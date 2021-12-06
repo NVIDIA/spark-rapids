@@ -23,7 +23,7 @@ class ClusterUtils(object):
 
     @staticmethod
     def generate_create_templ(sshKey, cluster_name, runtime, idle_timeout,
-            num_workers, driver_node_type, worker_node_type, cloud_provider, init_scripts,
+            num_workers, driver_node_type, worker_node_type, cloud_provider, init_scripts, aws_zone,
             printLoc=sys.stdout):
         timeStr = str(int(time.time()))
         uniq_name = cluster_name + "-" + timeStr
@@ -33,7 +33,7 @@ class ClusterUtils(object):
         templ['spark_version'] = runtime
         if (cloud_provider == 'aws'):
             templ['aws_attributes'] = {
-                        "zone_id": "us-west-2c",
+                        "zone_id": aws_zone,
                         "first_on_demand": 1,
                         "availability": "SPOT_WITH_FALLBACK",
                         "spot_bid_price_percent": 100,

@@ -48,7 +48,6 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
     @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
@@ -59,10 +58,11 @@ case class GpuBatchScanExec(
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics = Map(
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)) ++
+      semaphoreMetrics
 
   scan match {
     case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
@@ -219,8 +219,10 @@ object GpuCSVScan {
         meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading dates. " +
             s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DATES} to true.")
       }
-      if (!supportedDateFormats.contains(parsedOptions.dateFormat)) {
-        meta.willNotWorkOnGpu(s"the date format '${parsedOptions.dateFormat}' is not supported'")
+      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
+        if (!supportedDateFormats.contains(dateFormat)) {
+          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
+        }
       }
     }
 
@@ -264,19 +266,20 @@ object GpuCSVScan {
         meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
           s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
       }
-      if (parsedOptions.zoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      val tsFormat = parsedOptions.timestampFormat
-      val parts = tsFormat.split("'T'", 2)
-      if (parts.isEmpty) {
-        meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-      }
-      if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-        meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-      }
-      if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-        meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+      ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+        val parts = tsFormat.split("'T'", 2)
+        if (parts.isEmpty) {
+          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+        }
+        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
+          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+        }
+        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
+          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+        }
       }
     }
     // TODO parsedOptions.emptyValueInRead
@@ -329,7 +332,8 @@ case class GpuCSVScan(
       maxReaderBatchSizeBytes, metrics)
   }
 
-  override def withFilters(
+  // overrides nothing in 330
+  def withFilters(
       partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 
@@ -458,7 +462,7 @@ class CSVPartitionReader(
           if (newTotal > hmb.getLength) {
             hmb = growHostBuffer(hmb, newTotal)
           }
-          // Can have an empty line, do not write this to buffer but add the separator 
+          // Can have an empty line, do not write this to buffer but add the separator
           // and totalRows
           if (lineSize != 0) {
             hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
@@ -503,7 +507,7 @@ class CSVPartitionReader(
         None
       } else {
         val newReadDataSchema: StructType = if (readDataSchema.isEmpty) {
-          val smallestField = 
+          val smallestField =
               dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
           StructType(Seq(smallestField))
         } else {
@@ -512,7 +516,7 @@ class CSVPartitionReader(
         val cudfSchema = GpuColumnVector.from(dataSchema)
         val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
         // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
         // The buffer that is sent down
         val table = withResource(new NvtxWithMetrics("CSV decode", NvtxColor.DARK_GREEN,
@@ -545,7 +549,7 @@ class CSVPartitionReader(
       if (batch.isEmpty) {
         // This is odd, but some operators return data even when there is no input so we need to
         // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
       }
       isFirstBatch = false
     }

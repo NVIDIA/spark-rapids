@@ -79,17 +79,14 @@ class GpuShuffleMeta(
     childPlans.head.availableRuntimeDataTransition
 
   override def tagPlanForGpu(): Unit = {
-    // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
-    // previously stored on the spark plan to determine whether this exchange can run on GPU
-    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
 
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning
         if ShimLoader.getSparkShims.sessionFromPlan(shuffle).sessionState.conf
             .sortBeforeRepartition =>
-        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
+        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL
         shuffle.output.map(_.dataType)
-            .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
+            .filterNot(orderableTypes.isSupportedByPlugin)
             .foreach { dataType =>
               willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
                   s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")

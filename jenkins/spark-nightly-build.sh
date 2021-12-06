@@ -40,8 +40,13 @@ mvn -U -B -Dbuildver=311cdh clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2
 mvn -B -Dbuildver=311cdh deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 mvn -U -B -Dbuildver=320 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 mvn -B -Dbuildver=320 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=321 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=321 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+# temporarily skip tests on Spark 3.3.0 - https://github.com/NVIDIA/spark-rapids/issues/4031
+mvn -U -B -Dbuildver=330 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -B -Dbuildver=330 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 
-mvn -U -B -Dbuildver=301 -PsnapshotsWithDatabricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=301 -PsnapshotsWithDatabricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 
 # Parse cudf and spark files from local mvn repo
 jenkins/printJarVersion.sh "CUDFVersion" "$M2DIR/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID

@@ -94,6 +94,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
         if (headers.isEmpty) {
           batchInternal = GpuColumnVector.emptyBatchFromTypes(dataTypes)
+          GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
         } else {
           withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
             val table = tableInfo.getContiguousTable
@@ -103,6 +104,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
             } else {
               batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
               GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
+              table.getBuffer.noWarnLeakExpected()
             }
           }
         }
@@ -251,9 +253,6 @@ class GpuBroadcastMeta(
             "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
       }
     }
-    // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
-    // previously stored on the spark plan to determine whether this exchange can run on GPU
-    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
 
   override def convertToGpu(): GpuExec = {
@@ -268,7 +267,6 @@ abstract class GpuBroadcastExchangeExecBase(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
     "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
@@ -292,7 +290,6 @@ abstract class GpuBroadcastExchangeExecBase(
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
     val collectTime = gpuLongMetric(COLLECT_TIME)
     val buildTime = gpuLongMetric(BUILD_TIME)
     val broadcastTime = gpuLongMetric("broadcastTime")
@@ -302,7 +299,6 @@ abstract class GpuBroadcastExchangeExecBase(
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
         SQLExecution.withExecutionId(sparkSession, executionId) {
-          val totalRange = new MetricRange(totalTime)
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
@@ -360,8 +356,6 @@ abstract class GpuBroadcastExchangeExecBase(
             case e: Throwable =>
               promise.failure(e)
               throw e
-          } finally {
-            totalRange.close()
           }
         }
       }

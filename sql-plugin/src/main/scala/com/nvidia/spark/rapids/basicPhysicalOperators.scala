@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Scalar, Table}
+import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
@@ -28,13 +28,14 @@ import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskCon
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan}
-import org.apache.spark.sql.rapids.GpuPredicateHelper
+import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.util.random.BernoulliCellSampler
 
 class GpuProjectExecMeta(
     proj: ProjectExec,
@@ -44,7 +45,7 @@ class GpuProjectExecMeta(
     with Logging {
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
-    val gpuExprs = childExprs.map(_.convertToGpu()).toList
+    val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
       if (childExprs.forall(_.canThisBeAst)) {
@@ -119,16 +120,14 @@ case class GpuProjectExec(
    // using an Array, we opt in for List because it implements Seq while having non-recursive
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
-   projectList: List[Expression],
+   projectList: List[NamedExpression],
    child: SparkPlan
  ) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
-  override def output: Seq[Attribute] = {
-    projectList.collect { case ne: NamedExpression => ne.toAttribute }
-  }
+  override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -366,31 +365,140 @@ case class GpuFilterExec(
   }
 }
 
+class GpuSampleExecMeta(sample: SampleExec, conf: RapidsConf, p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends SparkPlanMeta[SampleExec](sample, conf, p, r)
+  with Logging {
+  override def convertToGpu(): GpuExec = {
+    val gpuChild = childPlans.head.convertIfNeeded()
+    GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
+      sample.seed, gpuChild)
+  }
+}
+
+case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement: Boolean,
+                         seed: Long, child: SparkPlan)
+  extends ShimUnaryExecNode with GpuExec {
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+
+  override def output: Seq[Attribute] = {
+    child.output
+  }
+
+  // add one coalesce exec to avoid empty batch and small batch,
+  // because sample will shrink the batch
+  override val coalesceAfter: Boolean = true
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val opTime = gpuLongMetric(OP_TIME)
+    val rdd = child.executeColumnar()
+    if (withReplacement) {
+      new GpuPartitionwiseSampledRDD(
+        rdd,
+        new GpuPoissonSampler(upperBound - lowerBound, useGapSamplingIfPossible = false,
+          numOutputRows, numOutputBatches, opTime),
+        preservesPartitioning = true,
+        seed)
+    } else {
+      rdd.mapPartitionsWithIndex(
+        (index, iterator) => {
+          // use CPU sampler generate filter
+          val sampler = new BernoulliCellSampler(lowerBound, upperBound)
+          sampler.setSeed(seed + index)
+          iterator.map[ColumnarBatch] { batch =>
+            numOutputBatches += 1
+            withResource(batch) { b => // will generate new columnar column, close this
+              val numRows = b.numRows()
+              val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
+                builder =>
+                  (0 until numRows).foreach { _ =>
+                    val n = sampler.sample()
+                    if (n > 0) {
+                      builder.append(1.toByte)
+                      numOutputRows += 1
+                    } else {
+                      builder.append(0.toByte)
+                    }
+                  }
+                  builder.buildAndPutOnDevice()
+              }
+
+              // use GPU filer rows
+              val colTypes = GpuColumnVector.extractTypes(b)
+              withResource(filter) { filter =>
+                withResource(GpuColumnVector.from(b)) { tbl =>
+                  withResource(tbl.filter(filter)) { filteredData =>
+                    if (filteredData.getRowCount == 0) {
+                      GpuColumnVector.emptyBatchFromTypes(colTypes)
+                    } else {
+                      GpuColumnVector.from(filteredData, colTypes)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        ,preservesPartitioning = true
+      )
+    }
+  }
+}
+
 /**
  * Physical plan for range (generating a range of 64 bit numbers).
  */
-case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range,
+case class GpuRangeExec(
+    start: Long,
+    end: Long,
+    step: Long,
+    numSlices: Int,
+    output: Seq[Attribute],
     targetSizeBytes: Long)
     extends LeafExecNode with GpuExec {
 
-  val start: Long = range.start
-  val end: Long = range.end
-  val step: Long = range.step
-  val numSlices: Int = range.numSlices.getOrElse(ShimLoader.getSparkShims
-    .leafNodeDefaultParallelism(sparkSession))
-  val numElements: BigInt = range.numElements
-  val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
+  val numElements: BigInt = {
+    val safeStart = BigInt(start)
+    val safeEnd = BigInt(end)
+    if ((safeEnd - safeStart) % step == 0 || (safeEnd > safeStart) != (step > 0)) {
+      (safeEnd - safeStart) / step
+    } else {
+      // the remainder has the same sign with range, could add 1 more
+      (safeEnd - safeStart) / step + 1
+    }
+  }
 
-  override val output: Seq[Attribute] = range.output
+  val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
 
   override protected val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
-  )
+  ) ++ semaphoreMetrics
 
-  override def outputOrdering: Seq[SortOrder] = range.outputOrdering
+  override def outputOrdering: Seq[SortOrder] = {
+    val shim = ShimLoader.getSparkShims
+    val order = if (step > 0) {
+      Ascending
+    } else {
+      Descending
+    }
+    output.map(a => shim.sortOrder(a, order))
+  }
 
   override def outputPartitioning: Partitioning = {
     if (numElements > 0) {
@@ -406,15 +514,10 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
   override def outputBatching: CoalesceGoal = TargetSize(targetSizeBytes)
 
-  override def doCanonicalize(): SparkPlan = {
-    GpuRangeExec(
-      range.canonicalized.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Range],
-      targetSizeBytes)
-  }
-
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
 
@@ -455,10 +558,10 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                   }
                 } else false
 
-              override def next(): ColumnarBatch =
-                withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) {
-                  _ =>
-                    GpuSemaphore.acquireIfNecessary(taskContext)
+              override def next(): ColumnarBatch = {
+                GpuSemaphore.acquireIfNecessary(taskContext, semTime)
+                withResource(
+                  new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
                     val start = number
                     val remainingSteps = (safePartitionEnd - start) / step
                     // Start is inclusive so we need to produce at least one row
@@ -475,7 +578,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                     val ret = withResource(Scalar.fromLong(start)) { startScalar =>
                       withResource(Scalar.fromLong(step)) { stepScalar =>
                         withResource(
-                          ai.rapids.cudf.ColumnVector.sequence(
+                          cudf.ColumnVector.sequence(
                             startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>
                           withResource(new Table(vec)) { tab =>
                             GpuColumnVector.from(tab, Array[DataType](LongType))
@@ -490,6 +593,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                     numOutputBatches += 1
                     ret
                 }
+              }
             }
             new InterruptibleIterator(taskContext, iter)
           }
@@ -512,7 +616,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     children.map(_.output).transpose.map { attrs =>
       val firstAttr = attrs.head
       val nullable = attrs.exists(_.nullable)
-      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.structTypeMerge)
+      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.unionLikeMerge)
       if (firstAttr.dataType == newDt) {
         firstAttr.withNullability(nullable)
       } else {

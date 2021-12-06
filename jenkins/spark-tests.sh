@@ -56,6 +56,47 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
 # The version of pytest.tar.gz that is uploaded is the one built against spark301 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
+
+tmp_info=${TMP_INFO_FILE:-'/tmp/artifacts-build.info'}
+rm -rf "$tmp_info"
+TEE_CMD="tee -a $tmp_info"
+GREP_CMD="grep revision"
+AWK_CMD=(awk -F'=' '{print $2}')
+getRevision() {
+  local file=$1
+  local properties=$2
+  local revision
+  if [[ $file == *.jar || $file == *.zip ]]; then
+    revision=$(unzip -p "$file" "$properties" | $TEE_CMD | $GREP_CMD | "${AWK_CMD[@]}" || true)
+  elif [[ $file == *.tgz || $file == *.tar.gz ]]; then
+    revision=$(tar -xzf "$file" --to-command=cat "$properties" | $TEE_CMD | $GREP_CMD | "${AWK_CMD[@]}" || true)
+  fi
+  echo "$revision"
+}
+
+set +x
+echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
+echo "-------------------- cudf JNI BUILD INFO --------------------" >> "$tmp_info"
+c_ver=$(getRevision $JARS_PATH/$CUDF_JAR cudf-java-version-info.properties)
+echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
+p_ver=$(getRevision $JARS_PATH/$RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
+echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"
+it_ver=$(getRevision $JARS_PATH/$RAPIDS_TEST_JAR rapids4spark-version-info.properties)
+echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" >> "$tmp_info"
+pt_ver=$(getRevision $JARS_PATH/$RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
+echo "-------------------- rapids-4-spark-udf-examples BUILD INFO --------------------" >> "$tmp_info"
+u_ver=$(getRevision $JARS_PATH/$RAPIDS_UDF_JAR rapids4spark-version-info.properties)
+echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
+set -x
+cat "$tmp_info" || true
+
+SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
+if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
+      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver" || "$p_ver" != "$u_ver") ]]; then
+  echo "Artifacts revisions are inconsistent!"
+  exit 1
+fi
+
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 $MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
@@ -155,6 +196,7 @@ run_test() {
           sed -n -e '/test session starts/,/deselected,/ p' "$LOG_FILE" || true
         else
           cat "$LOG_FILE" || true
+          cat /tmp/artifacts-build.info || true
         fi
         return $CODE
         ;;
@@ -162,25 +204,35 @@ run_test() {
 }
 export -f run_test
 
-# integration tests
-if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-  # put most time-consuming tests at the head of queue
-  time_consuming_tests="join_test.py generate_expr_test.py parquet_write_test.py"
-  tests_list=$(find "$SCRIPT_PATH"/src/main/python/ -name "*_test.py" -printf "%f ")
-  tests=$(echo "$time_consuming_tests $tests_list" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
-  # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
-  #                      we can set it to "never" and print failed ones after finish running all tests if needed
-  # --group: print stderr after test finished for better readability
-  parallel --group --halt "now,fail=1" -j5 run_test ::: $tests
-else
-  run_test all
-fi
-# cudf_udf_test
-run_test cudf_udf_test
+# TEST_MODE
+# - IT_ONLY
+# - CUDF_UDF_ONLY
+# - ALL: IT+CUDF_UDF
+TEST_MODE=${TEST_MODE:-'IT_ONLY'}
+if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+  # integration tests
+  if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
+    # put most time-consuming tests at the head of queue
+    time_consuming_tests="join_test.py generate_expr_test.py parquet_write_test.py"
+    tests_list=$(find "$SCRIPT_PATH"/src/main/python/ -name "*_test.py" -printf "%f ")
+    tests=$(echo "$time_consuming_tests $tests_list" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
+    # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
+    #                      we can set it to "never" and print failed ones after finish running all tests if needed
+    # --group: print stderr after test finished for better readability
+    parallel --group --halt "now,fail=1" -j5 run_test ::: $tests
+  else
+    run_test all
+  fi
 
-# Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
-if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-  run_test cache_serializer
+  # Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
+  if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+    run_test cache_serializer
+  fi
+fi
+
+# cudf_udf_test
+if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  run_test cudf_udf_test
 fi
 
 popd

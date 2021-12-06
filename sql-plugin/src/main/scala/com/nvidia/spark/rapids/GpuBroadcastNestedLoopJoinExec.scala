@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.sql.catalyst.expressions.Expression

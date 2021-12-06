@@ -231,7 +231,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  private static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
+  static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
     if (spark instanceof ArrayType) {
       ArrayType arrayType = (ArrayType) spark;
       return new HostColumnVector.ListType(nullable,
@@ -485,13 +485,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       // Decimal supportable check has been conducted in the GPU plan overriding stage.
       // So, we don't have to handle decimal-supportable problem at here.
       DecimalType dt = (DecimalType) type;
-      if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
-        return null;
-      } else {
-        return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
-      }
+      return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
     }
     return null;
+  }
+
+  public static DType getRapidsType(DataType type) {
+    if (type instanceof ArrayType) {
+      return DType.LIST;
+    } else if (type instanceof StructType) {
+      return DType.STRUCT;
+    } else {
+      return getNonNestedRapidsType(type);
+    }
   }
 
   public static boolean isNonNestedSupportedType(DataType type) {
@@ -1105,6 +1111,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public final RapidsHostColumnVector copyToHost() {
     return new RapidsHostColumnVector(type, cudfCv.copyToHost());
+  }
+
+  public final RapidsNullSafeHostColumnVector copyToNullSafeHost() {
+    return new RapidsNullSafeHostColumnVector(copyToHost());
   }
 
   @Override

@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
-import java.util.{List => JList, Objects}
+import java.math.BigInteger
 import java.util
+import java.util.{List => JList, Objects}
 import javax.xml.bind.DatatypeConverter
 
 import scala.collection.JavaConverters._
@@ -72,21 +73,12 @@ object GpuScalar extends Arm with Logging {
    * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
    * The returned type will be used by the `ColumnVector.fromXXX` family.
    */
-  private[rapids] def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
-    case ArrayType(elementType, _) =>
-      new HostColumnVector.ListType(true, resolveElementType(elementType))
-    case StructType(fields) =>
-      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
-    case MapType(keyType, valueType, _) =>
-      new HostColumnVector.ListType(true,
-        new HostColumnVector.StructType(true,
-          resolveElementType(keyType),
-          resolveElementType(valueType)))
-    case other =>
-      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
+  private[rapids] def resolveElementType(dt: DataType,
+      nullable: Boolean = true): HostColumnVector.DataType = {
+    GpuColumnVector.convertFrom(dt, nullable)
   }
 
-  /**
+  /*
    * The "convertXXXTo" functions are used to convert the data from Catalyst type
    * to the Java type required by the `ColumnVector.fromXXX` family.
    *
@@ -94,8 +86,9 @@ object GpuScalar extends Arm with Logging {
    * The mapping from DataType to Catalyst data type can be found in the function
    * 'validateLiteralValue' in Spark.
    */
+
   /** Converts a decimal, `dec` should not be null. */
-  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Any = {
     if (dec.scale > dt.scale) {
       throw new IllegalArgumentException(s"Unexpected decimals rounding.")
     }
@@ -103,9 +96,11 @@ object GpuScalar extends Arm with Logging {
       throw new IllegalArgumentException(s"Cannot change precision to $dt for decimal: $dec")
     }
     if (DecimalType.is32BitDecimalType(dt)) {
-      Left(dec.toUnscaledLong.toInt)
+      dec.toUnscaledLong.toInt
+    } else if (DecimalType.is64BitDecimalType(dt)) {
+      dec.toUnscaledLong
     } else {
-      Right(dec.toUnscaledLong)
+      dec.toBigDecimal.bigDecimal.unscaledValue()
     }
   }
 
@@ -123,8 +118,9 @@ object GpuScalar extends Arm with Logging {
     case _ if element == null => null
     case StringType => element.asInstanceOf[UTF8String].getBytes
     case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {
-      case Left(i) => i
-      case Right(l) => l
+      case element: Int => element
+      case element: Long => element
+      case element: BigInteger => element
     }
     case ArrayType(eType, _) =>
       val data = getArrayData(element.asInstanceOf[ArrayData], eType)
@@ -179,15 +175,22 @@ object GpuScalar extends Arm with Logging {
         if (DecimalType.is32BitDecimalType(dt)) {
           val rows = decs.map {
             case null => null
-            case d => convertDecimalTo(d, dt).left.get
+            case d => convertDecimalTo(d, dt)
           }
-          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
-        } else {
+          ColumnVector.decimalFromBoxedInts(-dt.scale,
+            rows.asInstanceOf[Seq[java.lang.Integer]]: _*)
+        } else if (DecimalType.is64BitDecimalType(dt)){
           val rows = decs.map {
             case null => null
-            case d => convertDecimalTo(d, dt).right.get
+            case d => convertDecimalTo(d, dt)
           }
-          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
+          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows.asInstanceOf[Seq[java.lang.Long]]: _*)
+        }  else {
+          val rows = decs.map {
+            case null => null
+            case d => convertDecimalTo(d, dt)
+          }
+          ColumnVector.decimalFromBigInt(-dt.scale, rows.asInstanceOf[Seq[BigInteger]]: _*)
         }
       case ArrayType(_, _) =>
         val colType = resolveElementType(elementType)
@@ -236,6 +239,8 @@ object GpuScalar extends Arm with Logging {
     case decType: DecimalType =>
       val dec = v match {
         case de: Decimal => de
+        case vb: Byte => Decimal(vb)
+        case vs: Short => Decimal(vs)
         case vi: Int => Decimal(vi)
         case vl: Long => Decimal(vl)
         case vd: Double => Decimal(vd)
@@ -245,12 +250,16 @@ object GpuScalar extends Arm with Logging {
           s" for DecimalType, expecting Decimal, Int, Long, Double, String, or BigDecimal.")
       }
       convertDecimalTo(dec, decType) match {
-        case Left(i) => Scalar.fromDecimal(-decType.scale, i)
-        case Right(l) => Scalar.fromDecimal(-decType.scale, l)
+        case element: Int => Scalar.fromDecimal(-decType.scale, element)
+        case element: Long => Scalar.fromDecimal(-decType.scale, element)
+        case element: BigInteger => Scalar.fromDecimal(-decType.scale, element)
+        case _ => throw new IllegalArgumentException(s"Expecting Long, Int or BigInteger")
       }
     case LongType => v match {
       case l: Long => Scalar.fromLong(l)
       case i: Int => Scalar.fromLong(i.toLong)
+      case s: Short => Scalar.fromLong(s.toLong)
+      case b: Byte => Scalar.fromLong(b.toLong)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for LongType, expecting Long, or Int.")
     }
@@ -270,6 +279,8 @@ object GpuScalar extends Arm with Logging {
     }
     case IntegerType => v match {
       case i: Int =>  Scalar.fromInt(i)
+      case s: Short =>  Scalar.fromInt(s.toInt)
+      case b: Byte =>  Scalar.fromInt(b.toInt)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for IntegerType, expecting Int.")
     }
@@ -288,6 +299,7 @@ object GpuScalar extends Arm with Logging {
     }
     case ShortType => v match {
       case s: Short => Scalar.fromShort(s)
+      case b: Byte => Scalar.fromShort(b.toShort)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for ShortType, expecting Short.")
     }
@@ -661,7 +673,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       case TimestampType =>
         ast.Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
           value.asInstanceOf[java.lang.Long])
-      case _ => throw new IllegalStateException("$dataType is an unsupported literal type")
+      case _ => throw new IllegalStateException(s"$dataType is an unsupported literal type")
     }
   }
 }
@@ -671,6 +683,9 @@ class LiteralExprMeta(
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends ExprMeta[Literal](lit, conf, p, r) {
+
+  def withNewLiteral(newLiteral: Literal): LiteralExprMeta =
+    new LiteralExprMeta(newLiteral, conf, p, r)
 
   override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 

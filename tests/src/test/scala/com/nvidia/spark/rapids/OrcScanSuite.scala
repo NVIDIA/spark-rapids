@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.types.{IntegerType, LongType, StringType, StructField, StructType}
+import org.apache.spark.sql.types.{DateType, IntegerType, LongType, StringType, StructField, StructType}
 
 class OrcScanSuite extends SparkQueryCompareTestSuite {
 
@@ -94,6 +95,43 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
       assert(ret1(0).getInt(1) === 1)
       assert(ret1(0).getString(2) === "hello")
     })
+  }
+
+  /**
+   *
+   * The calendar of hybrid-Julian-calendar.orc file is hybrid Julian Gregorian
+   * This file has one date column one row, value is 1582-10-03
+   * When specify "orc.proleptic.gregorian" calendar to filter the file with c1 >= 1582-10-03,
+   * then no result returned. Because of 1582-10-03 in hybrid calender
+   * is actually 1582-09-23 in proleptic Gregorian calendar.
+   */
+  test("test hybrid Julian Gregorian calendar vs proleptic Gregorian calendar") {
+
+    withCpuSparkSession(spark => {
+      val df = frameFromOrcWithSchema("hybrid-Julian-calendar.orc",
+        StructType(Seq(StructField("c1", DateType))))(spark)
+      val ret = df.collect()
+      ret.length == 1
+      assert(ret(0).toString() == "[1582-10-03]")
+    })
+
+    def check(spark: SparkSession) = {
+      val df = frameFromOrcWithSchema("hybrid-Julian-calendar.orc",
+        StructType(Seq(StructField("c1", DateType))))(spark)
+      df.createOrReplaceTempView("df1")
+      // should not have data, if orc.proleptic.gregorian is specified
+      val ret = spark.sql("select c1 from df1 where c1 >= to_date('1582-10-03', 'yyyy-MM-dd') ")
+          .collect()
+      assert(ret.isEmpty)
+    }
+
+    val conf: SparkConf = new SparkConf()
+    // indicate convert to proleptic Gregorian calendar
+    conf.set("orc.proleptic.gregorian", "true")
+
+    // both cpu and gpu should return empty
+    withGpuSparkSession(check, conf)
+    withCpuSparkSession(check, conf)
   }
 
 }

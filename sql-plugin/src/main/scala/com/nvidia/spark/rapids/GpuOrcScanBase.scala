@@ -27,6 +27,7 @@ import java.util.concurrent.{Callable, ThreadPoolExecutor}
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
+import scala.collection.mutable
 import scala.language.implicitConversions
 import scala.math.max
 
@@ -58,8 +59,9 @@ import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, File
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{Decimal, DecimalType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -397,6 +399,38 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     }.getOrElse(schema)
   }
 
+  /**
+   * Extracts all fields(columns) of DECIMAL128, including child columns of nested types,
+   * and returns the names of all fields.
+   * The names of nested children are prefixed with their parents' information, which is the
+   * acceptable format of cuDF reader options.
+   */
+  protected def filterDecimal128Fields(readColumns: Array[String],
+      readSchema: StructType): Array[String] = {
+    val buffer = mutable.ArrayBuffer.empty[String]
+
+    def findImpl(prefix: String, fieldName: String, fieldType: DataType): Unit = fieldType match {
+      case dt: DecimalType if DecimalType.isByteArrayDecimalType(dt) =>
+        buffer.append(prefix + fieldName)
+      case dt: StructType =>
+        dt.fields.foreach(f => findImpl(prefix + fieldName + ".", f.name, f.dataType))
+      case dt: ArrayType =>
+        findImpl(prefix + fieldName + ".", "1", dt.elementType)
+      case MapType(kt: DataType, vt: DataType, _) =>
+        findImpl(prefix + fieldName + ".", "0", kt)
+        findImpl(prefix + fieldName + ".", "1", vt)
+      case _ =>
+    }
+
+    val rootFields = readColumns.toSet
+    readSchema.fields.foreach {
+      case f if rootFields.contains(f.name) => findImpl("", f.name, f.dataType)
+      case _ =>
+    }
+
+    buffer.toArray
+  }
+
 }
 
 /**
@@ -585,7 +619,7 @@ class GpuOrcPartitionReader(
       if (batch.isEmpty) {
         // This is odd, but some operators return data even when there is no input so we need to
         // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
       }
       isFirstBatch = false
     }
@@ -625,14 +659,16 @@ class GpuOrcPartitionReader(
         dumpDataToFile(dataBuffer, dataSize, Array(partFile), Option(debugDumpPrefix), Some("orc"))
         val tableSchema = resolveTableSchema(ctx.updatedReadSchema, ctx.requestedMapping)
         val includedColumns = tableSchema.getFieldNames.asScala
+        val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
         val parseOpts = ORCOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withNumPyTypes(false)
           .includeColumn(includedColumns:_*)
+          .decimal128Column(decimal128Fields:_*)
           .build()
 
         // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
         val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
             metrics(GPU_DECODE_TIME))) { _ =>
@@ -907,7 +943,9 @@ private case class GpuOrcFileFilterHandler(
         isCaseSensitive)
       val evolution = new SchemaEvolution(orcReader.getSchema, updatedReadSchema, readerOpts)
       val (sargApp, sargColumns) = getSearchApplier(evolution,
-        orcFileReaderOpts.getUseUTCTimestamp)
+        orcFileReaderOpts.getUseUTCTimestamp,
+        orcReader.writerUsedProlepticGregorian(), orcFileReaderOpts.getConvertToProlepticGregorian)
+
       val splitStripes = orcReader.getStripes.asScala.filter(s =>
         s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
       val stripes = buildOutputStripes(splitStripes, evolution,
@@ -1220,11 +1258,14 @@ private case class GpuOrcFileFilterHandler(
      */
     private def getSearchApplier(
         evolution: SchemaEvolution,
-        useUTCTimestamp: Boolean): (SargApplier, Array[Boolean]) = {
+        useUTCTimestamp: Boolean,
+        writerUsedProlepticGregorian: Boolean,
+        convertToProlepticGregorian: Boolean): (SargApplier, Array[Boolean]) = {
       val searchArg = readerOpts.getSearchArgument
       if (searchArg != null && orcReader.getRowIndexStride != 0) {
         val sa = new SargApplier(searchArg, orcReader.getRowIndexStride, evolution,
-          orcReader.getWriterVersion, useUTCTimestamp)
+          orcReader.getWriterVersion, useUTCTimestamp,
+          writerUsedProlepticGregorian, convertToProlepticGregorian)
         // SargApplier.sargColumns is unfortunately not visible so we redundantly compute it here.
         val filterCols = RecordReaderImpl.mapSargColumnsToOrcInternalColIdx(searchArg.getLeaves,
           evolution)
@@ -1291,6 +1332,7 @@ class MultiFileCloudOrcPartitionReader(
     requestedMapping: Option[Array[Int]]) extends HostMemoryBuffersWithMetaDataBase
 
   private class ReadBatchRunner(
+      taskContext: TaskContext,
       partFile: PartitionedFile,
       conf: Configuration,
       filters: Array[Filter]) extends Callable[HostMemoryBuffersWithMetaDataBase]  {
@@ -1298,6 +1340,15 @@ class MultiFileCloudOrcPartitionReader(
     private var blockChunkIter: BufferedIterator[OrcOutputStripe] = null
 
     override def call(): HostMemoryBuffersWithMetaDataBase = {
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        doRead()
+      } finally {
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
 
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
@@ -1353,14 +1404,18 @@ class MultiFileCloudOrcPartitionReader(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
+   * @param tc      task context to use
    * @param file    file to be read
    * @param conf    the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
    */
-  override def getBatchRunner(file: PartitionedFile, conf: Configuration, filters: Array[Filter]):
-      Callable[HostMemoryBuffersWithMetaDataBase] = {
-    new ReadBatchRunner(file, conf, filters)
+  override def getBatchRunner(
+      tc: TaskContext,
+      file: PartitionedFile,
+      conf: Configuration,
+      filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
+    new ReadBatchRunner(tc, file, conf, filters)
   }
 
   /**
@@ -1421,7 +1476,7 @@ class MultiFileCloudOrcPartitionReader(
     // Not reading any data, but add in partition data if needed
     if (hostBuffer == null) {
       // Someone is going to process this data, even if it is just a row count
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
       val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
       return addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
     }
@@ -1432,14 +1487,16 @@ class MultiFileCloudOrcPartitionReader(
 
       val tableSchema = resolveTableSchema(updatedReadSchema, requestedMapping)
       val includedColumns = tableSchema.getFieldNames.asScala
+      val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
       val parseOpts = ORCOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
         .withNumPyTypes(false)
         .includeColumn(includedColumns:_*)
+        .decimal128Column(decimal128Fields:_*)
         .build()
 
       // about to start using the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
       val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
           metrics(GPU_DECODE_TIME))) { _ =>
@@ -1622,6 +1679,7 @@ class MultiFileOrcPartitionReader(
   // The runner to copy stripes to the offset of HostMemoryBuffer and update
   // the StripeInformation to construct the file Footer
   class OrcCopyStripesRunner(
+      taskContext: TaskContext,
       file: Path,
       outhmb: HostMemoryBuffer,
       stripes: ArrayBuffer[DataBlockBase],
@@ -1629,6 +1687,15 @@ class MultiFileOrcPartitionReader(
     extends Callable[(Seq[DataBlockBase], Long)] {
 
     override def call(): (Seq[DataBlockBase], Long) = {
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        doRead()
+      } finally {
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def doRead(): (Seq[DataBlockBase], Long) = {
       val startBytesRead = fileSystemBytesRead()
       // copy stripes to the HostMemoryBuffer
       withResource(outhmb) { _ =>
@@ -1795,6 +1862,7 @@ class MultiFileOrcPartitionReader(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
+   * @param tc     task context to use
    * @param file   file to be read
    * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the implementation
    *               is in charge of closing it in sub-class
@@ -1806,11 +1874,12 @@ class MultiFileOrcPartitionReader(
    *         result._2 is the bytes read
    */
   override def getBatchRunner(
+      tc: TaskContext,
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long): Callable[(Seq[DataBlockBase], Long)] = {
-    new OrcCopyStripesRunner(file, outhmb, blocks, offset)
+    new OrcCopyStripesRunner(tc, file, outhmb, blocks, offset)
   }
 
   /**
@@ -1840,14 +1909,16 @@ class MultiFileOrcPartitionReader(
 
     val tableSchema = resolveTableSchema(clippedSchema, extraInfo.requestedMapping)
     val includedColumns = tableSchema.getFieldNames.asScala
+    val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
     val parseOpts = ORCOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
       .withNumPyTypes(false)
       .includeColumn(includedColumns: _*)
+      .decimal128Column(decimal128Fields:_*)
       .build()
 
     // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
     val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
       metrics(GPU_DECODE_TIME))) { _ =>

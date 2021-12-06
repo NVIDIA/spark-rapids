@@ -103,7 +103,7 @@ case class GpuSortExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = {
     val required = Map(
-      TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+      OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
       SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
       PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
     if (sortType == OutOfCoreSort) {
@@ -120,7 +120,7 @@ case class GpuSortExec(
 
     val sortTime = gpuLongMetric(SORT_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val outputBatch = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val outOfCore = sortType == OutOfCoreSort
@@ -132,13 +132,13 @@ case class GpuSortExec(
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
           // To avoid divide by zero errors, underflow and overflow issues in tests
           // that want the targetSize to be 0, we set it to something more reasonable
-          math.max(16 * 1024, targetSize), totalTime, sortTime, outputBatch, outputRows,
+          math.max(16 * 1024, targetSize), opTime, sortTime, outputBatch, outputRows,
           peakDevMemory, spillCallback)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter
       } else {
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
-          totalTime, sortTime, outputBatch, outputRows, peakDevMemory)
+          opTime, sortTime, outputBatch, outputRows, peakDevMemory)
       }
     }
   }
@@ -148,7 +148,7 @@ case class GpuSortEachBatchIterator(
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
     singleBatch: Boolean,
-    totalTime: GpuMetric = NoopMetric,
+    opTime: GpuMetric = NoopMetric,
     sortTime: GpuMetric = NoopMetric,
     outputBatches: GpuMetric = NoopMetric,
     outputRows: GpuMetric = NoopMetric,
@@ -157,7 +157,7 @@ case class GpuSortEachBatchIterator(
 
   override def next(): ColumnarBatch = {
     withResource(iter.next()) { cb =>
-        withResource(new NvtxWithMetrics("sort total", NvtxColor.WHITE, totalTime)) { _ =>
+        withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
           val ret = sorter.fullySortBatch(cb, sortTime, peakDevMemory)
           outputBatches += 1
           outputRows += ret.numRows()
@@ -236,12 +236,12 @@ case class GpuOutOfCoreSortIterator(
     sorter: GpuSorter,
     cpuOrd: LazilyGeneratedOrdering,
     targetSize: Long,
-    totalTime: GpuMetric,
+    opTime: GpuMetric,
     sortTime: GpuMetric,
     outputBatches: GpuMetric,
     outputRows: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: RapidsBuffer.SpillCallback) extends Iterator[ColumnarBatch]
+    spillCallback: SpillCallback) extends Iterator[ColumnarBatch]
     with Arm with AutoCloseable {
 
   // There are so many places where we might hit a new peak that it gets kind of complex
@@ -380,13 +380,13 @@ case class GpuOutOfCoreSortIterator(
       var memUsed = 0L
       val sortedTbl = withResource(iter.next()) { batch =>
         memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(batch)
-        withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, totalTime)) { _ =>
+        withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, opTime)) { _ =>
           sorter.appendProjectedAndSort(batch, sortTime)
         }
       }
       memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
       peakMemory = Math.max(peakMemory, memUsed)
-      withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, totalTime)) { _ =>
+      withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
         withResource(sortedTbl) { sortedTbl =>
           val rows = sortedTbl.getRowCount.toInt
           // filter out empty batches
@@ -515,7 +515,7 @@ case class GpuOutOfCoreSortIterator(
       if (pending.isEmpty && sorted.isEmpty) {
         firstPassReadBatches()
       }
-      withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, totalTime)) { _ =>
+      withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, opTime)) { _ =>
         val ret = mergeSortEnoughToOutput().getOrElse(concatOutput())
         outputBatches += 1
         outputRows += ret.numRows()

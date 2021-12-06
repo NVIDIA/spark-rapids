@@ -22,23 +22,13 @@ import ai.rapids.cudf.{ContiguousTable, CuFile, Table}
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, times, verify, when}
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.compatible.Assertion
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.storage.BlockId
 
-class RapidsGdsStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with MockitoSugar {
-  val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
-
-  override def beforeEach(): Unit = {
-    TEST_FILES_ROOT.mkdirs()
-  }
-
-  override def afterEach(): Unit = {
-    org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
-  }
+class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
 
   test("single shot spill with shared path") {
     assume(CuFile.libraryLoaded())
@@ -66,7 +56,7 @@ class RapidsGdsStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with
     val batchWriteBufferSize = 16384 // Holds 2 buffers.
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       withResource(new RapidsGdsStore(
-        diskBlockManager, batchWriteBufferSize, false, 65536, catalog)) { gdsStore =>
+        diskBlockManager, batchWriteBufferSize, catalog)) { gdsStore =>
 
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
@@ -111,7 +101,7 @@ class RapidsGdsStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with
     val spillPriority = -7
     val catalog = spy(new RapidsBufferCatalog)
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsGdsStore(mock[RapidsDiskBlockManager], 4096, false, 65536, catalog)) {
+      withResource(new RapidsGdsStore(mock[RapidsDiskBlockManager], 4096, catalog)) {
         gdsStore =>
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)

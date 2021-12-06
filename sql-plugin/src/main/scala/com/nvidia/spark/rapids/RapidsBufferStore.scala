@@ -20,7 +20,7 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -143,7 +143,8 @@ abstract class RapidsBufferStore(
    * @param targetTotalSize maximum total size of this store after spilling completes
    * @return number of bytes that were spilled
    */
-  def synchronousSpill(targetTotalSize: Long): Long = synchronousSpill(targetTotalSize, null)
+  def synchronousSpill(targetTotalSize: Long): Long =
+    synchronousSpill(targetTotalSize, Cuda.DEFAULT_STREAM)
 
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
@@ -263,7 +264,7 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback,
+      override val spillCallback: SpillCallback,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
       deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
       extends RapidsBuffer with Arm {
@@ -333,7 +334,7 @@ abstract class RapidsBufferStore(
           case _: HostMemoryBuffer =>
             // TODO: consider moving to the async version.
             dst.copyFromMemoryBuffer(dstOffset, memBuff, srcOffset, length, stream)
-          case _: DeviceMemoryBuffer =>
+          case _: BaseDeviceMemoryBuffer =>
             dst.copyFromMemoryBufferAsync(dstOffset, memBuff, srcOffset, length, stream)
           case _ =>
             throw new IllegalStateException(s"Infeasible destination buffer type ${dst.getClass}")

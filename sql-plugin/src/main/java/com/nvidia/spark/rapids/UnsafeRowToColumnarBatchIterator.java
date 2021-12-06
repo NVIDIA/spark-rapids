@@ -50,8 +50,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final DType[] rapidsTypes;
   protected final DataType[] outputTypes;
   protected final GpuMetric semaphoreWaitTime;
-  protected final GpuMetric gpuOpTime;
-  protected final GpuMetric totalTime;
+  protected final GpuMetric streamTime;
+  protected final GpuMetric opTime;
   protected final GpuMetric numInputRows;
   protected final GpuMetric numOutputRows;
   protected final GpuMetric numOutputBatches;
@@ -61,8 +61,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
       Attribute[] schema,
       CoalesceSizeGoal goal,
       GpuMetric semaphoreWaitTime,
-      GpuMetric gpuOpTime,
-      GpuMetric totalTime,
+      GpuMetric streamTime,
+      GpuMetric opTime,
       GpuMetric numInputRows,
       GpuMetric numOutputRows,
       GpuMetric numOutputBatches) {
@@ -79,8 +79,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
       outputTypes[i] = schema[i].dataType();
     }
     this.semaphoreWaitTime = semaphoreWaitTime;
-    this.gpuOpTime = gpuOpTime;
-    this.totalTime = totalTime;
+    this.streamTime = streamTime;
+    this.opTime = opTime;
     this.numInputRows = numInputRows;
     this.numOutputRows = numOutputRows;
     this.numOutputBatches = numOutputBatches;
@@ -88,7 +88,14 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
 
   @Override
   public boolean hasNext() {
-    return pending != null || input.hasNext();
+    boolean ret = true;
+    if (pending == null) {
+      long start = System.nanoTime();
+      ret = input.hasNext();
+      long ct = System.nanoTime() - start;
+      streamTime.add(ct);
+    }
+    return ret;
   }
 
   @Override
@@ -98,6 +105,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
     }
     final int BYTES_PER_OFFSET = DType.INT32.getSizeInBytes();
 
+    long collectStart = System.nanoTime();
+
     ColumnVector devColumn;
     NvtxRange buildRange;
     // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
@@ -106,12 +115,12 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
     // buffers.  One will be for the byte data and the second will be for the offsets. We will then
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
-    try (NvtxWithMetrics nvtx = new NvtxWithMetrics("RowToColumnar", NvtxColor.CYAN, totalTime);
-         HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
+    try (HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
          HostMemoryBuffer offsetsBuffer =
              HostMemoryBuffer.allocate(((long)numRowsEstimate + 1) * BYTES_PER_OFFSET)) {
 
       int[] used = fillBatch(dataBuffer, offsetsBuffer);
+
       int dataOffset = used[0];
       int currentRow = used[1];
       // We don't want to loop forever trying to copy nothing
@@ -139,12 +148,16 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
            HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
                currentRow, Optional.of(0L), null, null,
                offsetsBuffer, Collections.singletonList(dataCv))) {
+
+        long ct = System.nanoTime() - collectStart;
+        streamTime.add(ct);
+
         // Grab the semaphore because we are about to put data onto the GPU.
         TaskContext tc = TaskContext.get();
         if (tc != null) {
           GpuSemaphore$.MODULE$.acquireIfNecessary(tc, semaphoreWaitTime);
         }
-        buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(gpuOpTime));
+        buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(opTime));
         devColumn = hostColumn.copyToDevice();
       }
     }

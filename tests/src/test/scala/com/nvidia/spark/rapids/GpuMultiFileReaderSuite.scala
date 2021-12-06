@@ -22,6 +22,7 @@ import ai.rapids.cudf.HostMemoryBuffer
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.FunSuite
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
@@ -37,7 +38,8 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       numThreads = 1,
       maxNumFileProcessed = 1,
       filters = Array.empty,
-      execMetrics = Map(GpuMetric.PEAK_DEVICE_MEMORY -> NoopMetric)) {
+      execMetrics = Map(GpuMetric.PEAK_DEVICE_MEMORY -> NoopMetric,
+        GpuMetric.SEMAPHORE_WAIT_TIME -> NoopMetric)) {
 
       // Setup some empty host buffers at the start
       currentFileHostBuffers = Some(new HostMemoryBuffersWithMetaDataBase {
@@ -48,6 +50,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       })
 
       override def getBatchRunner(
+          tc: TaskContext,
           file: PartitionedFile,
           conf: Configuration,
           filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {

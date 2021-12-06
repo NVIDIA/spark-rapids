@@ -20,6 +20,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecuto
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.util.control.NonFatal
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
@@ -106,14 +107,32 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
   }
 
+  private def errorHandler(error: Throwable, path: EventLogInfo) = {
+    error match {
+      case oom: OutOfMemoryError =>
+        logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+            s" Increase heap size. Exiting ...", oom)
+        sys.exit(1)
+      case NonFatal(e) =>
+        logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
+      case o: Throwable =>
+        logError(s"Error occurred while processing file: ${path.eventLog.toString}. Exiting ...", o)
+        sys.exit(1)
+    }
+  }
+
   private def createApps(allPaths: Seq[EventLogInfo]): Seq[ApplicationInfo] = {
     var errorCodes = ArrayBuffer[Int]()
     val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val appOpt = createApp(path, numOutputRows, index, hadoopConf)
-        appOpt.foreach(app => allApps.add(app))
+        try {
+          val appOpt = createApp(path, index, hadoopConf)
+          appOpt.foreach(app => allApps.add(app))
+        } catch {
+          case t: Throwable => errorHandler(t, path)
+        }
       }
     }
 
@@ -145,18 +164,21 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val appOpt = createApp(path, numOutputRows, index, hadoopConf)
-        appOpt.foreach { app =>
-          val sum = try {
-            val (s, _) = processApps(Seq(app), false, profileOutputWriter)
-            Some(s)
-          } catch {
-            case e: Exception =>
-              logWarning(s"Unexpected exception thrown ${path.eventLog.toString}, skipping! ", e)
-              None
-
+        try {
+          val appOpt = createApp(path, index, hadoopConf)
+          appOpt.foreach { app =>
+            val sum = try {
+              val (s, _) = processApps(Seq(app), false, profileOutputWriter)
+              Some(s)
+            } catch {
+              case e: Exception =>
+                logWarning(s"Unexpected exception thrown ${path.eventLog.toString}, skipping! ", e)
+                None
+            }
+            sum.foreach(allApps.add(_))
           }
-          sum.foreach(allApps.add(_))
+        } catch {
+          case t: Throwable => errorHandler(t, path)
         }
       }
     }
@@ -186,8 +208,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
         try {
-          // we just skip apps that don't process cleanly
-          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          // we just skip apps that don't process cleanly and exit if heap is smaller
+          val appOpt = createApp(path, index, hadoopConf)
           appOpt match {
             case Some(app) =>
               val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/${app.appId}",
@@ -204,8 +226,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
               logInfo("No application to process. Exiting")
           }
         } catch {
-          case e: Exception =>
-            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
+          case t: Throwable => errorHandler(t, path)
         }
       }
     }
@@ -220,12 +241,12 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
   }
 
-  private def createApp(path: EventLogInfo, numRows: Int, index: Int,
+  private def createApp(path: EventLogInfo, index: Int,
       hadoopConf: Configuration): Option[ApplicationInfo] = {
     try {
       // This apps only contains 1 app in each loop.
       val startTime = System.currentTimeMillis()
-      val app = new ApplicationInfo(numRows, hadoopConf, path, index)
+      val app = new ApplicationInfo(hadoopConf, path, index)
       EventLogPathProcessor.logApplicationInfo(app)
       val endTime = System.currentTimeMillis()
       logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")

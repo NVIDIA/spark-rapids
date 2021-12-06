@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
-import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
+import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 
-import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, DataType, DateType, DecimalType, IntegerType, LongType, MapType, NullType, NumericType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -137,15 +136,18 @@ trait JoinGatherer extends LazySpillable with Arm {
 
 object JoinGatherer extends Arm {
   def apply(gatherMap: LazySpillableGatherMap,
-      inputData: LazySpillableColumnarBatch): JoinGatherer =
-    new JoinGathererImpl(gatherMap, inputData)
+      inputData: LazySpillableColumnarBatch,
+      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
+    new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
 
   def apply(leftMap: LazySpillableGatherMap,
       leftData: LazySpillableColumnarBatch,
       rightMap: LazySpillableGatherMap,
-      rightData: LazySpillableColumnarBatch): JoinGatherer = {
-    val left = JoinGatherer(leftMap, leftData)
-    val right = JoinGatherer(rightMap, rightData)
+      rightData: LazySpillableColumnarBatch,
+      outOfBoundsPolicyLeft: OutOfBoundsPolicy,
+      outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
+    val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
+    val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
     MultiJoinGather(left, right)
   }
 
@@ -478,12 +480,6 @@ object JoinGathererImpl {
   private def calcRowSizeBits(dt: DataType, nullValueCalc: Boolean): Option[Int] = dt match {
     case StructType(fields) =>
       sumRowSizesBits(fields.map(_.dataType), nullValueCalc).map(_ + 1)
-    case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
-      if (nullValueCalc) {
-        throw new IllegalArgumentException(s"Found an unsupported type $dt")
-      } else {
-        None
-      }
     case _: NumericType | DateType | TimestampType | BooleanType | NullType =>
       Some(GpuColumnVector.getNonNestedRapidsType(dt).getSizeInBytes * 8 + 1)
     case StringType | BinaryType | ArrayType(_, _) | MapType(_, _, _) if nullValueCalc =>
@@ -500,7 +496,8 @@ object JoinGathererImpl {
  */
 class JoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
-    private val data: LazySpillableColumnarBatch) extends JoinGatherer {
+    private val data: LazySpillableColumnarBatch,
+    boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
 
   assert(data.numCols > 0, "data with no columns should have been filtered out already")
 
@@ -537,7 +534,7 @@ class JoinGathererImpl(
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
       val batch = data.getBatch
       val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
-        table.gather(gatherView)
+        table.gather(gatherView, boundsCheckPolicy)
       }
       withResource(gatheredTable) { gt =>
         GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))

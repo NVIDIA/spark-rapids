@@ -28,46 +28,60 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.005, 0.05, 0.25, 0.45, 0.5, 0.55, 0.75, 0.95, 0.995)
 
+  test("null handling") {
+    val func = spark => salariesWithNull(spark)
+    doTest(func, delta = Some(100))
+  }
+
   test("1 row per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 1, delta = Some(100))
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 1)
+    doTest(func, delta = Some(100))
   }
 
   test("5 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = Some(100))
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 5)
+    doTest(func, delta = Some(100))
   }
 
   test("250 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 250, delta = Some(100))
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 250)
+    doTest(func, delta = Some(100))
   }
 
   test("2500 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 2500, delta = Some(100))
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 2500)
+    doTest(func, delta = Some(100))
   }
 
   test("250 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 250, delta = None)
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 250)
+    doTest(func, delta = None)
   }
 
   test("25000 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 25000, delta = None)
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 25000)
+    doTest(func, delta = None)
   }
 
   test("50000 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 50000, delta = None)
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 50000)
+    doTest(func, delta = None)
   }
 
   // test with a threshold just below the default level of 10000
   test("50000 rows per group, delta 9999, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 50000, delta = Some(9999))
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 50000)
+    doTest(func, delta = Some(9999))
   }
 
   test("empty input set") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 0, delta = None)
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 1)
+    doTest(func, delta = None)
   }
 
   test("scalar percentile") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 250,
-      percentileArg = Left(0.5), delta = Some(100))
+    val func = spark => salaries(spark, DataTypes.DoubleType, rowsPerDept = 250)
+    doTest(func, percentileArg = Left(0.5), delta = Some(100))
   }
 
   test("empty percentile array fall back to CPU") {
@@ -105,25 +119,25 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  private def doTest(dataType: DataType,
-      rowsPerGroup: Int,
-      percentileArg: Either[Double, Array[Double]] = Right(DEFAULT_PERCENTILES),
-      delta: Option[Int]) {
+  private def doTest(
+    func: SparkSession => DataFrame,
+    percentileArg: Either[Double, Array[Double]] = Right(DEFAULT_PERCENTILES),
+    delta: Option[Int]) {
 
     val percentiles = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta,
+      calcPercentiles(spark, func, percentileArg, delta,
         approx = false)
     }
 
     val approxPercentilesCpu = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta, approx = true)
+      calcPercentiles(spark, func, percentileArg, delta, approx = true)
     }
 
     val conf = new SparkConf()
       .set("spark.rapids.sql.expression.ApproximatePercentile", "true")
 
     val approxPercentilesGpu = withGpuSparkSession(spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta, approx = true)
+      calcPercentiles(spark, func, percentileArg, delta, approx = true)
     , conf)
 
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
@@ -165,14 +179,13 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   private def calcPercentiles(
       spark: SparkSession,
-      dataType: DataType,
-      rowsPerDept: Int,
+      dfFunc: SparkSession => DataFrame,
       percentilesArg: Either[Double, Array[Double]],
       delta: Option[Int],
       approx: Boolean
     ): Map[String, Array[Double]] = {
 
-    val df = salaries(spark, dataType, rowsPerDept)
+    val df = dfFunc(spark)
 
     val percentileArg = percentilesArg match {
       case Left(n) => s"$n"
@@ -208,6 +221,14 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       }
       dept -> result
     }).toMap
+  }
+
+  private def salariesWithNull(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq(("a", null), ("b", null),  ("b", "123456.78")).toDF("dept", "x")
+      .withColumn("salary", expr("CAST(x AS double)"))
+      .drop("x")
+      .repartition(2)
   }
 
   private def salaries(
