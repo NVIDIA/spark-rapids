@@ -71,8 +71,20 @@ object RapidsPluginUtils extends Logging {
     logInfo(s"cudf build: $cudfProps")
     val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
     val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
-    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
-        s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
+    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion.")
+  }
+
+  def logPluginMode(conf: RapidsConf): Unit = {
+    if (conf.isSqlEnabled) {
+      logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
+        s"support set `${RapidsConf.SQL_ENABLED}` to false")
+    } else if (conf.isSqlExplainOnlyEnabled) {
+      logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
+        s"set `${RapidsConf.SQL_EXPLAIN_ONLY_ENABLED}` to false")
+    } else {
+      logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
+        s"support set `${RapidsConf.SQL_ENABLED}` to true")
+    }
   }
 
   def fixupConfigs(conf: SparkConf): Unit = {
@@ -151,6 +163,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
+    RapidsPluginUtils.logPluginMode(conf)
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
