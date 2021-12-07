@@ -338,23 +338,6 @@
                             </target>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>check-shims-versions</id>
-                        <phase>package</phase>
-                        <configuration>
-                            <target>
-                                <property name="included_buildvers" value="${included_buildvers}"/>
-                                <exec executable="${project.basedir}/scripts/check-shims-revisions.sh"
-                                      dir="${project.build.directory}">
-                                    <arg value="${included_buildvers}"/>
-                                </exec>
-
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
                 </executions>
                 <dependencies>
                     <dependency>
