@@ -1,44 +1,36 @@
 # Change log
-Generated on 2021-12-02
+Generated on 2021-12-07
 
 ## Release 21.12
 
 ### Features
 |||
 |:---|:---|
-|[#4011](https://github.com/NVIDIA/spark-rapids/issues/4011)|[FEA] build and test pipelines for databricks 9.1|
 |[#3953](https://github.com/NVIDIA/spark-rapids/issues/3953)|[FEA] Audit: Add array support to union by name |
-|[#3227](https://github.com/NVIDIA/spark-rapids/issues/3227)|[FEA] Upgrade the ORC version|
 |[#4085](https://github.com/NVIDIA/spark-rapids/issues/4085)|[FEA] Decimal 128 Support: Concat|
 |[#4073](https://github.com/NVIDIA/spark-rapids/issues/4073)|[FEA] Decimal 128 Support: MapKeys, MapValues, MapEntries|
 |[#3432](https://github.com/NVIDIA/spark-rapids/issues/3432)|[FEA] Qualification tool checks if there is any "Scan JDBCRelation" and count it as "problematic"|
 |[#3824](https://github.com/NVIDIA/spark-rapids/issues/3824)|[FEA] Support MapType in ParquetCachedBatchSerializer|
 |[#4048](https://github.com/NVIDIA/spark-rapids/issues/4048)|[FEA] WindowExpression support for Decimal 128 in Spark 320|
 |[#4047](https://github.com/NVIDIA/spark-rapids/issues/4047)|[FEA] Literal support for Decimal 128 in Spark 320|
-|[#3764](https://github.com/NVIDIA/spark-rapids/issues/3764)|[FEA] In qualification tool output, remove some "unsupported" words|
 |[#3863](https://github.com/NVIDIA/spark-rapids/issues/3863)|[FEA] Add Spark 3.3.0-SNAPSHOT Shim |
 |[#3814](https://github.com/NVIDIA/spark-rapids/issues/3814)|[FEA] stddev stddev_samp and std should be supported over a window|
 |[#3370](https://github.com/NVIDIA/spark-rapids/issues/3370)|[FEA] Add support for Databricks 9.1 runtime|
 |[#3876](https://github.com/NVIDIA/spark-rapids/issues/3876)|[FEA] Support REGEXP_REPLACE to replace null values|
 |[#3784](https://github.com/NVIDIA/spark-rapids/issues/3784)|[FEA] Support ORC write Map column(single level)|
 |[#3470](https://github.com/NVIDIA/spark-rapids/issues/3470)|[FEA] Add shims for 3.2.1-SNAPSHOT|
-|[#3975](https://github.com/NVIDIA/spark-rapids/issues/3975)|[FEA] Roll explicit dependency:copy into a loop in dist/pom.xml|
 |[#3855](https://github.com/NVIDIA/spark-rapids/issues/3855)|[FEA] CPU based UDF to run efficiently and transfer data back to GPU for supported operations|
 |[#3739](https://github.com/NVIDIA/spark-rapids/issues/3739)|[FEA] Provide an explicit config for fallback on CPU if plan rewrite fails|
 |[#3888](https://github.com/NVIDIA/spark-rapids/issues/3888)|[FEA] Decimal 128 Support: Add a "Trust me I know it will not overflow config"|
-|[#3442](https://github.com/NVIDIA/spark-rapids/issues/3442)|[FEA] simplify the casting in hash aggregate|
-|[#3088](https://github.com/NVIDIA/spark-rapids/issues/3088)|[FEA]Profile tool print problematic operations|
+|[#3088](https://github.com/NVIDIA/spark-rapids/issues/3088)|[FEA] Profile tool print problematic operations|
 |[#3886](https://github.com/NVIDIA/spark-rapids/issues/3886)|[FEA] Decimal 128 Support: Extend the range for Decimal Multiply and Divide|
 |[#79](https://github.com/NVIDIA/spark-rapids/issues/79)|[FEA] Support Size operation|
-|[#3754](https://github.com/NVIDIA/spark-rapids/issues/3754)|[FEA] Update to nvcomp-2.x JNI APIs|
 |[#3880](https://github.com/NVIDIA/spark-rapids/issues/3880)|[FEA] Decimal 128 Support: Average aggregation|
 |[#3659](https://github.com/NVIDIA/spark-rapids/issues/3659)|[FEA] External tool integration with Qualification tool|
-|[#3836](https://github.com/NVIDIA/spark-rapids/issues/3836)|[FEA][AUDIT][SPARK-36673][SQL] Fix incorrect schema of nested types of union|
-|[#2](https://github.com/NVIDIA/spark-rapids/issues/2)|[FEA] RLIKE|
+|[#2](https://github.com/NVIDIA/spark-rapids/issues/2)|[FEA] RLIKE support|
 |[#3192](https://github.com/NVIDIA/spark-rapids/issues/3192)|[FEA] Support decimal type in ORC writer|
 |[#3419](https://github.com/NVIDIA/spark-rapids/issues/3419)|[FEA] Add support for org.apache.spark.sql.execution.SampleExec|
 |[#3535](https://github.com/NVIDIA/spark-rapids/issues/3535)|[FEA] Qualification tool can detect RDD APIs in SQL plan|
-|[#3818](https://github.com/NVIDIA/spark-rapids/issues/3818)|[FEA] Improve builds involving multiple shims|
 |[#3494](https://github.com/NVIDIA/spark-rapids/issues/3494)|[FEA] Support structs in ORC writer|
 |[#3514](https://github.com/NVIDIA/spark-rapids/issues/3514)|[FEA] Support collect_set on struct in aggregation context|
 |[#3515](https://github.com/NVIDIA/spark-rapids/issues/3515)|[FEA] Support CreateArray to produce array(struct)|
@@ -58,6 +50,8 @@ Generated on 2021-12-02
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#4253](https://github.com/NVIDIA/spark-rapids/issues/4253)|[BUG] Dependencies missing of spark-rapids v21.12.0 release jars|
+|[#4216](https://github.com/NVIDIA/spark-rapids/issues/4216)|[BUG] AQE Crashing Spark RAPIDS when using filter() and union()|
 |[#4188](https://github.com/NVIDIA/spark-rapids/issues/4188)|[BUG] data corruption in GpuBroadcastNestedLoopJoin with empty relations edge case|
 |[#4191](https://github.com/NVIDIA/spark-rapids/issues/4191)|[BUG] failed to read DECIMAL128 within MapType from ORC|
 |[#4175](https://github.com/NVIDIA/spark-rapids/issues/4175)|[BUG] arithmetic_ops_test failed in spark 3.2.0|
@@ -112,6 +106,17 @@ Generated on 2021-12-02
 ### PRs
 |||
 |:---|:---|
+|[#4258](https://github.com/NVIDIA/spark-rapids/pull/4258)|Sanitize column names in ParquetCachedBatchSerializer before writing to Parquet|
+|[#4308](https://github.com/NVIDIA/spark-rapids/pull/4308)|Bump up GPU reserve memory to 640MB|
+|[#4307](https://github.com/NVIDIA/spark-rapids/pull/4307)|Update Download page for 21.12 [skip ci]|
+|[#4261](https://github.com/NVIDIA/spark-rapids/pull/4261)|Update cudfjni version to released 21.12.0|
+|[#4265](https://github.com/NVIDIA/spark-rapids/pull/4265)|Remove aggregator dependency before deploying dist artifact|
+|[#4030](https://github.com/NVIDIA/spark-rapids/pull/4030)|Support code coverage report with single version jar [skip ci]|
+|[#4287](https://github.com/NVIDIA/spark-rapids/pull/4287)|Update 21.12 compatibility guide for known regexp issue [skip ci]|
+|[#4242](https://github.com/NVIDIA/spark-rapids/pull/4242)|Fix indentation issue in getting-started-k8s guide [skip ci]|
+|[#4263](https://github.com/NVIDIA/spark-rapids/pull/4263)|Add missing ORC write tests on Map of Decimal|
+|[#4257](https://github.com/NVIDIA/spark-rapids/pull/4257)|Implement getShuffleRDD and fixup mismatched output types on shuffle reuse|
+|[#4250](https://github.com/NVIDIA/spark-rapids/pull/4250)|Update the release script [skip ci]|
 |[#4222](https://github.com/NVIDIA/spark-rapids/pull/4222)|Add arguments support to 'databricks/run-tests.py'|
 |[#4233](https://github.com/NVIDIA/spark-rapids/pull/4233)|Add databricks init script for UCX|
 |[#4231](https://github.com/NVIDIA/spark-rapids/pull/4231)|RAPIDS Shuffle Manager fallback if security is enabled|
@@ -281,6 +286,7 @@ Generated on 2021-12-02
 |[#13](https://github.com/NVIDIA/spark-rapids/issues/13)|[FEA] Percentile support|
 |[#3606](https://github.com/NVIDIA/spark-rapids/issues/3606)|[FEA] Support approx_percentile on GPU with decimal type|
 |[#3552](https://github.com/NVIDIA/spark-rapids/issues/3552)|[FEA] extend allowed datatypes for add and multiply in ANSI mode |
+|[#3450](https://github.com/NVIDIA/spark-rapids/issues/3450)|[FEA] test the UCX shuffle with the new build changes|
 |[#3043](https://github.com/NVIDIA/spark-rapids/issues/3043)|[FEA] Qualification tool: Add support to filter specific configuration values|
 |[#3413](https://github.com/NVIDIA/spark-rapids/issues/3413)|[FEA] Add in support for transform_keys|
 |[#3297](https://github.com/NVIDIA/spark-rapids/issues/3297)|[FEA] ORC reader supports reading Map columns.|
@@ -318,7 +324,6 @@ Generated on 2021-12-02
 |||
 |:---|:---|
 |[#3651](https://github.com/NVIDIA/spark-rapids/issues/3651)|[DOC] Point users to UCX 1.11.2|
-|[#3450](https://github.com/NVIDIA/spark-rapids/issues/3450)|[FEA] test the UCX shuffle with the new build changes|
 |[#2370](https://github.com/NVIDIA/spark-rapids/issues/2370)|[FEA] RAPIDS Shuffle Manager enable/disable config|
 |[#2923](https://github.com/NVIDIA/spark-rapids/issues/2923)|[FEA] Move to dispatched binops instead of JIT binops|
 
