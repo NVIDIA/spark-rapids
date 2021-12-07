@@ -3714,7 +3714,7 @@ object GpuOverrides extends Logging {
           case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
             val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
             exMeta.tagForGpu()
-            if (!exMeta.canThisBeReplaced) {
+            if (exMeta.canThisBeReplaced) {
               broadcastMeta = exMeta
             } else {
               willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
