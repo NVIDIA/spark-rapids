@@ -221,7 +221,7 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
     #                      we can set it to "never" and print failed ones after finish running all tests if needed
     # --group: print stderr after test finished for better readability
-    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test ::: $tests
+    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test ::: hash_aggregate_test.py
   else
     run_test all
   fi
