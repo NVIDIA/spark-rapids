@@ -55,11 +55,15 @@ trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveIns
 
   override def prettyName: String = name
 
-  /** Handle GpuLiteral and foldable GpuExpression, similar to `toInspector(Expression)` */
+  /** Create an object inspector from a GPU expression. */
   protected def gpuToInspector(expr: Expression): ObjectInspector = expr match {
     case GpuLiteral(value, dataType) =>
-      // Convert to CPU literal as possible as we can before going into `toInspector(Expression)`.
-      // Because some optimization will be made for Literal expressions of primitive types.
+      // Convert GpuLiterals to CPU Literals as possible as we can for primitive types, to
+      // leverage the Spark `toInspector(Expression)` method as much as possible.
+      // Because the `toInspector(Expression)` method will take care of the CPU Literal
+      // especially, converting it to a ConstantObjectInspector when it is primitive type. A
+      // `ConstantObjectInspector` can accelerate the row data reading by caching the actual
+      // value and bypassing the unnecessary null check.
       value match {
         case scalar: ai.rapids.cudf.Scalar =>
           if (scalar.getType.isNestedType) {
@@ -70,16 +74,20 @@ trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveIns
               toInspector(Literal.create(GpuScalar.extract(scalar), dataType))
             } catch {
               // Unsupported type for extraction, so use the data type way instead.
-              case _: Throwable => toInspector(dataType)
+              case _: UnsupportedOperationException => toInspector(dataType)
             }
           }
         case _ => toInspector(Literal.create(value, dataType))
       }
     case ge: GpuExpression if ge.foldable =>
-      // GPU expression should not be evaluated on driver side, so
-      // create an inspector from the data type instead.
+      // Create an inspector from the data type instead, to avoid evaluation on the driver side,
+      // which will be triggered inside the `toInspector(Expression)` method for a foldable
+      // expression. Because GPU expressions should not be evaluated on the driver side.
       toInspector(ge.dataType)
-    case _ => toInspector(expr)
+    case _ =>
+      // For other expressions, it is safe to call `toInspector(Expression)`, which will call into
+      // `toInspector(DataType)` directly for now.
+      toInspector(expr)
   }
 
   @transient
