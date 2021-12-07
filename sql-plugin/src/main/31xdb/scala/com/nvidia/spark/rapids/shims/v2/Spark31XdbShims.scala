@@ -67,7 +67,7 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-abstract class SparkBaseShims extends Spark30XShims with Logging {
+abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)

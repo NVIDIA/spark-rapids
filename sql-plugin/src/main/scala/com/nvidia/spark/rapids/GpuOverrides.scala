@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
+import com.nvidia.spark.rapids.shims.v2.{AQEUtils, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -56,7 +56,6 @@ import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.aggregate.GpuSum
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
@@ -544,6 +543,30 @@ object GpuOverrides extends Logging {
               case _ => cpuShuffle
             }
           case _ => cpuShuffle
+        }
+    }
+  }
+
+  /**
+   * Searches the plan for ReusedExchangeExec instances containing a GPU shuffle where the
+   * output types between the two plan nodes do not match. In such a case the ReusedExchangeExec
+   * will be updated to match the GPU shuffle output types.
+   */
+  def fixupReusedExchangeExecs(plan: SparkPlan): SparkPlan = {
+    def outputTypesMatch(a: Seq[Attribute], b: Seq[Attribute]): Boolean =
+      a.corresponds(b)((x, y) => x.dataType == y.dataType)
+    plan.transformUp {
+      case sqse: ShuffleQueryStageExec =>
+        sqse.plan match {
+          case ReusedExchangeExec(output, gsee: GpuShuffleExchangeExecBase) if (
+              !outputTypesMatch(output, gsee.output)) =>
+            val newOutput = sqse.plan.output.zip(gsee.output).map { case (c, g) =>
+              assert(c.isInstanceOf[AttributeReference] && g.isInstanceOf[AttributeReference],
+                s"Expected AttributeReference but found $c and $g")
+              AttributeReference(c.name, g.dataType, c.nullable, c.metadata)(c.exprId, c.qualifier)
+            }
+            AQEUtils.newReuseInstance(sqse, newOutput)
+          case _ => sqse
         }
     }
   }
@@ -2264,21 +2287,6 @@ object GpuOverrides extends Logging {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
           checkAndTagFloatAgg(inputDataType, conf, this)
-
-          a.dataType match {
-            case _: DecimalType =>
-              val unboundPrecision = a.child.dataType.asInstanceOf[DecimalType].precision + 10
-              if (unboundPrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalGuarantees) {
-                  willNotWorkOnGpu("overflow checking on sum would need " +
-                      s"a precision of $unboundPrecision to properly detect overflows")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"sum(${a.child.dataType}) produces ${a.dataType}")
-                }
-              }
-            case _ => // NOOP
-          }
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -3678,7 +3686,7 @@ object GpuOverrides extends Logging {
     exec[SampleExec](
       "The backend for the sample operator",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-        TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+        TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
     ),
     exec[SubqueryBroadcastExec](
@@ -3956,7 +3964,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
           // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
           // distribution expressions are not semantically equal.
-          GpuOverrides.removeExtraneousShuffles(plan, conf)
+          val newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+
+          // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
+          // compared to the desired buffer type from a reused GPU shuffle.
+          GpuOverrides.fixupReusedExchangeExecs(newPlan)
         } else {
           plan
         }

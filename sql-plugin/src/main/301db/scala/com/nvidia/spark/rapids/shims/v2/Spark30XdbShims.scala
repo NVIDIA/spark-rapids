@@ -68,7 +68,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class SparkBaseShims extends Spark30XShims with Logging {
+abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
