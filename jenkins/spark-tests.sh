@@ -139,14 +139,16 @@ export SEQ_CONF="--executor-memory 16G \
 
 # currently we hardcode the parallelism and configs based on our CI node's hardware specs,
 # we can make it dynamically generated if this script is going to be used in other scenarios in the future
+PARALLELISM=${PARALLELISM:-'4'}
+MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 1))")
 export PARALLEL_CONF="--executor-memory 4G \
 --total-executor-cores 2 \
 --conf spark.executor.cores=2 \
 --conf spark.task.cpus=1 \
 --conf spark.rapids.sql.concurrentGpuTasks=2 \
---conf spark.rapids.memory.gpu.allocFraction=0.15 \
 --conf spark.rapids.memory.gpu.minAllocFraction=0 \
---conf spark.rapids.memory.gpu.maxAllocFraction=0.15"
+--conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
+--conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"
 
 export CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
 --conf spark.rapids.memory.gpu.minAllocFraction=0 \
@@ -219,7 +221,7 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
     #                      we can set it to "never" and print failed ones after finish running all tests if needed
     # --group: print stderr after test finished for better readability
-    parallel --group --halt "now,fail=1" -j5 run_test ::: $tests
+    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test ::: $tests
   else
     run_test all
   fi
