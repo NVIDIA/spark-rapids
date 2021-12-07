@@ -181,8 +181,7 @@ object RapidsBufferCatalog extends Logging with Arm {
     deviceStorage = new RapidsDeviceMemoryStore()
     val diskBlockManager = new RapidsDiskBlockManager(conf)
     if (rapidsConf.isGdsSpillEnabled) {
-      gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize,
-        rapidsConf.isGdsSpillAlignedIO, rapidsConf.gdsSpillAlignmentThreshold)
+      gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
       deviceStorage.setSpillStore(gdsStorage)
     } else {
       hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
@@ -250,7 +249,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
     deviceStorage.addTable(id, table, contigBuffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**
@@ -265,7 +264,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
     deviceStorage.addContiguousTable(id, contigTable, initialSpillPriority, spillCallback)
 
   /**
@@ -282,7 +281,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
     deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**

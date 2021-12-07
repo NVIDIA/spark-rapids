@@ -54,11 +54,11 @@ trait SpillableColumnarBatch extends AutoCloseable {
  * spillable, even though in reality there is no backing buffer.  It does this by just keeping the
  * row count in memory, and not dealing with the catalog at all.
  */
-class JustRowsColumnarBatch(numRows: Int) extends SpillableColumnarBatch {
+class JustRowsColumnarBatch(numRows: Int, semWait: GpuMetric) extends SpillableColumnarBatch {
   override def numRows(): Int = numRows
   override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
   override def getColumnarBatch(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
     new ColumnarBatch(Array.empty, numRows)
   }
   override def close(): Unit = () // NOOP nothing to close
@@ -73,7 +73,8 @@ class JustRowsColumnarBatch(numRows: Int) extends SpillableColumnarBatch {
  */
 class SpillableColumnarBatchImpl (id: TempSpillBufferId,
     rowCount: Int,
-    sparkTypes: Array[DataType])
+    sparkTypes: Array[DataType],
+    semWait: GpuMetric)
     extends  SpillableColumnarBatch with Arm {
   private var closed = false
 
@@ -111,7 +112,7 @@ class SpillableColumnarBatchImpl (id: TempSpillBufferId,
    */
   override def getColumnarBatch(): ColumnarBatch = {
     withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
       rapidsBuffer.getColumnarBatch(sparkTypes)
     }
   }
@@ -138,17 +139,17 @@ object SpillableColumnarBatch extends Arm {
    */
   def apply(batch: ColumnarBatch,
       priority: Long,
-      spillCallback: RapidsBuffer.SpillCallback): SpillableColumnarBatch = {
+      spillCallback: SpillCallback): SpillableColumnarBatch = {
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
       // We consumed it
       batch.close()
-      new JustRowsColumnarBatch(numRows)
+      new JustRowsColumnarBatch(numRows, spillCallback.semaphoreWaitTime)
     } else {
       val types =  GpuColumnVector.extractTypes(batch)
       val id = TempSpillBufferId()
       addBatch(id, batch, priority, spillCallback)
-      new SpillableColumnarBatchImpl(id, numRows, types)
+      new SpillableColumnarBatchImpl(id, numRows, types, spillCallback.semaphoreWaitTime)
     }
   }
 
@@ -165,17 +166,18 @@ object SpillableColumnarBatch extends Arm {
       ct: ContiguousTable,
       sparkTypes: Array[DataType],
       priority: Long,
-      spillCallback: RapidsBuffer.SpillCallback): SpillableColumnarBatch = {
+      spillCallback: SpillCallback): SpillableColumnarBatch = {
     val id = TempSpillBufferId()
     RapidsBufferCatalog.addContiguousTable(id, ct, priority, spillCallback)
-    new SpillableColumnarBatchImpl(id, ct.getRowCount.toInt, sparkTypes)
+    new SpillableColumnarBatchImpl(id, ct.getRowCount.toInt, sparkTypes,
+      spillCallback.semaphoreWaitTime)
   }
 
   private[this] def addBatch(
       id: RapidsBufferId,
       batch: ColumnarBatch,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback): Unit = {
+      spillCallback: SpillCallback): Unit = {
     withResource(batch) { batch =>
       val numColumns = batch.numCols()
       if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
@@ -214,7 +216,7 @@ object SpillableColumnarBatch extends Arm {
 /**
  * Just like a SpillableColumnarBatch but for buffers.
  */
-class SpillableBuffer (id: TempSpillBufferId) extends AutoCloseable with Arm {
+class SpillableBuffer (id: TempSpillBufferId, semWait: GpuMetric) extends AutoCloseable with Arm {
   private var closed = false
 
   /**
@@ -243,7 +245,7 @@ class SpillableBuffer (id: TempSpillBufferId) extends AutoCloseable with Arm {
    */
   def getDeviceBuffer(): DeviceMemoryBuffer = {
     withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
       rapidsBuffer.getDeviceMemoryBuffer
     }
   }
@@ -271,10 +273,10 @@ object SpillableBuffer extends Arm {
    */
   def apply(buffer: DeviceMemoryBuffer,
       priority: Long,
-      spillCallback: RapidsBuffer.SpillCallback): SpillableBuffer = {
+      spillCallback: SpillCallback): SpillableBuffer = {
     val id = TempSpillBufferId()
     val meta = MetaUtils.getTableMetaNoTable(buffer)
     RapidsBufferCatalog.addBuffer(id, buffer, meta, priority, spillCallback)
-    new SpillableBuffer(id)
+    new SpillableBuffer(id, spillCallback.semaphoreWaitTime)
   }
 }

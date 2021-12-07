@@ -47,7 +47,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     .asInstanceOf[ThreadPoolExecutor]
 
   private class QualifyThread(path: EventLogInfo) extends Runnable {
-    def run: Unit = qualifyApp(path, numRows, hadoopConf)
+    def run: Unit = qualifyApp(path, hadoopConf)
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
@@ -89,11 +89,10 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
 
   private def qualifyApp(
       path: EventLogInfo,
-      numRows: Int,
       hadoopConf: Configuration): Unit = {
     try {
       val startTime = System.currentTimeMillis()
-      val app = QualAppInfo.createApp(path, numRows, hadoopConf, pluginTypeChecker,
+      val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker,
         readScorePercent)
       if (!app.isDefined) {
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
@@ -109,8 +108,15 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         }
       }
     } catch {
+      case oom: OutOfMemoryError =>
+        logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+            s"Increase heap size.", oom)
+        System.exit(1)
+      case o: Error =>
+        logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
+        System.exit(1)
       case e: Exception =>
-        logError(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
+        logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
   }
 }

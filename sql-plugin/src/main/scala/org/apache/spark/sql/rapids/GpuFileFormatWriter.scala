@@ -34,10 +34,10 @@ import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.datasources.{WriteJobStatsTracker, WriteTaskResult, WriteTaskStats}
+import org.apache.spark.sql.execution.datasources.{WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
 import org.apache.spark.sql.types.{DataType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -119,7 +119,7 @@ object GpuFileFormatWriter extends Logging {
     val dataColumns = outputSpec.outputColumns.filterNot(partitionSet.contains)
 
     var needConvert = false
-    val projectList: List[Expression] = plan.output.map {
+    val projectList: List[NamedExpression] = plan.output.map {
       case p if partitionSet.contains(p) && p.dataType == StringType && p.nullable =>
         needConvert = true
         GpuAlias(GpuEmpty2Null(p), p.name)()

@@ -29,7 +29,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types._
 
 object GpuOrcFileFormat extends Logging {
   // The classname used when Spark is configured to use the Hive implementation for ORC.
@@ -129,7 +129,7 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
 
     val conf = job.getConfiguration
 
-    conf.set(MAPRED_OUTPUT_SCHEMA.getAttribute, OrcFileFormat.getQuotedSchemaString(dataSchema))
+    conf.set(MAPRED_OUTPUT_SCHEMA.getAttribute, OrcUtils.orcTypeDescriptionString(dataSchema))
 
     conf.set(COMPRESS.getAttribute, orcOptions.compressionCodec)
 
@@ -161,18 +161,9 @@ class GpuOrcWriter(path: String,
   extends ColumnarOutputWriter(path, context, dataSchema, "ORC") {
 
   override val tableWriter: TableWriter = {
-    val builder= ORCWriterOptions.builder()
+    val builder = SchemaUtils
+      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
-
-    dataSchema.foreach(entry => {
-      if (entry.nullable) {
-        builder.withColumnNames(entry.name)
-      } else {
-        builder.withNotNullableColumnNames(entry.name)
-      }
-    })
-
-    val options = builder.build()
-    Table.writeORCChunked(options, this)
+    Table.writeORCChunked(builder.build(), this)
   }
 }

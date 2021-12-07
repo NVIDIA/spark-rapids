@@ -135,10 +135,11 @@ std::unique_ptr<cudf::column> cosine_similarity(cudf::lists_column_view const& l
                     cosine_similarity_functor({lv1_data, lv2_data, lv1_offsets, lv2_offsets}));
 
   // the validity of the output is the bitwise-and of the two input validity masks
-  rmm::device_buffer null_mask = cudf::bitmask_and(cudf::table_view({lv1.parent(), lv2.parent()}));
+  auto [null_mask, null_count] = cudf::bitmask_and(cudf::table_view({lv1.parent(), lv2.parent()}));
 
   return std::make_unique<cudf::column>(cudf::data_type{cudf::type_id::FLOAT32},
                                         row_count,
                                         float_results.release(),
-                                        std::move(null_mask));
+                                        std::move(null_mask),
+                                        null_count);
 }

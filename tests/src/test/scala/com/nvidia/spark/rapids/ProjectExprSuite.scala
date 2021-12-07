@@ -50,8 +50,10 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame =>
       frame.select(col("floats"),
         lit(100), lit("hello, world!"),
-        lit(BigDecimal(123456789L, 6)), lit(BigDecimal(0L)), lit(BigDecimal(1L, -3)),
+        lit(BigDecimal(1234567890123L, 6)), lit(BigDecimal(0L)), lit(BigDecimal(1L, -3)),
         lit(BigDecimal(-2.12314e-8)),
+        lit(BigDecimal("-123456789012345678901234567890")),
+        lit(Decimal(BigDecimal("123456789012345678901234567890123"), 38, 5)),
         lit(Array(1, 2, 3, 4, 5)), lit(Array(1.2, 3.4, 5.6)),
         lit(Array("a", "b", null, "")),
         lit(Array(Array(1, 2), null, Array(3, 4))),
@@ -60,8 +62,11 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
           ArrayType(StructType(
             Array(StructField("id", IntegerType), StructField("name", StringType)))))),
         new Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
-          ArrayType(DecimalType(10, 2)))))
-        .selectExpr("array(null)", "array(array(null))", "array()")
+          ArrayType(DecimalType(10, 2)))),
+        new Column(Literal.create(List(BigDecimal("1234567890123456789012345678")),
+          ArrayType(DecimalType(30, 2))))
+      )
+          .selectExpr("*", "array(null)", "array(array(null))", "array()")
   }
 
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
@@ -88,7 +93,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val fun = (df: DataFrame) => df.withColumn("dec", df("decimals")).select("dec")
       val conf = new SparkConf()
           .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
-          .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
       compareResults(false, 0.0, fromCpu, fromGpu)
     } finally {

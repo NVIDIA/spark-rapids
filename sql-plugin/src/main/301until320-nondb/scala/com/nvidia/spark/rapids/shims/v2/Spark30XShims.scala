@@ -18,13 +18,12 @@ package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuLiteral, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.execution.SparkPlan
@@ -109,7 +108,7 @@ trait Spark30XShims extends SparkShims {
 
   override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[CustomShuffleReaderExec](
     "A wrapper of shuffle query stage",
-    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
+    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
@@ -142,5 +141,5 @@ trait Spark30XShims extends SparkShims {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = GpuLiteral(Double.NaN)
+  override def getLegacyStatisticalAggregate(): Boolean = true
 }

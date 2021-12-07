@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
@@ -109,6 +110,8 @@ object RapidsPluginUtils extends Logging {
           s"the RAPIDS Accelerator. Please disable the RAPIDS Accelerator or use a supported " +
           s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
+    // set driver timezone
+    conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
   }
 
   def loadProps(resourceName: String): Properties = {
@@ -179,11 +182,26 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
 
+      // Validate driver and executor time zone are same if the driver time zone is supported by
+      // the plugin.
+      val driverTimezone = conf.driverTimeZone match {
+        case Some(value) => ZoneId.of(value)
+        case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
+      }
+      if (TypeChecks.areTimestampsSupported(driverTimezone)) {
+        val executorTimezone = ZoneId.systemDefault()
+        if (executorTimezone.normalized() != driverTimezone.normalized()) {
+          throw new RuntimeException(s" Driver and executor timezone mismatch. " +
+              s"Driver timezone is $driverTimezone and executor timezone is " +
+              s"$executorTimezone. Set executor timezone to $driverTimezone.")
+        }
+      }
+
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
       // on executor startup.
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
-        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
         if (GpuShuffleEnv.isRapidsShuffleAvailable) {
           GpuShuffleEnv.initShuffleManager()
           if (conf.shuffleTransportEarlyStart) {
@@ -325,9 +343,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(containsPlan(executedPlan, className),
-      s"Could not find $className in the Spark plan\n$executedPlan")
+    assert(containsPlan(gpuPlan, className),
+      s"Could not find $className in the Spark plan\n$gpuPlan")
   }
 
   def assertContains(df: DataFrame, gpuClass: String): Unit = {
@@ -336,9 +353,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(!containsPlan(executedPlan, className),
-      s"We found $className in the Spark plan\n$executedPlan")
+    assert(!containsPlan(gpuPlan, className),
+      s"We found $className in the Spark plan\n$gpuPlan")
   }
 
   def assertNotContain(df: DataFrame, gpuClass: String): Unit = {
@@ -360,20 +376,22 @@ object ExecutionPlanCaptureCallback {
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String): Boolean = {
-    PlanUtils.getBaseNameFromClass(exp.getClass.getName) == className ||
-        exp.children.exists(containsExpression(_, className))
-  }
+  private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
+    case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
+    case e: ExecSubqueryExpression => containsPlan(e.plan, className)
+    case _ => false
+  }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String): Boolean = {
-    val p = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan)) match {
-      case p: QueryStageExec => p.plan
-      case p => p
-    }
-    PlanUtils.sameClass(p, className) ||
-        p.expressions.exists(containsExpression(_, className)) ||
-        p.children.exists(containsPlan(_, className))
-  }
+  private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+    case p if PlanUtils.sameClass(p, className) =>
+      true
+    case p: AdaptiveSparkPlanExec =>
+      containsPlan(p.executedPlan, className)
+    case p: QueryStageExec =>
+      containsPlan(p.plan, className)
+    case p =>
+      p.expressions.exists(containsExpression(_, className))
+  }.nonEmpty
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 package com.nvidia.spark.rapids.tests.mortgage
-
-import org.scalatest.Ignore
 
 class MortgageAdaptiveSparkSuite extends MortgageSparkSuite {
   override def adaptiveQueryEnabled: Boolean = true

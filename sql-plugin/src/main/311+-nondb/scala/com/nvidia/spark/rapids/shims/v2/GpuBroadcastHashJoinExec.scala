@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -102,10 +101,10 @@ case class GpuBroadcastHashJoinExec(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME)) ++ spillMetrics
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -141,7 +140,7 @@ case class GpuBroadcastHashJoinExec(
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
@@ -155,11 +154,11 @@ case class GpuBroadcastHashJoinExec(
 
     val rdd = streamedPlan.executeColumnar()
     rdd.mapPartitions { it =>
+      val stIt = new CollectTimeIterator("broadcast join stream", it, streamTime)
       val builtBatch = broadcastRelation.value.batch
       GpuColumnVector.extractBases(builtBatch).foreach(_.noWarnLeakExpected())
-      doJoin(builtBatch, it, targetSize, spillCallback,
-        numOutputRows, joinOutputRows, numOutputBatches, streamTime, joinTime,
-        totalTime)
+      doJoin(builtBatch, stIt, targetSize, spillCallback,
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 }

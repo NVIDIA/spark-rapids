@@ -27,7 +27,7 @@ def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
   sshkey = ''
-  cluster_name = 'CI-GPU-databricks-21.10.0'
+  cluster_name = 'CI-GPU-databricks-21.12.0'
   idletime = 240
   runtime = '7.0.x-gpu-ml-scala2.12'
   num_workers = 1
@@ -36,21 +36,22 @@ def main():
   cloud_provider = 'aws'
   # comma separated init scripts, e.g. dbfs:/foo,dbfs:/bar,...
   init_scripts = ''
+  aws_zone='us-west-2c'
 
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:k:n:i:r:o:d:e:s:f:',
+      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:k:n:i:r:o:d:e:s:f:z:',
                                  ['workspace=', 'token=', 'sshkey=', 'clustername=', 'idletime=',
-                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers=', 'cloudprovider=', 'initscripts='])
+                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers=', 'cloudprovider=', 'initscripts=', 'awszone='])
   except getopt.GetoptError:
       print(
-          'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider> -f <initscripts>')
+          'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider> -f <initscripts> -z <awszone>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider>')
+              'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider> -f <initscripts> -z <awszone>')
           sys.exit()
       elif opt in ('-w', '--workspace'):
           workspace = arg
@@ -74,6 +75,8 @@ def main():
           cloud_provider = arg
       elif opt in ('-f', '--initscripts'):
           init_scripts = arg
+      elif opt in ('-z', '--awszone'):
+          aws_zone = arg
 
   print('-w is ' + workspace, file=sys.stderr)
   print('-k is ' + sshkey, file=sys.stderr)
@@ -85,6 +88,7 @@ def main():
   print('-e is ' + str(num_workers), file=sys.stderr)
   print('-s is ' + cloud_provider, file=sys.stderr)
   print('-f is ' + init_scripts, file=sys.stderr)
+  print('-z is ' + aws_zone, file=sys.stderr)
 
   if not sshkey:
       print("You must specify an sshkey!", file=sys.stderr)
@@ -95,7 +99,7 @@ def main():
       sys.exit(2)
 
   templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
-          num_workers, driver_type, worker_type, cloud_provider, init_scripts, printLoc=sys.stderr)
+          num_workers, driver_type, worker_type, cloud_provider, init_scripts, aws_zone, printLoc=sys.stderr)
   clusterid = ClusterUtils.create_cluster(workspace, templ, token, printLoc=sys.stderr)
   ClusterUtils.wait_for_cluster_start(workspace, clusterid, token, printLoc=sys.stderr)
 

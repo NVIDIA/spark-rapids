@@ -66,7 +66,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     freeOnExcept(
       new RapidsDeviceMemoryBuffer(
         id,
@@ -97,7 +97,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -132,7 +132,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     freeOnExcept(
       new RapidsDeviceMemoryBuffer(
         id,
@@ -157,7 +157,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback)
+      override val spillCallback: SpillCallback)
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.DEVICE
 

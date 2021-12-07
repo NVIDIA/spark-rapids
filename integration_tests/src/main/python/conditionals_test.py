@@ -39,7 +39,7 @@ if_struct_gens_sample = [if_struct_gen,
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
-@pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + if_nested_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_if_else(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -53,8 +53,7 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(s2),
                 'IF(a, {}, {})'.format(s1, s2),
                 'IF(a, b, {})'.format(null_lit),
-                'IF(a, {}, c)'.format(null_lit)),
-            conf = allow_negative_scale_of_decimal_conf)
+                'IF(a, {}, c)'.format(null_lit)))
 
 # Maps scalars are not really supported by Spark from python without jumping through a lot of hoops
 # so for now we are going to skip them
@@ -67,7 +66,7 @@ def test_if_else_map(data_gen):
             conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -109,7 +108,7 @@ def test_nanvl(data_gen):
                 f.nanvl(f.lit(None).cast(data_type), f.col('b')),
                 f.nanvl(f.lit(float('nan')).cast(data_type), f.col('b'))))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_nvl(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -126,7 +125,7 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + decimal_128_gens, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -148,7 +147,7 @@ def test_coalesce_constant_output():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(1, 100).selectExpr("4 + coalesce(5, id) as nine"))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_nvl2(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -160,7 +159,7 @@ def test_nvl2(data_gen):
                 'nvl2({}, b, c)'.format(null_lit),
                 'nvl2(a, {}, c)'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_nullif(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -172,7 +171,7 @@ def test_nullif(data_gen):
                 'nullif({}, b)'.format(null_lit),
                 'nullif(a, {})'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_ifnull(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)

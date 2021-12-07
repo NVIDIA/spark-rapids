@@ -23,15 +23,14 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
-import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
-import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo}
+import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -117,7 +116,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1622043423018"))
+      assert(appSum.head.appId.equals("local-1623281204390"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -153,7 +152,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1622043423018"))
+      assert(appSum.head.appId.equals("local-1623281204390"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -164,7 +163,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1622043423018"))
+        assert(firstRow.contains("local-1623281204390"))
       } finally {
         inputSource.close()
       }
@@ -394,7 +393,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "map<id:int;map<fn:string;ln:string>>;map<id:int;struct<st:string;city:string>>;" +
               "map<id:int;order:array<map<oname:string;oid:int>>>"))
 
-    val result = testSchemas.map(x => QualAppInfo.parseReadSchemaForNestedTypes(x))
+    val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
       assert(actualResult._1.equals(expectedResult(index)._1))
       assert(actualResult._2.equals(expectedResult(index)._2))
@@ -409,6 +408,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "decimal_part_expectation.csv")
   }
 
+  test("test jdbc problematic") {
+    val logFiles = Array(s"$logDir/jdbc_eventlog.zstd")
+    runQualificationTest(logFiles, "jdbc_expectation.csv")
+  }
+
   private def createDecFile(spark: SparkSession, dir: String): Unit = {
     import spark.implicits._
     val dfGen = Seq("1.32").toDF("value")
@@ -418,7 +422,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test decimal generate udf same") {
     TrampolineUtil.withTempDir { outpath =>
-
       TrampolineUtil.withTempDir { eventLogDir =>
         val tmpParquet = s"$outpath/decparquet"
         createDecFile(sparkSession, tmpParquet)
@@ -546,6 +549,92 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
         // compare metrics from event log with metrics from listener
         assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
+      }
+    }
+  }
+
+  test("running qualification app join") {
+    val qualApp = new RunningQualificationApp()
+    ToolTestUtils.runAndCollect("streaming") { spark =>
+      val listener = qualApp.getEventListener
+      spark.sparkContext.addSparkListener(listener)
+      import spark.implicits._
+      val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+      testData.createOrReplaceTempView("t1")
+      testData.createOrReplaceTempView("t2")
+      spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
+        "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
+        "GROUP BY a ORDER BY a")
+    }
+    val sumOut = qualApp.getSummary()
+    val detailedOut = qualApp.getDetailed()
+    assert(sumOut.nonEmpty)
+    assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
+    assert(detailedOut.nonEmpty)
+    assert(detailedOut.startsWith("|") && detailedOut.endsWith("|\n"))
+
+    val csvSumOut = qualApp.getSummary(",", false)
+    val rowsSumOut = csvSumOut.split("\n")
+    assert(rowsSumOut.size == 2)
+    val headers = rowsSumOut(0).split(",")
+    val values = rowsSumOut(1).split(",")
+    assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+    assert(values.size == headers.size)
+    // 2 should be the SQL DF Duration
+    assert(headers(2).contains("SQL DF"))
+    assert(values(2).toInt > 0)
+    val csvDetailedOut = qualApp.getDetailed(",", false)
+    val rowsDetailedOut = csvDetailedOut.split("\n")
+    assert(rowsDetailedOut.size == 2)
+    val headersDetailed = rowsDetailedOut(0).split(",")
+    val valuesDetailed = rowsDetailedOut(1).split(",")
+    assert(headersDetailed.size == QualOutputWriter
+      .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get), false).keys.size)
+    assert(valuesDetailed.size == headersDetailed.size)
+    // 2 should be the Score
+    assert(headersDetailed(2).contains("Score"))
+    assert(valuesDetailed(2).toDouble > 0)
+  }
+
+  test("running qualification app files") {
+    TrampolineUtil.withTempPath { outParquetFile =>
+      TrampolineUtil.withTempPath { outJsonFile =>
+
+        val qualApp = new RunningQualificationApp()
+        ToolTestUtils.runAndCollect("streaming") { spark =>
+          val listener = qualApp.getEventListener
+          spark.sparkContext.addSparkListener(listener)
+          import spark.implicits._
+          val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+          testData.write.json(outJsonFile.getCanonicalPath)
+          testData.write.parquet(outParquetFile.getCanonicalPath)
+          val df = spark.read.parquet(outParquetFile.getCanonicalPath)
+          val df2 = spark.read.json(outJsonFile.getCanonicalPath)
+          df.join(df2.select($"a" as "a2"), $"a" === $"a2")
+        }
+        // test different delimiter
+        val sumOut = qualApp.getSummary(":", false)
+        val rowsSumOut = sumOut.split("\n")
+        assert(rowsSumOut.size == 2)
+        val headers = rowsSumOut(0).split(":")
+        val values = rowsSumOut(1).split(":")
+        assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+        assert(values.size == headers.size)
+        // 2 should be the SQL DF Duration
+        assert(headers(2).contains("SQL DF"))
+        assert(values(2).toInt > 0)
+        val detailedOut = qualApp.getDetailed(":", prettyPrint = false, reportReadSchema = true)
+        val rowsDetailedOut = detailedOut.split("\n")
+        assert(rowsDetailedOut.size == 2)
+        val headersDetailed = rowsDetailedOut(0).split(":")
+        val valuesDetailed = rowsDetailedOut(1).split(":")
+        // Read File Format Score
+        assert(headersDetailed(12).contains("Read File Format Score"))
+        assert(valuesDetailed(12).toDouble == 50.0)
+        assert(headersDetailed(13).contains("Read File Formats"))
+        assert(valuesDetailed(13).contains("JSON"))
+        assert(headersDetailed(17).contains("Read Schema"))
+        assert(valuesDetailed(17).contains("json") && valuesDetailed(17).contains("parquet"))
       }
     }
   }

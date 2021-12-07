@@ -42,7 +42,8 @@ object TrampolineUtil {
     case _ => false
   }
 
-  def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
+  def unionLikeMerge(left: DataType, right: DataType): DataType =
+    ShimTrampolineUtil.unionLikeMerge(left, right)
 
   def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
 
@@ -144,4 +145,10 @@ object TrampolineUtil {
 
   /** Throw a Spark analysis exception */
   def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
+
+  /** Set the task context for the current thread */
+  def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)
+
+  /** Remove the task context for the current thread */
+  def unsetTaskContext(): Unit = TaskContext.unset()
 }

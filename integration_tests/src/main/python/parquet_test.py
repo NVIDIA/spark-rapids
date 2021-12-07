@@ -477,14 +477,20 @@ _nested_pruning_schemas = [
         ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]],
             [["a", StructGen([["c_3", ShortGen()], ["c_2", LongGen()], ["c_1", StringGen()]])]]),
         ([["ar", ArrayGen(StructGen([["str_1", StringGen()],["str_2", StringGen()]]))]],
-            [["ar", ArrayGen(StructGen([["str_2", StringGen()]]))]])
+            [["ar", ArrayGen(StructGen([["str_2", StringGen()]]))]]),
+        ([["struct", StructGen([["c_1", StringGen()], ["case_insensitive", LongGen()], ["c_3", ShortGen()]])]],
+            [["STRUCT", StructGen([["case_INSENsitive", LongGen()]])]]),
+        ([["struct", StructGen([["c_1", StringGen()], ["case_insensitive", LongGen()], ["c_3", ShortGen()]])]],
+            [["struct", StructGen([["CASE_INSENSITIVE", LongGen()]])]]),
+        ([["struct", StructGen([["c_1", StringGen()], ["case_insensitive", LongGen()], ["c_3", ShortGen()]])]],
+            [["stRUct", StructGen([["CASE_INSENSITIVE", LongGen()]])]]),
         ]
 
 @pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('nested_enabled', ["true", "false"])
-def test_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_enabled_list, nested_enabled):
+def test_nested_pruning_and_case_insensitive(spark_tmp_path, data_gen, read_schema, reader_confs, v1_enabled_list, nested_enabled):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : gen_df(spark, data_gen).write.parquet(data_path),
