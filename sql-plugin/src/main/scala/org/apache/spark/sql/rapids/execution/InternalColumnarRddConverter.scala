@@ -466,7 +466,7 @@ private object GpuExternalRowToColumnConverter {
       }
     }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   private case class NotNullArrayConverter(childConverter: TypeConverter)
@@ -476,7 +476,7 @@ private object GpuExternalRowToColumnConverter {
       arrayConvert(childConverter, row, column, builder)
     }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   private[this] def structConvert(
