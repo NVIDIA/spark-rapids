@@ -150,9 +150,6 @@ def test_empty_broadcast_hash_join(join_type, enable_aqe):
             {'spark.sql.adaptive.enabled': enable_aqe})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
-shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
-                 "spark.sql.join.preferSortMergeJoin": "false",
-                 "spark.sql.shuffle.partitions": "2"}
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
