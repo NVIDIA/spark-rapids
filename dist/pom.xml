@@ -34,11 +34,7 @@
             <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
-            <!--
-                provided such that the 3rd party project depending on this will drop it
-                https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html#Dependency_Scope
-            -->
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
 
         <!--
@@ -248,6 +244,10 @@
                         </goals>
                         <configuration>
                             <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
+                            <excludes>
+                                <!-- get rid of all maven poms from shim builds -->
+                                <exclude>META-INF/maven/**</exclude>
+                            </excludes>
                         </configuration>
                     </execution>
                     <execution>
@@ -296,6 +296,19 @@
                                     antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
                                     target="build-parallel-worlds"
                                 />
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <id>reduce-pom-deps-in-the-jar</id>
+                        <configuration>
+                            <target>
+                                <zip update="true" basedir="${project.build.directory}/extra-resources"
+                                    destfile="${project.build.directory}/${project.artifactId}-${project.version}.jar"/>
                             </target>
                         </configuration>
                     </execution>

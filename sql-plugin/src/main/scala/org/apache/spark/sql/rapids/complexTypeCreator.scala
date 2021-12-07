@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuMapUtils}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
@@ -80,7 +80,10 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
   }
 }
 
-case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
+case class GpuCreateMap(
+      children: Seq[Expression],
+      useStringTypeWhenEmpty: Boolean,
+      isExceptionDedupePolicy: Boolean)
     extends GpuExpression with ShimExpression {
 
   private val valueIndices: Seq[Int] = children.indices.filter(_ % 2 != 0)
@@ -106,7 +109,22 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
       val structs = Range(0, columns.length, 2)
         .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))
       withResource(structs) { _ =>
-        GpuColumnVector.from(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*), dataType)
+        withResource(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*)) { listOfStruct =>
+          withResource(listOfStruct.dropListDuplicatesWithKeysValues()) { deduped =>
+            if (isExceptionDedupePolicy) {
+              // compare child data row count before and after
+              // removing duplicates to determine if there were duplicates
+              withResource(deduped.getChildColumnView(0)) { a =>
+                withResource(listOfStruct.getChildColumnView(0)) { b =>
+                  if (a.getRowCount != b.getRowCount) {
+                    throw GpuMapUtils.duplicateMapKeyFoundError
+                  }
+                }
+              }
+            }
+            GpuColumnVector.from(deduped.incRefCount(), dataType)
+          }
+        }
       }
     }
   }
@@ -128,7 +146,9 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
 object GpuCreateMap {
   def apply(children: Seq[Expression]): GpuCreateMap = {
     new GpuCreateMap(children,
-      SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
+      SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE),
+      SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+        SQLConf.MapKeyDedupPolicy.EXCEPTION.toString)
   }
 }
 

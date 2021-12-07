@@ -267,3 +267,14 @@ def test_hash_repartition_exact(gen, num_parts):
                     .withColumn('hashed', f.hash(*part_on))\
                     .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)),
             conf = allow_negative_scale_of_decimal_conf)
+
+# Test a query that should cause Spark to leverage getShuffleRDD
+@ignore_order(local=True)
+def test_union_with_filter():
+    def doit(spark):
+        dfa = spark.range(1, 100).withColumn("id2", f.col("id"))
+        dfb = dfa.groupBy("id").agg(f.size(f.collect_set("id2")).alias("idc"))
+        dfc = dfb.filter(f.col("idc") == 1).select("id")
+        return dfc.union(dfc)
+    conf = { "spark.sql.adaptive.enabled": "true" }
+    assert_gpu_and_cpu_are_equal_collect(doit, conf)

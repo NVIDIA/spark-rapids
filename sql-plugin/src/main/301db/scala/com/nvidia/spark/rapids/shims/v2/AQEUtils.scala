@@ -14,8 +14,15 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.aggregate
+package com.nvidia.spark.rapids.shims.v2
 
-object GpuSumDefaults {
-  val hasIsEmptyField: Boolean = true
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+
+/** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
+object AQEUtils {
+  /** Return a new QueryStageExec reuse instance with updated output attributes */
+  def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
+    sqse.newReuseInstance(sqse.id, newOutput)
+  }
 }

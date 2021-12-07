@@ -14,8 +14,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.aggregate
+package com.nvidia.spark.rapids.udf.hive;
 
-object GpuSumDefaults {
-  val hasIsEmptyField: Boolean = true
+import org.apache.hadoop.hive.ql.exec.UDF;
+
+/** An empty Hive simple UDF returning the input directly for row-based UDF test only. */
+public class EmptyHiveSimpleUDF extends UDF {
+  public String evaluate(String in) {
+    return in;
+  }
 }
