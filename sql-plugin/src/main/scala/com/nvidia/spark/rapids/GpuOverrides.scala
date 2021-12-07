@@ -3067,8 +3067,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("idx", TypeSig.lit(TypeEnum.INT)
-            .withPsNote(TypeEnum.INT, "only a value greater than 0 is supported"),
+          ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
             TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r))
       .disabledByDefault(
