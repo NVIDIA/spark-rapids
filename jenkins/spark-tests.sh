@@ -140,7 +140,7 @@ export SEQ_CONF="--executor-memory 16G \
 # currently we hardcode the parallelism and configs based on our CI node's hardware specs,
 # we can make it dynamically generated if this script is going to be used in other scenarios in the future
 PARALLELISM=${PARALLELISM:-'4'}
-MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 1))")
+MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.2))")
 export PARALLEL_CONF="--executor-memory 4G \
 --total-executor-cores 2 \
 --conf spark.executor.cores=2 \
@@ -221,7 +221,7 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
     #                      we can set it to "never" and print failed ones after finish running all tests if needed
     # --group: print stderr after test finished for better readability
-    parallel -u --halt "now,fail=1" -j"${PARALLELISM}" run_test ::: hash_aggregate_test.py test_hash_reduction_decimal_overflow_sum
+    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test ::: $tests
   else
     run_test all
   fi
