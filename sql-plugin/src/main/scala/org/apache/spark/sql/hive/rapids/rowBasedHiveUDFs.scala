@@ -63,7 +63,7 @@ trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveIns
       // Because the `toInspector(Expression)` method will take care of the CPU Literal
       // especially, converting it to a ConstantObjectInspector when it is primitive type. A
       // `ConstantObjectInspector` can accelerate the row data reading by caching the actual
-      // value and bypassing the unnecessary null check.
+      // value and skipping the null check which becomes unnecessary.
       value match {
         case scalar: ai.rapids.cudf.Scalar =>
           if (scalar.getType.isNestedType) {
