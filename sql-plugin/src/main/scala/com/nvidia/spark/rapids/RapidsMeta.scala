@@ -1096,6 +1096,8 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
     convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
+
+  override val isFoldableNonLitAllowed: Boolean = true
 }
 
 /** Base metadata class for unary expressions that support conversion to AST as well */
