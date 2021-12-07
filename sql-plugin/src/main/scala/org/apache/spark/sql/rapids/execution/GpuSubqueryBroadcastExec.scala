@@ -21,7 +21,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec, GpuMetric, NvtxWithMetrics}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric, NvtxWithMetrics}
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
@@ -29,7 +29,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, UnsafeProjection}
 import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
 
@@ -53,19 +52,18 @@ case class GpuSubqueryBroadcastExec(
       // This will run in another thread. Set the execution id so that we can connect these jobs
       // with the correct execution.
       SQLExecution.withExecutionId(sparkSession, executionId) {
-        withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-          collectTime)) { _ =>
-          val serBatch = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]().value
-          val hostCols = GpuColumnVector.extractColumns(serBatch.batch).map(_.copyToHost())
+        withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN, collectTime)) { _ =>
 
-          // call dataSize method after the set of internal batch of serializeBatch
-          gpuLongMetric("dataSize") += serBatch.dataSize
+          val batchBc = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-          withResource(new ColumnarBatch(hostCols.toArray, serBatch.numRows)) { cb =>
-            val toUnsafe = UnsafeProjection.create(output, output)
-            cb.rowIterator().asScala
-                .map(toUnsafe(_).copy().asInstanceOf[InternalRow])
-                .toArray
+          gpuLongMetric("dataSize") += batchBc.value.dataSize
+
+          val toUnsafe = UnsafeProjection.create(output, output)
+          withResource(batchBc.value.hostBatches) { hostBatches =>
+            hostBatches.flatMap { cb =>
+              cb.rowIterator().asScala
+                  .map(toUnsafe(_).copy().asInstanceOf[InternalRow])
+            }
           }
         }
       }

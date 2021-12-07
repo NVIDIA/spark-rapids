@@ -3686,40 +3686,44 @@ object GpuOverrides extends Logging {
       ExecChecks(TypeSig.all, TypeSig.all),
       (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
 
+        private var broadcastMeta: GpuBroadcastMeta = _
+
         override val childExprs: Seq[BaseExprMeta[_]] = Nil
 
         override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
 
+        /**
+         * The rule PlanDynamicPruningFilters will insert SubqueryBroadcastExec if there exists
+         * available broadcast exchange for reuse. The plan stack of SubqueryBroadcastExec:
+         * SubqueryBroadcast -> BroadcastExchange -> executedPlan
+         * Since the GPU overrides rule has been applied on executedPlan, the plan stack become:
+         * SubqueryBroadcast -> BroadcastExchange -> GpuColumnarToRow -> GpuPlanStack...
+         * , if the wrapped subquery can run on the GPU.
+         * To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
+         * GpuSubqueryBroadcast -> GpuBroadcastExchange -> GpuPlanStack...
+         */
         override def tagPlanForGpu(): Unit = s.child match {
           case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
             val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
             exMeta.tagForGpu()
             if (!exMeta.canThisBeReplaced) {
-              willNotWorkOnGpu("underlying BroadcastExchange can not run on the GPU.")
+              broadcastMeta = exMeta
+            } else {
+              willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
             }
           case _ =>
-            willNotWorkOnGpu("no available BroadcastExchange for reuse.")
+            willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
         }
 
-        // Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
-        // need to change if SubqueryBroadcastExec falls back to the CPU.
+        /**
+         * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
+         * need to change if SubqueryBroadcastExec falls back to the CPU.
+         */
         override def convertToCpu(): SparkPlan = s
 
-        // The rule PlanDynamicPruningFilters will insert SubqueryBroadcastExec if there exists
-        // available broadcast exchange for reuse. The plan stack of SubqueryBroadcastExec:
-        //      SubqueryBroadcast -> BroadcastExchange -> executedPlan
-        // Since the GPU overrides rule has been applied on executedPlan, the plan stack become:
-        //      SubqueryBroadcast -> BroadcastExchange -> GpuColumnarToRow -> GpuPlanStack...
-        // , if the wrapped subquery can run on the GPU.
-        // To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
-        //      GpuSubqueryBroadcast -> GpuBroadcastExchange -> GpuPlanStack...
-        override def convertToGpu(): GpuExec = s.child match {
-          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
-            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
-            val gpuEx = exMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
-            GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
-          case _ =>
-            throw new IllegalStateException("should NOT reach here")
+        override def convertToGpu(): GpuExec = {
+          val gpuEx = broadcastMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
+          GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
         }
       }
     ),
