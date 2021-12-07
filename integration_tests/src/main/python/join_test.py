@@ -139,6 +139,21 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
             {'spark.sql.adaptive.enabled': enable_aqe})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@pytest.mark.parametrize('enable_aqe', [False, True], ids=idfn)
+def test_empty_broadcast_hash_join(join_type, enable_aqe):
+    def do_join(spark):
+        left, right = create_df(spark, long_gen, 50, 0)
+        return left.join(right.hint("broadcast"), left.a == right.r_a, join_type)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+            {'spark.sql.adaptive.enabled': enable_aqe})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+
+shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
+                 "spark.sql.join.preferSortMergeJoin": "false",
+                 "spark.sql.shuffle.partitions": "2"}
+
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
