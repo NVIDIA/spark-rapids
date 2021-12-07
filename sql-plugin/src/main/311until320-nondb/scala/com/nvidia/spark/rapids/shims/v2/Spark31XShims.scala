@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.joins.EmptyHashedRelation
 import org.apache.spark.sql.internal.SQLConf
 
 trait Spark31XShims extends Spark30XShims {
@@ -29,4 +31,10 @@ trait Spark31XShims extends Spark30XShims {
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+
+  override def isEmptyRelation(relation: Any): Boolean = relation match {
+    case EmptyHashedRelation => true
+    case arr: Array[InternalRow] if arr.isEmpty => true
+    case _ => false
+  }
 }

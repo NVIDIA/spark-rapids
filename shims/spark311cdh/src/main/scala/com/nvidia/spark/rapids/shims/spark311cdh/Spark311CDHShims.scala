@@ -20,7 +20,9 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 import org.apache.parquet.schema.MessageType
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.execution.joins.EmptyHashedRelation
 import org.apache.spark.sql.internal.SQLConf
 
 class Spark311CDHShims extends SparkBaseShims with Spark30Xuntil33XShims {
@@ -40,5 +42,11 @@ class Spark311CDHShims extends SparkBaseShims with Spark30Xuntil33XShims {
       datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive)
+  }
+
+  override def isEmptyRelation(relation: Any): Boolean = relation match {
+    case EmptyHashedRelation => true
+    case arr: Array[InternalRow] if arr.isEmpty => true
+    case _ => false
   }
 }

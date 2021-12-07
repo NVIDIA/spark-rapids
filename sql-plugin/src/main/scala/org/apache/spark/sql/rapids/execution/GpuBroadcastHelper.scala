@@ -16,10 +16,9 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.GpuColumnVector
+import com.nvidia.spark.rapids.{GpuColumnVector, ShimLoader}
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.execution.joins.EmptyHashedRelation
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -45,14 +44,7 @@ object GpuBroadcastHelper {
         val builtBatch = broadcastBatch.batch
         GpuColumnVector.incRefCounts(builtBatch)
         builtBatch
-      case EmptyHashedRelation =>
-        GpuColumnVector.emptyBatch(broadcastSchema)
-      case identity: Array[Any] if identity.isEmpty =>
-        // A broadcast nested loop join uses `IdentityBroadcastMode` which when
-        // transformed can produce an Array[InternalRow].
-        // In this case we handle the scenario where this is an empty result,
-        // so we return the empty batch, other results are expected to be
-        // `SerializeConcatHostBuffersDeserializeBatch`.
+      case _ if ShimLoader.getSparkShims.isEmptyRelation(broadcastRelation) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
@@ -76,8 +68,7 @@ object GpuBroadcastHelper {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
         broadcastBatch.batch.numRows()
-      case EmptyHashedRelation => 0
-      case identity: Array[Any] if identity.isEmpty => 0
+      case _ if ShimLoader.getSparkShims.isEmptyRelation(broadcastRelation) => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
     }

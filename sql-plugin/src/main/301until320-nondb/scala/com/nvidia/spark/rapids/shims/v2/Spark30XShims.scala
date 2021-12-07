@@ -70,6 +70,8 @@ trait Spark30XShims extends SparkShims {
     fileIndex.allFiles()
   }
 
+  override def isEmptyRelation(relation: Any): Boolean = false
+
   def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 

@@ -253,6 +253,8 @@ trait SparkShims {
 
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
 
+  def isEmptyRelation(relation: Any): Boolean
+
   def broadcastModeTransform(mode: BroadcastMode, toArray: Array[InternalRow]): Any
 
   def isAqePlan(p: SparkPlan): Boolean
