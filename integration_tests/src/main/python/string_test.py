@@ -561,13 +561,12 @@ def test_regexp_extract_multiline_negated_character_class():
                 'regexp_extract(a, "^([a-d]*)([^a-z]*)([a-d]*)$", 2)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
-@allow_non_gpu('ProjectExec', 'RegExpExtract')
-def test_regexp_extract_idx_0_fallback():
+def test_regexp_extract_idx_0():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 0)'),
-            'RegExpExtract',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 0)',
+                'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)$", 0)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
 def test_rlike():
