@@ -61,6 +61,10 @@ going to run on the GPU and tell you what would and wouldn't have been run on th
 There are two ways to run this, one is running with the plugin set to explain only mode and
 the other is to modify your existing Spark application code to call a function directly.
 
+Please note that if using adaptive execution in Spark the explain output may not be perfect
+as the plan could have changed along the way in a way that we wouldn't see by looking at just
+the CPU plan.
+
 ### Requirements
 
 - A Spark 3.x CPU cluster
