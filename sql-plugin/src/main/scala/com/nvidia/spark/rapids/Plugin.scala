@@ -24,8 +24,8 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import org.apache.spark.{SparkConf, SparkContext}
 
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
