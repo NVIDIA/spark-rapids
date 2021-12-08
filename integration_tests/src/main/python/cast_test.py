@@ -168,7 +168,7 @@ def test_cast_long_to_decimal_overflow():
 
 
 @pytest.mark.xfail(not is_before_spark_311(), reason="Only in Spark 3.1.1+ do we have incompatibility with negative decimal scale", raises=IllegalArgumentException)
-def test_cast_string_to_decimal_fail(spark_tmp_path):
+def test_cast_string_to_decimal(spark_tmp_path):
     if (is_before_spark_311()):
         assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
