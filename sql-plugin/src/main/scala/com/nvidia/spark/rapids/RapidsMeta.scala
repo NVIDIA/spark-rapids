@@ -46,7 +46,7 @@ trait DataFromReplacementRule {
  * A version of DataFromReplacementRule that is used when no replacement rule can be found.
  */
 final class NoRuleDataFromReplacementRule extends DataFromReplacementRule {
-  override val operationName: String = "NOT_FOUND"
+  override val operationName: String = "Unsupported operator: "
 
   override def confKey = "NOT_FOUND"
 
