@@ -1092,4 +1092,11 @@ trait Spark32XShims extends SparkShims  with Logging {
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.initialPlan
   }
+
+  override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec,
+      goal: CoalesceSizeGoal): SparkPlan = {
+    a.copy(supportsColumnar = true)
+  }
+
+  override def supportsColumnarAdaptivePlans: Boolean = true
 }
