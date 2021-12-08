@@ -694,6 +694,7 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
 
   // this is to help with an optimization in Spark 3.1, so we disable it by default in Spark 3.0.x
   override def isEmptyRelation(relation: Any): Boolean = false
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TrampolineUtil.getTaskMemoryManager())

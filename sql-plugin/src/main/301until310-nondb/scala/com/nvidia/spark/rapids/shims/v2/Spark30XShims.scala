@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
@@ -363,6 +363,7 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
 
   // this is to help with an optimization in Spark 3.1, so we disable it by default in Spark 3.0.x
   override def isEmptyRelation(relation: Any): Boolean = false
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None
 
   override def supportsColumnarAdaptivePlans: Boolean = false
 

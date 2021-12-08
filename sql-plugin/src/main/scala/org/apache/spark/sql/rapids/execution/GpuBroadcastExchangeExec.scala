@@ -316,23 +316,8 @@ abstract class GpuBroadcastExchangeExecBase(
 
                 val d = data.collect()
                 val emptyRelation: Option[Any] = if (d.isEmpty) {
-                  // This call for `HashedRelationBroadcastMode` produces
-                  // `EmptyHashedRelation` allowing the AQE rule `EliminateJoinToEmptyRelation`
-                  // before Spark 3.2.0 to optimize out our parent join given that this is
-                  // a empty broadcast result.
-                  // In Spark 3.2.0, the optimization is still performed, but the AQE optimizer
-                  // is looking at the metrics for the query stage to determine if numRows == 0,
-                  // and if so it can eliminate certain joins.
-                  val transformed = 
-                    ShimLoader.getSparkShims.broadcastModeTransform(mode, Array.empty)
 
-                  // We make sure that `transformed` is indeed an EmptyHashedRelation or an
-                  // empty array of rows, and in those cases only do we short circuit our
-                  // broadcast. The reason for this is to be protective, since an
-                  // EmptyHashedRelation or Array.empty are not the only results of a transform
-                  // call, depending on BroadcastMode specifics. At this time other results are
-                  // not expected, but we default to the unoptimized path.
-                  Some(transformed).filter(ShimLoader.getSparkShims.isEmptyRelation)
+                  ShimLoader.getSparkShims.tryTransformIfEmptyRelation(mode)
                 } else {
                   None
                 }

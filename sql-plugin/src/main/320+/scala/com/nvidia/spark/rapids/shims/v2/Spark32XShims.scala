@@ -134,6 +134,15 @@ trait Spark32XShims extends SparkShims  with Logging {
     case _ => false
   }
 
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = {
+    val transformed = broadcastModeTransform(mode, Array.empty)
+    transformed match {
+      case EmptyHashedRelation => Some(transformed)
+      case arr: Array[InternalRow] if arr.isEmpty => Some(transformed)
+      case _ => None
+    }
+  }
+
   override final def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 
