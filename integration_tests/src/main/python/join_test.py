@@ -130,7 +130,7 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type, batch_siz
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.parametrize('enable_aqe', [False, True], ids=idfn)
+@pytest.mark.parametrize('enable_aqe', [False, True] if not is_databricks_runtime() else [False], ids=idfn)
 def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type, enable_aqe):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
@@ -141,7 +141,7 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.parametrize('enable_aqe', [False, True], ids=idfn)
+@pytest.mark.parametrize('enable_aqe', [False, True] if not is_databricks_runtime() else [False], ids=idfn)
 def test_empty_broadcast_hash_join(join_type, enable_aqe):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
