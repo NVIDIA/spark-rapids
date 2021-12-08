@@ -50,7 +50,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 // 31x nondb shims, used by 311cdh and 31x
-abstract class Spark31XShims extends Spark301util320Shims with Logging {
+abstract class Spark31XShims extends Spark301until320Shims with Logging {
 
   override def int96ParquetRebaseRead(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
