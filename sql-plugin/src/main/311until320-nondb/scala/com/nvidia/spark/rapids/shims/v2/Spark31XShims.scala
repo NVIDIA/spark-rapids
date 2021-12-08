@@ -519,4 +519,14 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
     SQLConf.get.legacyStatisticalAggregate
 
   override def hasCastFloatTimestampUpcast: Boolean = false
+
+  override def supportsColumnarAdaptivePlans: Boolean = false
+
+  override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan = {
+    // When the input is an adaptive plan we do not get to see the GPU version until
+    // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
+    // final operator and we can bypass this to keep the data columnar by inserting
+    // the [[AvoidAdaptiveTransitionToRow]] operator here
+    AvoidAdaptiveTransitionToRow(GpuRowToColumnarExec(a, goal))
+  }
 }

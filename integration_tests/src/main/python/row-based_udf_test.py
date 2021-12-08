@@ -28,7 +28,7 @@ def test_hive_empty_simple_udf():
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
         "hive_simple_udf_test_table",
-        "SELECT i, emptysimple(s) FROM hive_simple_udf_test_table",
+        "SELECT i, emptysimple(s, 'const_string') FROM hive_simple_udf_test_table",
         conf={'spark.rapids.sql.rowBasedUDF.enabled': 'true'})
 
 def test_hive_empty_generic_udf():
