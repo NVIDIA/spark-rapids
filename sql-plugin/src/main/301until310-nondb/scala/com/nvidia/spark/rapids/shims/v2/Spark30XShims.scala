@@ -360,4 +360,7 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.initialPlan
   }
+
+  // this is to help with an optimization in Spark 3.1, so we disable it by default in Spark 3.0.x
+  override def isEmptyRelation(relation: Any): Boolean = false
 }
