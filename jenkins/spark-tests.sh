@@ -142,10 +142,10 @@ export SEQ_CONF="--executor-memory 16G \
 PARALLELISM=${PARALLELISM:-'4'}
 MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.2))")
 export PARALLEL_CONF="--executor-memory 4G \
---total-executor-cores 2 \
---conf spark.executor.cores=2 \
+--total-executor-cores 1 \
+--conf spark.executor.cores=1 \
 --conf spark.task.cpus=1 \
---conf spark.rapids.sql.concurrentGpuTasks=2 \
+--conf spark.rapids.sql.concurrentGpuTasks=1 \
 --conf spark.rapids.memory.gpu.minAllocFraction=0 \
 --conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
 --conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"
@@ -215,7 +215,7 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
     # put most time-consuming tests at the head of queue
-    time_consuming_tests="join_test.py hash_aggregate_test.py parquet_write_test.py"
+    time_consuming_tests="hash_aggregate_test.py join_test.py generate_expr_test.py parquet_write_test.py"
     tests_list=$(find "$SCRIPT_PATH"/src/main/python/ -name "*_test.py" -printf "%f ")
     tests=$(echo "$time_consuming_tests $tests_list" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
     # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
