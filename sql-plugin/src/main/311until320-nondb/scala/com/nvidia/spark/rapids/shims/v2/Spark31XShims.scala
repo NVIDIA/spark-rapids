@@ -22,6 +22,7 @@ import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
+
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
@@ -62,12 +63,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
 
   override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = {
-    val transformed = broadcastModeTransform(mode, Array.empty)
-    transformed match {
-      case EmptyHashedRelation => Some(transformed)
-      case arr: Array[InternalRow] if arr.isEmpty => Some(transformed)
-      case _ => None
-    }
+    Some(broadcastModeTransform(mode, Array.empty)).filter(isEmptyRelation)
   }
 
   override def isEmptyRelation(relation: Any): Boolean = relation match {

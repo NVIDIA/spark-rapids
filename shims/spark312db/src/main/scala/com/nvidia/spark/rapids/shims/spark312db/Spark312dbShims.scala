@@ -38,5 +38,4 @@ class Spark312dbShims extends Spark31XdbShims with Spark30Xuntil33XShims {
       datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
-
 }
