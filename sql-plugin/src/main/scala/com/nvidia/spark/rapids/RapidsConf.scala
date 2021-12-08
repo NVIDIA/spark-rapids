@@ -705,6 +705,18 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_ALL_TRUE_FALSE_OPTIMIZATION = conf("spark.rapids.sql.opt.allTrueFalse.enabled")
+    .doc("When set to true, checks whether the predictions on a batch are all true or false, " +
+      "then accordingly evaluate only the true or false expression. This is for the GPU `If` " +
+      "and `CaseWhen`, and can improve the performance by avoiding the evaluation of the true " +
+      "or false expression when it is an expensive operation. e.g. row-based UDF. It is " +
+      "disabled by default because it does work when the input batch is mixed with true and " +
+      "false predictions, and may affect the performance negatively because it involves some " +
+      "additional computations. This config might be removed in the future when the " +
+      "implementation of GPU `If` and `CaseWhen` evolves")
+    .booleanConf
+    .createWithDefault(false)
+
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
@@ -1738,6 +1750,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
+
+  lazy val isAllTrueFalseOptEnabled: Boolean = get(ENABLE_ALL_TRUE_FALSE_OPTIMIZATION)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 

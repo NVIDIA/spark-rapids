@@ -40,11 +40,15 @@ if_struct_gens_sample = [if_struct_gen,
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens + if_nested_gens + decimal_128_gens_no_neg, ids=idfn)
-def test_if_else(data_gen):
+@pytest.mark.parametrize('all_truefalse_opt', [True, False])
+def test_if_else(data_gen, all_truefalse_opt):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
+    row_num = 2048
+    if all_truefalse_opt:
+        row_num = 30 # Small row number can get all-true or all-false batch easily.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
+            lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen, row_num).selectExpr(
                 'IF(TRUE, b, c)',
                 'IF(TRUE, {}, {})'.format(s1, null_lit),
                 'IF(FALSE, {}, {})'.format(s1, null_lit),
@@ -53,7 +57,8 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(s2),
                 'IF(a, {}, {})'.format(s1, s2),
                 'IF(a, b, {})'.format(null_lit),
-                'IF(a, {}, c)'.format(null_lit)))
+                'IF(a, {}, c)'.format(null_lit)),
+            conf={'spark.rapids.sql.opt.allTrueFalse.enabled': all_truefalse_opt})
 
 # Maps scalars are not really supported by Spark from python without jumping through a lot of hoops
 # so for now we are going to skip them
@@ -67,7 +72,13 @@ def test_if_else_map(data_gen):
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
-def test_case_when(data_gen):
+@pytest.mark.parametrize('all_truefalse_opt', [True, False])
+def test_case_when(data_gen, all_truefalse_opt):
+    row_num = 2048
+    if all_truefalse_opt:
+        row_num = 30 # Small row number can get all-true or all-false batch easily.
+    opt_conf = {'spark.rapids.sql.opt.allTrueFalse.enabled': all_truefalse_opt}
+    opt_conf.update(allow_negative_scale_of_decimal_conf)
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
@@ -87,7 +98,7 @@ def test_case_when(data_gen):
     #    (scalar, column)
     # in sequence.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen).select(command,
+            lambda spark : gen_df(spark, gen, row_num).select(command,
                 f.when(f.col('_b0'), s1),
                 f.when(f.col('_b0'), f.col('_c0')).otherwise(f.col('_c1')),
                 f.when(f.col('_b0'), s1).otherwise(f.col('_c0')),
@@ -95,7 +106,7 @@ def test_case_when(data_gen):
                 f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
                 f.when(f.lit(False), f.col('_c0'))),
-            conf = allow_negative_scale_of_decimal_conf)
+            conf = opt_conf)
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):
