@@ -139,7 +139,7 @@ export SEQ_CONF="--executor-memory 16G \
 
 # currently we hardcode the parallelism and configs based on our CI node's hardware specs,
 # we can make it dynamically generated if this script is going to be used in other scenarios in the future
-PARALLELISM=${PARALLELISM:-'5'}
+PARALLELISM=${PARALLELISM:-'4'}
 MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.2))")
 export PARALLEL_CONF="--executor-memory 4G \
 --total-executor-cores 2 \
