@@ -523,6 +523,21 @@ def test_regexp_replace_null_pattern_fallback():
             'RegExpReplace',
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
+def test_regexp_replace_character_set_negated():
+    gen = mk_str_gen('[abcd]{0,3}[\r\n]{0,2}[abcd]{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "([^a])|([^b])", "1")',
+                'regexp_replace(a, "[^a]", "1")',
+                'regexp_replace(a, "([^a]|[\r\n])", "1")',
+                'regexp_replace(a, "[^a\r\n]", "1")',
+                'regexp_replace(a, "[^a\r]", "1")',
+                'regexp_replace(a, "[^a\n]", "1")',
+                'regexp_replace(a, "[^\r\n]", "1")',
+                'regexp_replace(a, "[^\r]", "1")',
+                'regexp_replace(a, "[^\n]", "1")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(

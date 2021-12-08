@@ -1088,4 +1088,11 @@ trait Spark32XShims extends SparkShims  with Logging {
   }
 
   override def isNegativeDecimalScaleSupportEnabled: Boolean = false
+
+  override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec,
+      goal: CoalesceSizeGoal): SparkPlan = {
+    a.copy(supportsColumnar = true)
+  }
+
+  override def supportsColumnarAdaptivePlans: Boolean = true
 }
