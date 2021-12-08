@@ -142,8 +142,8 @@ export SEQ_CONF="--executor-memory 16G \
 PARALLELISM=${PARALLELISM:-'4'}
 MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.2))")
 export PARALLEL_CONF="--executor-memory 4G \
---total-executor-cores 2 \
---conf spark.executor.cores=2 \
+--total-executor-cores 1 \
+--conf spark.executor.cores=1 \
 --conf spark.task.cpus=1 \
 --conf spark.rapids.sql.concurrentGpuTasks=1 \
 --conf spark.rapids.memory.gpu.minAllocFraction=0 \
