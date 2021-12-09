@@ -80,7 +80,7 @@
         <!-- run_pyspark_from_build.sh depends on the distribution jar, so make it as runtime scope -->
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark_2.12</artifactId>
+            <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
         </dependency>

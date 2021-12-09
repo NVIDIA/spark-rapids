@@ -33,7 +33,7 @@ ARG UCX_VER
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
-    apt-get install -y software-properties-common rsync
+    apt-get install -y software-properties-common rsync zip unzip
 
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
