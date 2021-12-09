@@ -47,7 +47,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class Spark30XShims extends Spark301util320Shims with Logging {
+abstract class Spark30XShims extends Spark301until320Shims with Logging {
   override def int96ParquetRebaseRead(conf: SQLConf): String =
     parquetRebaseRead(conf)
   override def int96ParquetRebaseWrite(conf: SQLConf): String =
