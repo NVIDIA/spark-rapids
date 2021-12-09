@@ -219,11 +219,11 @@ trait Spark32XShims extends SparkShims  with Logging {
   override def getGpuBroadcastNestedLoopJoinShim(
       left: SparkPlan,
       right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
+      gpuBuildSide: GpuBuildSide,
       joinType: JoinType,
       condition: Option[Expression],
       targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
+    GpuBroadcastNestedLoopJoinExec(left, right, gpuBuildSide, joinType, condition, targetSizeBytes)
   }
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {

@@ -135,7 +135,7 @@ trait SparkShims {
   def getGpuBroadcastNestedLoopJoinShim(
     left: SparkPlan,
     right: SparkPlan,
-    join: BroadcastNestedLoopJoinExec,
+    gpuBuildSide: GpuBuildSide,
     joinType: JoinType,
     condition: Option[Expression],
     targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase

@@ -106,7 +106,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
 
     val joinExec = ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
-      left, right, join,
+      left, right, gpuBuildSide,
       join.joinType,
       if (isAstCondition) condition else None,
       conf.gpuTargetBatchSizeBytes)

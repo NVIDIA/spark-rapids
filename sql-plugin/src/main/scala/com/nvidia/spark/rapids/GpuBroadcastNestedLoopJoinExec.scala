@@ -16,25 +16,20 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.v2._
-
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.rapids.execution._
 
 case class GpuBroadcastNestedLoopJoinExec(
     left: SparkPlan,
     right: SparkPlan,
-    join: BroadcastNestedLoopJoinExec,
+    gpuBuildSide: GpuBuildSide,
     joinType: JoinType,
     condition: Option[Expression],
     targetSizeBytes: Long)
   extends GpuBroadcastNestedLoopJoinExecBase(left, right, joinType, condition,
     targetSizeBytes) {
 
-  def getGpuBuildSide: GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
+  def getGpuBuildSide: GpuBuildSide = gpuBuildSide
 }

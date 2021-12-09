@@ -22,13 +22,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuHashJoin, JoinTypeChecks, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuBroadcastHashJoinMeta(
@@ -42,16 +43,60 @@ class GpuBroadcastHashJoinMeta(
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] =
+  val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
+  def isAstCondition(): Boolean = {
+    join.condition.isDefined && conditionMeta.forall(_.canThisBeAst)
+  }
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+  override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
+
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
 
   override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    //GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    val joinType = join.joinType
+    val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
+    val gpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
+
+    def unSupportNonEqualCondition(): Unit = if (join.condition.isDefined) {
+      this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+    }
+    def unSupportNonEqualNonAst(): Unit = if (join.condition.isDefined) {
+      conditionMeta.foreach(requireAstForGpuOn)
+    }
+    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+      this.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
+    }
+
+    JoinTypeChecks.tagForGpu(joinType, this)
+    joinType match {
+      case _: InnerLike =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+        unSupportNonEqualNonAst()
+      case FullOuter =>
+        unSupportNonEqualCondition()
+        // FullOuter join cannot support with struct keys as two issues below
+        //  * https://github.com/NVIDIA/spark-rapids/issues/2126
+        //  * https://github.com/rapidsai/cudf/issues/7947
+        unSupportStructKeys()
+      case _ =>
+        this.willNotWorkOnGpu(s"$joinType currently is not supported")
+    }
+    // If there is an AST condition, we need to make sure the build side works for
+    // GpuBroadcastNestedLoopJoin
+    if (isAstCondition()) {
+      join.joinType match {
+        case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
+          willNotWorkOnGpu(s"build left not supported for conditional ${join.joinType}")
+        case RightOuter if gpuBuildSide == GpuBuildRight =>
+          willNotWorkOnGpu(s"build right not supported for conditional ${join.joinType}")
+        case _ =>
+      }
+    }
+
     val Seq(leftChild, rightChild) = childPlans
     val buildSide = join.buildSide match {
       case BuildLeft => leftChild
@@ -69,22 +114,40 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val gpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSide = join.buildSide match {
       case BuildLeft => left
       case BuildRight => right
     }
     verifyBuildSideWasReplaced(buildSide)
-    val joinExec = GpuBroadcastHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      GpuJoinUtils.getGpuBuildSide(join.buildSide),
-      None,
-      left, right)
-    // The GPU does not yet support conditional joins, so conditions are implemented
-    // as a filter after the join when possible.
-    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+
+    val condition = conditionMeta.map(_.convertToGpu())
+    val substituteBroadcastNestedLoopJoin: Boolean = join.joinType match {
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti  =>
+        isAstCondition()
+      case _ => false
+    }
+
+    if (substituteBroadcastNestedLoopJoin) {
+      val joinExec = ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
+        left, right, gpuBuildSide,
+        join.joinType,
+        condition,
+        conf.gpuTargetBatchSizeBytes)
+      joinExec
+    } else {
+      val joinExec = GpuBroadcastHashJoinExec(
+        leftKeys.map(_.convertToGpu()),
+        rightKeys.map(_.convertToGpu()),
+        join.joinType,
+        GpuJoinUtils.getGpuBuildSide(join.buildSide),
+        None,
+        left, right)
+      // The GPU does not yet support conditional joins, so conditions are implemented
+      // as a filter after the join when possible.
+      conditionMeta.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+    }
   }
 }
 
