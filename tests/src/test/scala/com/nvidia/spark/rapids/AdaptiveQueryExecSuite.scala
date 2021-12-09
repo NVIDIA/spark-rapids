@@ -18,9 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
-import org.scalatest.BeforeAndAfterEach
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
@@ -31,26 +28,15 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange,
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
-
-object AdaptiveQueryExecSuite {
-  val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
-}
 
 class AdaptiveQueryExecSuite
     extends SparkQueryCompareTestSuite
     with AdaptiveSparkPlanHelper
-    with BeforeAndAfterEach
+    with FunSuiteWithTempDir
     with Logging {
-
-  override def beforeEach(): Unit = {
-    TEST_FILES_ROOT.mkdirs()
-  }
-
-  override def afterEach(): Unit = {
-    org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
-  }
 
   private def runAdaptiveAndVerifyResult(
       spark: SparkSession, query: String): (SparkPlan, SparkPlan) = {
@@ -344,14 +330,21 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[AdaptiveSparkPlanExec])
           .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      val transition = adaptiveSparkPlanExec
+      if (ShimLoader.getSparkShims.supportsColumnarAdaptivePlans) {
+        // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
+        // support columnar adaptive plans
+        assert(adaptiveSparkPlanExec
           .executedPlan
-          .asInstanceOf[GpuColumnarToRowExec]
+          .isInstanceOf[GpuFileSourceScanExec])
+      } else {
+        val transition = adaptiveSparkPlanExec
+            .executedPlan
+            .asInstanceOf[GpuColumnarToRowExec]
 
-      // although the plan contains a GpuColumnarToRowExec, we bypass it in
-      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
-      assert(transition.metrics("numOutputRows").value === 0)
-
+        // although the plan contains a GpuColumnarToRowExec, we bypass it in
+        // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+        assert(transition.metrics("numOutputRows").value === 0)
+      }
     }, conf)
   }
 
@@ -400,7 +393,6 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
-        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
@@ -438,7 +430,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
-      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
@@ -470,7 +461,6 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
-      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
 

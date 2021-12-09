@@ -185,11 +185,10 @@ object SparkPlanInfoWithStage {
  * Used only for Profiling.
  */
 class ApplicationInfo(
-    numRows: Int,
     hadoopConf: Configuration,
     eLogInfo: EventLogInfo,
     val index: Int)
-  extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
+  extends AppBase(Some(eLogInfo), Some(hadoopConf)) with Logging {
 
   // executorId to executor info
   val executorIdToInfo = new HashMap[String, ExecutorInfoClass]()
@@ -234,7 +233,7 @@ class ApplicationInfo(
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
-  private lazy val eventProcessor =  new EventsProcessor()
+  private lazy val eventProcessor =  new EventsProcessor(this)
 
   // Process all events
   processEvents()
@@ -243,7 +242,7 @@ class ApplicationInfo(
   aggregateAppInfo
 
   override def processEvent(event: SparkListenerEvent) = {
-    eventProcessor.processAnyEvent(this, event)
+    eventProcessor.processAnyEvent(event)
     false
   }
 
@@ -263,24 +262,39 @@ class ApplicationInfo(
    * Function to process SQL Plan Metrics after all events are processed
    */
   def processSQLPlanMetrics(): Unit = {
-    for ((sqlID, planInfo) <- sqlPlan){
+    for ((sqlID, planInfo) <- sqlPlan) {
       checkMetadataForReadSchema(sqlID, planInfo)
+      checkJdbcScan(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
         checkGraphNodeForBatchScan(sqlID, node)
-        if (isDataSetPlan(node.desc)) {
+        if (isDataSetOrRDDPlan(node.desc)) {
           sqlIdToInfo.get(sqlID).foreach { sql =>
-            sql.hasDataset = true
+            sqlIDToDataSetOrRDDCase += sqlID
+            sql.hasDatasetOrRDD = true
           }
           if (gpuMode) {
             val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc,
-              "Contains Dataset")
+              "Contains Dataset or RDD")
             unsupportedSQLplan += thisPlan
           }
         }
+
+        // find potential problems
+        val issues = findPotentialIssues(node.desc)
+        if (issues.nonEmpty) {
+          val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
+          sqlIDtoProblematic(sqlID) = existingIssues ++ issues
+        }
+        val (_, nestedComplexTypes) = reportComplexTypes
+        val potentialProbs = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
+        sqlIdToInfo.get(sqlID).foreach { sql =>
+          sql.problematic = potentialProbs
+        }
+
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,

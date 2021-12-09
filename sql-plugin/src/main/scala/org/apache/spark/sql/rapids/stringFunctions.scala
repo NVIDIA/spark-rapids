@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RLike, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -65,9 +65,9 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
 
   override def dataType: DataType = IntegerType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  def first: Expression = substr
-  def second: Expression = col
-  def third: Expression = start
+  override def first: Expression = substr
+  override def second: Expression = col
+  override def third: Expression = start
 
   def this(substr: Expression, col: Expression) = {
     this(substr, col, GpuLiteral(1, IntegerType))
@@ -424,9 +424,9 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(StringType, BinaryType), IntegerType, IntegerType)
 
-  def first: Expression = str
-  def second: Expression = pos
-  def third: Expression = len
+  override def first: Expression = str
+  override def second: Expression = pos
+  override def third: Expression = len
 
   def this(str: Expression, pos: Expression) = {
     this(str, pos, GpuLiteral(Integer.MAX_VALUE, IntegerType))
@@ -582,9 +582,9 @@ case class GpuStringReplace(
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
-  def first: Expression = srcExpr
-  def second: Expression = searchExpr
-  def third: Expression = replaceExpr
+  override def first: Expression = srcExpr
+  override def second: Expression = searchExpr
+  override def third: Expression = replaceExpr
 
   def this(srcExpr: Expression, searchExpr: Expression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
@@ -744,6 +744,133 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   }
 }
 
+class GpuRLikeMeta(
+    expr: RLike,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
+
+    private var pattern: Option[String] = None
+
+    override def tagExprForGpu(): Unit = {
+      expr.right match {
+        case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+          try {
+            // verify that we support this regex and can transpile it to cuDF format
+            pattern = Some(new CudfRegexTranspiler(replace = false).transpile(str.toString))
+          } catch {
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
+          }
+        case _ =>
+          willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
+      }
+    }
+
+    override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+      GpuRLike(lhs, rhs, pattern.getOrElse(
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+    }
+}
+
+case class GpuRLike(left: Expression, right: Expression, pattern: String)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
+
+  override def toString: String = s"$left gpurlike $right"
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have two column vectors as input in RLike")
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have a scalar as left side operand in RLike")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    lhs.getBase.containsRe(pattern)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+
+  override def dataType: DataType = BooleanType
+}
+
+case class GpuRegExpReplace(
+    srcExpr: Expression,
+    searchExpr: Expression,
+    replaceExpr: Expression,
+    cudfRegexPattern: String)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = srcExpr.dataType
+
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
+
+  override def first: Expression = srcExpr
+  override def second: Expression = searchExpr
+  override def third: Expression = replaceExpr
+
+  def this(srcExpr: Expression, searchExpr: Expression, cudfRegexPattern: String) = {
+    this(srcExpr, searchExpr, GpuLiteral("", StringType), cudfRegexPattern)
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuScalar): ColumnVector = {
+    strExpr.getBase.replaceRegex(cudfRegexPattern, replaceExpr.getBase)
+  }
+
+  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
+      val2: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+}
+
 class SubstringIndexMeta(
     expr: SubstringIndex,
     override val conf: RapidsConf,
@@ -814,9 +941,9 @@ case class GpuSubstringIndex(strExpr: Expression,
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
 
-  def first: Expression = strExpr
-  def second: Expression = ignoredDelimExpr
-  def third: Expression = ignoredCountExpr
+  override def first: Expression = strExpr
+  override def second: Expression = ignoredDelimExpr
+  override def third: Expression = ignoredCountExpr
 
   override def prettyName: String = "substring_index"
 
@@ -894,9 +1021,9 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
   val pad: Expression
   val direction: PadSide
 
-  def first: Expression = str
-  def second: Expression = len
-  def third: Expression = pad
+  override def first: Expression = str
+  override def second: Expression = len
+  override def third: Expression = pad
 
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, IntegerType, StringType)
@@ -1016,9 +1143,9 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
 
   override def dataType: DataType = ArrayType(StringType)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  def first: Expression = str
-  def second: Expression = regex
-  def third: Expression = limit
+  override def first: Expression = str
+  override def second: Expression = regex
+  override def third: Expression = limit
 
   def this(exp: Expression, regex: Expression) = this(exp, regex, GpuLiteral(-1, IntegerType))
 

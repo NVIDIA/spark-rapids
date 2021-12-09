@@ -14,12 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_311, is_before_spark_320
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -220,7 +221,7 @@ def test_concat_ws_sql_col_sep():
                 'concat_ws(c, b, a, cast(null as string)) from concat_ws_table')
 
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
+@pytest.mark.skipif(is_databricks_runtime(),
     reason='Databricks optimizes out concat_ws call in this case')
 @allow_non_gpu('ProjectExec', 'Alias', 'ConcatWs')
 def test_concat_ws_sql_col_sep_only_sep_specified():
@@ -337,7 +338,28 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
-                'REGEXP_REPLACE(a, "TEST", NULL)'))
+                'REGEXP_REPLACE(a, "TEST", NULL)'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_re_replace_null():
+    gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\
+        .with_special_case("\u0000")\
+        .with_special_case("\u0000\u0000")
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'REGEXP_REPLACE(a, "\u0000", "")',
+                'REGEXP_REPLACE(a, "\000", "")',
+                'REGEXP_REPLACE(a, "\00", "")',
+                'REGEXP_REPLACE(a, "\x00", "")',
+                'REGEXP_REPLACE(a, "\0", "")',
+                'REGEXP_REPLACE(a, "\u0000", "NULL")',
+                'REGEXP_REPLACE(a, "\000", "NULL")',
+                'REGEXP_REPLACE(a, "\00", "NULL")',
+                'REGEXP_REPLACE(a, "\x00", "NULL")',
+                'REGEXP_REPLACE(a, "\0", "NULL")',
+                'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
@@ -451,3 +473,149 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
+def test_regexp_replace():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "a", "A")',
+                'regexp_replace(a, "[^xyz]", "A")',
+                'regexp_replace(a, "([^x])|([^y])", "A")',
+                'regexp_replace(a, "(?:aa)+", "A")',
+                'regexp_replace(a, "a|b|c", "A")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
+def test_regexp():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp(a, "a{2}")',
+                'regexp(a, "a{1,3}")',
+                'regexp(a, "a{1,}")',
+                'regexp(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
+def test_regexp_like():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_like(a, "a{2}")',
+                'regexp_like(a, "a{1,3}")',
+                'regexp_like(a, "a{1,}")',
+                'regexp_like(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.skipif(is_databricks_runtime(),
+    reason='Databricks optimizes out regexp_replace call in this case')
+@pytest.mark.skipif(not is_before_spark_311(),
+    reason='Spark 3.1.1 optimizes out regexp_replace call in this case')
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_null_pattern_fallback():
+    gen = mk_str_gen('[abcd]{0,3}')
+    # Spark 3.0.1 translates `NULL` to `CAST(NULL as STRING)` and we only support
+    # literal expressions for the regex pattern
+    # Spark 3.1.1 (and Databricks) replaces the whole regexp_replace expression with a
+    # literal null
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, NULL, "A")'),
+            'RegExpReplace',
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_regexp_replace_character_set_negated():
+    gen = mk_str_gen('[abcd]{0,3}[\r\n]{0,2}[abcd]{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "([^a])|([^b])", "1")',
+                'regexp_replace(a, "[^a]", "1")',
+                'regexp_replace(a, "([^a]|[\r\n])", "1")',
+                'regexp_replace(a, "[^a\r\n]", "1")',
+                'regexp_replace(a, "[^a\r]", "1")',
+                'regexp_replace(a, "[^a\n]", "1")',
+                'regexp_replace(a, "[^\r\n]", "1")',
+                'regexp_replace(a, "[^\r]", "1")',
+                'regexp_replace(a, "[^\n]", "1")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_rlike():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a{2}"',
+                'a rlike "a{1,3}"',
+                'a rlike "a{1,}"',
+                'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_embedded_null():
+    gen = mk_str_gen('[abcd]{1,3}')\
+            .with_special_case('\u0000aaa')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a{2}"',
+                'a rlike "a{1,3}"',
+                'a rlike "a{1,}"',
+                'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_null_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    # Spark optimizes out `RLIKE NULL` in this test
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike NULL'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_null_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a\u0000"'),
+            'RLike',
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_empty_group():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a()?"'),
+            'RLike',
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_escape():
+    gen = mk_str_gen('[ab]{0,2}[\\-\\+]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a[\\\\-]"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_multi_line():
+    gen = mk_str_gen('[abc]\n[def]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "^a"',
+                'a rlike "^d"',
+                'a rlike "c$"',
+                'a rlike "e$"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_missing_escape():
+    gen = mk_str_gen('a[\\-\\+]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a[-]"',
+                'a rlike "a[+-]"',
+                'a rlike "a[a-b-]"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_possessive_quantifier():
+    gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a*+"'),
+                'RLike',
+            conf={'spark.rapids.sql.expression.RLike': 'true'})

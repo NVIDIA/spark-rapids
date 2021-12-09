@@ -25,7 +25,7 @@ import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 
 /**
- *  A Spark Resource Discovery Plugin that relies on the Nvidia GPUs being in PROCESS_EXCLUSIVE
+ *  A Spark Resource Discovery Plugin that relies on the NVIDIA GPUs being in PROCESS_EXCLUSIVE
  *  mode so that it can discover free GPUs.
  *  This plugin iterates through all the GPUs on the node and tries to initialize a CUDA context
  *  on each one. When the GPUs are in process exclusive mode this

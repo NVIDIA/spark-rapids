@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Developer Overview
-nav_order: 10
+nav_order: 11
 has_children: true
 permalink: /developer-overview/
 ---
@@ -241,6 +241,8 @@ in the driver options, e.g.:
 The Spark process will wait upon launch for a remote debugger to attach via
 port 5005.
 
+You can also use [Compute Sanitizer](compute_sanitizer.md) to debug CUDA memory errors.
+
 ## Profiling Tips
 [NVIDIA Nsight Systems](https://developer.nvidia.com/nsight-systems) makes
 profiling easy.  In addition to showing where time is being spent in CUDA
@@ -264,8 +266,11 @@ The regular [jacoco maven plugin](https://www.jacoco.org/jacoco/trunk/doc/maven.
 is not currently [able to support](https://github.com/jacoco/jacoco/issues/965) this type of
 setup. So if you want to generate a coverage report you need to do it manually.  Coverage is
 collected by default so first run the tests, and then generate the report, this should be run
-from the root project directory.  It will print out the URL of the report at the end. 
- 
+from the root project directory. It will print out the URL of the report at the end. Besides,
+coverage report only covers test with Spark 301 by default as [jacoco](https://www.jacoco.org/jacoco/trunk/doc/)
+can't support combined jars. If you're testing with different Spark version, please change it
+via environment variable `JACOCO_SPARK_VER` before generate coverage report, e.g, `export JACOCO_SPARK_VER=311`.
+
 ```bash
 mvn clean verify
 ./build/coverage-report

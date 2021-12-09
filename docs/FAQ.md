@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 11
+nav_order: 12
 ---
 # Frequently Asked Questions
 
@@ -10,7 +10,7 @@ nav_order: 11
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.0.3, 3.1.1, or 3.1.2 of
+The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2 or 3.2.0 of
 Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
 be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -19,9 +19,10 @@ process, we try to stay on top of these changes and release updates as quickly a
 
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
-- [AWS EMR 6.2.0, 6.3.0](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 7.3, 8.2](get-started/getting-started-databricks.md)
+- [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
+- [Databricks Runtime 7.3, 9.1](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
+- [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
 replaces parts of the physical plan that Apache Spark considers to be internal the code for those
@@ -35,7 +36,7 @@ release.
 
 ### What hardware is supported? 
 
-The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
+The plugin is tested and supported on V100, T4, A2, A10, A30 and A100 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
 does not support [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
@@ -287,13 +288,15 @@ AdaptiveSparkPlan isFinalPlan=false
 
 ### Are cache and persist supported?
 
-Yes cache and persist are supported, but they are not GPU accelerated yet. We are working with
-the Spark community on changes that would allow us to accelerate compression when caching data.
+Yes cache and persist are supported, the cache is GPU accelerated 
+but still stored on the host memory. 
+Please refer to [RAPIDS Cache Serializer](./additional-functionality/cache-serializer.md) 
+for more details.
 
 ### Can I cache data into GPU memory?
 
-No, that is not currently supported. It would require much larger changes to Apache Spark to be able
-to support this.
+No, that is not currently supported. 
+It would require much larger changes to Apache Spark to be able to support this.
 
 ### Is PySpark supported?
 

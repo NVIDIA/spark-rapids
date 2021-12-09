@@ -324,10 +324,10 @@ object RapidsConf {
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of available GPU memory that should be initially allocated " +
-      "for pooled memory. Extra memory will be allocated as needed, but it may " +
-      "result in more fragmentation. This must be less than or equal to the maximum limit " +
-      s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
+    .doc("The fraction of available (free) GPU memory that should be allocated for pooled " +
+      "memory. This must be less than or equal to the maximum limit configured via " +
+      s"$RMM_ALLOC_MAX_FRACTION_KEY, and greater than or equal to the minimum limit configured " +
+      s"via $RMM_ALLOC_MIN_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -352,7 +352,7 @@ object RapidsConf {
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
           "system use such as memory needed for kernels and kernel launches.")
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(ByteUnit.MiB.toBytes(1024))
+      .createWithDefault(ByteUnit.MiB.toBytes(640))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
@@ -384,24 +384,6 @@ object RapidsConf {
         "by UCX bounce buffers.")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.MiB.toBytes(8))
-
-  val GDS_SPILL_ALIGNED_IO =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.alignedIO")
-    .doc("When GDS spill is enabled, should I/O be 4 KiB aligned. GDS is more efficient when " +
-        "reads and writes are 4 KiB aligned, but aligning has some additional memory overhead " +
-        "with the padding.")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
-
-  val GDS_SPILL_ALIGNMENT_THRESHOLD =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.alignmentThreshold")
-    .doc("GPU memory buffers with size above this threshold will be aligned to 4 KiB. Setting " +
-        "this value to 0 means every allocation will be 4 KiB aligned. A low threshold may " +
-        "cause more memory consumption because of padding.")
-    .internal()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.KiB.toBytes(64))
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
@@ -457,6 +439,13 @@ object RapidsConf {
       "in some cases based on the schema and number of rows in each batch.")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
+
+  val DRIVER_TIMEZONE = conf("spark.rapids.driver.user.timezone")
+    .doc("This config is used to inform the executor plugin about the driver's timezone " +
+      "and is not intended to be set by the user.")
+    .internal()
+    .stringConf
+    .createOptional
 
   // Internal Features
 
@@ -530,11 +519,11 @@ object RapidsConf {
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
     .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
-         "formats are fully supported on the GPU and some are unsupported and will fall back to " + 
+         "formats are fully supported on the GPU and some are unsupported and will fall back to " +
          "the CPU.  Some formats behave differently on the GPU than the CPU.  Spark on the CPU " +
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
-         "at [parsing strings as dates or timestamps]" + 
+         "at [parsing strings as dates or timestamps]" +
          "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
@@ -554,6 +543,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val NEED_DECIMAL_OVERFLOW_GUARANTEES = conf("spark.rapids.sql.decimalOverflowGuarantees")
+      .doc("FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of " +
+          "the compatibility documents for more information on this config.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -561,13 +556,6 @@ object RapidsConf {
       "those operations if you know the query is only computing it once.")
     .booleanConf
     .createWithDefault(false)
-
-  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
-      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
-          "which can slow down processing in some cases.")
-      .booleanConf
-      .createWithDefault(false)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -654,14 +642,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
-    .doc("The GPU-enabled version of the `CreateMap` expression (`map` SQL function) does not " +
-      "detect duplicate keys in all cases and does not guarantee which key wins if there are " +
-      "duplicates. When this config is set to true, `CreateMap` will be enabled to run on the " +
-      "GPU even when there might be duplicate keys.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
       .booleanConf
@@ -715,6 +695,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  // This is an experimental feature now. And eventually, should be enabled or disabled depending
+  // on something that we don't know yet but would try to figure out.
+  val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
+    .doc("When set to true, optimizes a row-based UDF in a GPU operation by transferring " +
+      "only the data it needs between GPU and CPU inside a query operation, instead of falling " +
+      "this operation back to CPU. This is an experimental feature, and this config might be " +
+      "removed in the future.")
+    .booleanConf
+    .createWithDefault(false)
+
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
@@ -746,12 +736,17 @@ object RapidsConf {
     .checkValues(ParquetReaderType.values.map(_.toString))
     .createWithDefault(ParquetReaderType.AUTO.toString)
 
+  /** List of schemes that are always considered cloud storage schemes */
+  private lazy val DEFAULT_CLOUD_SCHEMES =
+    Seq("abfs", "abfss", "dbfs", "gs", "s3", "s3a", "s3n", "wasbs")
+
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
-      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
-      "generally would be total separate from the executors and likely have a higher I/O read " +
-      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
-      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+      s"filesystems. Schemes already included: ${DEFAULT_CLOUD_SCHEMES.mkString(", ")}. Cloud " +
+      "based stores generally would be total separate from the executors and likely have a " +
+      "higher I/O read cost. Many times the cloud filesystems also get better throughput when " +
+      "you have multiple readers in parallel. This is used with " +
+      "spark.rapids.sql.format.parquet.reader.type")
     .stringConf
     .toSequence
     .createOptional
@@ -1145,6 +1140,12 @@ object RapidsConf {
       .stringConf
       .createWithDefault("none")
 
+  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+    .doc("A configurable chunk size to use when compressing with LZ4.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(64 * 1024)
+
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
@@ -1296,6 +1297,34 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val FORCE_SHIMCALLER_CLASSLOADER = conf("spark.rapids.force.caller.classloader")
+    .doc("Option to statically add shim's parallel world classloader URLs to " +
+      "the classloader of the ShimLoader class, typically Bootstrap classloader. This option" +
+      " uses reflection with setAccessible true on a classloader that is not created by Spark.")
+    .internal()
+    .booleanConf
+    .createWithDefault(value = true)
+
+  val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
+    .doc("The name of the Spark resource that represents a GPU that you want the plugin to use " +
+      "if using custom resources with Spark.")
+    .stringConf
+    .createWithDefault("gpu")
+
+  val SUPPRESS_PLANNING_FAILURE = conf("spark.rapids.sql.suppressPlanningFailure")
+    .doc("Option to fallback an individual query to CPU if an unexpected condition prevents the " +
+      "query plan from being converted to a GPU-enabled one. Note this is different from " +
+      "a normal CPU fallback for a yet-to-be-supported Spark SQL feature. If this happens " +
+      "the error should be reported and investigated as a GitHub issue.")
+    .booleanConf
+    .createWithDefault(value = false)
+
+  val ENABLE_FAST_SAMPLE = conf("spark.rapids.sql.fast.sample")
+    .doc("Option to turn on fast sample. If enable it is inconsistent with CPU sample " +
+      "because of GPU sample algorithm is inconsistent with CPU.")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1326,7 +1355,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.12.0-SNAPSHOT.jar,cudf-21.12.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1404,8 +1433,8 @@ object RapidsConf {
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
 
-  import RapidsConf._
   import ConfHelper._
+  import RapidsConf._
 
   def this(sqlConf: SQLConf) = {
     this(sqlConf.getAllConfs)
@@ -1474,17 +1503,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
-  lazy val isGdsSpillAlignedIO: Boolean = get(GDS_SPILL_ALIGNED_IO)
-
-  lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
-
   lazy val hasNans: Boolean = get(HAS_NANS)
+
+  lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
-
-  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 
@@ -1561,8 +1586,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
-
-  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
@@ -1659,6 +1682,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
+  lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
+
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
@@ -1669,7 +1694,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
 
-  lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
+  lazy val getCloudSchemes: Seq[String] =
+    DEFAULT_CLOUD_SCHEMES ++ get(CLOUD_SCHEMES).getOrElse(Seq.empty)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
@@ -1699,6 +1725,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
+  lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
+
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 
   lazy val isRangeWindowShortEnabled: Boolean = get(ENABLE_RANGE_WINDOW_SHORT)
@@ -1706,6 +1734,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
+
+  lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
+
+  lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

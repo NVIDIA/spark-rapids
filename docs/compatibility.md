@@ -94,6 +94,183 @@ after Spark 3.1.0.
 We do not disable operations that produce different results due to `-0.0` in the data because it is
 considered to be a rare occurrence.
 
+## Decimal Support
+
+Apache Spark supports decimal values with a precision up to 38. This equates to 128-bits.
+However, when actually processing the data, in most cases, it is temporarily converted to 
+Java's `BigDecimal` type which allows for effectively unlimited precision. This lets Spark do
+complicated calculations without the risk of missing an overflow and causing data corruption.
+It also lets Spark support some operations that require intermediate values that are larger than
+a 128-bit representation can support.
+
+The RAPIDS Accelerator currently is limited to a maximum of 128-bits for storing or processing
+decimal values. This allows us to fully support the majority of decimal operations. But there are
+a few operations that we cannot support to the same degree as Spark can on the CPU.
+
+### Decimal Sum Aggregation
+
+A number of fixes for overflow detection went into Spark 3.1.0. Please see
+[SPARK-28067](https://issues.apache.org/jira/browse/SPARK-28067) and
+[SPARK-32018](https://issues.apache.org/jira/browse/SPARK-32018) for more detailed information.
+Some of these fixes we were able to back port, but some of them require Spark 3.1.0 or above to
+fully be able to detect overflow in all cases. As such on versions of Spark older than 3.1.0 for
+large decimal values there is the possibility of data corruption in some corner cases. 
+This is true for both the CPU and GPU implementations, but there are fewer of these cases for the 
+GPU. If this concerns you, you should upgrade to Spark 3.1.0 or above. 
+
+When Apache Spark does a sum aggregation on decimal values it will store the result in a value
+with a precision that is the input precision + 10, but with a maximum precision of 38.
+For an input precision of 9 and above, Spark will do the aggregations as a Java `BigDecimal`
+value which is slow, but guarantees that any overflow can be detected because it can work with
+effectively unlimited precision. For inputs with a precision of 8 or below Spark will internally do
+the calculations as a long value, 64-bits. When the precision is 8, you would need at least 
+174,467,442,482 values/rows contributing to a single aggregation result before the overflow is no
+longer detected. Even then all the values would need to be either the largest or the smallest value
+possible to be stored in the type for the overflow to cause data corruption.
+
+For the RAPIDS Accelerator we don't have direct access to unlimited precision for our calculations
+like the CPU does. For input values with a precision of 8 and below we follow Spark and process the
+data the same way, as a 64-bit value. For larger values we will do extra calculations looking at the
+higher order digits to be able to detect overflow in all cases. But because of this you may see
+some performance differences depending on the input precision used. The differences will show up
+when going from an input precision of 8 to 9 and again when going from an input precision of 28 to 29.
+
+### Decimal Average
+
+Average is effectively doing a `sum(input)/count(input)`, except the scale of the output type is
+the scale of the input + 4. As such it inherits some of the same issues that both sum and divide
+have. It also inherits some issues from Spark itself. See
+https://issues.apache.org/jira/browse/SPARK-37024 for a detailed description of some issues
+with average in Spark.
+
+In order to be able to guarantee doing the divide with half up rounding at the end we only support
+average on input values with a precision of 23 or below. This is 38 - 10 for the sum guarantees
+and then 5 less to be able to shift the left-hand side of the divide enough to get a correct
+answer that can be rounded to the result that Spark would produce.
+
+### Divide and Multiply
+
+Division and multiplication of decimal types is a little complicated in Apache Spark. For 
+some arbitrary reason divide and multiply in Spark require that the precision and scale of 
+the left-hand side and the right-hand side match. As such when planning a divide or multiply 
+Spark will look at the original inputs to calculate the output precision and scale. Then it will
+cast the inputs to a common wider value where the scale is the max of the two input scales,
+and the precision is max of the two input non-scale portions (precision - scale) + the new
+scale. Then it will do the divide or multiply as a `BigDecimal` value, and return the result as
+a `BigDecimal` but lie about the precision and scale of the return type. Finally, Spark will
+insert a `CheckOverflow` expression that will round the scale of the BigDecimal value to that
+of the desired output type and check that the final precision will fit in the precision of the
+desired output type. 
+
+In order to match exactly with what Spark is doing the RAPIDS Accelerator would need at least
+256-bit decimal values. We might implement that at some point, but until then we try to cover as
+much of division and multiplication as possible.
+
+To combat this we look at the query plan and try to determine what is the smallest precision
+and scale for each parameter that would let us still produce the exact same answer as Apache
+Spark. We effectively try to undo what Spark did when widening the types to make them common.
+
+#### Division
+
+In Spark the output of a division operation is
+
+```scala
+val precision = p1 - s1 + s2 + max(6, s1 + p2 + 1)
+val scale = max(6, s1 + p2 + 1)
+```
+
+Where `p1` and `s1` are the precision and scale of the left-hand side of the operation and
+`p2` and `s2` are the precision and scale of the right-hand side of the operation. But decimal
+divide inherently produces a result where the output scale is `s1 - s2`. In addition to this 
+Spark will round the result to the given scale, and not just truncate it. This means that to
+produce the same result as Apache Spark we have to increase the scale of the left-hand side
+operation to be at least `output_scale + s2 + 1`. The `+ 1` is so the output is large enough that
+we can round it to the desired result.  If this causes the precision of the left-hand side
+to go above 38, the maximum precision that 128-bits can hold, then we have to fall back to the
+CPU. Unfortunately the math is a bit complicated so there is no simple rule of thumb for this.
+
+#### Multiplication
+
+In Spark the output of a multiplication operation is
+
+```scala
+val precision = p1 + p2 + 1
+val scale = s1 + s2
+```
+
+Where `p1` and `s1` are the precision and scale of the left-hand side of the operation and
+`p2` and `s2` are the precision and scale of the right-hand side of the operation. Fortunately,
+decimal multiply inherently produces the same scale, but Spark will round the result. As such,
+the RAPIDS Accelerator must add an extra decimal place to the scale and the precision, so we can
+round correctly. This means that if `p1 + p2 > 36` we will fall back to the CPU to do processing. 
+
+### How to get more decimal operations on the GPU?
+
+Spark is very conservative in calculating the output types for decimal operations. It does this
+to avoid overflow in the worst case scenario, but generally will end up using a much larger type
+than is needed to store the final result. This means that over the course of a large query the
+precision and scale can grow to a size that would force the RAPIDS Accelerator to fall back
+to the CPU out of an abundance of caution. If you find yourself in this situation you can often
+cast the results to something smaller and still get the same answer. These casts should be done 
+with some knowledge about the data being processed.
+
+For example if we had a query like
+
+```sql
+SELECT SUM(cs_wholesale_cost * cs_quantity)/
+       SUM(cs_sales_price * cs_quantity) cost_to_sale
+  FROM catalog_sales
+  GROUP BY cs_sold_date_sk
+  ORDER BY cs_sold_date_sk
+```
+
+where `cs_wholesale_cost` and `cs_sale_price` are both decimal values with a precision of 7 
+and a scale of 2, `Decimal(7, 2)`, and `cs_quantity` is a 32-bit integer. Only the first half 
+of the query will be on the GPU. The following explanation is a bit complicated but tries to
+break down the processing into the distinct steps that Spark takes.
+
+  1. Multiplying a `Decimal(7, 2)` by an integer produces a `Decimal(18, 2)` value. This is the
+     same for both multiply operations in the query.
+  2. The `sum` operation on the resulting `Decimal(18, 2)` column produces a `Decimal(28, 2)`.
+     This also is the same for both sum aggregations in the query.
+  3. The final divide operation is dividing a `Decimal(28, 2)` by another `Decimal(28, 2)` and
+     produces a `Decimal(38, 10)`.
+
+We cannot guarantee that on the GPU the divide will produce the exact same result as
+the CPU for all possible inputs. But we know that we have at most 1,000,000 line items
+for each `cs_sold_date_sk`, and the average price/cost is no where close to the maximum
+value that `Decimal(7, 2)` can hold. So we can cast the result of the sums to a more
+reasonable `Decimal(14, 2)` and still produce an equivalent result, but totally on the GPU.
+
+```sql
+SELECT CAST(SUM(cs_wholesale_cost * cs_quantity) AS Decimal(14,2))/
+       CAST(SUM(cs_sales_price * cs_quantity) AS Decimal(14,2)) cost_to_sale
+  FROM catalog_sales
+  GROUP BY cs_sold_date_sk
+  ORDER BY cs_sold_date_sk
+```
+
+This should be done with some caution as it does reduce the range of values that the query could
+process before overflowing. It also can produce different result types. In this case instead of
+producing a `Decimal(38, 10)` the result is a `Decimal(31, 17)`. If you really want the exact
+same result type you can cast the result back to a `Decimal(38, 10)`, and the result will be
+identical to before. But, it can have a positive impact to performance.
+
+If you have made it this far in the documentation then you probably know what you are doing
+and will use the following power only for good. It can often be difficult to
+determine if adding casts to put some processing on the GPU would improve performance or not.
+It can also be difficult to detect if a query might produce incorrect results because of a cast.
+To help answer some of these questions we provide
+`spark.rapids.sql.decimalOverflowGuarantees` that if set to false will disable guarantees for
+overflow checking and run all decimal operations on the GPU, even if it cannot guarantee that
+it will produce the exact same result as Spark. This should **never** be set to false in
+production because it disables all guarantees, and if your data does overflow, it might produce
+either a `null` value or worse an incorrect decimal value. But, it should give you more
+information about what the performance impact might be if you tuned it with casting. If
+you compare the results to GPU results with the guarantees still in place it should give you 
+an idea if casting would still produce a correct answer. Even with this you should go through
+the query and your data and see what level of guarantees for outputs you are comfortable with.
+
 ## Unicode
 
 Spark delegates Unicode operations to the underlying JVM. Each version of Java complies with a
@@ -257,13 +434,53 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
 
-## Regular Expressions
-The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard
-matches.
+## LIKE
 
 If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
 the end of the string.  This will be fixed in a future release. The issue is
 [here](https://github.com/NVIDIA/spark-rapids/issues/119).
+
+## Regular Expressions
+
+The following Apache Spark regular expression functions and expressions are supported on the GPU:
+
+- `RLIKE`
+- `regexp`
+- `regexp_like`
+- `regexp_replace`
+
+These operations are disabled by default because of known incompatibilities between the Java regular expression 
+engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 
+kernels can potentially have high memory overhead.
+
+These operations can be enabled on the GPU with the following configuration settings:
+
+- `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
+- `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
+
+Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
+CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
+
+Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
+
+- Lazy quantifiers, such as `a*?`
+- Possessive quantifiers, such as `a*+`
+- Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
+  or `[a-z&&[^bc]]`
+- Word and non-word boundaries, `\b` and `\B`
+- Empty groups: `()`
+- Regular expressions containing null characters (unless the pattern is a simple literal string)
+- Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
+  with a choice (`^|a`) or when used anywhere in `regexp_replace` patterns.
+
+In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
+
+- `$` does not match the end of a string if the string ends with a line-terminator 
+  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
+- Character classes for negative matches have different behavior between CPU and GPU for multiline
+  strings. The pattern `[^a]` will match line-terminators on CPU but not on GPU.
+
+Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
 ## Timestamps
 
@@ -477,7 +694,8 @@ This configuration setting is ignored when using Spark versions prior to 3.1.0.
 ### Float to String
 
 The GPU will use different precision than Java's toString method when converting floating-point data
-types to strings and this can produce results that differ from the default behavior in Spark.
+types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
+`E`. As a result the computed string can differ from the default behavior in Spark.
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.
@@ -567,8 +785,57 @@ The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.approxPercentileEnabled=true`.
+`spark.rapids.sql.expression.ApproximatePercentile=true`.
 
-There are known issues with the approximate percentile implementation
-([#3706](https://github.com/NVIDIA/spark-rapids/issues/3706),
-[#3692](https://github.com/NVIDIA/spark-rapids/issues/3692)) and the feature should be considered experimental.
+There is also a known issue ([issue #4060](https://github.com/NVIDIA/spark-rapids/issues/4060)) where
+incorrect results are produced intermittently.
+
+## Conditionals and operations with side effects (ANSI mode)
+
+In Apache Spark condition operations like `if`, `coalesce`, and `case/when` lazily evaluate
+their parameters on a row by row basis. On the GPU it is generally more efficient to
+evaluate the parameters regardless of the condition and then select which result to return
+based on the condition. This is fine so long as there are no side effects caused by evaluating
+a parameter. For most expressions in Spark this is true, but in ANSI mode many expressions can
+throw exceptions, like for the `Add` expression if an overflow happens. This is also true of
+UDFs, because by their nature they are user defined and can have side effects like throwing
+exceptions.
+
+Currently, the RAPIDS Accelerator
+[assumes that there are no side effects](https://github.com/NVIDIA/spark-rapids/issues/3849).
+This can result it situations, specifically in ANSI mode, where the RAPIDS Accelerator will
+always throw an exception, but Spark on the CPU will not.  For example:
+
+```scala
+spark.conf.set("spark.sql.ansi.enabled", "true")
+
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val + 1) as ret")
+    .show()
+```
+
+If the above example is run on the CPU you will get a result like.
+```
++----+
+| ret|
++----+
+|   1|
+|null|
++----+
+```
+
+But if it is run on the GPU an overflow exception is thrown. As was explained before this
+is because the RAPIDS Accelerator will evaluate both `val + 1` and `null` regardless of
+the result of the condition. In some cases you can work around this. The above example
+could be re-written so the `if` happens before the `Add` operation.
+
+```scala
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val) + 1 as ret")
+    .show()
+```
+
+But this is not something that can be done generically and requires inner knowledge about
+what can trigger a side effect.

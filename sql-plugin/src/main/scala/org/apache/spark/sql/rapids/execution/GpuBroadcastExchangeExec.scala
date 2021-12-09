@@ -94,6 +94,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
         if (headers.isEmpty) {
           batchInternal = GpuColumnVector.emptyBatchFromTypes(dataTypes)
+          GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
         } else {
           withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
             val table = tableInfo.getContiguousTable
@@ -103,6 +104,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
             } else {
               batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
               GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
+              table.getBuffer.noWarnLeakExpected()
             }
           }
         }
@@ -251,9 +253,6 @@ class GpuBroadcastMeta(
             "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
       }
     }
-    // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
-    // previously stored on the spark plan to determine whether this exchange can run on GPU
-    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
 
   override def convertToGpu(): GpuExec = {

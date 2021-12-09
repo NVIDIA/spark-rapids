@@ -18,11 +18,12 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{GatherMap, NvtxColor}
+import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -280,7 +281,8 @@ abstract class SplittableJoinIterator(
   protected def makeGatherer(
       maps: Array[GatherMap],
       leftData: LazySpillableColumnarBatch,
-      rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+      rightData: LazySpillableColumnarBatch,
+      joinType: JoinType): Option[JoinGatherer] = {
     assert(maps.length > 0 && maps.length <= 2)
     try {
       val leftMap = maps.head
@@ -298,11 +300,37 @@ abstract class SplittableJoinIterator(
       val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
       val gatherer = rightMap match {
         case None =>
+          // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
+          // In these cases, the map and the table are both the left side, and everything in the map
+          // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
-          JoinGatherer(lazyLeftMap, leftData)
+          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
         case Some(right) =>
+          // Inner joins -- manifest the intersection of both left and right sides. The gather maps
+          //   contain the number of rows that must be manifested, and every index
+          //   must be within bounds, so we can skip the bounds checking.
+          //
+          // Left outer  -- Left outer manifests all rows for the left table. The left gather map
+          //   must contain valid indices, so we skip the check for the left side. The right side
+          //   has to be checked, since we need to produce nulls (for the right) for those
+          //   rows on the left side that don't have a match on the right.
+          //
+          // Right outer -- Is the opposite from left outer (skip right bounds check, keep left)
+          //
+          // Full outer  -- Can produce nulls for any left or right rows that don't have a match
+          //   in the opposite table. So we must check both gather maps.
+          //
+          val leftOutOfBoundsPolicy = joinType match {
+            case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
+            case _ => OutOfBoundsPolicy.NULLIFY
+          }
+          val rightOutOfBoundsPolicy = joinType match {
+            case _: InnerLike | RightOuter => OutOfBoundsPolicy.DONT_CHECK
+            case _ => OutOfBoundsPolicy.NULLIFY
+          }
           val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
-          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData)
+          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
+            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
       }
       if (gatherer.isDone) {
         // Nothing matched...

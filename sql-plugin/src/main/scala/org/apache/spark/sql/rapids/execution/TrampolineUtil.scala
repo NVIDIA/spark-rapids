@@ -18,10 +18,11 @@ package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
 
-import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
+import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
+import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -41,7 +42,8 @@ object TrampolineUtil {
     case _ => false
   }
 
-  def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
+  def unionLikeMerge(left: DataType, right: DataType): DataType =
+    ShimTrampolineUtil.unionLikeMerge(left, right)
 
   def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
 
@@ -59,6 +61,11 @@ object TrampolineUtil {
     } else {
       false
     }
+  }
+
+  def isDriver(sparkConf: SparkConf): Boolean = {
+    sparkConf.get(EXECUTOR_ID).map(_ == SparkContext.DRIVER_IDENTIFIER)
+      .getOrElse(isDriver(SparkEnv.get))
   }
 
   /**
@@ -138,4 +145,10 @@ object TrampolineUtil {
 
   /** Throw a Spark analysis exception */
   def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
+
+  /** Set the task context for the current thread */
+  def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)
+
+  /** Remove the task context for the current thread */
+  def unsetTaskContext(): Unit = TaskContext.unset()
 }

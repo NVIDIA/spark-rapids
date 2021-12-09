@@ -62,7 +62,7 @@ object JoinTypeChecks {
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
-    (cudfSupportedKeyTypes + TypeSig.ARRAY + TypeSig.MAP).nested()
+    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP).nested()
 
   val equiJoinExecChecks: ExecChecks = ExecChecks(
     joinRideAlongTypes,
@@ -295,7 +295,7 @@ class HashJoinIterator(
           throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
               s" supported")
       }
-      makeGatherer(maps, leftData, rightData)
+      makeGatherer(maps, leftData, rightData, joinType)
     }
   }
 

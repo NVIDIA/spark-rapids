@@ -116,7 +116,6 @@ object QualificationInfoUtils extends Logging {
   //   val normaliseCountry = spark.udf.register("normalisedCountry",cleanCountry)
   // doesn't seem to put anything unique in the plan
   def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
-    import spark.implicits._
     TrampolineUtil.withTempPath { jsonInputFile =>
       TrampolineUtil.withTempPath { jsonOutFile =>
         val userData = spark.createDataFrame(Seq(
@@ -141,10 +140,10 @@ object QualificationInfoUtils extends Logging {
   /*
    * Example command:
    * $SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g \
-   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-21.12.0-SNAPSHOT-tests.jar,\
-   *  ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-21.12.0-SNAPSHOT.jar \
+   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>-tests.jar,\
+   *  ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
    * --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoUtils \
-   * ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-21.12.0-SNAPSHOT-tests.jar udffunc \
+   * ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>-tests.jar udffunc \
    * /tmp/testeventlogDir 100001
    */
   def main(args: Array[String]): Unit = {
@@ -169,7 +168,6 @@ object QualificationInfoUtils extends Logging {
         .config("spark.eventLog.dir", eventDir)
         .getOrCreate()
     }
-    import spark.implicits._
     if (logType.toLowerCase.equals("dataset")) {
       genDatasetEventLog(spark, size)
     } else if (logType.toLowerCase.equals("udfds")) {

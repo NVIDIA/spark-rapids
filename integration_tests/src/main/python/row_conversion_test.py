@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float
+from marks import allow_non_gpu, approximate_float, incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import with_cpu_session
 
 
 # This is one of the most basic tests where we verify that we can
@@ -37,7 +38,8 @@ def test_row_conversions():
             ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])],
             ["q", simple_string_to_string_map_gen],
             ["r", MapGen(BooleanGen(nullable=False), ArrayGen(boolean_gen), max_length=2)],
-            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_scale_precision]]
+            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_scale_precision],
+            ["v", decimal_gen_36_5]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
@@ -67,3 +69,23 @@ def test_row_conversions_fixed_width_wide():
         return df
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+# Test handling of transitions when the data is already columnar on the host
+# Note that Apache Spark will automatically convert a load of nested types to rows, so
+# the nested types will not test a host columnar transition in that case.
+# Databricks does support returning nested types as columnar data on the host, and that
+# is where we would expect any problems with handling nested types in host columnar form to appear.
+@pytest.mark.parametrize('data_gen', [
+    int_gen,
+    string_gen,
+    decimal_gen_default,
+    decimal_gen_36_5,
+    ArrayGen(string_gen, max_length=10),
+    ArrayGen(decimal_gen_36_5, max_length=10),
+    StructGen([('a', string_gen)]) ] + map_string_string_gen, ids=idfn)
+@allow_non_gpu('ColumnarToRowExec', 'FileSourceScanExec')
+def test_host_columnar_transition(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(lambda spark : unary_op_df(spark, data_gen).write.parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).filter("a IS NOT NULL"),
+        conf={ 'spark.rapids.sql.exec.FileSourceScanExec' : 'false'})

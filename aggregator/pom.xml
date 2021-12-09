@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>21.12.0-SNAPSHOT</version>
+        <version>22.02.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>21.12.0-SNAPSHOT</version>
+    <version>22.02.0-SNAPSHOT</version>
 
     <properties>
         <!--
@@ -65,6 +65,23 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven.jar.plugin.version}</version>
+                <configuration>
+                    <archive>
+                        <!-- transient jar, writing compressed can take several x time -->
+                        <compress>false</compress>
+                    </archive>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>default-test-jar</id>
+                        <phase>none</phase>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <artifactSet>
@@ -83,9 +100,25 @@
                             <pattern>org.apache.hadoop.hive.</pattern>
                             <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
                             <excludes>
+                                <!--
+                                    Class exclusions for Hive UDFs, to avoid the ClassNotFoundException,
+                                    For example:
+                                        E Caused by: java.lang.ClassNotFoundException: com.nvidia.shaded.spark.hadoop.hive.serde2.objectinspector.ObjectInspector
+                                        E     at java.net.URLClassLoader.findClass(URLClassLoader.java:382)
+                                -->
                                 <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.FunctionRegistry</exclude>
                                 <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.UDFMethodResolver</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.UDFType</exclude>
                                 <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF$DeferredObject</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDFUtils$ConversionHelper</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory$ObjectInspectorOptions</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.StructField</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.typeinfo.TypeInfo</exclude>
                             </excludes>
                         </relocation>
                         <relocation>
@@ -120,44 +153,103 @@
                             </excludes>
                         </filter>
                     </filters>
+                    <createDependencyReducedPom>false</createDependencyReducedPom>
                 </configuration>
                 <executions>
-                    <!-- Unfortunately have to have 2 executions here to get dependency reduced pom.
-                         The shade plugin won't generate it when using the classifier and shadedArtifactAttached=true.
-                    -->
                     <execution>
-                        <id>main</id>
+                        <id>main-${spark.version.classifier}</id>
                         <phase>package</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
-                        <configuration>
-                            <createDependencyReducedPom>true</createDependencyReducedPom>
-                            <shadedArtifactAttached>false</shadedArtifactAttached>
-                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                        <phase>none</phase>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-test</id>
+                        <phase>none</phase>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-profile-src-30+</id>
+                        <phase>none</phase>
                     </execution>
                     <execution>
-                        <id>classifierversion</id>
+                        <id>add-profile-src-31+</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <!-- WORKAROUND: default-jar does not contain classes by design.
+                             there seems to be a race between shade and empty default-jar
+                             So attaching here manually because maven complains when we try
+                             to disable default-jar to resolve the conflict.-->
+                        <id>attach-shaded-with-spark-version</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>shade</goal>
+                            <goal>attach-artifact</goal>
                         </goals>
                         <configuration>
-                            <!-- note that the classifier version won't generate dependency reduce pom due to shadedArtifactAttached=true -->
-                            <createDependencyReducedPom>true</createDependencyReducedPom>
-                            <shadedArtifactAttached>true</shadedArtifactAttached>
-                            <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
+                            <artifacts>
+                                <artifact>
+                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
+                                    <type>jar</type>
+                                    <classifier>${spark.version.classifier}</classifier>
+                                </artifact>
+                            </artifacts>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
             <plugin>
-                <groupId>net.alchim31.maven</groupId>
-                <artifactId>scala-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <!-- keep for the case dependency-reduced pom is enabled -->
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>clean-reduced-dependency-poms</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skipDrpClean}</skip>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.basedir}</directory>
+                                    <includes>
+                                        <include>dependency-reduced-pom*.xml</include>
+                                    </includes>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -28,10 +28,10 @@ pytestmark = pytest.mark.premerge_ci_1
 basic_struct_gen = StructGen([
     ['child' + str(ind), sub_gen]
     for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default] + decimal_128_gens_no_neg)],
     nullable=False)
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -39,9 +39,10 @@ def test_map_keys(data_gen):
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
-                'map_keys(a)'))
+                'map_keys(a)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -49,9 +50,10 @@ def test_map_values(data_gen):
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
-                'map_values(a)'))
+                'map_values(a)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample  + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_entries(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -59,7 +61,8 @@ def test_map_entries(data_gen):
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
-                'map_entries(a)'))
+                'map_entries(a)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value(data_gen):
@@ -93,27 +96,43 @@ def test_map_expr_multiple_pairs():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key2", a) as m1',
-                'map(a, b, b, a) as m2'),
-                conf={'spark.rapids.sql.createMap.enabled':True})
+                'map(a, b, b, a) as m2'))
 
-@allow_non_gpu('ProjectExec,Alias,CreateMap,Literal')
-def test_map_expr_dupe_keys_fallback():
+def test_map_expr_expr_keys_dupe_last_win():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, a, b) as m2'),
+                conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
+def test_map_expr_expr_keys_dupe_exception():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_error(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, a, b) as m2').collect(),
+                conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+                error_message = "Duplicate map key")
+
+def test_map_expr_literal_keys_dupe_last_win():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key1", a) as m1'),
-                'ProjectExec',
-                conf={'spark.rapids.sql.createMap.enabled':True,
-                    'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+                conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
 
-@allow_non_gpu('ProjectExec,Alias,CreateMap,Literal')
-def test_map_expr_multi_non_literal_keys_fallback():
+def test_map_expr_literal_keys_dupe_exception():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_error(
             lambda spark : gen_df(spark, data_gen).selectExpr(
-                'map(a, b, b, a) as m1'),
-                'ProjectExec',
-                conf={'spark.rapids.sql.createMap.enabled':False})
+                'map("key1", b, "key1", a) as m1').collect(),
+                conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+                error_message = "Duplicate map key")
+
+def test_map_expr_multi_non_literal_keys():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, b, a) as m1'))
 
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
@@ -209,7 +228,7 @@ def test_transform_values(data_gen):
             conf=allow_negative_scale_of_decimal_conf)
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 def test_transform_keys(data_gen):
     # The processing here is very limited, because we need to be sure we do not create duplicate keys.
     # This can happen because of integer overflow, round off errors in floating point, etc. So for now

@@ -17,14 +17,9 @@
 package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
-import com.nvidia.spark.rapids.spark301db.RapidsShuffleManager
+import com.nvidia.spark.rapids.shims.v2._
 
-class Spark301dbShims extends SparkBaseShims {
+class Spark301dbShims extends Spark30XdbShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
 }

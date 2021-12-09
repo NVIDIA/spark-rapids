@@ -65,7 +65,7 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable w
   }
 }
 
-private object GpuRowToColumnConverter {
+private[rapids] object GpuRowToColumnConverter {
   // Sizes estimates for different things
   /*
    * size of an offset entry.  In general we have 1 more offset entry than rows, so
@@ -75,7 +75,7 @@ private object GpuRowToColumnConverter {
   private[this] val VALIDITY = 0.125 // 1/8th of a byte (1 bit)
   private[this] val VALIDITY_N_OFFSET = OFFSET + VALIDITY
 
-  private abstract class TypeConverter extends Serializable {
+  private[rapids] abstract class TypeConverter extends Serializable {
     /** Append row value to the column builder and return the number of data bytes written */
     def append(row: SpecializedGetters,
       column: Int,
@@ -92,7 +92,7 @@ private object GpuRowToColumnConverter {
   private def getConverterFor(field: StructField): TypeConverter =
     getConverterForType(field.dataType, field.nullable)
 
-  private def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
+  private[rapids] def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
     (dataType, nullable) match {
       case (BooleanType, true) => BooleanConverter
       case (BooleanType, false) => NotNullBooleanConverter
@@ -539,6 +539,12 @@ private object GpuRowToColumnConverter {
 
   private class DecimalConverter(
     precision: Int, scale: Int) extends NotNullDecimalConverter(precision, scale) {
+    private val appendedSize = if (precision <= Decimal.MAX_LONG_DIGITS) {
+      8 + VALIDITY
+    } else {
+      16 + VALIDITY
+    }
+
     override def append(
       row: SpecializedGetters,
       column: Int,
@@ -548,31 +554,30 @@ private object GpuRowToColumnConverter {
       } else {
         super.append(row, column, builder)
       }
-      8 + VALIDITY
+      appendedSize
     }
   }
 
   private class NotNullDecimalConverter(precision: Int, scale: Int) extends TypeConverter {
+    private val appendedSize = if (precision <= Decimal.MAX_INT_DIGITS) {
+      4
+    } else if (precision <= Decimal.MAX_LONG_DIGITS) {
+      8
+    } else {
+      16
+    }
+
     override def append(
       row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
-      builder.append(row.getDecimal(column, precision, scale).toJavaBigDecimal)
-      // We are basing our DType.DECIMAL on precision in GpuColumnVector#toRapidsOrNull so we can
-      // safely assume the underlying vector is Int if precision < 10 otherwise Long
-      if (precision <= Decimal.MAX_INT_DIGITS) {
-        4
-      } else {
-        8
-      }
+      val bigDecimal = row.getDecimal(column, precision, scale).toJavaBigDecimal
+      builder.append(bigDecimal)
+      appendedSize
     }
 
     override def getNullSize: Double = {
-      if (precision <= Decimal.MAX_INT_DIGITS) {
-        4
-      } else {
-        8
-      } + VALIDITY
+      appendedSize + VALIDITY
     }
   }
 }
@@ -716,6 +721,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
         case 2 => s"Platform.putShort(null, startAddress + $cudfOffset, Platform.getShort($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
         case 4 => s"Platform.putInt(null, startAddress + $cudfOffset, Platform.getInt($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
         case 8 => s"Platform.putLong(null, startAddress + $cudfOffset, Platform.getLong($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+//        case 16 => s"Platform.setDecimal(null, startAddress + $cudfOffset, getDecimal($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
         case _ => throw new IllegalStateException(s"$length  NOT SUPPORTED YET")
       }
       cudfOffset += length

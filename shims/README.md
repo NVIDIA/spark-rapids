@@ -26,7 +26,7 @@ In the following we provide recipes for typical scenarios addressed by the Shim 
 It's among the easiest issues to resolve. We define a method in SparkShims
 trait covering a superset of parameters from all versions and call it 
 ```
-ShimLoader.gerSparkShims.methodWithDiscrepancies(p_1, ..., p_n)
+ShimLoader.getSparkShims.methodWithDiscrepancies(p_1, ..., p_n)
 ```
 instead of referencing it directly. Shim implementations are in charge of dispatching it further 
 to correct version-dependent methods. Moreover, unlike in the below sections 
@@ -62,16 +62,16 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 
 Spark 3.0.2's URLs:
 ```
-jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :    
 ```
-jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes

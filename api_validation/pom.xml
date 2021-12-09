@@ -22,10 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>21.12.0-SNAPSHOT</version>
+        <version>22.02.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-api-validation</artifactId>
-    <version>21.12.0-SNAPSHOT</version>
+    <version>22.02.0-SNAPSHOT</version>
 
     <profiles>
        <profile>
@@ -127,6 +127,14 @@
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
+        <!-- use aggregator jar because accessing internal classes -->
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+            <scope>provided</scope>
+         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
@@ -136,7 +144,7 @@
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
-            <version>21.12.0-SNAPSHOT</version>
+            <version>22.02.0-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
@@ -149,7 +157,7 @@
             <configuration>
 			    <mainClass>com.nvidia.spark.rapids.api.ApiValidation</mainClass>
             </configuration>
-	    </plugin>	
+	    </plugin>
         </plugins>
     </build>
 </project>
