@@ -298,4 +298,13 @@ trait SparkShims {
   def timestampFormatInRead(csvOpts: CSVOptions): Option[String]
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
+
+  /**
+   * Determine if the Spark version allows the supportsColumnar flag to be overridden
+   * in AdaptiveSparkPlanExec. This feature was introduced in Spark 3.2 as part of
+   * SPARK-35881.
+   */
+  def supportsColumnarAdaptivePlans: Boolean
+
+  def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan
 }

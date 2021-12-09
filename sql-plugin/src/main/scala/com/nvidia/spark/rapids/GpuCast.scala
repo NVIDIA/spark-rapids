@@ -1345,24 +1345,30 @@ object GpuCast extends Arm {
     }
   }
 
+  def fixDecimalBounds(input: ColumnView,
+      outOfBounds: ColumnView,
+      ansiMode: Boolean): ColumnVector = {
+    if (ansiMode) {
+      withResource(outOfBounds.any()) { isAny =>
+        if (isAny.isValid && isAny.getBoolean) {
+          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+        }
+      }
+      input.copyToColumnVector()
+    } else {
+      withResource(Scalar.fromNull(input.getType)) { nullVal =>
+        outOfBounds.ifElse(nullVal, input)
+      }
+    }
+  }
+
   def checkNFixDecimalBounds(
       input: ColumnView,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
-      if (ansiMode) {
-        withResource(outOfBounds.any()) { isAny =>
-          if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-          }
-        }
-        input.copyToColumnVector()
-      } else {
-        withResource(Scalar.fromNull(input.getType)) { nullVal =>
-          outOfBounds.ifElse(nullVal, input)
-        }
-      }
+      fixDecimalBounds(input, outOfBounds, ansiMode)
     }
   }
 

@@ -27,7 +27,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCreateNamedStruct}
+import org.apache.spark.sql.rapids.{GpuAdd, GpuAggregateExpression, GpuCreateNamedStruct}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -630,6 +630,12 @@ trait GpuReplaceWindowFunction extends GpuWindowFunction {
    * in the future.
    */
   def windowReplacement(spec: GpuWindowSpecDefinition): Expression
+
+  /**
+   * Return true if windowReplacement should be called to replace this GpuWindowFunction with
+   * something else.
+   */
+  def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = true
 }
 
 /**
@@ -881,14 +887,17 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
 class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
     extends BatchedRunningWindowFixer with Arm with Logging {
   private val name = "sum"
-  private val binOp = BinaryOp.ADD
   private var previousResult: Option[Scalar] = None
+  private var previousOverflow: Option[Scalar] = None
 
-  def updateState(finalOutputColumn: cudf.ColumnVector): Unit = {
+  def updateState(finalOutputColumn: cudf.ColumnVector,
+      wasOverflow: Option[cudf.ColumnVector]): Unit = {
+    val lastIndex = finalOutputColumn.getRowCount.toInt - 1
     logDebug(s"$name: updateState from $previousResult to...")
     previousResult.foreach(_.close)
-    previousResult =
-      Some(finalOutputColumn.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
+    previousResult = Some(finalOutputColumn.getScalarElement(lastIndex))
+    previousOverflow.foreach(_.close())
+    previousOverflow = wasOverflow.map(_.getScalarElement(lastIndex))
     logDebug(s"$name: ... $previousResult")
   }
 
@@ -911,8 +920,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
       throw new IllegalArgumentException(s"Making a zero scalar for $other is not supported")
   }
 
-  override def fixUp(samePartitionMask: Either[cudf.ColumnVector, Boolean],
-      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+  private[this] def fixUpNonDecimal(samePartitionMask: Either[cudf.ColumnVector, Boolean],
       windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
     logDebug(s"$name: fix up $previousResult $samePartitionMask")
     val ret = (previousResult, samePartitionMask) match {
@@ -928,7 +936,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
               }
             }
             withResource(nullsReplaced) { nullsReplaced =>
-              nullsReplaced.binaryOp(binOp, prev, prev.getType)
+              nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)
             }
           } else {
             // prev is NULL but NULL + something == NULL which we don't want
@@ -948,7 +956,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             }
           }
           withResource(nullsReplaced) { nullsReplaced =>
-            withResource(nullsReplaced.binaryOp(binOp, prev, prev.getType)) { updated =>
+            withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
               mask.ifElse(updated, windowedColumnOutput)
             }
           }
@@ -958,15 +966,126 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         }
     }
     closeOnExcept(ret) { ret =>
-      updateState(ret)
+      updateState(ret, None)
+      ret
     }
-    toType match {
-      case dt: DecimalType =>
-        withResource(ret) { ret =>
-          GpuCast.checkNFixDecimalBounds(ret, dt, isAnsi)
+  }
+
+  private[this] def fixUpDecimal(samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      windowedColumnOutput: cudf.ColumnView,
+      dt: DecimalType): cudf.ColumnVector = {
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    val (ret, decimalOverflowOnAdd) = (previousResult, previousOverflow, samePartitionMask) match {
+      case (None, None, _) =>
+        // The mask is all false so do nothing
+        withResource(Scalar.fromBool(false)) { falseVal =>
+          closeOnExcept(ColumnVector.fromScalar(falseVal,
+            windowedColumnOutput.getRowCount.toInt)) { over =>
+            (incRef(windowedColumnOutput), over)
+          }
+        }
+      case (Some(prev), Some(previousOver), scala.util.Right(mask)) =>
+        if (mask) {
+          if (!prev.isValid) {
+            // So in the window operation we can have a null if all of the input values before it
+            // were also null or if we overflowed the result and inserted in a null.
+            //
+            // If we overflowed, then all of the output for this group should be null, but the
+            // overflow check code can handle inserting that, so just inc the ref count and return
+            // the overflow column.
+            //
+            // If we didn't overflow, and the input is null then
+            // prev is NULL but NULL + something == NULL which we don't want, so also
+            // just increment the reference count and go on.
+            closeOnExcept(ColumnVector.fromScalar(previousOver,
+              windowedColumnOutput.getRowCount.toInt)) { over =>
+              (incRef(windowedColumnOutput), over)
+            }
+          } else {
+            // The previous didn't overflow, so now we need to do the add and check for overflow.
+            val nullsReplaced = withResource(windowedColumnOutput.isNull) { nulls =>
+              withResource(makeZeroScalar(windowedColumnOutput.getType)) { zero =>
+                nulls.ifElse(zero, windowedColumnOutput)
+              }
+            }
+            withResource(nullsReplaced) { nullsReplaced =>
+              closeOnExcept(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { added =>
+                (added, GpuAdd.didDecimalOverflow(nullsReplaced, prev, added))
+              }
+            }
+          }
+        } else {
+          // The mask is all false so do nothing
+          withResource(Scalar.fromBool(false)) { falseVal =>
+            closeOnExcept(ColumnVector.fromScalar(falseVal,
+              windowedColumnOutput.getRowCount.toInt)) { over =>
+              (incRef(windowedColumnOutput), over)
+            }
+          }
+        }
+      case (Some(prev), Some(previousOver), scala.util.Left(mask)) =>
+        if (prev.isValid) {
+          // The previous didn't overflow, so now we need to do the add and check for overflow.
+          val nullsReplaced = withResource(windowedColumnOutput.isNull) { nulls =>
+            withResource(nulls.and(mask)) { shouldReplace =>
+              withResource(makeZeroScalar(windowedColumnOutput.getType)) { zero =>
+                shouldReplace.ifElse(zero, windowedColumnOutput)
+              }
+            }
+          }
+          withResource(nullsReplaced) { nullsReplaced =>
+            withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { added =>
+              closeOnExcept(mask.ifElse(added, windowedColumnOutput)) { updated =>
+                withResource(Scalar.fromBool(false)) { falseVal =>
+                  withResource(GpuAdd.didDecimalOverflow(nullsReplaced, prev, added)) { over =>
+                    (updated, mask.ifElse(over, falseVal))
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          // So in the window operation we can have a null if all of the input values before it
+          // were also null or if we overflowed the result and inserted in a null.
+          //
+          // If we overflowed, then all of the output for this group should be null, but the
+          // overflow check code can handle inserting that, so just inc the ref count and return
+          // the overflow column.
+          //
+          // If we didn't overflow, and the input is null then
+          // prev is NULL but NULL + something == NULL which we don't want, so also
+          // just increment the reference count and go on.
+          closeOnExcept(ColumnVector.fromScalar(previousOver,
+            windowedColumnOutput.getRowCount.toInt)) { over =>
+            (incRef(windowedColumnOutput), over)
+          }
         }
       case _ =>
-        ret
+        throw new IllegalStateException("INTERNAL ERROR: Should never have a situation where " +
+            "prev and previousOver do not match.")
+    }
+    withResource(ret) { ret =>
+      withResource(decimalOverflowOnAdd) { decimalOverflowOnAdd =>
+        withResource(DecimalUtil.outOfBounds(ret, dt)) { valOutOfBounds =>
+          withResource(valOutOfBounds.or(decimalOverflowOnAdd)) { outOfBounds =>
+            closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, isAnsi)) { replaced =>
+              updateState(replaced, Some(outOfBounds))
+              replaced
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def fixUp(samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+      windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
+    toType match {
+      case dt: DecimalType =>
+        fixUpDecimal(samePartitionMask, windowedColumnOutput, dt)
+      case _ =>
+        fixUpNonDecimal(samePartitionMask, windowedColumnOutput)
     }
   }
 

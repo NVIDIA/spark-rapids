@@ -28,7 +28,8 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeS
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
-import org.apache.spark.sql.rapids.aggregate.GpuSum
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.aggregate.GpuSumDefaults
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -176,14 +177,12 @@ trait GpuAggregateFunction extends GpuExpression
    */
   val evaluateExpression: Expression
 
-  /** Attributes of fields in aggBufferSchema. */
-  def aggBufferAttributes: Seq[AttributeReference]
-
   /**
-   * Result of the aggregate function when the input is empty. This is currently only used for the
-   * proper rewriting of distinct aggregate functions.
+   * This is the contract with the outside world. It describes what the output of postUpdate should
+   * look like, and what the input to preMerge looks like. It also describes what the output of
+   * postMerge must look like.
    */
-  def defaultResult: Option[GpuLiteral] = None
+  def aggBufferAttributes: Seq[AttributeReference]
 
   def sql(isDistinct: Boolean): String = {
     val distinct = if (isDistinct) "DISTINCT " else ""
@@ -196,19 +195,8 @@ trait GpuAggregateFunction extends GpuExpression
     prettyName + flatArguments.mkString(start, ", ", ")")
   }
 
-  /**
-   * Attributes of fields in input aggregation buffers (immutable aggregation buffers that are
-   * merged with mutable aggregation buffers in the merge() function or merge expressions).
-   * These attributes are created automatically by cloning the [[aggBufferAttributes]].
-   */
-  final lazy val inputAggBufferAttributes: Seq[AttributeReference] =
-    aggBufferAttributes.map(_.newInstance())
-
   /** An aggregate function is not foldable. */
   final override def foldable: Boolean = false
-
-  /** The schema of the aggregation buffer. */
-  def aggBufferSchema: StructType = null //not used in GPU version
 }
 
 case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
@@ -576,6 +564,75 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
 }
 
 /**
+ * All decimal processing in Spark has overflow detection as a part of it. Either it replaces
+ * the value with a null in non-ANSI mode, or it throws an exception in ANSI mode. Spark will also
+ * do the processing for larger values as `Decimal` values which are based on `BigDecimal` and have
+ * unbounded precision. So in most cases it is impossible to overflow/underflow so much that an
+ * incorrect value is returned. Spark will just use more and more memory to hold the value and
+ * then check for overflow at some point when the result needs to be turned back into a 128-bit
+ * value.
+ *
+ * We cannot do the same thing. Instead we take three strategies to detect overflow.
+ *
+ * 1. For decimal values with a precision of 8 or under we follow Spark and do the SUM
+ *    on the unscaled value as a long, and then bit-cast the result back to a Decimal value.
+ *    this means that we can SUM `174,467,442,481` maximum or minimum decimal values with a
+ *    precision of 8 before overflow can no longer be detected. It is much higher for decimal
+ *    values with a smaller precision.
+ * 2. For decimal values with a precision from 9 to 20 inclusive we sum them as 128-bit values.
+ *    this is very similar to what we do in the first strategy. The main differences are that we
+ *    use a 128-bit value when doing the sum, and we check for overflow after processing each batch.
+ *    In the case of group-by and reduction that happens after the update stage and also after each
+ *    merge stage. This gives us enough room that we can always detect overflow when summing a
+ *    single batch. Even on a merge where we could be doing the aggregation on a batch that has
+ *    all max output values in it.
+ * 3. For values from 21 to 28 inclusive we have enough room to not check for overflow on teh update
+ *    aggregation, but for the merge aggregation we need to do some extra checks. This is done by
+ *    taking the digits above 28 and sum them separately. We then check to see if they would have
+ *    overflowed the original limits. This lets us detect overflow in cases where the original
+ *    value would have wrapped around. The reason this works is because we have a hard limit on the
+ *    maximum number of values in a single batch being processed. `Int.MaxValue`, or about 2.2
+ *    billion values. So we use a precision on the higher values that is large enough to handle
+ *    2.2 billion values and still detect overflow. This equates to a precision of about 10 more
+ *    than is needed to hold the higher digits. This effectively gives us unlimited overflow
+ *    detection.
+ * 4. For anything larger than precision 28 we do the same overflow detection for strategy 3, but
+ *    also do it on the update aggregation. This lets us fully detect overflows in any stage of
+ *    an aggregation.
+ *
+ * Note that for Window operations either there is no merge stage or it only has a single value
+ * being merged into a batch instead of an entire batch being merged together. This lets us handle
+ * the overflow detection with what is built into GpuAdd.
+ */
+object GpuDecimalSumOverflow {
+  /**
+   * The increase in precision for the output of a SUM from the input. This is hard coded by
+   * Spark so we just have it here. This means that for most types without being limited to
+   * a precision of 38 you get 10-billion+ values before an overflow would even be possible.
+   */
+  val sumPrecisionIncrease: Int = 10
+
+  /**
+   * Generally we want a guarantee that is at least 10x larger than the original overflow.
+   */
+  val extraGuaranteePrecision: Int = 1
+
+  /**
+   * The precision above which we need extra overflow checks while doing an update. This is because
+   * anything above this precision could in theory overflow beyond detection within a single input
+   * batch.
+   */
+  val updateCutoffPrecision: Int = 28
+
+  /**
+   * This is the precision above which we need to do extra checks for overflow when merging
+   * results. This is because anything above this precision could in theory overflow a decimal128
+   * value beyond detection in a batch of already updated and checked values.
+   */
+  val mergeCutoffPrecision: Int = 20
+}
+
+/**
  * This is equivalent to what Spark does after a sum to check for overflow
  * `
  * If(isEmpty, Literal.create(null, resultType),
@@ -627,15 +684,122 @@ case class GpuCheckOverflowAfterSum(
   override def children: Seq[Expression] = Seq(data, isEmpty)
 }
 
-trait GpuSumBase extends GpuAggregateFunction with ImplicitCastInputTypes
-      with GpuBatchedRunningWindowWithFixer
-      with GpuAggregateWindowFunction
-      with GpuRunningWindowFunction {
+/**
+ * This extracts the highest digits from a Decimal value as a part of doing a SUM.
+ */
+case class GpuDecimalSumHighDigits(
+    input: Expression,
+    originalInputType: DecimalType) extends GpuExpression with ShimExpression {
 
-  val child: Expression
-  val resultType: DataType
-  val failOnErrorOverride: Boolean
-  val extraDecimalOverflowChecks: Boolean
+  override def nullable: Boolean = input.nullable
+
+  override def toString: String = s"GpuDecimalSumHighDigits($input)"
+
+  override def sql: String = input.sql
+
+  override val dataType: DecimalType = DecimalType(originalInputType.precision +
+      GpuDecimalSumOverflow.sumPrecisionIncrease + GpuDecimalSumOverflow.extraGuaranteePrecision -
+      GpuDecimalSumOverflow.updateCutoffPrecision, 0)
+  // Marking these as lazy because they are not serializable
+  private lazy val outputDType = GpuColumnVector.getNonNestedRapidsType(dataType)
+  private lazy val intermediateDType =
+    DType.create(DType.DTypeEnum.DECIMAL128, outputDType.getScale)
+
+  private lazy val divisionFactor: Decimal =
+    Decimal(math.pow(10, GpuDecimalSumOverflow.updateCutoffPrecision))
+  private val divisionType = DecimalType(38, 0)
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuProjectExec.projectSingle(batch, input)) { inputCol =>
+      val inputBase = inputCol.getBase
+      // We don't have direct access to 128 bit ints so we use a decimal with a scale of 0
+      // as a stand in.
+      val bitCastInputType = DType.create(DType.DTypeEnum.DECIMAL128, 0)
+      val divided = withResource(inputBase.bitCastTo(bitCastInputType)) { bitCastInput =>
+        withResource(GpuScalar.from(divisionFactor, divisionType)) { divisor =>
+          bitCastInput.div(divisor, intermediateDType)
+        }
+      }
+      val ret = withResource(divided) { divided =>
+        if (divided.getType.equals(outputDType)) {
+          divided.incRefCount()
+        } else {
+          divided.castTo(outputDType)
+        }
+      }
+      GpuColumnVector.from(ret, dataType)
+    }
+  }
+
+  override def children: Seq[Expression] = Seq(input)
+}
+
+/**
+ * Return a boolean if this decimal overflowed or not
+ */
+case class GpuDecimalDidOverflow(
+    data: Expression,
+    rangeType: DecimalType,
+    nullOnOverflow: Boolean) extends GpuExpression with ShimExpression {
+
+  override def nullable: Boolean = true
+
+  override def toString: String =
+    s"GpuDecimalDidOverflow($data, $rangeType, $nullOnOverflow)"
+
+  override def sql: String = data.sql
+
+  override def dataType: DataType = BooleanType
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+      val dataBase = dataCol.getBase
+      withResource(DecimalUtil.outOfBounds(dataBase, rangeType)) { outOfBounds =>
+        if (!nullOnOverflow) {
+          withResource(outOfBounds.any()) { isAny =>
+            if (isAny.isValid && isAny.getBoolean) {
+              throw new ArithmeticException("Overflow as a part of SUM")
+            }
+          }
+        } else {
+          GpuColumnVector.from(outOfBounds.incRefCount(), dataType)
+        }
+      }
+    }
+  }
+
+  override def children: Seq[Expression] = Seq(data)
+}
+
+case class GpuSum(child: Expression,
+    resultType: DataType,
+    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled,
+    forceWindowSumToNotBeReplaced: Boolean = false)
+    extends GpuAggregateFunction with ImplicitCastInputTypes
+        with GpuReplaceWindowFunction
+        with GpuBatchedRunningWindowWithFixer
+        with GpuAggregateWindowFunction
+        with GpuRunningWindowFunction {
+
+  private lazy val childIsDecimal: Boolean =
+    child.dataType.isInstanceOf[DecimalType]
+
+  private lazy val childDecimalType: DecimalType =
+    child.dataType.asInstanceOf[DecimalType]
+
+  private lazy val needsDec128MergeOverflowChecks: Boolean =
+    childIsDecimal && childDecimalType.precision > GpuDecimalSumOverflow.mergeCutoffPrecision
+
+  private lazy val needsDec128UpdateOverflowChecks: Boolean =
+    childIsDecimal &&
+        childDecimalType.precision > GpuDecimalSumOverflow.updateCutoffPrecision
+
+  // For some operations we need to SUm the higher digits in addition to the regular value so
+  // we can detect overflow. This is the type of the higher digits SUM value.
+  private lazy val higherDigitsCheckType: DecimalType = {
+    val t = resultType.asInstanceOf[DecimalType]
+    DecimalType(t.precision - GpuDecimalSumOverflow.updateCutoffPrecision, 0)
+  }
 
   private lazy val zeroDec = {
     val dt = resultType.asInstanceOf[DecimalType]
@@ -643,74 +807,198 @@ trait GpuSumBase extends GpuAggregateFunction with ImplicitCastInputTypes
   }
 
   override lazy val initialValues: Seq[GpuLiteral] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
+    case _: DecimalType if GpuSumDefaults.hasIsEmptyField =>
       Seq(zeroDec, GpuLiteral(true, BooleanType))
     case _ => Seq(GpuLiteral(null, resultType))
+  }
+
+  private lazy val updateHigherOrderBits = {
+    val input = if (child.dataType != resultType) {
+      GpuCast(child, resultType)
+    } else {
+      child
+    }
+    GpuDecimalSumHighDigits(input, childDecimalType)
   }
 
   // we need to cast to `resultType` here, since Spark is not widening types
   // as done before Spark 3.2.0. See CudfSum for more info.
   override lazy val inputProjection: Seq[Expression] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
-      // Spark tracks null columns through a second column isEmpty for decimal.
-      Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, resultType)), GpuIsNull(child))
+    case _: DecimalType =>
+      // Decimal is complicated...
+      if (GpuSumDefaults.hasIsEmptyField) {
+        // Spark tracks null columns through a second column isEmpty for decimal. So null values
+        // are replaced with 0, and a separate boolean column for isNull is added
+        if (needsDec128UpdateOverflowChecks) {
+          // If we want extra checks for overflow, then we also want to include it here
+          Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, resultType)),
+            GpuIsNull(child),
+            updateHigherOrderBits)
+        } else {
+          Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, resultType)), GpuIsNull(child))
+        }
+      } else {
+        if (needsDec128UpdateOverflowChecks) {
+          // If we want extra checks for overflow, then we also want to include it here
+          Seq(GpuCast(child, resultType), updateHigherOrderBits)
+        } else {
+          Seq(GpuCast(child, resultType))
+        }
+      }
     case _ => Seq(GpuCast(child, resultType))
   }
 
   private lazy val updateSum = new CudfSum(resultType)
   private lazy val updateIsEmpty = new CudfMin(BooleanType)
+  private lazy val updateOverflow = new CudfSum(updateHigherOrderBits.dataType)
 
   override lazy val updateAggregates: Seq[CudfAggregate] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
-      Seq(updateSum, updateIsEmpty)
+    case _: DecimalType =>
+      if (GpuSumDefaults.hasIsEmptyField) {
+        if (needsDec128UpdateOverflowChecks) {
+          Seq(updateSum, updateIsEmpty, updateOverflow)
+        } else {
+          Seq(updateSum, updateIsEmpty)
+        }
+      } else {
+        if (needsDec128UpdateOverflowChecks) {
+          Seq(updateSum, updateOverflow)
+        } else {
+          Seq(updateSum)
+        }
+      }
     case _ => Seq(updateSum)
   }
 
+  private[this] def extendedPostUpdateDecOverflowCheck(dt: DecimalType) =
+    GpuCheckOverflow(
+      GpuIf(
+        GpuDecimalDidOverflow(updateOverflow.attr,
+          higherDigitsCheckType,
+          !failOnErrorOverride),
+        GpuLiteral(null, dt),
+        updateSum.attr),
+      dt, !failOnErrorOverride)
+
   override lazy val postUpdate: Seq[Expression] = resultType match {
-    case dt: DecimalType if extraDecimalOverflowChecks =>
-      Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
+    case dt: DecimalType =>
+      if (GpuSumDefaults.hasIsEmptyField) {
+        if (needsDec128UpdateOverflowChecks) {
+          Seq(extendedPostUpdateDecOverflowCheck(dt), updateIsEmpty.attr)
+        } else {
+          Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
+        }
+      } else {
+        if (needsDec128UpdateOverflowChecks) {
+          Seq(extendedPostUpdateDecOverflowCheck(dt))
+        } else {
+          postUpdateAttr
+        }
+      }
     case _ => postUpdateAttr
   }
 
   // output of GpuSum
   private lazy val sum = AttributeReference("sum", resultType)()
+
   // Used for Decimal overflow detection
   private lazy val isEmpty = AttributeReference("isEmpty", BooleanType)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
+    case _: DecimalType if GpuSumDefaults.hasIsEmptyField =>
       sum :: isEmpty :: Nil
     case _ => sum :: Nil
   }
 
+  private lazy val mergeHigherOrderBits = GpuDecimalSumHighDigits(sum, childDecimalType)
+
   override lazy val preMerge: Seq[Expression] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
-      Seq(sum, isEmpty, GpuIsNull(sum))
+    case _: DecimalType =>
+      if (GpuSumDefaults.hasIsEmptyField) {
+        if (needsDec128MergeOverflowChecks) {
+          Seq(sum, isEmpty, GpuIsNull(sum), mergeHigherOrderBits)
+        } else {
+          Seq(sum, isEmpty, GpuIsNull(sum))
+        }
+      } else {
+        if (needsDec128MergeOverflowChecks) {
+          Seq(sum, mergeHigherOrderBits)
+        } else {
+          aggBufferAttributes
+        }
+      }
     case _ => aggBufferAttributes
   }
 
   private lazy val mergeSum = new CudfSum(resultType)
   private lazy val mergeIsEmpty = new CudfMin(BooleanType)
   private lazy val mergeIsOverflow = new CudfMax(BooleanType)
+  private lazy val mergeOverflow = new CudfSum(mergeHigherOrderBits.dataType)
 
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
   // what happens with isEmpty
   override lazy val mergeAggregates: Seq[CudfAggregate] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
-      Seq(mergeSum, mergeIsEmpty, mergeIsOverflow)
+    case _: DecimalType =>
+      if (GpuSumDefaults.hasIsEmptyField) {
+        if (needsDec128MergeOverflowChecks) {
+          Seq(mergeSum, mergeIsEmpty, mergeIsOverflow, mergeOverflow)
+        } else {
+          Seq(mergeSum, mergeIsEmpty, mergeIsOverflow)
+        }
+      } else {
+        if (needsDec128MergeOverflowChecks) {
+          Seq(mergeSum, mergeOverflow)
+        } else {
+          Seq(mergeSum)
+        }
+      }
     case _ => Seq(mergeSum)
   }
 
   override lazy val postMerge: Seq[Expression] = resultType match {
-    case _: DecimalType if extraDecimalOverflowChecks =>
-      Seq(GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, resultType), mergeSum.attr),
-        mergeIsEmpty.attr)
+    case dt: DecimalType =>
+      if (GpuSumDefaults.hasIsEmptyField) {
+        if (needsDec128MergeOverflowChecks) {
+          Seq(
+            GpuCheckOverflow(
+              GpuIf(
+                GpuOr(
+                  GpuDecimalDidOverflow(mergeOverflow.attr, higherDigitsCheckType,
+                    !failOnErrorOverride),
+                  mergeIsOverflow.attr),
+                GpuLiteral.create(null, resultType),
+                mergeSum.attr),
+              dt, !failOnErrorOverride),
+            mergeIsEmpty.attr)
+        } else {
+          Seq(
+            GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
+              GpuLiteral.create(null, resultType),
+              mergeSum.attr),
+              dt, !failOnErrorOverride),
+            mergeIsEmpty.attr)
+        }
+      } else {
+        if (needsDec128MergeOverflowChecks) {
+          Seq(
+            GpuCheckOverflow(
+              GpuIf(
+                GpuDecimalDidOverflow(mergeOverflow.attr, higherDigitsCheckType,
+                  !failOnErrorOverride),
+                GpuLiteral.create(null, resultType),
+                mergeSum.attr),
+              dt, !failOnErrorOverride))
+        } else {
+          postMergeAttr
+        }
+      }
+
     case _ => postMergeAttr
   }
 
   override lazy val evaluateExpression: Expression = resultType match {
     case dt: DecimalType =>
-      if (extraDecimalOverflowChecks) {
+      if (GpuSumDefaults.hasIsEmptyField) {
         GpuCheckOverflowAfterSum(sum, isEmpty, dt, !failOnErrorOverride)
       } else {
         GpuCheckOverflow(sum, dt, !failOnErrorOverride)
@@ -725,6 +1013,32 @@ trait GpuSumBase extends GpuAggregateFunction with ImplicitCastInputTypes
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu sum")
+
+  // Replacement Window Function
+  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = {
+    // We only will replace this if we think an update will fail. In the cases where we can
+    // handle a window function larger than a single batch, we already have merge overflow
+    // detection enabled.
+    !forceWindowSumToNotBeReplaced && needsDec128UpdateOverflowChecks
+  }
+
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // We need extra overflow checks for some larger decimal type. To do these checks we
+    // extract the higher digits and SUM them separately to see if they would overflow.
+    // If they do we know that the regular SUM also overflowed. If not we know that we can rely on
+    // the existing overflow code to detect it.
+    val regularSum = GpuWindowExpression(
+      GpuSum(child, resultType, failOnErrorOverride = failOnErrorOverride,
+        forceWindowSumToNotBeReplaced = true),
+      spec)
+    val highOrderDigitsSum = GpuWindowExpression(
+      GpuSum(
+        GpuDecimalSumHighDigits(GpuCast(child, resultType), childDecimalType),
+        higherDigitsCheckType,
+        failOnErrorOverride = failOnErrorOverride),
+      spec)
+    GpuIf(GpuIsNull(highOrderDigitsSum), GpuLiteral(null, resultType), regularSum)
+  }
 
   // GENERAL WINDOW FUNCTION
   // Spark 3.2.0+ stopped casting the input data to the output type before the sum operation

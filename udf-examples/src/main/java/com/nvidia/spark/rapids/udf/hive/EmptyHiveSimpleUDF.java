@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids.udf.hive;
 
 import org.apache.hadoop.hive.ql.exec.UDF;
 
-/** An empty Hive simple UDF returning the input directly for row-based UDF test only. */
+/** An empty Hive simple UDF returning the first input directly for row-based UDF test only. */
 public class EmptyHiveSimpleUDF extends UDF {
-  public String evaluate(String in) {
+  public String evaluate(String in, String in2) {
     return in;
   }
 }
