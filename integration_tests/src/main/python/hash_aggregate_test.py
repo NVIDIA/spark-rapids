@@ -1012,24 +1012,18 @@ def test_first_last_reductions_extra_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             # Coalesce and sort are to make sure that first and last, which are non-deterministic
             # become deterministic
-            lambda spark : unary_op_df(spark, data_gen)\
-                    .coalesce(1).selectExpr(
-                'first(a)',
-                'last(a)'),
-            conf = allow_negative_scale_of_decimal_conf)
-
-# TODO: https://github.com/NVIDIA/spark-rapids/issues/3221
-@allow_non_gpu('HashAggregateExec', 'SortAggregateExec',
-               'ShuffleExchangeExec', 'HashPartitioning',
-               'AggregateExpression', 'Alias', 'First', 'Last')
-@pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
-def test_first_last_reductions_nested_types_fallback(data_gen):
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: unary_op_df(spark, data_gen, num_slices=1)\
-                    .selectExpr('first(a)', 'last(a)', 'first(a, True)', 'last(a, True)'),
-            exist_classes='First,Last',
-            non_exist_classes='GpuFirst,GpuLast',
+            lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
+                'first(a)', 'last(a)'),
             conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
+def test_first_last_reductions_nested_types(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
