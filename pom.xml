@@ -982,7 +982,7 @@
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>
                                 </exec>
-                                <fail message="exec build-info.sh failed ${build-info.errorMsg}">
+                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
                                     <condition>
                                         <not>
                                             <equals arg1="${build-info.exitCode}" arg2="0"/>

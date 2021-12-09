@@ -57,7 +57,7 @@
                                     <arg value="${cuda.version}"/>
                                     <arg value="${spark312db.version}"/>
                                 </exec>
-                                <fail message="exec dependency-info.sh failed ${dependency-info.errorMsg}">
+                                <fail message="exec dependency-info.sh failed, exit code is ${dependency-info.exitCode}, error msg is ${dependency-info.errorMsg}">
                                     <condition>
                                         <not>
                                             <equals arg1="${dependency-info.exitCode}" arg2="0"/>
