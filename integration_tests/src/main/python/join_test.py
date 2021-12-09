@@ -15,7 +15,8 @@
 import pytest
 from pyspark.sql.functions import broadcast
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect,\
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
@@ -129,26 +130,30 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type, batch_siz
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Disabled for databricks because of lack of AQE support, and "
+                           "differences in BroadcastMode.transform")
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.parametrize('enable_aqe', [False, True] if not is_databricks_runtime() else [False], ids=idfn)
-def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type, enable_aqe):
+def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(broadcast(right), how=join_type)
     conf = copy_and_update(allow_negative_scale_of_decimal_conf,
-            {'spark.sql.adaptive.enabled': enable_aqe})
+            {'spark.sql.adaptive.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Disabled for databricks because of lack of AQE support, and "
+                           "differences in BroadcastMode.transform")
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.parametrize('enable_aqe', [False, True] if not is_databricks_runtime() else [False], ids=idfn)
-def test_empty_broadcast_hash_join(join_type, enable_aqe):
+def test_empty_broadcast_hash_join(join_type):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(right.hint("broadcast"), left.a == right.r_a, join_type)
     conf = copy_and_update(allow_negative_scale_of_decimal_conf,
-            {'spark.sql.adaptive.enabled': enable_aqe})
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+            {'spark.sql.adaptive.enabled': 'true'})
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, conf = conf)
 
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84

@@ -316,7 +316,6 @@ abstract class GpuBroadcastExchangeExecBase(
 
                 val d = data.collect()
                 val emptyRelation: Option[Any] = if (d.isEmpty) {
-
                   ShimLoader.getSparkShims.tryTransformIfEmptyRelation(mode)
                 } else {
                   None
