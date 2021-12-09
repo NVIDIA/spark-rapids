@@ -40,13 +40,10 @@ if_struct_gens_sample = [if_struct_gen,
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens + if_nested_gens + decimal_128_gens_no_neg, ids=idfn)
-@pytest.mark.parametrize('all_truefalse_opt', [True, False])
-def test_if_else(data_gen, all_truefalse_opt):
+@pytest.mark.parametrize('row_num', [2048, 30]) # Small row number can get all-true or all-false batch easily.
+def test_if_else(data_gen, row_num):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
-    row_num = 2048
-    if all_truefalse_opt:
-        row_num = 30 # Small row number can get all-true or all-false batch easily.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen, row_num).selectExpr(
                 'IF(TRUE, b, c)',
@@ -57,8 +54,7 @@ def test_if_else(data_gen, all_truefalse_opt):
                 'IF(a, b, {})'.format(s2),
                 'IF(a, {}, {})'.format(s1, s2),
                 'IF(a, b, {})'.format(null_lit),
-                'IF(a, {}, c)'.format(null_lit)),
-            conf={'spark.rapids.sql.opt.allTrueFalse.enabled': all_truefalse_opt})
+                'IF(a, {}, c)'.format(null_lit)))
 
 # Maps scalars are not really supported by Spark from python without jumping through a lot of hoops
 # so for now we are going to skip them
@@ -72,13 +68,8 @@ def test_if_else_map(data_gen):
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
-@pytest.mark.parametrize('all_truefalse_opt', [True, False])
-def test_case_when(data_gen, all_truefalse_opt):
-    row_num = 2048
-    if all_truefalse_opt:
-        row_num = 30 # Small row number can get all-true or all-false batch easily.
-    opt_conf = {'spark.rapids.sql.opt.allTrueFalse.enabled': all_truefalse_opt}
-    opt_conf.update(allow_negative_scale_of_decimal_conf)
+@pytest.mark.parametrize('row_num', [2048, 30]) # Small row number can get all-true or all-false batch easily.
+def test_case_when(data_gen, row_num):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
@@ -106,7 +97,7 @@ def test_case_when(data_gen, all_truefalse_opt):
                 f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
                 f.when(f.lit(False), f.col('_c0'))),
-            conf = opt_conf)
+            conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):

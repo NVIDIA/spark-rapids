@@ -2045,7 +2045,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue, conf.isAllTrueFalseOptEnabled)
+          GpuCaseWhen(branches, elseValue)
         }
       }),
     expr[If](
@@ -2066,7 +2066,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
-          GpuIf(boolExpr, trueExpr, falseExpr, conf.isAllTrueFalseOptEnabled)
+          GpuIf(boolExpr, trueExpr, falseExpr)
         }
       }),
     expr[Pow](

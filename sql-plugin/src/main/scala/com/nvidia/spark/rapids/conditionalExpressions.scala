@@ -54,9 +54,15 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
 
   protected def isAllTrue(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
+    if (col.getRowCount == 0) {
+      return true
+    }
+    if (col.hasNull) {
+      return false
+    }
     withResource(col.getBase.all()) { allTrue =>
-      // null is treated as false in Spark, but skipped by 'all()' method.
-      allTrue.isValid && allTrue.getBoolean && !col.hasNull
+      // Guaranteed there is at least one row and no nulls so result must be valid
+      allTrue.getBoolean
     }
   }
 
@@ -72,8 +78,7 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
 case class GpuIf(
     predicateExpr: Expression,
     trueExpr: Expression,
-    falseExpr: Expression,
-    optAllTrueFalse: Boolean = false) extends GpuConditionalExpression {
+    falseExpr: Expression) extends GpuConditionalExpression {
 
   @transient
   override lazy val inputTypesForMerging: Seq[DataType] = {
@@ -96,9 +101,8 @@ case class GpuIf(
     }
   }
 
-  @transient
-  private[this] lazy val func = if (optAllTrueFalse) {
-    (pred: GpuColumnVector, batch: ColumnarBatch) => {
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
       if (isAllTrue(pred)) {
         // All are true
         trueExpr.columnarEval(batch)
@@ -108,16 +112,6 @@ case class GpuIf(
       } else {
         computeIfElse(batch, pred, trueExpr, falseExpr.columnarEval(batch))
       }
-    }
-  } else {
-    (pred: GpuColumnVector, batch: ColumnarBatch) => {
-      computeIfElse(batch, pred, trueExpr, falseExpr.columnarEval(batch))
-    }
-  }
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
-      func(pred, batch)
     }
   }
 
@@ -129,8 +123,7 @@ case class GpuIf(
 
 case class GpuCaseWhen(
     branches: Seq[(Expression, Expression)],
-    elseValue: Option[Expression] = None,
-    optAllTrueFalse: Boolean) extends GpuConditionalExpression with Serializable {
+    elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
 
   override def children: Seq[Expression] = branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue
 
@@ -169,7 +162,7 @@ case class GpuCaseWhen(
   @transient
   private[this] lazy val trueExpressions = branches.map(_._2)
 
-  private def computeWithTrueFalseOpt(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch:ColumnarBatch): Any = {
     val size = branches.size
     val predictions = new Array[GpuColumnVector](size)
     var isAllPredsFalse = true
@@ -201,25 +194,6 @@ case class GpuCaseWhen(
       }
     }
   }
-
-  @transient
-  private[this] lazy val func = if (optAllTrueFalse) {
-    (batch: ColumnarBatch) => computeWithTrueFalseOpt(batch)
-  } else {
-    (batch: ColumnarBatch) => {
-      // `elseRet` will be closed in `computeIfElse`.
-      val elseRet = elseValue
-        .map(_.columnarEval(batch))
-        .getOrElse(GpuScalar(null, branches.last._2.dataType))
-      branches.foldRight[Any](elseRet) { case ((predicateExpr, trueExpr), falseRet) =>
-        withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
-          computeIfElse(batch, pred, trueExpr, falseRet)
-        }
-      }
-    }
-  }
-
-  override def columnarEval(batch: ColumnarBatch): Any = func(batch)
 
   override def toString: String = {
     val cases = branches.map { case (c, v) => s" WHEN $c THEN $v" }.mkString
