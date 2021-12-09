@@ -15,8 +15,7 @@
 import pytest
 from pyspark.sql.functions import broadcast
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect,\
-    assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
@@ -153,7 +152,7 @@ def test_empty_broadcast_hash_join(join_type):
         return left.join(right.hint("broadcast"), left.a == right.r_a, join_type)
     conf = copy_and_update(allow_negative_scale_of_decimal_conf,
             {'spark.sql.adaptive.enabled': 'true'})
-    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, conf = conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
