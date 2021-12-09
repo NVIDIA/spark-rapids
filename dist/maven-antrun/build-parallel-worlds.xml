@@ -121,6 +121,13 @@
         <concat destfile="${shimServiceFile}">
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
         </concat>
+
+        <!-- check shims revisions -->
+        <exec executable="${project.basedir}/scripts/check-shims-revisions.sh" failonerror="true"
+              dir="${project.build.directory}">
+            <arg value="${included_buildvers}"/>
+        </exec>
+
         <exec executable="${project.basedir}/scripts/binary-dedupe.sh" failonerror="true"
             dir="${project.build.directory}"/>
 

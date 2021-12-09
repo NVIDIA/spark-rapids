@@ -322,11 +322,13 @@ object GpuWindowExec extends Arm {
         // First pass replace any operations that should be totally replaced.
         val replacePass = expr.transformDown {
           case GpuWindowExpression(
-          GpuAggregateExpression(rep: GpuReplaceWindowFunction, _, _, _, _), spec) =>
+          GpuAggregateExpression(rep: GpuReplaceWindowFunction, _, _, _, _), spec)
+            if rep.shouldReplaceWindow(spec) =>
             // We don't actually care about the GpuAggregateExpression because it is ignored
             // by our GPU window operations anyways.
             rep.windowReplacement(spec)
-          case GpuWindowExpression(rep: GpuReplaceWindowFunction, spec) =>
+          case GpuWindowExpression(rep: GpuReplaceWindowFunction, spec)
+            if rep.shouldReplaceWindow(spec) =>
             rep.windowReplacement(spec)
         }
         // Second pass looks for GpuWindowFunctions and GpuWindowSpecDefinitions to build up
@@ -372,6 +374,8 @@ object GpuWindowExec extends Arm {
   def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
     case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RowFrame,
     GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))) => true
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RowFrame,
+    GpuSpecialFrameBoundary(UnboundedPreceding), GpuLiteral(value, _))) if value == 0 => true
     case _ => false
   }
 }

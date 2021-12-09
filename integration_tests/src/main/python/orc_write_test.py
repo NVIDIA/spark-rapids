@@ -152,3 +152,15 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             data_path,
             'DataWritingCommandExec',
             conf = {'spark.rapids.sql.format.orc.write.enabled': True})
+
+@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
+def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
+    def create_empty_df(spark, path):
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+        return gen_df(spark, gen_list, length=0).write.orc(path)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        create_empty_df,
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf={'spark.rapids.sql.format.orc.write.enabled': True})
