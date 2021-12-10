@@ -974,7 +974,7 @@ case class GpuRegExpExtract(
         withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
           withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
             withResource(str.getBase.isNull) { isNull =>
-              withResource(matches.ifElse(str.getBase.incRefCount(), emptyString)) {
+              withResource(matches.ifElse(str.getBase, emptyString)) {
                 isNull.ifElse(nullString, _)
               }
             }
@@ -987,10 +987,8 @@ case class GpuRegExpExtract(
           withResource(str.getBase.extractRe(cudfRegexPattern)) { extract =>
             withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
               withResource(str.getBase.isNull) { isNull =>
-                withResource(extract.getColumn(groupIndex - 1)) { extractedGroup =>
-                  withResource(matches.ifElse(extractedGroup.incRefCount(), emptyString)) {
-                    isNull.ifElse(nullString, _)
-                  }
+                withResource(matches.ifElse(extract.getColumn(groupIndex - 1), emptyString)) {
+                  isNull.ifElse(nullString, _)
                 }
               }
             }
