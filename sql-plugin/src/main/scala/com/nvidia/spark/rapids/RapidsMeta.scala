@@ -46,7 +46,7 @@ trait DataFromReplacementRule {
  * A version of DataFromReplacementRule that is used when no replacement rule can be found.
  */
 final class NoRuleDataFromReplacementRule extends DataFromReplacementRule {
-  override val operationName: String = "Not supported by GPU: "
+  override val operationName: String = ""
 
   override def confKey = "NOT_FOUND"
 
@@ -463,7 +463,7 @@ final class RuleNotFoundPartMeta[INPUT <: Partitioning](
   extends PartMeta[INPUT](part, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagPartForGpu(): Unit = {
-    willNotWorkOnGpu(s"GPU does not support the operator ${part.getClass}")
+    willNotWorkOnGpu(s"GPU does not currently support the operator ${part.getClass}")
   }
 
   override def convertToGpu(): GpuPartitioning =
@@ -498,7 +498,7 @@ final class RuleNotFoundScanMeta[INPUT <: Scan](
   extends ScanMeta[INPUT](scan, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagSelfForGpu(): Unit = {
-    willNotWorkOnGpu(s"GPU does not support the operator ${scan.getClass}")
+    willNotWorkOnGpu(s"GPU does not currently support the operator ${scan.getClass}")
   }
 
   override def convertToGpu(): Scan =
@@ -534,7 +534,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagSelfForGpu(): Unit = {
-    willNotWorkOnGpu(s"GPU does not support the operator ${cmd.getClass}")
+    willNotWorkOnGpu(s"GPU does not currently support the operator ${cmd.getClass}")
   }
 
   override def convertToGpu(): GpuDataWritingCommand =
@@ -795,7 +795,7 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
   extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagPlanForGpu(): Unit =
-    willNotWorkOnGpu(s"GPU does not support the operator ${plan.getClass}")
+    willNotWorkOnGpu(s"GPU does not currently support the operator ${plan.getClass}")
 
   override def convertToGpu(): GpuExec =
     throw new IllegalStateException("Cannot be converted to GPU")
