@@ -165,7 +165,7 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
   }
 
   def withMockContiguousTable[T](numRows: Long)(body: ContiguousTable => T): T = {
-    val rows: Seq[Integer] = (0 until numRows).map(Int.box)
+    val rows: Seq[Integer] = (0 until numRows.toInt).map(new Integer(_))
     withResource(ColumnVector.fromBoxedInts(rows:_*)) { cvBase =>
       cvBase.incRefCount()
       val gpuCv = GpuColumnVector.from(cvBase, IntegerType)
