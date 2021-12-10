@@ -831,6 +831,9 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     fileCatalog.allFiles().map(_.toFileStatus)
   }
 
+  override def isEmptyRelation(relation: Any): Boolean = false
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None
+
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TaskContext.get.taskMemoryManager())
 
