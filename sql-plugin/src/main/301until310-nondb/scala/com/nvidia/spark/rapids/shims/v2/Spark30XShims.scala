@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
@@ -47,7 +47,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class Spark30XShims extends Spark301util320Shims with Logging {
+abstract class Spark30XShims extends Spark301until320Shims with Logging {
   override def int96ParquetRebaseRead(conf: SQLConf): String =
     parquetRebaseRead(conf)
   override def int96ParquetRebaseWrite(conf: SQLConf): String =
@@ -381,5 +381,19 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
 
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.initialPlan
+  }
+
+  // this is to help with an optimization in Spark 3.1, so we disable it by default in Spark 3.0.x
+  override def isEmptyRelation(relation: Any): Boolean = false
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None
+
+  override def supportsColumnarAdaptivePlans: Boolean = false
+
+  override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan = {
+    // When the input is an adaptive plan we do not get to see the GPU version until
+    // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
+    // final operator and we can bypass this to keep the data columnar by inserting
+    // the [[AvoidAdaptiveTransitionToRow]] operator here
+    AvoidAdaptiveTransitionToRow(GpuRowToColumnarExec(a, goal))
   }
 }

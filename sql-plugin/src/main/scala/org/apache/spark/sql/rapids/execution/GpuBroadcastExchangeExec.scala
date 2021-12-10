@@ -351,28 +351,36 @@ abstract class GpuBroadcastExchangeExecBase(
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
               interruptOnCancel = true)
-            val batch = withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-              collectTime)) { _ =>
-              val data = child.executeColumnar().map(cb => try {
-                new SerializeBatchDeserializeHostBuffer(cb)
-              } finally {
-                cb.close()
-              })
-              val d = data.collect()
-              new SerializeConcatHostBuffersDeserializeBatch(d, output)
-            }
+            var dataSize = 0L
+            val broadcastResult =
+              withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
+                collectTime)) { _ =>
+                val childRdd = child.executeColumnar()
+                val data = childRdd.map(cb => try {
+                  new SerializeBatchDeserializeHostBuffer(cb)
+                } finally {
+                  cb.close()
+                })
 
-            val numRows = batch.numRows
-            checkRowLimit(numRows)
-            numOutputBatches += 1
-            numOutputRows += numRows
+                val d = data.collect()
+                val emptyRelation: Option[Any] = if (d.isEmpty) {
+                  ShimLoader.getSparkShims.tryTransformIfEmptyRelation(mode)
+                } else {
+                  None
+                }
 
+                emptyRelation.getOrElse({
+                  val batch = new SerializeConcatHostBuffersDeserializeBatch(d, output)
+                  val numRows = batch.numRows
+                  checkRowLimit(numRows)
+                  numOutputBatches += 1
+                  numOutputRows += numRows
+                  dataSize += batch.dataSize
+                  batch
+                })
+              }
             withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
                 buildTime)) { _ =>
-              // we only support hashjoin so this is a noop
-              // val relation = mode.transform(input, Some(numRows))
-              val dataSize = batch.dataSize
-
               gpuLongMetric("dataSize") += dataSize
               if (dataSize >= MAX_BROADCAST_TABLE_BYTES) {
                 throw new SparkException(
@@ -383,7 +391,7 @@ abstract class GpuBroadcastExchangeExecBase(
             val broadcasted = withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
                 broadcastTime)) { _ =>
               // Broadcast the relation
-              sparkContext.broadcast(batch.asInstanceOf[Any])
+              sparkContext.broadcast(broadcastResult)
             }
 
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)

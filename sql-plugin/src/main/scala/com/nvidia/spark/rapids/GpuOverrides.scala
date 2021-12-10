@@ -2294,14 +2294,7 @@ object GpuOverrides extends Logging {
       }),
     expr[First](
       "first aggregate operator", {
-        val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
-          Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
-        ).asInstanceOf[ExprChecksImpl]
-        // TODO: support GpuFirst on nested types for reduction
-        //  https://github.com/NVIDIA/spark-rapids/issues/3221
-        val nestedChecks = ContextChecks(
+        ExprChecks.aggNotWindow(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
@@ -2310,7 +2303,6 @@ object GpuOverrides extends Logging {
                 TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
-        ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
       (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -2321,14 +2313,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Last](
       "last aggregate operator", {
-        val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
-          Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
-        ).asInstanceOf[ExprChecksImpl]
-        // TODO: support GpuLast on nested types for reduction
-        // https://github.com/NVIDIA/spark-rapids/issues/3221
-        val nestedChecks = ContextChecks(
+        ExprChecks.aggNotWindow(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
@@ -2337,7 +2322,6 @@ object GpuOverrides extends Logging {
                 TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
-        ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
       (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =

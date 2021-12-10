@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuHashJoin, JoinTypeChecks, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastHelper, GpuHashJoin, JoinTypeChecks}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuBroadcastHashJoinMeta(
@@ -147,16 +147,17 @@ case class GpuBroadcastHashJoinExec(
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
-    val broadcastRelation = broadcastExchange
-        .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
+    val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
 
     val rdd = streamedPlan.executeColumnar()
+    val buildSchema = buildPlan.schema
     rdd.mapPartitions { it =>
       val stIt = new CollectTimeIterator("broadcast join stream", it, streamTime)
-      val builtBatch = broadcastRelation.value.batch
-      GpuColumnVector.extractBases(builtBatch).foreach(_.noWarnLeakExpected())
-      doJoin(builtBatch, stIt, targetSize, spillCallback,
-        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+      withResource(
+          GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)) { builtBatch =>
+        doJoin(builtBatch, stIt, targetSize, spillCallback,
+          numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+      }
     }
   }
 }
