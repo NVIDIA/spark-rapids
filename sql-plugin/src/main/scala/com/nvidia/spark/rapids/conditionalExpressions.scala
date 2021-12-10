@@ -69,7 +69,8 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
   protected def isAllFalse(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
     withResource(col.getBase.any()) { anyTrue =>
-      anyTrue.isValid && !anyTrue.getBoolean
+      // null values are considered false values in this context
+      !anyTrue.isValid || !anyTrue.getBoolean
     }
   }
 
@@ -105,10 +106,10 @@ case class GpuIf(
     withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
       if (isAllTrue(pred)) {
         // All are true
-        trueExpr.columnarEval(batch)
+        GpuExpressionsUtils.columnarEvalToColumn(trueExpr, batch)
       } else if (isAllFalse(pred)) {
         // All are false
-        falseExpr.columnarEval(batch)
+        GpuExpressionsUtils.columnarEvalToColumn(falseExpr, batch)
       } else {
         computeIfElse(batch, pred, trueExpr, falseExpr.columnarEval(batch))
       }
@@ -163,22 +164,19 @@ case class GpuCaseWhen(
   private[this] lazy val trueExpressions = branches.map(_._2)
 
   override def columnarEval(batch:ColumnarBatch): Any = {
-    val size = branches.size
-    val predictions = new Array[GpuColumnVector](size)
+    val predictions = new Array[GpuColumnVector](branches.size)
     var isAllPredsFalse = true
-    var i = 0
 
     withResource(predictions) { preds =>
-      while (i < size) {
-        // If any predication is the first all-true, then evaluate its true expression
-        // and return the result.
-        preds(i) = GpuExpressionsUtils.columnarEvalToColumn(branches(i)._1, batch)
-        val p = preds(i)
+      branches.zipWithIndex.foreach { case ((predExpr, trueExpr), i) =>
+        val p = GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)
+        preds(i) = p
         if (isAllPredsFalse && isAllTrue(p)) {
-          return trueExpressions(i).columnarEval(batch)
+          // If any predication is the first all-true, then evaluate its true expression
+          // and return the result.
+          return GpuExpressionsUtils.columnarEvalToColumn(trueExpr, batch)
         }
         isAllPredsFalse = isAllPredsFalse && isAllFalse(p)
-        i += 1
       }
 
       val elseRet = elseValue
@@ -186,7 +184,7 @@ case class GpuCaseWhen(
         .getOrElse(GpuScalar(null, branches.last._2.dataType))
       if (isAllPredsFalse) {
         // No predication has a true, so return the else value.
-        elseRet
+        GpuExpressionsUtils.resolveColumnVector(elseRet, batch.numRows())
       } else {
         preds.zip(trueExpressions).foldRight[Any](elseRet) { case ((p, trueExpr), falseRet) =>
           computeIfElse(batch, p, trueExpr, falseRet)

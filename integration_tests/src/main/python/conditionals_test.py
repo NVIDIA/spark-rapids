@@ -40,12 +40,13 @@ if_struct_gens_sample = [if_struct_gen,
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens + if_nested_gens + decimal_128_gens_no_neg, ids=idfn)
-@pytest.mark.parametrize('row_num', [2048, 30]) # Small row number can get all-true or all-false batch easily.
-def test_if_else(data_gen, row_num):
+@pytest.mark.parametrize('const_bool', [True, False, None])
+def test_if_else(data_gen, const_bool):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
+    bool_gen = BooleanGen(const_value=const_bool)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen, row_num).selectExpr(
+            lambda spark : three_col_df(spark, bool_gen, data_gen, data_gen).selectExpr(
                 'IF(TRUE, b, c)',
                 'IF(TRUE, {}, {})'.format(s1, null_lit),
                 'IF(FALSE, {}, {})'.format(s1, null_lit),
@@ -68,12 +69,15 @@ def test_if_else_map(data_gen):
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
-@pytest.mark.parametrize('row_num', [2048, 30]) # Small row number can get all-true or all-false batch easily.
-def test_case_when(data_gen, row_num):
+@pytest.mark.parametrize('const_bool', [True, False, None])
+def test_case_when(data_gen, const_bool):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
-    # we want lots of false
-    bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
+    if const_bool:
+        bool_gen = BooleanGen(const_value=const_bool)
+    else:
+        # we want lots of false
+        bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
     gen_cols = [('_b' + str(x), bool_gen) for x in range(0, num_cmps)]
     gen_cols = gen_cols + [('_c' + str(x), data_gen) for x in range(0, num_cmps)]
     gen = StructGen(gen_cols, nullable=False)
@@ -89,7 +93,7 @@ def test_case_when(data_gen, row_num):
     #    (scalar, column)
     # in sequence.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen, row_num).select(command,
+            lambda spark : gen_df(spark, gen).select(command,
                 f.when(f.col('_b0'), s1),
                 f.when(f.col('_b0'), f.col('_c0')).otherwise(f.col('_c1')),
                 f.when(f.col('_b0'), s1).otherwise(f.col('_c0')),

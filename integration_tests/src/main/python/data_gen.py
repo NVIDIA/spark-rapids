@@ -416,11 +416,16 @@ class DoubleGen(DataGen):
 
 class BooleanGen(DataGen):
     """Generate Bools (True/False)"""
-    def __init__(self, nullable=True):
+    def __init__(self, nullable=True, const_value=None):
         super().__init__(BooleanType(), nullable=nullable)
+        self.const_value = const_value
 
     def start(self, rand):
-        self._start(rand, lambda : bool(rand.getrandbits(1)))
+        if self.const_value:
+            make_boolean = lambda : bool(self.const_value)
+        else:
+            make_boolean = lambda : bool(rand.getrandbits(1))
+        self._start(rand, make_boolean)
 
 class StructGen(DataGen):
     """Generate a Struct"""
