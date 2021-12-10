@@ -9874,7 +9874,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>only a value greater than 0 is supported</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>

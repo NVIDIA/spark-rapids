@@ -900,7 +900,8 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val cudfRegexPattern = new CudfRegexTranspiler(replace = false).transpile(javaRegexpPattern)
+          val cudfRegexPattern = new CudfRegexTranspiler(replace = false)
+            .transpile(javaRegexpPattern)
           pattern = Some(cudfRegexPattern)
           numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
         } catch {
