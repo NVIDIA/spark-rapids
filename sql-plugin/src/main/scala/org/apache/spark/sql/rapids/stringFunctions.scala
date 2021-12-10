@@ -914,10 +914,10 @@ class GpuRegExpExtractMeta(
 
     val idx = expr.idx.asInstanceOf[Literal].value.asInstanceOf[Int]
     if (idx < 0) {
-      throw new IllegalArgumentException("The specified group index cannot be less than zero")
+      willNotWorkOnGpu("The specified group index cannot be less than zero")
     }
     if (idx > numGroups) {
-      throw new IllegalArgumentException(
+      willNotWorkOnGpu(
         s"Regex group count is $numGroups, but the specified group index is $idx")
     }
   }

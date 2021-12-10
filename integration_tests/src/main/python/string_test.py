@@ -547,6 +547,9 @@ def test_regexp_extract():
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
+# if we determine that the index is out of range we fall back to CPU and let
+# Spark take care of the error handling
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_negative():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_error(
@@ -555,6 +558,9 @@ def test_regexp_extract_idx_negative():
             error_message = "The specified group index cannot be less than zero",
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
+# if we determine that the index is out of range we fall back to CPU and let
+# Spark take care of the error handling
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_out_of_bounds():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_error(
