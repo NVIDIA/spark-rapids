@@ -329,6 +329,17 @@ def test_hash_reduction_sum_count_action(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100).agg(f.sum('b'))
     )
 
+# Make sure that we can do computation in the group by columns
+@ignore_order
+def test_computation_in_grpby_columns():
+    conf = {'spark.rapids.sql.batchSizeBytes' : '1000'}
+    data_gen = [
+            ('a', RepeatSeqGen(StringGen('a{1,20}'), length=50)),
+            ('b', short_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).groupby(f.substring(f.col('a'), 2, 10)).agg(f.sum('b')),
+        conf = conf)
+
 @shuffle_test
 @approximate_float
 @ignore_order
