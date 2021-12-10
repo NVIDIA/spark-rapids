@@ -547,6 +547,13 @@ def test_regexp_extract():
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
+def test_regexp_extract_no_match():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 1)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
 # if we determine that the index is out of range we fall back to CPU and let
 # Spark take care of the error handling
 @allow_non_gpu('ProjectExec', 'RegExpExtract')

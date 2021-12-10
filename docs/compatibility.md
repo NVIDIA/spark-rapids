@@ -446,9 +446,9 @@ The following Apache Spark regular expression functions and expressions are supp
 
 - `RLIKE`
 - `regexp`
+- `regexp_extract`
 - `regexp_like`
 - `regexp_replace`
-- `regexp_extract`
 
 These operations are disabled by default because of known incompatibilities between the Java regular expression 
 engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 

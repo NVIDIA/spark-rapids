@@ -912,13 +912,18 @@ class GpuRegExpExtractMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    val idx = expr.idx.asInstanceOf[Literal].value.asInstanceOf[Int]
-    if (idx < 0) {
-      willNotWorkOnGpu("The specified group index cannot be less than zero")
-    }
-    if (idx > numGroups) {
-      willNotWorkOnGpu(
-        s"Regex group count is $numGroups, but the specified group index is $idx")
+    expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        if (idx < 0) {
+          willNotWorkOnGpu("the specified group index cannot be less than zero")
+        }
+        if (idx > numGroups) {
+          willNotWorkOnGpu(
+            s"regex group count is $numGroups, but the specified group index is $idx")
+        }
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
     }
   }
 
