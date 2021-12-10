@@ -128,6 +128,16 @@ trait Spark32XShims extends SparkShims  with Logging {
     fileIndex.allFiles()
   }
 
+  override def isEmptyRelation(relation: Any): Boolean = relation match {
+    case EmptyHashedRelation => true
+    case arr: Array[InternalRow] if arr.isEmpty => true
+    case _ => false
+  }
+
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = {
+    Some(broadcastModeTransform(mode, Array.empty)).filter(isEmptyRelation)
+  }
+
   override final def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 

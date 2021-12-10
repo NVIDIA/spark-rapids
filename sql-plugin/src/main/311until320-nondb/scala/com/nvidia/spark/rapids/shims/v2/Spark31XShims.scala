@@ -27,11 +27,12 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
@@ -60,6 +61,17 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = {
+    Some(broadcastModeTransform(mode, Array.empty)).filter(isEmptyRelation)
+  }
+
+  override def isEmptyRelation(relation: Any): Boolean = relation match {
+    case EmptyHashedRelation => true
+    case arr: Array[InternalRow] if arr.isEmpty => true
+    case _ => false
+  }
+
   override def hasSeparateINT96RebaseConf: Boolean = true
 
   override def getScalaUDFAsExpression(
