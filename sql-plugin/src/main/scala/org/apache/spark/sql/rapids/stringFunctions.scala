@@ -803,6 +803,8 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
 
 abstract class GpuRegExpTernaryBase extends GpuTernaryExpression {
 
+  override def dataType: DataType = StringType
+
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuColumnVector,
@@ -854,8 +856,6 @@ case class GpuRegExpReplace(
     replaceExpr: Expression,
     cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes {
-
-  override def dataType: DataType = srcExpr.dataType
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
@@ -944,7 +944,6 @@ case class GpuRegExpExtract(
   override def second: Expression = regexp
   override def third: Expression = idx
 
-  override def dataType: DataType = StringType
   override def prettyName: String = "regexp_extract"
 
   override def doColumnar(
