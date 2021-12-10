@@ -884,13 +884,25 @@ class GpuRegExpExtractMeta(
   extends TernaryExprMeta[RegExpExtract](expr, conf, parent, rule) {
 
   private var pattern: Option[String] = None
+  private var numGroups = 0
 
   override def tagExprForGpu(): Unit = {
+
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+    }
+
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
+          val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          pattern = Some(new CudfRegexTranspiler(replace = false).transpile(str.toString))
+          val cudfRegexPattern = new CudfRegexTranspiler(replace = false).transpile(javaRegexpPattern)
+          pattern = Some(cudfRegexPattern)
+          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
@@ -900,9 +912,12 @@ class GpuRegExpExtractMeta(
     }
 
     val idx = expr.idx.asInstanceOf[Literal].value.asInstanceOf[Int]
-    if (idx == 0) {
-      // see https://github.com/NVIDIA/spark-rapids/issues/4284
-      willNotWorkOnGpu("idx 0 is not supported")
+    if (idx < 0) {
+      throw new IllegalArgumentException("The specified group index cannot be less than zero")
+    }
+    if (idx > numGroups) {
+      throw new IllegalArgumentException(
+        s"Regex group count is $numGroups, but the specified group index is $idx")
     }
   }
 
@@ -936,11 +951,7 @@ case class GpuRegExpExtract(
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
 
-    val i = idx.getValue.asInstanceOf[Int]
-
-    if (i == 0) {
-      throw new IllegalStateException("idx 0 is not supported")
-    }
+    val groupIndex = idx.getValue.asInstanceOf[Int]
 
     // There are some differences in behavior between cuDF and Java so we have
     // to handle those cases here.
@@ -957,15 +968,28 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-        withResource(str.getBase.extractRe(cudfRegexPattern)) { extract =>
+    if (groupIndex == 0) {
+      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
           withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
             withResource(str.getBase.isNull) { isNull =>
-              withResource(extract.getColumn(i - 1)) { extractedGroup =>
-                withResource(matches.ifElse(extractedGroup.incRefCount(), emptyString)) {
-                    extractedOrEmpty =>
-                  isNull.ifElse(nullString, extractedOrEmpty)
+              withResource(matches.ifElse(str.getBase.incRefCount(), emptyString)) {
+                isNull.ifElse(nullString, _)
+              }
+            }
+          }
+        }
+      }
+    } else {
+      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+          withResource(str.getBase.extractRe(cudfRegexPattern)) { extract =>
+            withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
+              withResource(str.getBase.isNull) { isNull =>
+                withResource(extract.getColumn(groupIndex - 1)) { extractedGroup =>
+                  withResource(matches.ifElse(extractedGroup.incRefCount(), emptyString)) {
+                    isNull.ifElse(nullString, _)
+                  }
                 }
               }
             }
