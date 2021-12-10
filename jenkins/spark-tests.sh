@@ -114,7 +114,8 @@ export SPARK_TASK_MAXFAILURES=1
 [[ "$IS_SPARK_311_OR_LATER" -eq "0" ]] && SPARK_TASK_MAXFAILURES=4
 
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
-
+# enable worker cleanup to avoid "out of space" issue
+# if failed, we abort the test instantly, so the failed executor log should still be left there for debugging
 export SPARK_WORKER_OPTS="$SPARK_WORKER_OPTS -Dspark.worker.cleanup.enabled=true -Dspark.worker.cleanup.interval=120 -Dspark.worker.cleanup.appDataTtl=60"
 #stop and restart SPARK ETL
 stop-slave.sh
@@ -160,7 +161,7 @@ export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
-run_test() {
+run_test_not_parallel() {
     local TEST=${1//\.py/}
     local LOG_FILE
     case $TEST in
@@ -199,7 +200,7 @@ run_test() {
         ;;
     esac
 }
-export -f run_test
+export -f run_test_not_parallel
 
 # TEST_MODE
 # - IT_ONLY
@@ -209,9 +210,15 @@ TEST_MODE=${TEST_MODE:-'IT_ONLY'}
 if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
+    # We separate tests/cases into different categories for parallel run to try avoid long tail distribution
+    # time_consuming_tests: tests that would cost over 1 hour if run sequentially, we split them into cases (time_consuming_tests_cases)
+    # mem_consuming_cases: cases in time_consuming_tests that would consume much more GPU memory than normal cases
+    # other_tests: tests except time_consuming_tests_cases and mem_consuming_cases
+
+    # TODO: Tag these tests/cases
     # time-consuming tests, space-separated
     time_consuming_tests="join_test hash_aggregate_test generate_expr_test parquet_write_test orc_test orc_write_test"
-    # memory-consuming cases in time-consuming tests, space-separated
+    # GPU memory-consuming cases in time_consuming_tests, space-separated
     mem_consuming_cases="test_hash_reduction_decimal_overflow_sum"
     # hardcode parallelism as 2 for gpu-mem consuming cases
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.45 \
@@ -219,7 +226,7 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
     #                      we can set it to "never" and print failed ones after finish running all tests if needed
     # --group: print stderr after test finished for better readability
-    parallel --group --halt "now,fail=1" -j2 run_test ::: ${mem_consuming_cases}
+    parallel --group --halt "now,fail=1" -j2 run_test_not_parallel ::: ${mem_consuming_cases}
 
     time_consuming_tests_str=$(echo ${time_consuming_tests} | xargs | sed 's/ / or /g')
     mem_consuming_cases_str=$(echo ${mem_consuming_cases} | xargs | sed 's/ / and not /g')
@@ -237,29 +244,29 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
     --conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"
-    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test ::: $tests
+    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test_not_parallel ::: $tests
   else
-    run_test all
+    run_test_not_parallel all
   fi
 
   if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
     if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
       cache_test_cases=$(./run_pyspark_from_build.sh -k "cache_test" \
                             --collect-only -qq 2>/dev/null | grep -oP '(?<=::).*?(?=\[)' | uniq | shuf | xargs)
-      # hardcode parallelism as 4
+      # hardcode parallelism as 5
       export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
       --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
       --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
-      parallel --group --halt "now,fail=1" -j5 run_test ::: ${cache_test_cases}
+      parallel --group --halt "now,fail=1" -j5 run_test_not_parallel ::: ${cache_test_cases}
     else
-      run_test cache_serializer
+      run_test_not_parallel cache_serializer
     fi
   fi
 fi
 
 # cudf_udf_test
 if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
-  run_test cudf_udf_test
+  run_test_not_parallel cudf_udf_test
 fi
 
 popd
