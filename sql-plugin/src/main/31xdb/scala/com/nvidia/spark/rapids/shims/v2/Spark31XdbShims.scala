@@ -636,9 +636,9 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = ShimLoader.loadClass(serName)
     if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan)
+      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
     } else {
-      GpuColumnarToRowExec(plan)
+      GpuColumnarToRowExec(plan, exportColumnRdd)
     }
   }
 
@@ -830,6 +830,9 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileCatalog.allFiles().map(_.toFileStatus)
   }
+
+  override def isEmptyRelation(relation: Any): Boolean = false
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TaskContext.get.taskMemoryManager())
