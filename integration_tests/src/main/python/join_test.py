@@ -78,10 +78,13 @@ _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
 # than the number of splits * broadcast threshold and also be at least
 # 3 times smaller than the other side.  So it is not likely to happen
 # unless we can give it some help.
+# To enable replacement of conditional hash joins with nested loop join,
+# set "spark.rapids.sql.replaceConditionalHashJoin.enabled" = "true"
 _hash_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '160',
                    'spark.sql.join.preferSortMergeJoin': 'false',
                    'spark.sql.shuffle.partitions': '2',
-                   'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
+                   'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                   'spark.rapids.sql.replaceConditionalHashJoin.enabled': 'true'
                   }
 
 def create_df(spark, data_gen, left_length, right_length):

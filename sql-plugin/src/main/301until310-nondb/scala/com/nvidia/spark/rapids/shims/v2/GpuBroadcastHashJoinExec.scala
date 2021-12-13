@@ -45,8 +45,9 @@ class GpuBroadcastHashJoinMeta(
   val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  def isAstCondition(): Boolean = {
-    join.condition.isDefined && conditionMeta.forall(_.canThisBeAst)
+  def canReplaceWithNestedLoopJoin(): Boolean = {
+    conf.enableReplaceConditionalHashJoin && join.condition.isDefined &&
+        conditionMeta.forall(_.canThisBeAst)
   }
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
@@ -63,7 +64,11 @@ class GpuBroadcastHashJoinMeta(
       this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
     }
     def unSupportNonEqualNonAst(): Unit = if (join.condition.isDefined) {
-      conditionMeta.foreach(requireAstForGpuOn)
+      if (conf.enableReplaceConditionalHashJoin) {
+        conditionMeta.foreach(requireAstForGpuOn)
+      } else {
+        this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+      }
     }
     def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
       this.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
@@ -85,7 +90,7 @@ class GpuBroadcastHashJoinMeta(
     }
     // If there is an AST condition, we need to make sure the build side works for
     // GpuBroadcastNestedLoopJoin
-    if (isAstCondition()) {
+    if (canReplaceWithNestedLoopJoin()) {
       joinType match {
         case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
           willNotWorkOnGpu(s"build left not supported for conditional ${joinType}")
@@ -122,7 +127,7 @@ class GpuBroadcastHashJoinMeta(
 
     val substituteBroadcastNestedLoopJoin: Boolean = join.joinType match {
       case RightOuter | LeftOuter | LeftSemi | LeftAnti  =>
-        isAstCondition()
+        canReplaceWithNestedLoopJoin()
       case _ => false
     }
 
