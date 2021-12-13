@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.TestUtils.findOperator
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.broadcast
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuHashJoin}
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin}
 
 class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
@@ -69,33 +69,6 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
           ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(finalPlan2.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildRight)
       }
-    })
-  }
-
-  test("replace AST GpuBroadCastHashJoin with GpuBroadcastNestedLoopJoin") {
-    withGpuSparkSession(spark => {
-      longsDf(spark).createOrReplaceTempView("t")
-      longsDf(spark).createOrReplaceTempView("u")
-
-      val plan1 = spark.sql(s"SELECT /*+ BROADCAST(t) */ * FROM t JOIN u ON t.longs <= u.longs")
-      val plan2 = spark.sql(s"SELECT /*+ BROADCAST(u) */ * FROM t JOIN u ON t.longs > u.longs")
-
-      // execute the plan so that the final adaptive plan is available when AQE is on
-      plan1.collect()
-
-      val finalPlan1 = findOperator(plan1.queryExecution.executedPlan,
-        _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
-      assert(
-        finalPlan1.get.asInstanceOf[GpuBroadcastNestedLoopJoinExecBase]
-            .getGpuBuildSide == GpuBuildLeft)
-
-      // execute the plan so that the final adaptive plan is available when AQE is on
-      plan2.collect()
-      val finalPlan2 = findOperator(plan2.queryExecution.executedPlan,
-        _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
-      assert(
-        finalPlan2.get.asInstanceOf[GpuBroadcastNestedLoopJoinExecBase]
-            .getGpuBuildSide == GpuBuildRight)
     })
   }
 }

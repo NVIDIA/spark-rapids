@@ -56,7 +56,6 @@ class GpuBroadcastHashJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
 
   override def tagPlanForGpu(): Unit = {
-    //GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
     val joinType = join.joinType
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
     val gpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
@@ -88,11 +87,11 @@ class GpuBroadcastHashJoinMeta(
     // If there is an AST condition, we need to make sure the build side works for
     // GpuBroadcastNestedLoopJoin
     if (isAstCondition()) {
-      join.joinType match {
+      joinType match {
         case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
-          willNotWorkOnGpu(s"build left not supported for conditional ${join.joinType}")
+          willNotWorkOnGpu(s"build left not supported for conditional ${joinType}")
         case RightOuter if gpuBuildSide == GpuBuildRight =>
-          willNotWorkOnGpu(s"build right not supported for conditional ${join.joinType}")
+          willNotWorkOnGpu(s"build right not supported for conditional ${joinType}")
         case _ =>
       }
     }
@@ -122,7 +121,6 @@ class GpuBroadcastHashJoinMeta(
     }
     verifyBuildSideWasReplaced(buildSide)
 
-    val condition = conditionMeta.map(_.convertToGpu())
     val substituteBroadcastNestedLoopJoin: Boolean = join.joinType match {
       case RightOuter | LeftOuter | LeftSemi | LeftAnti  =>
         isAstCondition()
@@ -130,12 +128,11 @@ class GpuBroadcastHashJoinMeta(
     }
 
     if (substituteBroadcastNestedLoopJoin) {
-      val joinExec = ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
+      ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
         left, right, gpuBuildSide,
         join.joinType,
-        condition,
+        conditionMeta.map(_.convertToGpu()),
         conf.gpuTargetBatchSizeBytes)
-      joinExec
     } else {
       val joinExec = GpuBroadcastHashJoinExec(
         leftKeys.map(_.convertToGpu()),
