@@ -70,7 +70,10 @@ def test_if_else_map(data_gen):
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
 def test_case_when(data_gen):
-    num_cmps = 20
+    # Change the number from 20 to 10 to reduce the memory size used in premerge build.
+    # The previous value took about 44GB memory, almost reaching the upper
+    # limitation(50G), which will cause the killing.
+    num_cmps = 10
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
     bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
