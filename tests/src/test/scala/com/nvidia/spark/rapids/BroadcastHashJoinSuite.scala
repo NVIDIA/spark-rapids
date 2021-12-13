@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.TestUtils.findOperator
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.broadcast
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin}
+import org.apache.spark.sql.rapids.execution.GpuHashJoin
 
 class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
