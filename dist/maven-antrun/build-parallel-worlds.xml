@@ -122,19 +122,6 @@
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
         </concat>
 
-        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-              dir="${project.build.directory}"
-              resultproperty="build-parallel-worlds.dedupeExitCode"
-              errorproperty="build-parallel-worlds.dedupeErrorMsg"
-              failonerror="false"/>
-        <fail message="exec binary-dedupe.sh failed, exit code is ${build-parallel-worlds.dedupeExitCode}, error msg is ${build-parallel-worlds.dedupeErrorMsg}">
-            <condition>
-                <not>
-                    <equals arg1="${build-parallel-worlds.dedupeExitCode}" arg2="0"/>
-                </not>
-            </condition>
-        </fail>
-
         <!-- check shims revisions -->
         <exec executable="${project.basedir}/scripts/check-shims-revisions.sh"
               dir="${project.build.directory}"
@@ -147,6 +134,19 @@
             <condition>
                 <not>
                     <equals arg1="${build-parallel-worlds.checkRevisionsExitCode}" arg2="0"/>
+                </not>
+            </condition>
+        </fail>
+
+        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+              dir="${project.build.directory}"
+              resultproperty="build-parallel-worlds.dedupeExitCode"
+              errorproperty="build-parallel-worlds.dedupeErrorMsg"
+              failonerror="false"/>
+        <fail message="exec binary-dedupe.sh failed, exit code is ${build-parallel-worlds.dedupeExitCode}, error msg is ${build-parallel-worlds.dedupeErrorMsg}">
+            <condition>
+                <not>
+                    <equals arg1="${build-parallel-worlds.dedupeExitCode}" arg2="0"/>
                 </not>
             </condition>
         </fail>
