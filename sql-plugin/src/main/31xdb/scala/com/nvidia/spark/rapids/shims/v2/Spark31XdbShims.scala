@@ -636,9 +636,9 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = ShimLoader.loadClass(serName)
     if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan)
+      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
     } else {
-      GpuColumnarToRowExec(plan)
+      GpuColumnarToRowExec(plan, exportColumnRdd)
     }
   }
 
