@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
@@ -537,6 +537,69 @@ def test_regexp_replace_character_set_negated():
                 'regexp_replace(a, "[^\r]", "1")',
                 'regexp_replace(a, "[^\n]", "1")'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_regexp_extract():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 1)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 2)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_no_match():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 0)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 1)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 2)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 3)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+# if we determine that the index is out of range we fall back to CPU and let
+# Spark take care of the error handling
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
+def test_regexp_extract_idx_negative():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", -1)').collect(),
+            error_message = "The specified group index cannot be less than zero",
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+# if we determine that the index is out of range we fall back to CPU and let
+# Spark take care of the error handling
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
+def test_regexp_extract_idx_out_of_bounds():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 4)').collect(),
+            error_message = "Regex group count is 3, but the specified group index is 4",
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_multiline():
+    gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([\r\n]*)", 2)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_multiline_negated_character_class():
+    gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([^a-z]*)([a-d]*)$", 2)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_idx_0():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 0)',
+                'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)$", 0)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
