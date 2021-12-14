@@ -392,9 +392,6 @@ class AdaptiveQueryExecSuite
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-      .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
-      .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec")
 
     withGpuSparkSession(spark => {
       import spark.implicits._
