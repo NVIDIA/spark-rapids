@@ -41,6 +41,8 @@ trait GpuUserDefinedFunction extends GpuExpression
   /** True if the UDF is deterministic */
   val udfDeterministic: Boolean
 
+  override def hasSideEffects: Boolean = true
+
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
   private[this] val nvtxRangeName = s"UDF: $name"

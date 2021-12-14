@@ -160,6 +160,13 @@ trait GpuExpression extends Expression with Arm {
    */
   def convertToAst(numFirstTableColumns: Int): ast.AstExpression =
     throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
+
+  /** Could evaluating this expression cause side-effects, such as throwing an exception? */
+  def hasSideEffects: Boolean =
+    children.exists {
+      case c: GpuExpression => c.hasSideEffects
+      case _ => false // This path should never really happen
+    }
 }
 
 abstract class GpuLeafExpression extends GpuExpression with ShimExpression {

@@ -142,6 +142,8 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
   override def dataType: DataType = left.dataType
+  // arithmetic operations can overflow and throw exceptions in ANSI mode
+  override def hasSideEffects: Boolean = SQLConf.get.ansiEnabled
 }
 
 object GpuAdd extends Arm {

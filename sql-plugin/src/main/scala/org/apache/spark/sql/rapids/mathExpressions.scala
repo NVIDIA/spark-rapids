@@ -171,6 +171,8 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
     case _ => LongType
   }
 
+  override def hasSideEffects: Boolean = true
+
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(DoubleType, DecimalType, LongType))
 
@@ -244,6 +246,8 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
       DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
     case _ => LongType
   }
+
+  override def hasSideEffects: Boolean = true
 
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(DoubleType, DecimalType, LongType))
