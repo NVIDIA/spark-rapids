@@ -386,6 +386,34 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
+  // repro case for https://github.com/NVIDIA/spark-rapids/issues/4351
+  test("Write parquet from AQE shuffle with limit") {
+    logError("Write parquet from AQE shuffle with limit")
+
+    val conf = new SparkConf()
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+      .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+        .write
+        .mode(SaveMode.Overwrite)
+        .parquet(path)
+
+      val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
+      spark.read.parquet(path)
+        .limit(100)
+        .write.mode(SaveMode.Overwrite)
+        .parquet(outputPath)
+    }, conf)
+  }
+
+
   test("Exchange reuse") {
     logError("Exchange reuse")
     assumeSpark301orLater
