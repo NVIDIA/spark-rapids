@@ -121,58 +121,8 @@ case class GpuIf(
       } else if (isAllFalse(pred)) {
         falseExpr.columnarEval(batch)
       } else if (gpuTrueExpr.hasSideEffects || gpuFalseExpr.hasSideEffects) {
-        withResource(GpuColumnVector.from(batch)) { tbl =>
-          withResource(pred.getBase.unaryOp(UnaryOp.NOT)) { inverted =>
-            withResource(filterBatch(tbl, pred.getBase, colTypes)) { trueBatch =>
-              withResource(filterBatch(tbl, inverted, colTypes)) { falseBatch =>
-                withResourceIfAllowed(gpuTrueExpr.columnarEval(trueBatch)) { tt =>
-                  withResourceIfAllowed(gpuFalseExpr.columnarEval(falseBatch)) { ff =>
-                    val finalRet = (tt, ff) match {
-                      case (t: GpuColumnVector, f: GpuColumnVector) =>
-                        withResource(GpuColumnVector.from(new Table(t.getBase),
-                            Array(trueExpr.dataType))) { trueTable =>
-                          withResource(GpuColumnVector.from(new Table(f.getBase),
-                              Array(falseExpr.dataType))) { falseTable =>
-                            withResource(gather(pred.getBase, trueTable)) { trueValues =>
-                              withResource(gather(inverted, falseTable)) { falseValues =>
-                                pred.getBase.ifElse(
-                                  trueValues.getColumn(0),
-                                  falseValues.getColumn(0))
-                              }
-                            }
-                          }
-                        }
-                      case (t: GpuScalar, f: GpuColumnVector) =>
-                        withResource(GpuColumnVector.from(new Table(f.getBase),
-                            Array(falseExpr.dataType))) { falseTable =>
-                          withResource(gather(inverted, falseTable)) { falseValues =>
-                            pred.getBase.ifElse(
-                              t.getBase,
-                              falseValues.getColumn(0))
-                          }
-                        }
-                      case (t: GpuColumnVector, f: GpuScalar) =>
-                        withResource(GpuColumnVector.from(new Table(t.getBase),
-                            Array(trueExpr.dataType))) { trueTable =>
-                          withResource(gather(pred.getBase, trueTable)) { trueValues =>
-                            pred.getBase.ifElse(
-                              trueValues.getColumn(0),
-                              f.getBase)
-                          }
-                        }
-                      case (_: GpuScalar, _: GpuScalar) =>
-                        throw new IllegalStateException(
-                          "scalar expressions can never have side effects")
-                    }
-                    GpuColumnVector.from(finalRet, dataType)
-                  }
-                }
-              }
-            }
-          }
-        }
+        conditionalWithSideEffects(batch, pred, gpuTrueExpr, gpuFalseExpr, colTypes)
       } else {
-        // simple approach (original GpuIf code)
         withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
           withResourceIfAllowed(falseExpr.columnarEval(batch)) { falseRet =>
             val finalRet = (trueRet, falseRet) match {
@@ -189,6 +139,73 @@ case class GpuIf(
                   s" ($t: ${t.getClass}, $f: ${f.getClass})")
             }
             GpuColumnVector.from(finalRet, dataType)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * When computing conditional expressions on the CPU, the true and false
+   * expressions are evaluated lazily, meaning that the true expression is
+   * only evaluated for rows where the predicate is true, and the false
+   * expression is only evaluated for rows where the predicate is false.
+   * This is important in the case where the expressions can have
+   * side-effects, such as throwing exceptions for invalid inputs.
+   *
+   * This method performs lazy evaluation on the GPU by first filtering the
+   * input batch into two batches - one for rows where the predicate is true
+   * and one for rows where the predicate is false. The expressions are
+   * evaluated against these batches and then the results are combined
+   * back into a single batch using the gather algorithm.
+   */
+  private def conditionalWithSideEffects(
+      batch: ColumnarBatch,
+      pred: GpuColumnVector,
+      gpuTrueExpr: GpuExpression,
+      gpuFalseExpr: GpuExpression,
+      colTypes: Array[DataType]): GpuColumnVector = {
+
+    withResource(GpuColumnVector.from(batch)) { tbl =>
+      withResource(pred.getBase.unaryOp(UnaryOp.NOT)) { inverted =>
+        withResource(filterBatch(tbl, pred.getBase, colTypes)) { trueBatch =>
+          withResource(filterBatch(tbl, inverted, colTypes)) { falseBatch =>
+            withResourceIfAllowed(gpuTrueExpr.columnarEval(trueBatch)) { tt =>
+              withResourceIfAllowed(gpuFalseExpr.columnarEval(falseBatch)) { ff =>
+                val finalRet = (tt, ff) match {
+                  case (t: GpuColumnVector, f: GpuColumnVector) =>
+                    withResource(GpuColumnVector.from(new Table(t.getBase),
+                      Array(trueExpr.dataType))) { trueTable =>
+                      withResource(GpuColumnVector.from(new Table(f.getBase),
+                        Array(falseExpr.dataType))) { falseTable =>
+                        withResource(gather(pred.getBase, trueTable)) { trueValues =>
+                          withResource(gather(inverted, falseTable)) { falseValues =>
+                            pred.getBase.ifElse(trueValues.getColumn(0), falseValues.getColumn(0))
+                          }
+                        }
+                      }
+                    }
+                  case (t: GpuScalar, f: GpuColumnVector) =>
+                    withResource(GpuColumnVector.from(new Table(f.getBase),
+                      Array(falseExpr.dataType))) { falseTable =>
+                      withResource(gather(inverted, falseTable)) { falseValues =>
+                        pred.getBase.ifElse(t.getBase, falseValues.getColumn(0))
+                      }
+                    }
+                  case (t: GpuColumnVector, f: GpuScalar) =>
+                    withResource(GpuColumnVector.from(new Table(t.getBase),
+                        Array(trueExpr.dataType))) { trueTable =>
+                      withResource(gather(pred.getBase, trueTable)) { trueValues =>
+                        pred.getBase.ifElse(trueValues.getColumn(0), f.getBase)
+                      }
+                    }
+                  case (_: GpuScalar, _: GpuScalar) =>
+                    throw new IllegalStateException(
+                      "scalar expressions can never have side effects")
+                }
+                GpuColumnVector.from(finalRet, dataType)
+              }
+            }
           }
         }
       }
