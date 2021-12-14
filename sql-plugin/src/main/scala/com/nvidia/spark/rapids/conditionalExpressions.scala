@@ -77,7 +77,7 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     }
     withResource(col.getBase.any()) { anyTrue =>
       // null values are considered false values in this context
-      !anyTrue.isValid || !anyTrue.getBoolean
+      !anyTrue.getBoolean
     }
   }
 }
