@@ -99,10 +99,15 @@ def test_orderby_array_of_structs(data_gen):
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
     lit = gen_scalar(data_gen, force_no_nulls=True)
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(
-        spark, arr_gen, data_gen).select(array_contains(col('a'), lit.cast(data_gen.data_type)),
-                                         array_contains(col('a'), col('b')),
-                                         array_contains(col('a'), col('a')[5])), no_nans_conf)
+
+    def get_input(spark):
+        return two_col_df(spark, arr_gen, data_gen)
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: get_input(spark).select(
+                                            array_contains(col('a'), lit.cast(data_gen.data_type)),
+                                            array_contains(col('a'), col('b')),
+                                            array_contains(col('a'), col('a')[5])
+                                         ), no_nans_conf)
 
 
 # Test array_contains() with a literal key that is extracted from the input array of doubles
@@ -117,6 +122,7 @@ def test_array_contains_for_nans(data_gen):
         chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
         return df.select(array_contains(col('a'), chk_val))
     assert_gpu_and_cpu_are_equal_collect(main_df)
+
 
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)

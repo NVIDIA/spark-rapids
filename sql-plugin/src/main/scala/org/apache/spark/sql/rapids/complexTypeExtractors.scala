@@ -223,8 +223,21 @@ case class GpuArrayContains(left: Expression, right: Expression)
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
-    lhs.getBase.listContains(rhs.getBase)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val contains = lhs.getBase.listContains(rhs.getBase)
+    withResource(contains) { containsCV =>
+      val containsNull = lhs.getBase.listContainsNulls()
+      withResource(containsNull) { containsNullCV =>
+        val notContainsNull = containsNullCV.not
+        withResource(notContainsNull) { notContainsNullCV =>
+          val validity = containsCV.or(notContainsNullCV)
+          withResource(validity) { validityCV =>
+            containsCV.copyWithBooleanColumnAsValidity(validityCV)
+          }
+        }
+      }
+    }
+  }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
@@ -232,8 +245,21 @@ case class GpuArrayContains(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    lhs.getBase.listContainsColumn(rhs.getBase)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val contains = lhs.getBase.listContainsColumn(rhs.getBase)
+    withResource(contains) { containsCV =>
+      val containsNull = lhs.getBase.listContainsNulls()
+      withResource(containsNull) { containsNullCV =>
+        val notContainsNull = containsNullCV.not
+        withResource(notContainsNull) { notContainsNullCV =>
+          val validity = containsCV.or(notContainsNullCV)
+          withResource(validity) { validityCV => 
+            containsCV.copyWithBooleanColumnAsValidity(validityCV)
+          }
+        }
+      }
+    }
+  }
 
   override def prettyName: String = "array_contains"
 }
