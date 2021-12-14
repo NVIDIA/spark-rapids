@@ -1452,7 +1452,7 @@ case class GpuCast(
   import GpuCast._
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
-  //TODO this might not be true for all possible casts?
+  //TODO not all casts can throw exceptions so this needs to be more specific
   override def hasSideEffects: Boolean = ansiMode
 
   override def toString: String = if (ansiMode) {

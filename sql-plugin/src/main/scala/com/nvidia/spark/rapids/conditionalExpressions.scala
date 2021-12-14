@@ -55,6 +55,31 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     }
   }
 
+  protected def isAllTrue(col: GpuColumnVector): Boolean = {
+    assert(BooleanType == col.dataType())
+    if (col.getRowCount == 0) {
+      return true
+    }
+    if (col.hasNull) {
+      return false
+    }
+    withResource(col.getBase.all()) { allTrue =>
+      // Guaranteed there is at least one row and no nulls so result must be valid
+      allTrue.getBoolean
+    }
+  }
+
+  protected def isAllFalse(col: GpuColumnVector): Boolean = {
+    assert(BooleanType == col.dataType())
+    if (col.getRowCount == col.numNulls()) {
+      // all nulls, and null values are false values here
+      return true
+    }
+    withResource(col.getBase.any()) { anyTrue =>
+      // null values are considered false values in this context
+      !anyTrue.isValid || !anyTrue.getBoolean
+    }
+  }
 }
 
 case class GpuIf(
@@ -91,10 +116,9 @@ case class GpuIf(
     val colTypes = GpuColumnVector.extractTypes(batch)
 
     withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
-      val hasNull = pred.hasNull
-      if (!hasNull && pred.getBase.all().getBoolean) {
+      if (isAllTrue(pred)) {
         trueExpr.columnarEval(batch)
-      } else if (!hasNull && !pred.getBase.any().getBoolean) {
+      } else if (isAllFalse(pred)) {
         falseExpr.columnarEval(batch)
       } else if (gpuTrueExpr.hasSideEffects || gpuFalseExpr.hasSideEffects) {
         withResource(GpuColumnVector.from(batch)) { tbl =>
