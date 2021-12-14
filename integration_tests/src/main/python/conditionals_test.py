@@ -69,11 +69,15 @@ def test_if_else_map(data_gen):
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
-def test_case_when(data_gen):
+@pytest.mark.parametrize('pred_value', [True, False, None, "random"])
+def test_case_when(data_gen, pred_value):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
-    # we want lots of false
-    bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
+    if pred_value == "random":
+        # we want lots of false
+        bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
+    else:
+        bool_gen = SetValuesGen(BooleanType(), [pred_value])
     gen_cols = [('_b' + str(x), bool_gen) for x in range(0, num_cmps)]
     gen_cols = gen_cols + [('_c' + str(x), data_gen) for x in range(0, num_cmps)]
     gen = StructGen(gen_cols, nullable=False)
@@ -88,34 +92,6 @@ def test_case_when(data_gen):
     #    (column, column)
     #    (scalar, column)
     # in sequence.
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen).select(command,
-                f.when(f.col('_b0'), s1),
-                f.when(f.col('_b0'), f.col('_c0')).otherwise(f.col('_c1')),
-                f.when(f.col('_b0'), s1).otherwise(f.col('_c0')),
-                f.when(f.col('_b0'), s1).when(f.lit(False), f.col('_c0')),
-                f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
-                f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
-                f.when(f.lit(False), f.col('_c0'))),
-            conf = allow_negative_scale_of_decimal_conf)
-
-# Seperate this test to avoid OOM in premerge build.
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
-@pytest.mark.parametrize('pred_value', [True, False, None])
-def test_case_when_all_true_false(data_gen, pred_value):
-    # Smaller number to reduce the memory size for this big test. Bigger number may get
-    # OOM easily and be killed in premerge build.
-    num_cmps = 2
-    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
-    bool_gen = SetValuesGen(BooleanType(), [pred_value])
-    gen_cols = [('_b' + str(x), bool_gen) for x in range(0, num_cmps)]
-    gen_cols = gen_cols + [('_c' + str(x), data_gen) for x in range(0, num_cmps)]
-    gen = StructGen(gen_cols, nullable=False)
-    command = f.when(f.col('_b0'), f.col('_c0'))
-    for x in range(1, num_cmps):
-        command = command.when(f.col('_b'+ str(x)), f.col('_c' + str(x)))
-    command = command.otherwise(s1)
-    data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(command,
                 f.when(f.col('_b0'), s1),
