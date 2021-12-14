@@ -22,7 +22,8 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution.JoinTypeChecks
+import org.apache.spark.sql.types.StructType
 
 class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
@@ -35,17 +36,54 @@ class GpuSortMergeJoinMeta(
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
-    GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val conditionMeta: Option[BaseExprMeta[_]] =
+    join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+  def canReplaceWithNestedLoopJoin(): Boolean = {
+    conf.enableReplaceConditionalHashJoin && join.condition.isDefined &&
+        conditionMeta.forall(_.canThisBeAst)
+  }
+
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    //GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+
+    val joinType = join.joinType
+    val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
+
+    def unSupportNonEqualCondition(): Unit = if (join.condition.isDefined) {
+      this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+    }
+    def unSupportNonEqualNonAst(): Unit = if (join.condition.isDefined) {
+      if (conf.enableReplaceConditionalHashJoin) {
+        conditionMeta.foreach(requireAstForGpuOn)
+      } else {
+        this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+      }
+    }
+    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+      this.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
+    }
+
+    JoinTypeChecks.tagForGpu(joinType, this)
+    joinType match {
+      case _: InnerLike =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+        unSupportNonEqualNonAst()
+      case FullOuter =>
+        unSupportNonEqualCondition()
+        // FullOuter join cannot support with struct keys as two issues below
+        //  * https://github.com/NVIDIA/spark-rapids/issues/2126
+        //  * https://github.com/rapidsai/cudf/issues/7947
+        unSupportStructKeys()
+      case _ =>
+        this.willNotWorkOnGpu(s"$joinType currently is not supported")
+    }
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -62,7 +100,11 @@ class GpuSortMergeJoinMeta(
             willNotWorkOnGpu(s"can't replace sortMergeJoin because one of the SortExec's before " +
               s"can't be replaced.")
           } else {
-            plan.shouldBeRemoved("replacing sortMergeJoin with shuffleHashJoin")
+            if (canReplaceWithNestedLoopJoin()) {
+              plan.shouldBeRemoved("replacing sortMergeJoin with shuffleNestedLoopJoin")
+            } else {
+              plan.shouldBeRemoved("replacing sortMergeJoin with shuffleHashJoin")
+            }
           }
         }
       }
@@ -78,20 +120,39 @@ class GpuSortMergeJoinMeta(
       throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-    val joinExec = GpuShuffledHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      GpuJoinUtils.getGpuBuildSide(buildSide),
-      None,
-      left,
-      right,
-      join.isSkewJoin)(
-      join.leftKeys,
-      join.rightKeys)
-    // The GPU does not yet support conditional joins, so conditions are implemented
-    // as a filter after the join when possible.
-    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+
+    val substituteShuffledNestedLoopJoin: Boolean = join.joinType match {
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti  =>
+        canReplaceWithNestedLoopJoin()
+      case _ => false
+    }
+
+    if (substituteShuffledNestedLoopJoin) {
+      GpuShuffledNestedLoopJoinExec(
+        join.joinType,
+        GpuJoinUtils.getGpuBuildSide(buildSide),
+        conditionMeta.map(_.convertToGpu()),
+        left,
+        right,
+        join.isSkewJoin)(
+        join.leftKeys,
+        join.rightKeys)
+    } else {
+      val joinExec = GpuShuffledHashJoinExec(
+        leftKeys.map(_.convertToGpu()),
+        rightKeys.map(_.convertToGpu()),
+        join.joinType,
+        GpuJoinUtils.getGpuBuildSide(buildSide),
+        None,
+        left,
+        right,
+        join.isSkewJoin)(
+        join.leftKeys,
+        join.rightKeys)
+      // The GPU does not yet support conditional joins, so conditions are implemented
+      // as a filter after the join when possible.
+      conditionMeta.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+    }
   }
 
   /**
