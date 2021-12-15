@@ -28,6 +28,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange,
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
@@ -329,14 +330,21 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[AdaptiveSparkPlanExec])
           .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      val transition = adaptiveSparkPlanExec
+      if (ShimLoader.getSparkShims.supportsColumnarAdaptivePlans) {
+        // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
+        // support columnar adaptive plans
+        assert(adaptiveSparkPlanExec
           .executedPlan
-          .asInstanceOf[GpuColumnarToRowExec]
+          .isInstanceOf[GpuFileSourceScanExec])
+      } else {
+        val transition = adaptiveSparkPlanExec
+            .executedPlan
+            .asInstanceOf[GpuColumnarToRowExec]
 
-      // although the plan contains a GpuColumnarToRowExec, we bypass it in
-      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
-      assert(transition.metrics("numOutputRows").value === 0)
-
+        // although the plan contains a GpuColumnarToRowExec, we bypass it in
+        // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+        assert(transition.metrics("numOutputRows").value === 0)
+      }
     }, conf)
   }
 
@@ -377,6 +385,31 @@ class AdaptiveQueryExecSuite
 
     }, conf)
   }
+
+  // repro case for https://github.com/NVIDIA/spark-rapids/issues/4351
+  test("Write parquet from AQE shuffle with limit") {
+    logError("Write parquet from AQE shuffle with limit")
+
+    val conf = new SparkConf()
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+        .write
+        .mode(SaveMode.Overwrite)
+        .parquet(path)
+
+      val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
+      spark.read.parquet(path)
+        .limit(100)
+        .write.mode(SaveMode.Overwrite)
+        .parquet(outputPath)
+    }, conf)
+  }
+
 
   test("Exchange reuse") {
     logError("Exchange reuse")

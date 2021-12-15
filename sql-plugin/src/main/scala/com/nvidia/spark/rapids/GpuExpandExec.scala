@@ -163,7 +163,7 @@ class GpuExpandIterator(
         val (cv, nullColumnReused) = expr.columnarEval(cb) match {
           case null => getOrCreateNullCV(sparkType)
           case other =>
-            (GpuExpressionsUtils.resolveColumnVector(other, cb.numRows, sparkType), false)
+            (GpuExpressionsUtils.resolveColumnVector(other, cb.numRows), false)
         }
         if (!nullColumnReused) {
           uniqueDeviceColumns += cv

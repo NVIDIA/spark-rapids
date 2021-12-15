@@ -188,6 +188,7 @@ class GpuHashAggregateIterator(
     metrics: GpuHashAggregateMetrics,
     configuredTargetBatchSize: Long)
     extends Iterator[ColumnarBatch] with Arm with AutoCloseable with Logging {
+
   // Partial mode:
   //  1. boundInputReferences: picks column from raw input
   //  2. boundFinalProjections: is a pass-through of the agg buffer
@@ -205,7 +206,6 @@ class GpuHashAggregateIterator(
   //     (GpuAverage => CudfSum/CudfCount)
   //  3. boundResultReferences: project the result expressions Spark expects in the output.
   private case class BoundExpressionsModeAggregates(
-      boundInputReferences: Seq[GpuExpression],
       boundFinalProjections: Option[Seq[GpuExpression]],
       boundResultReferences: Seq[Expression])
 
@@ -277,13 +277,10 @@ class GpuHashAggregateIterator(
 
   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
   private def aggregateInputBatches(): Unit = {
-    val aggHelper = new AggHelper(merge = false)
+    val aggHelper = new AggHelper(forceMerge = false)
     while (cbIter.hasNext) {
-      val (childBatch, isLastInputBatch) = withResource(cbIter.next()) { inputBatch =>
-        val isLast = GpuColumnVector.isTaggedAsFinalBatch(inputBatch)
-        (processIncomingBatch(inputBatch), isLast)
-      }
-      withResource(childBatch) { _ =>
+      withResource(cbIter.next()) { childBatch =>
+        val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
         withResource(computeAggregate(childBatch, aggHelper)) { aggBatch =>
           val batch = LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
           // Avoid making batch spillable for the common case of the last and only batch
@@ -385,7 +382,7 @@ class GpuHashAggregateIterator(
     wasBatchMerged
   }
 
-  private lazy val concatAndMergeHelper = new AggHelper(merge = true)
+  private lazy val concatAndMergeHelper = new AggHelper(forceMerge = true)
 
   /**
    * Concatenate batches together and perform a merge aggregation on the result. The input batches
@@ -426,8 +423,8 @@ class GpuHashAggregateIterator(
     }
 
     val shims = ShimLoader.getSparkShims
-    val ordering = groupingExpressions.map(shims.sortOrder(_, Ascending, NullsFirst))
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
+    val ordering = groupingAttributes.map(shims.sortOrder(_, Ascending, NullsFirst))
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -544,27 +541,6 @@ class GpuHashAggregateIterator(
     }
   }
 
-  /** Perform the initial projection on the input batch and extract the result columns */
-  private def processIncomingBatch(batch: ColumnarBatch): ColumnarBatch = {
-    val aggTime = metrics.computeAggTime
-    val opTime = metrics.opTime
-    withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime,
-      opTime)) { _ =>
-      val cols = boundExpressions.boundInputReferences.safeMap { ref =>
-        val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
-        if (DataType.equalsStructurally(childCv.dataType, ref.dataType, ignoreNullability = true)) {
-          childCv
-        } else {
-          withResource(childCv) { childCv =>
-            val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
-            GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
-          }
-        }
-      }
-      new ColumnarBatch(cols.toArray, batch.numRows())
-    }
-  }
-
   /**
    * Concatenates batches after extracting them from `LazySpillableColumnarBatch`
    * @note the input batches are not closed as part of this operation
@@ -603,30 +579,6 @@ class GpuHashAggregateIterator(
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
-    // Adapted from `AggregationIterator.initializeAggregateFunctions` in Spark:
-    // - we use the "imperative aggregate" way as it used bound expressions due to
-    //   lack of support of codegen (like our case)
-    // - for partial/complete: we bind to the inputProjection as specified by each
-    //   `GpuAggregateFunction` to the `inputAttributes` (see how those are defined)
-    // - for partial merge/final: it is the pass through case, we are getting as input
-    //   the "agg buffer", and we are using `inputAggBufferAttributes` to match the Spark
-    //   function. We still bind to `inputAttributes`, as those would be setup for pass-through
-    //   in the partial merge/final cases.
-    val aggBound = aggregateExpressions.flatMap { agg =>
-      agg.mode match {
-        case Partial | Complete =>
-          agg.aggregateFunction.inputProjection
-        case PartialMerge | Final =>
-          agg.aggregateFunction.inputAggBufferAttributes
-        case mode =>
-          throw new NotImplementedError(s"can't translate ${mode}")
-      }
-    }
-
-    val boundInputReferences = GpuBindReferences.bindGpuReferences(
-      groupingExpressions ++ aggBound,
-      inputAttributes)
-
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
       val finalProjections = groupingExpressions ++
           aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
@@ -659,7 +611,6 @@ class GpuHashAggregateIterator(
         groupingAttributes)
     }
     BoundExpressionsModeAggregates(
-      boundInputReferences,
       boundFinalProjections,
       boundResultReferences)
   }
@@ -667,12 +618,12 @@ class GpuHashAggregateIterator(
   /**
    * Internal class used in `computeAggregates` for the pre, agg, and post steps
    *
-   * @param merge - if true, we are merging two pre-aggregated batches, so we should use
+   * @param forceMerge - if true, we are merging two pre-aggregated batches, so we should use
    *                the merge steps for each aggregate function
    * @param isSorted - if the batch is sorted this is set to true and is passed to cuDF
    *                   as an optimization hint
    */
-  class AggHelper(merge: Boolean, isSorted: Boolean = false) {
+  class AggHelper(forceMerge: Boolean, isSorted: Boolean = false) {
     // `CudfAggregate` instances to apply, either update or merge aggregates
     private val cudfAggregates = new mutable.ArrayBuffer[CudfAggregate]()
 
@@ -693,11 +644,16 @@ class GpuHashAggregateIterator(
     private val postStep = new mutable.ArrayBuffer[Expression]()
     private val postStepAttr = new mutable.ArrayBuffer[Attribute]()
 
-    // we add the grouping expression first, which bind as pass-through
-    preStep ++= GpuBindReferences.bindGpuReferences(
-      groupingAttributes, groupingAttributes)
-    postStep ++= GpuBindReferences.bindGpuReferences(
-      groupingAttributes, groupingAttributes)
+    // we add the grouping expression first, which should bind as pass-through
+    if (forceMerge) {
+      // a grouping expression can do actual computation, but we cannot do that computation again
+      // on a merge, nor would we want to if we could. So use the attributes instead of the
+      // original expression when we are forcing a merge.
+      preStep ++= groupingAttributes
+    } else {
+      preStep ++= groupingExpressions
+    }
+    postStep ++= groupingAttributes
     postStepAttr ++= groupingAttributes
     postStepDataTypes ++=
       groupingExpressions.map(_.dataType)
@@ -705,14 +661,14 @@ class GpuHashAggregateIterator(
     private var ix = groupingAttributes.length
     for (aggExp <- aggregateExpressions) {
       val aggFn = aggExp.aggregateFunction
-      if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
+      if ((aggExp.mode == Partial || aggExp.mode == Complete) && !forceMerge) {
         val ordinals = (ix until ix + aggFn.updateAggregates.length)
         aggOrdinals ++= ordinals
         ix += ordinals.length
         val updateAggs = aggFn.updateAggregates
         postStepDataTypes ++= updateAggs.map(_.dataType)
         cudfAggregates ++= updateAggs
-        preStep ++= aggFn.aggBufferAttributes
+        preStep ++= aggFn.inputProjection
         postStep ++= aggFn.postUpdate
         postStepAttr ++= aggFn.postUpdateAttr
       } else {
@@ -729,8 +685,11 @@ class GpuHashAggregateIterator(
     }
 
     // a bound expression that is applied before the cuDF aggregate
-    private val preStepBound =
-      GpuBindReferences.bindGpuReferences(preStep, aggBufferAttributes)
+    private val preStepBound = if (forceMerge) {
+      GpuBindReferences.bindGpuReferences(preStep.toList, aggBufferAttributes.toList)
+    } else {
+      GpuBindReferences.bindGpuReferences(preStep, inputAttributes)
+    }
 
     // a bound expression that is applied after the cuDF aggregate
     private val postStepBound =
@@ -1388,11 +1347,11 @@ case class GpuHashAggregateExec(
 
   private val inputAggBufferAttributes: Seq[Attribute] = {
     aggregateExpressions
-      // there're exactly four cases needs `inputAggBufferAttributes` from child according to the
-      // agg planning in `AggUtils`: Partial -> Final, PartialMerge -> Final,
-      // Partial -> PartialMerge, PartialMerge -> PartialMerge.
-      .filter(a => a.mode == Final || a.mode == PartialMerge)
-      .flatMap(_.aggregateFunction.inputAggBufferAttributes)
+        // there're exactly four cases needs `inputAggBufferAttributes` from child according to the
+        // agg planning in `AggUtils`: Partial -> Final, PartialMerge -> Final,
+        // Partial -> PartialMerge, PartialMerge -> PartialMerge.
+        .filter(a => a.mode == Final || a.mode == PartialMerge)
+        .flatMap(_.aggregateFunction.aggBufferAttributes)
   }
 
   private lazy val uniqueModes: Seq[AggregateMode] = aggregateExpressions.map(_.mode).distinct
@@ -1519,7 +1478,7 @@ case class GpuHashAggregateExec(
    */
   override lazy val allAttributes: AttributeSeq =
     child.output ++ aggregateBufferAttributes ++ aggregateAttributes ++
-      aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes)
+        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
   override def verboseString(maxFields: Int): String = toString(verbose = true, maxFields)
 

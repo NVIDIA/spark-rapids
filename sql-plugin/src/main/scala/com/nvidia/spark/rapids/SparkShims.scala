@@ -253,7 +253,24 @@ trait SparkShims {
 
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
 
+  def isEmptyRelation(relation: Any): Boolean
+
   def broadcastModeTransform(mode: BroadcastMode, toArray: Array[InternalRow]): Any
+
+  /**
+   * This call can produce an `EmptyHashedRelation` or an empty array,
+   * allowing the AQE rule `EliminateJoinToEmptyRelation` in Spark 3.1.x
+   * to optimize certain joins.
+   *
+   * In Spark 3.2.0, the optimization is still performed (under `AQEPropagateEmptyRelation`),
+   * but the AQE optimizer is looking at the metrics for the query stage to determine
+   * if numRows == 0, and if so it can eliminate certain joins.
+   *
+   * The call is implemented only for Spark 3.1.x+. It is disabled in
+   * Databricks because it requires a task context to perform the
+   * `BroadcastMode.transform` call, but we'd like to call this from the driver.
+   */
+  def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any]
 
   def isAqePlan(p: SparkPlan): Boolean
 
@@ -298,4 +315,13 @@ trait SparkShims {
   def timestampFormatInRead(csvOpts: CSVOptions): Option[String]
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
+
+  /**
+   * Determine if the Spark version allows the supportsColumnar flag to be overridden
+   * in AdaptiveSparkPlanExec. This feature was introduced in Spark 3.2 as part of
+   * SPARK-35881.
+   */
+  def supportsColumnarAdaptivePlans: Boolean
+
+  def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan
 }
