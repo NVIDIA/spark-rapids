@@ -68,8 +68,9 @@ def test_if_else_map(data_gen):
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
 @pytest.mark.parametrize('empty_parameter', [1, 2, 3 ,4])
-def test_case_when(data_gen):
+def test_case_when(data_gen, empty_parameter):
     num_cmps = 20
+    id = empty_parameter
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
     bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
