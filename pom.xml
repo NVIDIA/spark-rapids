@@ -970,16 +970,28 @@
                         <phase>generate-resources</phase>
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
-                            <target>
+                            <target name="build-info">
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                <exec executable="bash"
+                                      output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties"
+                                      resultproperty="build-info.exitCode"
+                                      errorproperty="build-info.errorMsg"
+                                      failonerror="false">
                                     <arg value="${spark.rapids.source.basedir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>
                                 </exec>
+                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
+                                    <condition>
+                                        <not>
+                                            <equals arg1="${build-info.exitCode}" arg2="0"/>
+                                        </not>
+                                    </condition>
+                                </fail>
                             </target>
                         </configuration>
+
                         <goals>
                             <goal>run</goal>
                         </goals>

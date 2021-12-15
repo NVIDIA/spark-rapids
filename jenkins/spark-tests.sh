@@ -106,6 +106,7 @@ export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
+export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
 
 IS_SPARK_311_OR_LATER=0
 [[ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1

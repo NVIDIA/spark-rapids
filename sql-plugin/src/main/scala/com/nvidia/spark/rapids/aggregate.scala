@@ -423,8 +423,8 @@ class GpuHashAggregateIterator(
     }
 
     val shims = ShimLoader.getSparkShims
-    val ordering = groupingExpressions.map(shims.sortOrder(_, Ascending, NullsFirst))
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
+    val ordering = groupingAttributes.map(shims.sortOrder(_, Ascending, NullsFirst))
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -644,8 +644,15 @@ class GpuHashAggregateIterator(
     private val postStep = new mutable.ArrayBuffer[Expression]()
     private val postStepAttr = new mutable.ArrayBuffer[Attribute]()
 
-    // we add the grouping expression first, which bind as pass-through
-    preStep ++= groupingExpressions
+    // we add the grouping expression first, which should bind as pass-through
+    if (forceMerge) {
+      // a grouping expression can do actual computation, but we cannot do that computation again
+      // on a merge, nor would we want to if we could. So use the attributes instead of the
+      // original expression when we are forcing a merge.
+      preStep ++= groupingAttributes
+    } else {
+      preStep ++= groupingExpressions
+    }
     postStep ++= groupingAttributes
     postStepAttr ++= groupingAttributes
     postStepDataTypes ++=
@@ -679,7 +686,7 @@ class GpuHashAggregateIterator(
 
     // a bound expression that is applied before the cuDF aggregate
     private val preStepBound = if (forceMerge) {
-      GpuBindReferences.bindGpuReferences(preStep, aggBufferAttributes)
+      GpuBindReferences.bindGpuReferences(preStep.toList, aggBufferAttributes.toList)
     } else {
       GpuBindReferences.bindGpuReferences(preStep, inputAttributes)
     }
