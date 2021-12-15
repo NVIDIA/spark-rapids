@@ -74,7 +74,7 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     }
     withResource(col.getBase.any()) { anyTrue =>
       // null values are considered false values in this context
-      !anyTrue.isValid || !anyTrue.getBoolean
+      !anyTrue.getBoolean
     }
   }
 
@@ -128,7 +128,8 @@ case class GpuIf(
 
 case class GpuCaseWhen(
     branches: Seq[(Expression, Expression)],
-    elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
+    elseValue: Option[Expression] = None,
+    maxBranchNumForOpt: Int = 2) extends GpuConditionalExpression with Serializable {
 
   override def children: Seq[Expression] = branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue
 
@@ -164,36 +165,58 @@ case class GpuCaseWhen(
     }
   }
 
-  override def columnarEval(batch:ColumnarBatch): Any = {
+  private def computeWithTrueFalseOpt(batch: ColumnarBatch, trueExprs: Seq[Expression]): Any = {
+    val predicates = new Array[GpuColumnVector](branches.size)
     var isAllPredsFalse = true
-    // Check if any predicate is the first all-true, then evaluate its true expression
-    // and return the result.
-    branches.foreach { case (predExpr, trueExpr) =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { p =>
+
+    withResource(predicates) { preds =>
+      branches.zipWithIndex.foreach { case ((predExpr, trueExpr), i) =>
+        val p = GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)
+        preds(i) = p
         if (isAllPredsFalse && isAllTrue(p)) {
+          // If any predicate is the first all-true, then evaluate its true expression
+          // and return the result.
           return GpuExpressionsUtils.columnarEvalToColumn(trueExpr, batch)
         }
         isAllPredsFalse = isAllPredsFalse && isAllFalse(p)
       }
-    }
 
-    val elseRet = elseValue
-      .map(_.columnarEval(batch))
-      .getOrElse(GpuScalar(null, branches.last._2.dataType))
-    if (isAllPredsFalse) {
-      // No predicate has a true, so return the else value directly.
-      GpuExpressionsUtils.resolveColumnVector(elseRet, batch.numRows())
-    } else {
-      branches.foldRight[Any](elseRet) { case ((predExpr, trueExpr), falseRet) =>
-        // Here evaluates the predicate expressions again, sacrificing a little of perf
-        // for minimizing the memory size of computations. Because caching the predicates
-        // may get OOM if there are too many branches.
-        withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { p =>
+      val elseRet = elseValue
+        .map(_.columnarEval(batch))
+        .getOrElse(GpuScalar(null, branches.last._2.dataType))
+      if (isAllPredsFalse) {
+        // No predicate has a true, so return the else value.
+        GpuExpressionsUtils.resolveColumnVector(elseRet, batch.numRows())
+      } else {
+        preds.zip(trueExprs).foldRight[Any](elseRet) { case ((p, trueExpr), falseRet) =>
           computeIfElse(batch, p, trueExpr, falseRet)
         }
       }
     }
   }
+
+  @transient
+  private[this] lazy val computationFunc = if (branches.length <= maxBranchNumForOpt) {
+    // Run into the optimization only when the branch number is not bigger than the
+    // limitation. Since the predicate result will be cached during the computation,
+    // and caching too many predicates can get GPU OOM easily.
+    val trueExpressions = branches.map(_._2)
+    (batch: ColumnarBatch) => computeWithTrueFalseOpt(batch, trueExpressions)
+  } else {
+    (batch: ColumnarBatch) => {
+      // `elseRet` will be closed in `computeIfElse`.
+      val elseRet = elseValue
+        .map(_.columnarEval(batch))
+        .getOrElse(GpuScalar(null, branches.last._2.dataType))
+      branches.foldRight[Any](elseRet) { case ((predicateExpr, trueExpr), falseRet) =>
+        withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
+          computeIfElse(batch, pred, trueExpr, falseRet)
+        }
+      }
+    }
+  }
+
+  override def columnarEval(batch:ColumnarBatch): Any = computationFunc(batch)
 
   override def toString: String = {
     val cases = branches.map { case (c, v) => s" WHEN $c THEN $v" }.mkString

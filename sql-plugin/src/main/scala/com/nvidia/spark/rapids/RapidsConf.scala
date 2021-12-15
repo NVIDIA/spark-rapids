@@ -1325,6 +1325,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = false)
 
+  val MAX_CONDITION_BRANCH_NUMBER = conf("spark.rapids.sql.opt.condition.maxBranchNumber")
+    .doc("Maximum number of branches for GPU case-when to enable the lazy evaluation of true " +
+      "and else expressions if the predicates on a batch are all-true or all-false. Big number " +
+      "may get GPU OOM easily since the predicates are cached during the computation.")
+    .integerConf
+    .createWithDefault(2)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1740,6 +1747,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val maxConditionBranchNumber: Int = get(MAX_CONDITION_BRANCH_NUMBER)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
