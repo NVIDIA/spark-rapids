@@ -93,7 +93,6 @@ case class GpuIf(
   }
 
   override def children: Seq[Expression] = predicateExpr :: trueExpr :: falseExpr :: Nil
-
   override def nullable: Boolean = trueExpr.nullable || falseExpr.nullable
 
   override def checkInputDataTypes(): TypeCheckResult = {
