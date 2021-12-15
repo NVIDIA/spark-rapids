@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{And, EqualTo, Expression}
 import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
@@ -44,10 +44,21 @@ class GpuBroadcastHashJoinMeta(
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val equalityExprs = join.leftKeys.zip(join.rightKeys).map {
+    case (l, r) => EqualTo(l, r)
+  }
+  val nestedConditionExpr: Option[Expression] = join.condition match {
+    case Some(joinExpr) => Some(equalityExprs.foldRight(joinExpr) {
+      case (equalExpr, rest) => And(equalExpr, rest)
+    })
+    case None => None
+  }
+  val nestedCondition: Option[BaseExprMeta[_]] =
+    nestedConditionExpr.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   def canReplaceWithNestedLoopJoin(): Boolean = {
     conf.enableReplaceConditionalHashJoin && join.condition.isDefined &&
-        conditionMeta.forall(_.canThisBeAst)
+        nestedCondition.forall(_.canThisBeAst)
   }
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
@@ -65,7 +76,7 @@ class GpuBroadcastHashJoinMeta(
     }
     def unSupportNonEqualNonAst(): Unit = if (join.condition.isDefined) {
       if (conf.enableReplaceConditionalHashJoin) {
-        conditionMeta.foreach(requireAstForGpuOn)
+        nestedCondition.foreach(requireAstForGpuOn)
       } else {
         this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
       }
@@ -135,7 +146,7 @@ class GpuBroadcastHashJoinMeta(
       ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
         left, right, gpuBuildSide,
         join.joinType,
-        conditionMeta.map(_.convertToGpu()),
+        nestedCondition.map(_.convertToGpu()),
         conf.gpuTargetBatchSizeBytes)
     } else {
       val joinExec = GpuBroadcastHashJoinExec(
