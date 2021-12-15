@@ -166,6 +166,12 @@ case class GpuIf(
       gpuFalseExpr: GpuExpression,
       colTypes: Array[DataType]): GpuColumnVector = {
 
+    def batchFromCv(t: GpuColumnVector, dt: DataType): ColumnarBatch = {
+      withResource(new Table(t.getBase)) { tbl =>
+        GpuColumnVector.from(tbl, Array(dt))
+      }
+    }
+
     withResource(GpuColumnVector.from(batch)) { tbl =>
       withResource(pred.getBase.unaryOp(UnaryOp.NOT)) { inverted =>
         // evaluate true expression against true batch
@@ -180,10 +186,8 @@ case class GpuIf(
           withResourceIfAllowed(ff) { _ =>
             val finalRet = (tt, ff) match {
               case (t: GpuColumnVector, f: GpuColumnVector) =>
-                withResource(GpuColumnVector.from(new Table(t.getBase),
-                  Array(trueExpr.dataType))) { trueTable =>
-                  withResource(GpuColumnVector.from(new Table(f.getBase),
-                    Array(falseExpr.dataType))) { falseTable =>
+                withResource(batchFromCv(t, trueExpr.dataType)) { trueTable =>
+                  withResource(batchFromCv(f, falseExpr.dataType)) { falseTable =>
                     withResource(gather(pred.getBase, trueTable)) { trueValues =>
                       withResource(gather(inverted, falseTable)) { falseValues =>
                         pred.getBase.ifElse(trueValues.getColumn(0), falseValues.getColumn(0))
@@ -192,15 +196,13 @@ case class GpuIf(
                   }
                 }
               case (t: GpuScalar, f: GpuColumnVector) =>
-                withResource(GpuColumnVector.from(new Table(f.getBase),
-                  Array(falseExpr.dataType))) { falseTable =>
+                withResource(batchFromCv(f, falseExpr.dataType)) { falseTable =>
                   withResource(gather(inverted, falseTable)) { falseValues =>
                     pred.getBase.ifElse(t.getBase, falseValues.getColumn(0))
                   }
                 }
               case (t: GpuColumnVector, f: GpuScalar) =>
-                withResource(GpuColumnVector.from(new Table(t.getBase),
-                  Array(trueExpr.dataType))) { trueTable =>
+                withResource(batchFromCv(t, trueExpr.dataType)) { trueTable =>
                   withResource(gather(pred.getBase, trueTable)) { trueValues =>
                     pred.getBase.ifElse(trueValues.getColumn(0), f.getBase)
                   }
