@@ -32,6 +32,37 @@ ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
 
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
+DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
+
+function distWithReducedPom {
+    cmd="$1"
+
+    case $cmd in
+
+        install)
+            mvnCmd="install:install-file"
+            mvnExtaFlags="-Dpackaging=jar"
+            ;;
+
+        deploy)
+            mvnCmd="deploy:deploy-file"
+            ;;
+
+        *)
+            echo "Unknown command: $cmd"
+            ;;
+    esac
+
+    mvn -B $mvnCmd $MVN_URM_MIRROR \
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -Dmaven.repo.local=$M2DIR \
+        -Dfile="${DIST_FPATH}.jar" \
+        -DpomFile="${DIST_POM_FPATH}" \
+        -DgroupId="${ART_GROUP_ID}" \
+        -DartifactId="${ART_ID}" \
+        -Dversion="${ART_VER}" \
+        $mvnExtaFlags
+}
 
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
@@ -45,15 +76,7 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}" \
         -DskipTests="${skipTestsFor330}"
-    # fix up dist jar with reduced pom in the local m2
-    mvn -B install:install-file $MVN_URM_MIRROR \
-        -Dcuda.version=$CUDA_CLASSIFIER \
-        -Dmaven.repo.local=$M2DIR \
-        -Dfile="${DIST_FPATH}.jar" \
-        -DgroupId="${ART_GROUP_ID}" \
-        -DartifactId="${ART_ID}" \
-        -Dversion="${ART_VER}" \
-        -Dpackaging=jar
+    distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
         mvn -B deploy -pl '!tools,!dist' $MVN_URM_MIRROR \
             -Dmaven.repo.local=$M2DIR \
@@ -69,27 +92,13 @@ mvn -B clean install -pl '!tools' \
     -Dmaven.repo.local=$M2DIR \
     -Dcuda.version=$CUDA_CLASSIFIER
 
-# fix up dist jar with reduced pom in the local m2
-mvn -B install:install-file $MVN_URM_MIRROR \
-    -Dcuda.version=$CUDA_CLASSIFIER \
-    -Dmaven.repo.local=$M2DIR \
-    -Dfile="${DIST_FPATH}.jar" \
-    -DgroupId="${ART_GROUP_ID}" \
-    -DartifactId="${ART_ID}" \
-    -Dversion="${ART_VER}" \
-    -Dpackaging=jar
+distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
-    # deploy dist with reduced pom
-    mvn -B deploy:deploy-file
-        $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER \
-        -Dfile="${DIST_FPATH}.jar" \
-        -DgroupId="${ART_GROUP_ID}" \
-        -DartifactId="${ART_ID}" \
-        -Dversion="${ART_VER}"
+    distWithReducedPom "deploy"
 
-    mvn -B deploy -pl '!tools,!dist' \
+    # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
+    mvn -B deploy -pl '!dist' \
         -PsnapshotsWithDatabricks \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
