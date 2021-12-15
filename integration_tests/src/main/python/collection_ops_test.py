@@ -115,3 +115,68 @@ def test_sort_array_lit(data_gen, is_ascending):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=10).select(
             f.sort_array(f.lit(array_lit), is_ascending)))
+
+# We must restrict the sequence, since we will suffer Too long sequence: 2147483745. Should be <= 2147483632 or OOM.
+@pytest.mark.parametrize('data_gen', [ IntegerGen(nullable=False, min_val=-20, max_val=20, special_cases=[]) ], ids=idfn)
+def test_sequence_without_step(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark :
+        three_col_df(spark, data_gen, data_gen, data_gen)
+            .selectExpr("sequence(a, b)",
+                        "sequence(a, 0)",
+                        "sequence(0, b)"))
+
+# This function is to generate the correct sequence data according to below limitations.
+#      (step > num.zero && start <= stop)
+#        || (step < num.zero && start >= stop)
+#        || (step == num.zero && start == stop)
+def get_sequence_data(data_gen, length=2048):
+    rand = random.Random(0)
+    data_gen.start(rand)
+    list = []
+    for index in range(length):
+        start = data_gen.gen()
+        stop = data_gen.gen()
+        step = data_gen.gen()
+        # decide the direction of step
+        if start < stop:
+            step = abs(step) + 1
+        elif start == stop:
+            step = 0
+        else:
+            step = -(abs(step) + 1)
+        list.append(tuple([start, stop, step]))
+    return list
+
+def get_sequence_df(spark, data, data_type):
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize(data),
+        StructType([StructField('a', data_type), StructField('b', data_type), StructField('c', data_type)]))
+
+# test below case
+# (2, -1, -1)
+# (2, 5, 2)
+# (2, 2, 0)
+@pytest.mark.parametrize('data_gen', [IntegerGen(nullable=False, min_val=-20, max_val=20, special_cases=[])], ids=idfn)
+def test_sequence_with_step_case1(data_gen):
+    data = get_sequence_data(data_gen)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark :
+        get_sequence_df(spark, data, data_gen.data_type)
+            .selectExpr("sequence(a, b, c)"))
+
+@pytest.mark.parametrize('start_gen,stop_gen,step_gen',
+    [(IntegerGen(nullable=False, min_val=-10, max_val=10, special_cases=[]),
+     IntegerGen(nullable=False, min_val=30, max_val=50, special_cases=[]),
+    IntegerGen(nullable=False, min_val=1, max_val=10, special_cases=[]))], ids=idfn)
+def test_sequence_with_step_case2(start_gen, stop_gen, step_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark :
+        three_col_df(spark, start_gen, stop_gen, step_gen)
+            .selectExpr("sequence(a, b, c)",
+                        "sequence(a, b, 2)",
+                        "sequence(a, 20, c)",
+                        "sequence(a, 20, 2)",
+                        "sequence(0, b, c)",
+                        "sequence(0, 4, c)",
+                        "sequence(0, b, 3)"),)

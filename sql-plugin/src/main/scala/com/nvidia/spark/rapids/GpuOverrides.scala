@@ -3293,6 +3293,16 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
       }
+    ),
+    expr[Sequence](
+      desc = "Sequence",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.INT), TypeSig.ARRAY.nested(TypeSig.INT + TypeSig.TIMESTAMP +
+          TypeSig.DATE),
+        Seq(ParamCheck("start", TypeSig.INT, TypeSig.INT),
+          ParamCheck("stop", TypeSig.INT, TypeSig.INT)),
+        Some(RepeatingParamCheck("step", TypeSig.INT, TypeSig.INT))),
+      (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
