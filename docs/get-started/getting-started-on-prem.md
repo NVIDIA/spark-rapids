@@ -56,7 +56,7 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 
 For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
 - cudf-21.12.0-cuda11.jar
-- rapids-4-spark_2.12-21.12.0-SNAPSHOT.jar
+- rapids-4-spark_2.12-21.12.0.jar
 jar that your version of the accelerator depends on.
 
 
@@ -65,7 +65,7 @@ been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
 export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.12.0-cuda11.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.12.0-SNAPSHOT.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.12.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -311,7 +311,7 @@ are using.
 #### YARN version 3.3.0+
 YARN version 3.3.0 and newer support a pluggable device framework which allows adding support for
 MIG devices via a plugin. See
-[NVIDIA GPU Plugin for YARN with MIG support](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-21.12/hadoop/device-plugins/gpu-mig/README.md).
+[NVIDIA GPU Plugin for YARN with MIG support for YARN 3.3.0+](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-21.12/examples/MIG-Support/device-plugins/gpu-mig).
 If you are using that plugin with a Spark version older than 3.2.1 and/or specifying the resource
 as `nvidia/miggpu` you will also need to specify the config:
 
@@ -328,7 +328,7 @@ required.
 If you are using YARN version from 3.1.2 up until 3.3.0, it requires making modifications to YARN
 and deploying a version that adds support for MIG to the built-in YARN GPU resource plugin.
 
-See [NVIDIA Support for GPU for YARN with MIG support for YARN 3.1.2 until YARN 3.3.0](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-21.12/hadoop/resource-types/gpu-mig/README.md)
+See [NVIDIA Support for GPU for YARN with MIG support for YARN 3.1.2 until YARN 3.3.0](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-21.12/examples/MIG-Support/resource-types/gpu-mig)
 for details.
 
 ## Running on Kubernetes
