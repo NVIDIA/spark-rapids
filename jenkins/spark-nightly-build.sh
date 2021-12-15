@@ -34,6 +34,9 @@ ART_VER=$(mvnEval project.version)
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
+# Make sure that the local m2 repo on the build machine has the same pom
+# installed as the one being pushed to the remote repo. This to prevent
+# discrepancies between the builds machines regarless of how the local repo was populated.
 function distWithReducedPom {
     cmd="$1"
 
