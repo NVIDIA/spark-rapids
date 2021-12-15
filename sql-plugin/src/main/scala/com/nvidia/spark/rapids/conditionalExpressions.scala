@@ -117,7 +117,7 @@ case class GpuIf(
 
     withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
       if (isAllTrue(pred)) {
-        trueExpr.columnarEval(batch)
+        GpuExpressionsUtils.columnarEvalToColumn(trueExpr, batch)
       } else if (isAllFalse(pred)) {
         falseExpr.columnarEval(batch)
       } else if (gpuTrueExpr.hasSideEffects || gpuFalseExpr.hasSideEffects) {
