@@ -241,7 +241,7 @@ def test_left_broadcast_hash_join_ridealong(data_gen):
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_hash_join_ast_override(data_gen, join_type):
     def do_join(spark):
-        left, right = create_df(spark, short_gen, data_gen, 500, 50)
+        left, right = create_df(spark, data_gen, 500, 50)
         return left.join(broadcast(right), (left.a == right.r_a) & (left.b >= right.r_b), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_hash_join_conf)
 
@@ -251,7 +251,7 @@ def test_right_broadcast_hash_join_ast_override(data_gen, join_type):
 @pytest.mark.parametrize('data_gen', ast_gen, ids=idfn)
 def test_left_broadcast_hash_join_ast_override(data_gen):
     def do_join(spark):
-        left, right = create_df(spark, short_gen, data_gen, 500, 50)
+        left, right = create_df(spark, data_gen, 500, 50)
         return broadcast(left).join(right, (left.a == right.r_a) & (left.b >= right.r_b), 'Right')
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_hash_join_conf)
 
