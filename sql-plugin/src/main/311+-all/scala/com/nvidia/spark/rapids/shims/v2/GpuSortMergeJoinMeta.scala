@@ -51,21 +51,6 @@ class GpuSortMergeJoinMeta(
   val nestedCondition: Option[BaseExprMeta[_]] =
     nestedConditionExpr.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-//  val nestedLoopCondition: Seq[BaseExprMeta[_]] = join.condition match {
-//    case Some(joinExpr) => {
-//      join.leftKeys.zip(join.rightKeys).map {
-//        case (lk, rk) =>
-//          GpuOverrides.wrapExpr(And(joinExpr, EqualTo(lk, rk)), conf, Some(this))
-//      }
-//    }
-//    case None => {
-//      join.leftKeys.zip(join.rightKeys).map {
-//        case (lk, rk) =>
-//          GpuOverrides.wrapExpr(EqualTo(lk, rk), conf, Some(this))
-//      }
-//    }
-//  }
-
   def canReplaceWithNestedLoopJoin(): Boolean = {
     conf.enableReplaceConditionalHashJoin && join.condition.isDefined &&
         nestedCondition.forall(_.canThisBeAst)
