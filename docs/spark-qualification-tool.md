@@ -41,7 +41,7 @@ more information.
 The Qualification tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, you can download the Spark distribution to 
 any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.10.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.12.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2 Run the Qualification tool
@@ -60,7 +60,7 @@ any machine and include the jars in the classpath.
     ```
 
     ```bash
-    Sample: java -cp rapids-4-spark-tools_2.12-21.10.jar:$SPARK_HOME/jars/*
+    Sample: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
            com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
     ```
 
@@ -236,7 +236,7 @@ below for the description of output fields.
 - Java 8 or above, Spark 3.0.1+ 
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.10.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.12.0/)
 
 ### Modify your application code to call the api's
 
