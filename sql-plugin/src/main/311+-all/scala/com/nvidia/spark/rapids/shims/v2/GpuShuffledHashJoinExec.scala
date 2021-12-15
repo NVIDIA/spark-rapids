@@ -109,8 +109,8 @@ class GpuShuffledHashJoinMeta(
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val substituteShuffledNestedLoopJoin: Boolean = join.joinType match {
-      case RightOuter | LeftOuter | LeftSemi | LeftAnti  =>
-        canReplaceWithNestedLoopJoin()
+      case _: InnerLike => canReplaceWithNestedLoopJoin()
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti  => canReplaceWithNestedLoopJoin()
       case _ => false
     }
 
