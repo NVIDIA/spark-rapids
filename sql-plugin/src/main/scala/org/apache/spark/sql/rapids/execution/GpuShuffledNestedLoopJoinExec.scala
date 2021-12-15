@@ -34,7 +34,7 @@ case class GpuShuffledNestedLoopJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     val condition: Option[Expression],
-    val isSkewJoin: Boolean,
+    val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuExec {
 

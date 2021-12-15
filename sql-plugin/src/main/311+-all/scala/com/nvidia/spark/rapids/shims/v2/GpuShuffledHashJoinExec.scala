@@ -121,7 +121,7 @@ class GpuShuffledHashJoinMeta(
         join.joinType,
         GpuJoinUtils.getGpuBuildSide(join.buildSide),
         nestedCondition.map(_.convertToGpu()),
-        false,
+        false)(
         join.leftKeys,
         join.rightKeys)
     } else {

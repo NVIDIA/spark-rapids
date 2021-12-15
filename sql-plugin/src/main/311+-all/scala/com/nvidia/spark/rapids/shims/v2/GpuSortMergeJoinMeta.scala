@@ -147,7 +147,7 @@ class GpuSortMergeJoinMeta(
         join.joinType,
         GpuJoinUtils.getGpuBuildSide(buildSide),
         nestedCondition.map(_.convertToGpu()),
-        join.isSkewJoin,
+        join.isSkewJoin)(
         join.leftKeys,
         join.rightKeys)
     } else {
