@@ -137,6 +137,7 @@ class GpuBroadcastHashJoinMeta(
     verifyBuildSideWasReplaced(buildSide)
 
     val substituteBroadcastNestedLoopJoin: Boolean = join.joinType match {
+      case _: InnerLike => canReplaceWithNestedLoopJoin()
       case RightOuter | LeftOuter | LeftSemi | LeftAnti  =>
         canReplaceWithNestedLoopJoin()
       case _ => false
