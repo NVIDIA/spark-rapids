@@ -564,9 +564,10 @@ object RapidsConf {
 
   val ENABLE_REPLACE_CONDITIONAL_HASHJOIN =
     conf("spark.rapids.sql.replaceConditionalHashJoin.enabled")
-    .doc("Allow replacing conditional hash joins with nested loop joins")
-    .booleanConf
-    .createWithDefault(false)
+        .doc("Allow replacing conditional hash joins with nested loop joins")
+        .internal()
+        .booleanConf
+        .createWithDefault(false)
 
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
     .doc("Whether sorts should be inserted after some hashed operations to improve " +

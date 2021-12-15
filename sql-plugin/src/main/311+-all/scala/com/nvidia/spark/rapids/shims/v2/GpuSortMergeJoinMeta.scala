@@ -18,11 +18,12 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
-import org.apache.spark.sql.rapids.execution.JoinTypeChecks
+import org.apache.spark.sql.rapids.execution.{GpuShuffledNestedLoopJoinExec, JoinTypeChecks}
 import org.apache.spark.sql.types.StructType
 
 class GpuSortMergeJoinMeta(
@@ -38,10 +39,36 @@ class GpuSortMergeJoinMeta(
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val equalityExprs = join.leftKeys.zip(join.rightKeys).map {
+    case (l, r) => EqualTo(l, r)
+  }
+  val nestedConditionExpr: Option[Expression] = join.condition match {
+    case Some(joinExpr) => Some(equalityExprs.foldRight(joinExpr) {
+      case (equalExpr, rest) => And(equalExpr, rest)
+    })
+    case None => None
+  }
+  val nestedCondition: Option[BaseExprMeta[_]] =
+    nestedConditionExpr.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+//  val nestedLoopCondition: Seq[BaseExprMeta[_]] = join.condition match {
+//    case Some(joinExpr) => {
+//      join.leftKeys.zip(join.rightKeys).map {
+//        case (lk, rk) =>
+//          GpuOverrides.wrapExpr(And(joinExpr, EqualTo(lk, rk)), conf, Some(this))
+//      }
+//    }
+//    case None => {
+//      join.leftKeys.zip(join.rightKeys).map {
+//        case (lk, rk) =>
+//          GpuOverrides.wrapExpr(EqualTo(lk, rk), conf, Some(this))
+//      }
+//    }
+//  }
 
   def canReplaceWithNestedLoopJoin(): Boolean = {
     conf.enableReplaceConditionalHashJoin && join.condition.isDefined &&
-        conditionMeta.forall(_.canThisBeAst)
+        nestedCondition.forall(_.canThisBeAst)
   }
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
@@ -61,7 +88,7 @@ class GpuSortMergeJoinMeta(
     }
     def unSupportNonEqualNonAst(): Unit = if (join.condition.isDefined) {
       if (conf.enableReplaceConditionalHashJoin) {
-        conditionMeta.foreach(requireAstForGpuOn)
+        nestedCondition.foreach(requireAstForGpuOn)
       } else {
         this.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
       }
@@ -129,12 +156,12 @@ class GpuSortMergeJoinMeta(
 
     if (substituteShuffledNestedLoopJoin) {
       GpuShuffledNestedLoopJoinExec(
-        join.joinType,
-        GpuJoinUtils.getGpuBuildSide(buildSide),
-        conditionMeta.map(_.convertToGpu()),
         left,
         right,
-        join.isSkewJoin)(
+        join.joinType,
+        GpuJoinUtils.getGpuBuildSide(buildSide),
+        nestedCondition.map(_.convertToGpu()),
+        join.isSkewJoin,
         join.leftKeys,
         join.rightKeys)
     } else {

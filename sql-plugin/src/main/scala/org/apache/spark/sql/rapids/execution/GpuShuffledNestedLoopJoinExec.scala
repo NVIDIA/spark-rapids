@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClustered
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class GpuShuffledNestedLoopJoinBase(
+case class GpuShuffledNestedLoopJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     joinType: JoinType,
@@ -43,12 +43,11 @@ abstract class GpuShuffledNestedLoopJoinBase(
     case GpuBuildRight => (right, left)
   }
 
+  override def otherCopyArgs: Seq[AnyRef] = cpuLeftKeys :: cpuRightKeys :: Nil
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
-    BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
-    BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
@@ -91,8 +90,6 @@ abstract class GpuShuffledNestedLoopJoinBase(
     val streamTime = gpuLongMetric(STREAM_TIME)
     val targetSizeBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val localBuildOutput: Seq[Attribute] = buildPlan.output
-    val buildTime = gpuLongMetric(BUILD_TIME)
-    val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val streamAttributes = streamedPlan.output
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -115,36 +112,26 @@ abstract class GpuShuffledNestedLoopJoinBase(
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
-        val stIt = new CollectTimeIterator("shuffled nested loop join stream",
-          streamIter, streamTime)
-        val startTime = System.nanoTime()
-
-        withResource(ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter,
-          localBuildOutput)) { builtBatch =>
-          GpuColumnVector.incRefCounts(builtBatch)
-          val delta = System.nanoTime() - startTime
-          buildTime += delta
-          buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
-
-          val spillableBuiltBatch = withResource(builtBatch) {
-            LazySpillableColumnarBatch(_, spillCallback, "built")
+        val spillableBuiltBatch = withResource(
+          ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)) {
+          builtBatch => {
+            LazySpillableColumnarBatch(builtBatch, spillCallback, "built")
           }
-
-          val lazyStream = stIt.map { cb =>
-            withResource(cb) { cb =>
-              LazySpillableColumnarBatch(cb, spillCallback, "stream_batch")
-            }
-          }
-          GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
-            nestedLoopJoinType, buildSide, numFirstTableColumns,
-            spillableBuiltBatch,
-            lazyStream, streamAttributes, targetSizeBytes, boundCondition, spillCallback,
-            numOutputRows = numOutputRows,
-            joinOutputRows = joinOutputRows,
-            numOutputBatches = numOutputBatches,
-            opTime = opTime,
-            joinTime = joinTime)
         }
+        val lazyStream = streamIter.map { cb =>
+          withResource(cb) { cb =>
+            LazySpillableColumnarBatch(cb, spillCallback, "stream_batch")
+          }
+        }
+        GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
+          nestedLoopJoinType, buildSide, numFirstTableColumns,
+          spillableBuiltBatch,
+          lazyStream, streamAttributes, targetSizeBytes, boundCondition, spillCallback,
+          numOutputRows = numOutputRows,
+          joinOutputRows = joinOutputRows,
+          numOutputBatches = numOutputBatches,
+          opTime = opTime,
+          joinTime = joinTime)
       }
     }
   }
