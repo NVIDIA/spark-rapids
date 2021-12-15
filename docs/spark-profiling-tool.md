@@ -11,7 +11,7 @@ The output information contains the Spark version, executor details, properties,
 
 * TOC
 {:toc}
-      
+
 ## How to use the Profiling tool
 
 ### Prerequisites
@@ -33,7 +33,7 @@ If you do not already have Spark 3.x installed,
 you can download the Spark distribution to any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.10.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
-If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar).
+If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar). 
 
 ### Step 2 How to run the Profiling tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
@@ -66,7 +66,6 @@ There are 3 modes of operation for the Profiling tool:
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --combined
            <eventlogs | eventlog directories ...>
     ```
-
  3. Compare Mode:
     Compare mode will combine all the applications information in the same tables into a single file 
     and also adds in tables to compare stages and sql ids across all of those applications.
@@ -93,7 +92,7 @@ The output location can be changed using the `--output-directory` option.
 The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
 If running in normal collect mode, it processes event log individually and outputs files for each application under
 a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
-If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summar
+If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
 text file named `rapids_4_spark_tools_combined.log`.
 If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
 text file named `rapids_4_spark_tools_compare.log`.
@@ -140,9 +139,9 @@ We can input multiple Spark event logs and this tool can compare environments, e
 ### A. Information Collected ###
 Application Information:
 
-+--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------
++--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
 |appIndex|appName    |appId                  |sparkUser|startTime    |endTime      |duration|durationStr|sparkVersion|pluginEnabled|
-+--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------
++--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
 |1       |Spark shell|app-20210329165943-0103|user1    |1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false        |
 |2       |Spark shell|app-20210329170243-0018|user1    |1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true         |
 +--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
@@ -179,6 +178,7 @@ Data Source Information:
 |1       |6    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
 |1       |7    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
 |1       |8    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
+|1       |9    |JDBC   |unknown                                                                                                                    |unknown          |                                                                                             |
 +--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
 ```
 
@@ -238,7 +238,6 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.memory.pinnedPool.size        |null      |2g        |
 |spark.rapids.sql.castFloatToDecimal.enabled|null      |true      |
 |spark.rapids.sql.concurrentGpuTasks        |null      |2         |
-|spark.rapids.sql.decimalType.enabled       |null      |true      |
 |spark.rapids.sql.enabled                   |false     |true      |
 |spark.rapids.sql.explain                   |null      |NOT_ON_GPU|
 |spark.rapids.sql.hasNans                   |null      |FALSE     |
@@ -308,7 +307,6 @@ dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
 ```
 
 Or to svg using
-
 ```bash
 dot -Tsvg ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.svg
 ```
@@ -356,7 +354,7 @@ stage. Jobs and SQL are not color coordinated.
 #### B. Analysis
 - Job + Stage level aggregated task metrics
 - SQL level aggregated task metrics
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent
+- SQL duration, application during, if it contains Dataset or RDD operation, potential problems, executor CPU time percent
 - Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 Below we will aggregate the task level metrics at different levels 
@@ -373,7 +371,6 @@ Job + Stage level aggregated task metrics:
 +--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
 |1       |job_0  |3333    |222222  |0                   |11111111    |111111      |111         |1111.1      |6666666            |55555                         |55555                      |55555555           |0                    |222222222222       |22222222222          |111111       |0                     |0                      |0                        |222222222              |1                          |11111         |11111               |99999                    |22222222222          |2222221                   |222222222222          |0                           |222222222222         |222222222222       |5555555              |444444          |
 ```
-  
 
 - SQL level aggregated task metrics:
 
@@ -385,15 +382,15 @@ SQL level aggregated task metrics:
 |1       |application_1111111111111_0001|0    |show at <console>:11|1111    |222222  |6666666        |55555555       |55.55           |0                   |13333333    |111111      |999         |3333.3      |6666666            |55555                         |66666                      |11111111           |0                    |111111111111       |11111111111          |111111       |0                     |0                      |0                        |888888888              |8                          |11111         |11111               |99999                    |11111111111          |2222222                   |222222222222          |0                           |222222222222         |444444444444       |5555555              |444444          |
 ```
 
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent: 
+- SQL duration, application during, if it contains Dataset or RDD operation, potential problems, executor CPU time percent:
 
 ```
 SQL Duration and Executor CPU Time Percent
-+--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
-|appIndex|App ID                        |sqlID|SQL Duration|Contains Dataset Op|App Duration|Potential Problems|Executor CPU Time Percent|
-+--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
-|1       |application_1603128018386_7759|0    |11042       |false              |119990      |null              |68.48                    |
-+--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
++--------+-------------------+-----+------------+--------------------------+------------+---------------------------+-------------------------+
+|appIndex|App ID             |sqlID|SQL Duration|Contains Dataset or RDD Op|App Duration|Potential Problems         |Executor CPU Time Percent|
++--------+-------------------+-----+------------+--------------------------+------------+---------------------------+-------------------------+
+|1       |local-1626104300434|0    |1260        |false                     |131104      |DECIMAL:NESTED COMPLEX TYPE|92.65                    |
+|1       |local-1626104300434|1    |259         |false                     |131104      |DECIMAL:NESTED COMPLEX TYPE|76.79                    |
 ```
 
 - Shuffle Skew Check: 
@@ -465,7 +462,7 @@ Failed jobs:
 ```
 
 ## Profiling tool options
-
+  
 ```bash
 RAPIDS Accelerator for Apache Spark Profiling tool
 

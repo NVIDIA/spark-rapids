@@ -11,9 +11,9 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 8.2 ML with GPU
-    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
-    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
+    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 9.1 ML with GPU
+    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2)
+    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2)
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
@@ -41,7 +41,8 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
 
 4. Cannot spin off multiple executors on a multi-GPU node. 
-   Even though it is possible to set `spark.executor.resource.gpu.amount=N` (where N is the number
+
+	Even though it is possible to set `spark.executor.resource.gpu.amount=N` (where N is the number
     of GPUs per node) in the in Spark Configuration tab, Databricks overrides this to
     `spark.executor.resource.gpu.amount=1`.  This will result in failed executors when starting the
     cluster.
@@ -49,10 +50,10 @@ when using the plugin. Queries may still see significant speedups even with AQE 
 5. Databricks makes changes to the runtime without notification.
 
     Databricks makes changes to existing runtimes, applying patches, without notification.
-   [Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
-   regular integration tests on the Databricks environment to catch these issues and fix them once
-   detected.
-   
+	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
+	regular integration tests on the Databricks environment to catch these issues and fix them once
+	detected.
+	
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to Clusters, then clicking `+ Create Cluster`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
@@ -84,9 +85,9 @@ Update 2. Users wishing to try 21.06.1 or later on Databricks 7.3 LTS ML will ne
 CUDA 11.0 toolkit on the cluster.  This can be done with the [generate-init-script-cuda11.ipynb
 ](../demo/Databricks/generate-init-script-cuda11.ipynb) init script, which installs both the RAPIDS
 Spark plugin and the CUDA 11 toolkit. 
-    - [Databricks 8.2
-    ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment) has CUDA 11
-    installed.  Users will need to use 21.06.2 or later on Databricks 8.2 ML. In this case use
+    - [Databricks 9.1 LTS
+    ML](https://docs.databricks.com/release-notes/runtime/9.1ml.html#system-environment) has CUDA 11
+    installed.  Users will need to use 21.12.0 or later on Databricks 9.1 LTS ML. In this case use
     [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) which will install
     the RAPIDS Spark plugin.
 2. Once you are in the notebook, click the “Run All” button.
