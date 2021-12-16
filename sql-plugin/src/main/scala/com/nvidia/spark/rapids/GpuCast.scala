@@ -679,8 +679,6 @@ object GpuCast extends Arm {
       /*
        * cast all not-null elements in a child column to string type <p>
        * add `' '` to all elements when `legacyCastToString = true`
-       * @param child child column of an array column
-       * @return a string type child column
        */
       def castChildToStr(child: ColumnView): ColumnView = {
         withResource(
@@ -704,7 +702,6 @@ object GpuCast extends Arm {
 
       /*
        * If the first char of a string is ' ', remove it (only for legacyCastToString = true)
-       * @param strVec a string type column vector
        */
       def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
         if (legacyCastToString){
@@ -719,7 +716,6 @@ object GpuCast extends Arm {
 
       /*
        * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-       * @param strVec a string vector
        */
       def addBrackets(strVec: ColumnVector): ColumnVector = {
         withResource(
