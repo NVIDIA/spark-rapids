@@ -74,7 +74,7 @@ function distWithReducedPom {
 
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     # temporarily skip tests on Spark 3.3.0 - https://github.com/NVIDIA/spark-rapids/issues/4031
-    [[ buildver == "330" ]] && skipTestsFor330=true || skipTestsFor330=false
+    [[ $buildver == "330" ]] && skipTestsFor330=true || skipTestsFor330=false
     mvn -U -B clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}" \
