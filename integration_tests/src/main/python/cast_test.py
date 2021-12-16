@@ -200,7 +200,8 @@ def _assert_cast_to_string_equal (data_gen, conf):
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true', 
+        "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_gens_for_cast_to_string], ids=idfn)
@@ -210,6 +211,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
         {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
+         "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
          "spark.rapids.sql.castFloatToString.enabled"       : "true", 
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
@@ -221,16 +223,18 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 def test_cast_array_with_unsupported_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
+         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 
-@pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", short_gen], ["fourth", int_gen], ["fifth", long_gen], ["sixth", string_gen], ["seventh", date_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_gens_for_cast_to_string)])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.rapids.sql.castDecimalToString.enabled": 'true', 
+         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 # https://github.com/NVIDIA/spark-rapids/issues/2309
@@ -274,6 +278,7 @@ def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
         {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
+          "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
          "spark.rapids.sql.castFloatToString.enabled"       : "true", 
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
@@ -284,5 +289,7 @@ def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
 def test_cast_struct_with_unsupported_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true',
+         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
+    
