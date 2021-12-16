@@ -33,7 +33,12 @@ ART_VER=$(mvnEval project.version)
 
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
+
 DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
+DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"true"}
+if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]]; then
+    DIST_PROFILE_OPT="$DIST_PROFILE_OPT,301db,312db"
+fi
 
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
@@ -50,7 +55,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
-            mvnExtaFlags="-Durl=$SERVER_URL -DrepositoryId=$SERVER_ID"
+            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots"
             ;;
 
         *)
