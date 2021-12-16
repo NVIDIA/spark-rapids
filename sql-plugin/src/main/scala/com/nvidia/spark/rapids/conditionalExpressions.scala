@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, NullPolicy, ScanAggregation, ScanType, Table, UnaryOp}
+import ai.rapids.cudf.{ColumnVector, NullPolicy, Scalar, ScanAggregation, ScanType, Table, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
@@ -181,16 +181,16 @@ case class GpuIf(
               case (t: GpuColumnVector, f: GpuColumnVector) =>
                 withResource(gather(pred.getBase, t)) { trueValues =>
                   withResource(gather(inverted, f)) { falseValues =>
-                    pred.getBase.ifElse(trueValues.getColumn(0), falseValues.getColumn(0))
+                    pred.getBase.ifElse(trueValues, falseValues)
                   }
                 }
               case (t: GpuScalar, f: GpuColumnVector) =>
                 withResource(gather(inverted, f)) { falseValues =>
-                  pred.getBase.ifElse(t.getBase, falseValues.getColumn(0))
+                  pred.getBase.ifElse(t.getBase, falseValues)
                 }
               case (t: GpuColumnVector, f: GpuScalar) =>
                 withResource(gather(pred.getBase, t)) { trueValues =>
-                  pred.getBase.ifElse(trueValues.getColumn(0), f.getBase)
+                  pred.getBase.ifElse(trueValues, f.getBase)
                 }
               case (_: GpuScalar, _: GpuScalar) =>
                 throw new IllegalStateException(
@@ -220,7 +220,7 @@ case class GpuIf(
     }
   }
 
-  private def gather(predicate: ColumnVector, t: GpuColumnVector): Table = {
+  private def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
     // convert the predicate boolean column to numeric where 1 = true
     // amd 0 = false and then use `scan` with `sum` to convert to
     // indices.
@@ -247,7 +247,9 @@ case class GpuIf(
 
         withResource(new Table(t.getBase)) { tbl =>
           withResource(gatherMap) { _ =>
-            tbl.gather(gatherMap)
+            withResource(tbl.gather(gatherMap)) { gatherTbl =>
+              gatherTbl.getColumn(0).incRefCount()
+            }
           }
         }
       }
