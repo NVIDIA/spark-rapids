@@ -20,6 +20,8 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
+pytestmark = pytest.mark.nightly_test_to_cases
+
 orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \

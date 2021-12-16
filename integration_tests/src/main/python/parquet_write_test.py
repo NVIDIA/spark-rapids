@@ -25,6 +25,8 @@ import pyspark.sql.utils
 import random
 from spark_session import is_before_spark_311
 
+pytestmark = pytest.mark.nightly_test_to_cases
+
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
 original_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}

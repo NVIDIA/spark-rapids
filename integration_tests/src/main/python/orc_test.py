@@ -21,6 +21,8 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session
 from parquet_test import _nested_pruning_schemas
 
+pytestmark = pytest.mark.nightly_test_to_cases
+
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
 
