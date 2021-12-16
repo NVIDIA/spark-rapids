@@ -36,7 +36,7 @@ DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$AR
 
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
-# discrepancies between the builds machines regarless of how the local repo was populated.
+# discrepancies between the build machines regardless of how the local repo was populated.
 function distWithReducedPom {
     cmd="$1"
 
@@ -85,7 +85,7 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
             -Dmaven.repo.local=$M2DIR \
             -Dcuda.version=$CUDA_CLASSIFIER \
             -DskipTests \
-            -Dbuildver="${buildVer}"
+            -Dbuildver="${buildver}"
 done
 
 mvn -B clean install -pl '!tools' \
