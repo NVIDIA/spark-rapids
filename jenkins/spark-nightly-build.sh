@@ -57,7 +57,8 @@ function distWithReducedPom {
             ;;
     esac
 
-    mvn -B $mvnCmd $MVN_URM_MIRROR \
+    mvn -B -s jenkins/settings.xml \
+        $mvnCmd $MVN_URM_MIRROR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dmaven.repo.local=$M2DIR \
         -Dfile="${DIST_FPATH}.jar" \
