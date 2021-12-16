@@ -34,6 +34,12 @@ ART_VER=$(mvnEval project.version)
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
+DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
+DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"true"}
+if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]]; then
+    DIST_PROFILE_OPT="$DIST_PROFILE_OPT,301db,312db"
+fi
+
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
 # discrepancies between the build machines regardless of how the local repo was populated.
@@ -49,6 +55,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
+            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots"
             ;;
 
         *)
@@ -74,7 +81,7 @@ function distWithReducedPom {
 
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     # temporarily skip tests on Spark 3.3.0 - https://github.com/NVIDIA/spark-rapids/issues/4031
-    [[ buildver == "330" ]] && skipTestsFor330=true || skipTestsFor330=false
+    [[ $buildver == "330" ]] && skipTestsFor330=true || skipTestsFor330=false
     mvn -U -B clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}" \
@@ -89,7 +96,7 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
 done
 
 mvn -B clean install -pl '!tools' \
-    -PsnapshotsWithDatabricks \
+    $DIST_PROFILE_OPT \
     -Dbuildver=$SPARK_BASE_SHIM_VERSION \
     $MVN_URM_MIRROR \
     -Dmaven.repo.local=$M2DIR \
@@ -102,7 +109,6 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
 
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     mvn -B deploy -pl '!dist' \
-        -PsnapshotsWithDatabricks \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER
