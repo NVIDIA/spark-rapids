@@ -28,7 +28,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
   with ShimExpression {
 
-  def computeIfElse(
+  protected def computeIfElse(
       batch: ColumnarBatch,
       predExpr: Expression,
       trueExpr: Expression,
@@ -112,7 +112,6 @@ case class GpuIf(
 
     val gpuTrueExpr = trueExpr.asInstanceOf[GpuExpression]
     val gpuFalseExpr = falseExpr.asInstanceOf[GpuExpression]
-    val colTypes = GpuColumnVector.extractTypes(batch)
 
     withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
       if (isAllTrue(pred)) {
@@ -120,7 +119,7 @@ case class GpuIf(
       } else if (isAllFalse(pred)) {
         GpuExpressionsUtils.columnarEvalToColumn(falseExpr, batch)
       } else if (gpuTrueExpr.hasSideEffects || gpuFalseExpr.hasSideEffects) {
-        conditionalWithSideEffects(batch, pred, gpuTrueExpr, gpuFalseExpr, colTypes)
+        conditionalWithSideEffects(batch, pred, gpuTrueExpr, gpuFalseExpr)
       } else {
         withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
           withResourceIfAllowed(falseExpr.columnarEval(batch)) { falseRet =>
@@ -162,14 +161,9 @@ case class GpuIf(
       batch: ColumnarBatch,
       pred: GpuColumnVector,
       gpuTrueExpr: GpuExpression,
-      gpuFalseExpr: GpuExpression,
-      colTypes: Array[DataType]): GpuColumnVector = {
+      gpuFalseExpr: GpuExpression): GpuColumnVector = {
 
-    def batchFromCv(t: GpuColumnVector, dt: DataType): ColumnarBatch = {
-      withResource(new Table(t.getBase)) { tbl =>
-        GpuColumnVector.from(tbl, Array(dt))
-      }
-    }
+    val colTypes = GpuColumnVector.extractTypes(batch)
 
     withResource(GpuColumnVector.from(batch)) { tbl =>
       withResource(pred.getBase.unaryOp(UnaryOp.NOT)) { inverted =>
@@ -185,26 +179,18 @@ case class GpuIf(
           withResourceIfAllowed(ff) { _ =>
             val finalRet = (tt, ff) match {
               case (t: GpuColumnVector, f: GpuColumnVector) =>
-                withResource(batchFromCv(t, trueExpr.dataType)) { trueTable =>
-                  withResource(batchFromCv(f, falseExpr.dataType)) { falseTable =>
-                    withResource(gather(pred.getBase, trueTable)) { trueValues =>
-                      withResource(gather(inverted, falseTable)) { falseValues =>
-                        pred.getBase.ifElse(trueValues.getColumn(0), falseValues.getColumn(0))
-                      }
-                    }
+                withResource(gather(pred.getBase, t)) { trueValues =>
+                  withResource(gather(inverted, f)) { falseValues =>
+                    pred.getBase.ifElse(trueValues.getColumn(0), falseValues.getColumn(0))
                   }
                 }
               case (t: GpuScalar, f: GpuColumnVector) =>
-                withResource(batchFromCv(f, falseExpr.dataType)) { falseTable =>
-                  withResource(gather(inverted, falseTable)) { falseValues =>
-                    pred.getBase.ifElse(t.getBase, falseValues.getColumn(0))
-                  }
+                withResource(gather(inverted, f)) { falseValues =>
+                  pred.getBase.ifElse(t.getBase, falseValues.getColumn(0))
                 }
               case (t: GpuColumnVector, f: GpuScalar) =>
-                withResource(batchFromCv(t, trueExpr.dataType)) { trueTable =>
-                  withResource(gather(pred.getBase, trueTable)) { trueValues =>
-                    pred.getBase.ifElse(trueValues.getColumn(0), f.getBase)
-                  }
+                withResource(gather(pred.getBase, t)) { trueValues =>
+                  pred.getBase.ifElse(trueValues.getColumn(0), f.getBase)
                 }
               case (_: GpuScalar, _: GpuScalar) =>
                 throw new IllegalStateException(
@@ -234,7 +220,7 @@ case class GpuIf(
     }
   }
 
-  private def gather(predicate: ColumnVector, batch: ColumnarBatch): Table = {
+  private def gather(predicate: ColumnVector, t: GpuColumnVector): Table = {
     // convert the predicate boolean column to numeric where 1 = true
     // amd 0 = false and then use `scan` with `sum` to convert to
     // indices.
@@ -259,9 +245,9 @@ case class GpuIf(
           outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
         }
 
-        withResource(gatherMap) { _ =>
-          withResource(GpuColumnVector.from(batch)) { table =>
-            table.gather(gatherMap)
+        withResource(new Table(t.getBase)) { tbl =>
+          withResource(gatherMap) { _ =>
+            tbl.gather(gatherMap)
           }
         }
       }
