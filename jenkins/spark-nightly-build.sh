@@ -33,6 +33,7 @@ ART_VER=$(mvnEval project.version)
 
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
+DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
 
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
@@ -89,7 +90,7 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
 done
 
 mvn -B clean install -pl '!tools' \
-    -PsnapshotsWithDatabricks \
+    $DIST_PROFILE_OPT \
     -Dbuildver=$SPARK_BASE_SHIM_VERSION \
     $MVN_URM_MIRROR \
     -Dmaven.repo.local=$M2DIR \
@@ -102,7 +103,7 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
 
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     mvn -B deploy -pl '!dist' \
-        -PsnapshotsWithDatabricks \
+        $DIST_PROFILE_OPT \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER
