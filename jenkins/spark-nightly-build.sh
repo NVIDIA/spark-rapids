@@ -109,7 +109,6 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
 
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     mvn -B deploy -pl '!dist' \
-        $DIST_PROFILE_OPT \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER
