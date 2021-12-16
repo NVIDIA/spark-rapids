@@ -787,7 +787,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       field => {
         if (field.isPrimitive) {
           val t = field.getOriginalType
-          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) || (t == OriginalType.UINT_32)
+          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) ||
+            (t == OriginalType.UINT_32) || (t == OriginalType.UINT_64)
         } else {
           existsUnsignedType(field.asGroupType)
         }
@@ -796,7 +797,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
-    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType())
+    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()) ||
+      cv.getType.equals(DType.UINT64)
   }
 
   def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {

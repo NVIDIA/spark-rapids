@@ -56,7 +56,7 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
 
 parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in
                           [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
-                           limited_timestamp]] + [simple_string_to_string_map_gen]
+                           limited_timestamp]] + [simple_string_to_string_map_gen] + decimal_128_no_neg_map_gens
 
 parquet_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
                       StructGen([['child0', StructGen([['child1', byte_gen]])]]),
