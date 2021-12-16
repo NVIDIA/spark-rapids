@@ -270,7 +270,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
 @pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @pytest.mark.xfail(reason='casting this type to string is not an exact match')
-def test_cast_strict_with_unmatched_element_to_string(data_gen, legacy):
+def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
         {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
@@ -281,7 +281,7 @@ def test_cast_strict_with_unmatched_element_to_string(data_gen, legacy):
 @pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_support_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @pytest.mark.xfail(reason='casting this type to string is not supported')
-def test_cast_array_with_unsupported_element_to_string(data_gen, legacy):
+def test_cast_struct_with_unsupported_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
