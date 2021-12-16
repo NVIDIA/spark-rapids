@@ -50,6 +50,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
+            mvnExtaFlags="-Durl=$SERVER_URL -DrepositoryId=$SERVER_ID"
             ;;
 
         *)
@@ -57,8 +58,7 @@ function distWithReducedPom {
             ;;
     esac
 
-    mvn -B -s jenkins/settings.xml \
-        $mvnCmd $MVN_URM_MIRROR \
+    mvn -B $mvnCmd $MVN_URM_MIRROR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dmaven.repo.local=$M2DIR \
         -Dfile="${DIST_FPATH}.jar" \
