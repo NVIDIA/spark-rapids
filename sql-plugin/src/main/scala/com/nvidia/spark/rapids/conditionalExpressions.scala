@@ -255,7 +255,7 @@ case class GpuIf(
         // for the entries in the gather map that do not represent valid
         // values to be gathered, we change the value to -MAX_INT which
         // will be treated as null values in the gather algorithm
-        val gatherMap = withResource(GpuScalar.from(Int.MinValue, DataTypes.IntegerType)) {
+        val gatherMap = withResource(Scalar.fromInt(Int.MinValue)) {
           outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
         }
 
