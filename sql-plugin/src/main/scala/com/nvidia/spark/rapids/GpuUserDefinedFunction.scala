@@ -41,6 +41,8 @@ trait GpuUserDefinedFunction extends GpuExpression
   /** True if the UDF is deterministic */
   val udfDeterministic: Boolean
 
+  override def hasSideEffects: Boolean = true
+
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
   private[this] val nvtxRangeName = s"UDF: $name"
@@ -103,6 +105,7 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   private[this] lazy val outputType = dataType.catalogString
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
+  override def hasSideEffects: Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val cpuUDFStart = System.nanoTime
