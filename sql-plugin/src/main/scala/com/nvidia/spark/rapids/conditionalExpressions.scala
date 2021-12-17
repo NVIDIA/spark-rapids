@@ -28,6 +28,35 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
   with ShimExpression {
 
+  protected def computeIfElse(
+    batch: ColumnarBatch,
+    predExpr: Expression,
+    trueExpr: Expression,
+    falseValue: Any)
+  : GpuColumnVector = {
+
+    withResourceIfAllowed(falseValue) { falseRet =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
+          val finalRet = (trueRet, falseRet) match {
+            case (t: GpuColumnVector, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuColumnVector, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t, f) =>
+              throw new IllegalStateException(s"Unexpected inputs" +
+                s" ($t: ${t.getClass}, $f: ${f.getClass})")
+          }
+          GpuColumnVector.from(finalRet, dataType)
+        }
+      }
+    }
+  }
+
   protected def isAllTrue(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
     if (col.getRowCount == 0) {
@@ -405,35 +434,6 @@ case class GpuCaseWhen(
     } finally {
       currentValue.foreach(_.safeClose())
       cumulativePred.foreach(_.safeClose())
-    }
-  }
-
-  def computeIfElse(
-    batch: ColumnarBatch,
-    predExpr: Expression,
-    trueExpr: Expression,
-    falseValue: Any)
-  : GpuColumnVector = {
-
-    withResourceIfAllowed(falseValue) { falseRet =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
-        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
-          val finalRet = (trueRet, falseRet) match {
-            case (t: GpuColumnVector, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuColumnVector, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t, f) =>
-              throw new IllegalStateException(s"Unexpected inputs" +
-                s" ($t: ${t.getClass}, $f: ${f.getClass})")
-          }
-          GpuColumnVector.from(finalRet, dataType)
-        }
-      }
     }
   }
 
