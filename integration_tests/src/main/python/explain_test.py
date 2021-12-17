@@ -83,7 +83,7 @@ def test_explain_udf():
         df2 = df.select(slen("name").alias("slen(name)"), to_upper("name"), add_one("age"))
         explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df2._jdf, "ALL")
         # udf shouldn't be on GPU
-        udf_str_not = 'cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.python.BatchEvalPythonExec'
+        udf_str_not = 'cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.python.BatchEvalPythonExec'
         assert udf_str_not in explain_str
         not_on_gpu_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df2._jdf, "NOT")
         assert udf_str_not in not_on_gpu_str

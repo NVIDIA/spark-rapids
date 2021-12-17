@@ -654,7 +654,8 @@ object InternalColumnarRddConverter extends Logging {
     convert(df)
   }
 
-  def convert(df: DataFrame): RDD[Table] = {
+  // Extract RDD[ColumnarBatch] directly
+  def extractRDDColumnarBatch(df: DataFrame): (Option[RDD[ColumnarBatch]], RDD[Row]) = {
     val schema = df.schema
     val unsupported = schema.map(_.dataType).filter( dt => !GpuOverrides.isSupportedType(dt,
       allowMaps = true, allowStringMaps = true, allowNull = true, allowStruct = true, allowArray
@@ -709,7 +710,12 @@ object InternalColumnarRddConverter extends Logging {
         logDebug(s"Cannot extract columnar RDD directly. " +
           s"(First MapPartitionsRDD not found $rdd)")
     }
+    (batch, input)
+  }
 
+  def convert(df: DataFrame): RDD[Table] = {
+    val schema = df.schema
+    val (batch, input) = extractRDDColumnarBatch(df)
     val b = batch.getOrElse({
       // We have to fall back to doing a slow transition.
       val converters = new GpuExternalRowToColumnConverter(schema)

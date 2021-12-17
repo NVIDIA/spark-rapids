@@ -21,32 +21,98 @@ set -ex
 
 ## export 'M2DIR' so that shims can get the correct cudf/spark dependency info
 export M2DIR="$WORKSPACE/.m2"
+
+DIST_PL="dist"
+function mvnEval {
+    mvn help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
+}
+
+ART_ID=$(mvnEval project.artifactId)
+ART_GROUP_ID=$(mvnEval project.groupId)
+ART_VER=$(mvnEval project.version)
+
+DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
+DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
+
+DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
+DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"true"}
+if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]]; then
+    DIST_PROFILE_OPT="$DIST_PROFILE_OPT,301db,312db"
+fi
+
+# Make sure that the local m2 repo on the build machine has the same pom
+# installed as the one being pushed to the remote repo. This to prevent
+# discrepancies between the build machines regardless of how the local repo was populated.
+function distWithReducedPom {
+    cmd="$1"
+
+    case $cmd in
+
+        install)
+            mvnCmd="install:install-file"
+            mvnExtaFlags="-Dpackaging=jar"
+            ;;
+
+        deploy)
+            mvnCmd="deploy:deploy-file"
+            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots"
+            ;;
+
+        *)
+            echo "Unknown command: $cmd"
+            ;;
+    esac
+
+    mvn -B $mvnCmd $MVN_URM_MIRROR \
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -Dmaven.repo.local=$M2DIR \
+        -Dfile="${DIST_FPATH}.jar" \
+        -DpomFile="${DIST_POM_FPATH}" \
+        -DgroupId="${ART_GROUP_ID}" \
+        -DartifactId="${ART_ID}" \
+        -Dversion="${ART_VER}" \
+        $mvnExtaFlags
+}
+
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
-mvn -U -B -Dbuildver=302 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=302 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=303 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=303 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=304 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=304 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=311 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=311 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=312 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=312 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=313 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=313 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=311cdh clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=311cdh deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=320 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=320 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -U -B -Dbuildver=321 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=321 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-# temporarily skip tests on Spark 3.3.0 - https://github.com/NVIDIA/spark-rapids/issues/4031
-mvn -U -B -Dbuildver=330 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
-mvn -B -Dbuildver=330 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+# Deploy jars unless SKIP_DEPLOY is 'true'
 
-mvn -B -pl '!tools' -Dbuildver=301 -PsnapshotsWithDatabricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
+    # temporarily skip tests on Spark 3.3.0 - https://github.com/NVIDIA/spark-rapids/issues/4031
+    [[ $buildver == "330" ]] && skipTestsFor330=true || skipTestsFor330=false
+    mvn -U -B clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -Dbuildver="${buildver}" \
+        -DskipTests="${skipTestsFor330}"
+    distWithReducedPom "install"
+    [[ $SKIP_DEPLOY != 'true' ]] && \
+        mvn -B deploy -pl '!tools,!dist' $MVN_URM_MIRROR \
+            -Dmaven.repo.local=$M2DIR \
+            -Dcuda.version=$CUDA_CLASSIFIER \
+            -DskipTests \
+            -Dbuildver="${buildver}"
+done
+
+mvn -B clean install -pl '!tools' \
+    $DIST_PROFILE_OPT \
+    -Dbuildver=$SPARK_BASE_SHIM_VERSION \
+    $MVN_URM_MIRROR \
+    -Dmaven.repo.local=$M2DIR \
+    -Dcuda.version=$CUDA_CLASSIFIER
+
+distWithReducedPom "install"
+
+if [[ $SKIP_DEPLOY != 'true' ]]; then
+    distWithReducedPom "deploy"
+
+    # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
+    mvn -B deploy -pl '!dist' \
+        -Dbuildver=$SPARK_BASE_SHIM_VERSION \
+        $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+        -Dcuda.version=$CUDA_CLASSIFIER
+fi
 
 # Parse cudf and spark files from local mvn repo
 jenkins/printJarVersion.sh "CUDFVersion" "$M2DIR/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
