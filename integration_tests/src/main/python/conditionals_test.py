@@ -211,3 +211,15 @@ def test_conditional_with_side_effects_cast(data_gen):
                 'IF(a RLIKE "^[0-9]{1,5}$", CAST(a AS INT), 0)'),
             conf = {'spark.sql.ansi.enabled':True,
                     'spark.rapids.sql.expression.RLike': True})
+
+@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
+def test_conditional_with_side_effects_case_when(data_gen):
+    gen = mk_str_gen('[0-9]{1,20}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, data_gen, gen).selectExpr(
+                'CASE \
+                WHEN a RLIKE "^[0-9]{1,3}$" THEN CAST(a AS INT) \
+                WHEN a RLIKE "^[0-9]{4,6}$" THEN CAST(a AS INT) + 123 \
+                ELSE -1 END'),
+                conf = {'spark.sql.ansi.enabled':True,
+                        'spark.rapids.sql.expression.RLike': True})

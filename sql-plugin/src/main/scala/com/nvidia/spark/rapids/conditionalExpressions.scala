@@ -28,33 +28,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
   with ShimExpression {
 
-  protected def computeIfElse(
-      batch: ColumnarBatch,
-      predExpr: Expression,
-      trueExpr: Expression,
-      falseValue: Any): GpuColumnVector = {
-    withResourceIfAllowed(falseValue) { falseRet =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
-        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
-          val finalRet = (trueRet, falseRet) match {
-            case (t: GpuColumnVector, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuColumnVector, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t, f) =>
-              throw new IllegalStateException(s"Unexpected inputs" +
-                s" ($t: ${t.getClass}, $f: ${f.getClass})")
-          }
-          GpuColumnVector.from(finalRet, dataType)
-        }
-      }
-    }
-  }
-
   protected def isAllTrue(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
     if (col.getRowCount == 0) {
@@ -80,6 +53,61 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
       !anyTrue.getBoolean
     }
   }
+
+  protected def filterBatch(
+      tbl: Table,
+      pred: ColumnVector,
+      colTypes: Array[DataType]): ColumnarBatch = {
+    withResource(tbl.filter(pred)) { filteredData =>
+      GpuColumnVector.from(filteredData, colTypes)
+    }
+  }
+
+  private def boolToInt(cv: ColumnVector): ColumnVector = {
+    withResource(GpuScalar.from(1, DataTypes.IntegerType)) { one =>
+      withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+        cv.ifElse(one, zero)
+      }
+    }
+  }
+
+  protected def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
+    // convert the predicate boolean column to numeric where 1 = true
+    // amd 0 = false and then use `scan` with `sum` to convert to
+    // indices.
+    //
+    // For example, if the predicate evaluates to [F, F, T, F, T] then this
+    // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
+    // will perform an exclusive sum on these values and
+    // produce [0, 0, 0, 1, 1]. Combining this with the original
+    // predicate boolean array results in the two T values mapping to
+    // indices 0 and 1, respectively.
+
+    withResource(boolToInt(predicate)) { boolsAsInts =>
+      withResource(boolsAsInts.scan(
+        ScanAggregation.sum(),
+        ScanType.EXCLUSIVE,
+        NullPolicy.INCLUDE)) { prefixSumExclusive =>
+
+        // for the entries in the gather map that do not represent valid
+        // values to be gathered, we change the value to -MAX_INT which
+        // will be treated as null values in the gather algorithm
+        val gatherMap = withResource(Scalar.fromInt(Int.MinValue)) {
+          outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
+        }
+
+        withResource(new Table(t.getBase)) { tbl =>
+          withResource(gatherMap) { _ =>
+            withResource(tbl.gather(gatherMap)) { gatherTbl =>
+              gatherTbl.getColumn(0).incRefCount()
+            }
+          }
+        }
+      }
+    }
+  }
+
+
 }
 
 case class GpuIf(
@@ -203,59 +231,6 @@ case class GpuIf(
     }
   }
 
-  private def filterBatch(
-      tbl: Table,
-      pred: ColumnVector,
-      colTypes: Array[DataType]): ColumnarBatch = {
-    withResource(tbl.filter(pred)) { filteredData =>
-      GpuColumnVector.from(filteredData, colTypes)
-    }
-  }
-
-  private def boolToInt(cv: ColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(1, DataTypes.IntegerType)) { one =>
-      withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
-        cv.ifElse(one, zero)
-      }
-    }
-  }
-
-  private def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
-    // convert the predicate boolean column to numeric where 1 = true
-    // amd 0 = false and then use `scan` with `sum` to convert to
-    // indices.
-    //
-    // For example, if the predicate evaluates to [F, F, T, F, T] then this
-    // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
-    // will perform an exclusive sum on these values and
-    // produce [0, 0, 0, 1, 1]. Combining this with the original
-    // predicate boolean array results in the two T values mapping to
-    // indices 0 and 1, respectively.
-
-    withResource(boolToInt(predicate)) { boolsAsInts =>
-      withResource(boolsAsInts.scan(
-        ScanAggregation.sum(),
-        ScanType.EXCLUSIVE,
-        NullPolicy.INCLUDE)) { prefixSumExclusive =>
-
-        // for the entries in the gather map that do not represent valid
-        // values to be gathered, we change the value to -MAX_INT which
-        // will be treated as null values in the gather algorithm
-        val gatherMap = withResource(Scalar.fromInt(Int.MinValue)) {
-          outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
-        }
-
-        withResource(new Table(t.getBase)) { tbl =>
-          withResource(gatherMap) { _ =>
-            withResource(tbl.gather(gatherMap)) { gatherTbl =>
-              gatherTbl.getColumn(0).incRefCount()
-            }
-          }
-        }
-      }
-    }
-  }
-
   override def toString: String = s"if ($predicateExpr) $trueExpr else $falseExpr"
 
   override def sql: String = s"(IF(${predicateExpr.sql}, ${trueExpr.sql}, ${falseExpr.sql}))"
@@ -273,6 +248,9 @@ case class GpuCaseWhen(
   override lazy val inputTypesForMerging: Seq[DataType] = {
     branches.map(_._2.dataType) ++ elseValue.map(_.dataType)
   }
+
+  private lazy val branchesWithSideEffects =
+    branches.exists(_._2.asInstanceOf[GpuExpression].hasSideEffects)
 
   override def nullable: Boolean = {
     // Result is nullable if any of the branch is nullable, or if the else value is nullable
@@ -301,12 +279,164 @@ case class GpuCaseWhen(
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    // `elseRet` will be closed in `computeIfElse`.
-    val elseRet = elseValue
-      .map(_.columnarEval(batch))
-      .getOrElse(GpuScalar(null, branches.last._2.dataType))
-    branches.foldRight[Any](elseRet) { case ((predicateExpr, trueExpr), falseRet) =>
-      computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+    if (branchesWithSideEffects) {
+      columnarEvalWithSideEffects(batch)
+    } else {
+      // `elseRet` will be closed in `computeIfElse`.
+      val elseRet = elseValue
+        .map(_.columnarEval(batch))
+        .getOrElse(GpuScalar(null, branches.last._2.dataType))
+      branches.foldRight[Any](elseRet) {
+        case ((predicateExpr, trueExpr), falseRet) =>
+          computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+        }
+      }
+    }
+
+  private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+
+    // 1 2 3
+    // - - -
+    // T ? ? -> only eval branch1
+    // F T ? -> only eval branch2
+    // F F T -> only eval branch3
+    // F F F -> only eval else
+
+    // for now, assume all branches have side-effects but we can maybe optimize this?
+
+    val colTypes = GpuColumnVector.extractTypes(batch)
+    var cumulativePred: Option[GpuColumnVector] = None
+    var currentValue: Option[GpuColumnVector] = None
+
+    try {
+      withResource(GpuColumnVector.from(batch)) { tbl =>
+
+        branches.foreach {
+          case (whenExpr, thenExpr) =>
+            // evaluate the WHEN predicate
+            withResource(GpuExpressionsUtils.columnarEvalToColumn(whenExpr, batch)) { whenBool =>
+              // we only want to evaluate where this WHEN is true and no previous WHEN has been true
+              val whenBoolAdjusted: GpuColumnVector = cumulativePred match {
+                case Some(prev) =>
+                  withResource(prev.getBase.not()) { notPreviouslyTrue =>
+                    GpuColumnVector.from(
+                      whenBool.getBase.and(notPreviouslyTrue), DataTypes.BooleanType)
+                  }
+
+                case None =>
+                  whenBool.incRefCount()
+              }
+
+              withResource(whenBoolAdjusted) { _ =>
+
+                if (isAllTrue(whenBoolAdjusted)) {
+                  // TODO short circuit optimization
+                  println("BRANCH ALL TRUE")
+                  return GpuExpressionsUtils.columnarEvalToColumn(thenExpr, batch)
+                }
+
+                val thenValues = withResource(filterBatch(tbl,
+                    whenBoolAdjusted.getBase, colTypes)) {
+                  trueBatch => GpuExpressionsUtils.columnarEvalToColumn(thenExpr, trueBatch)
+                }
+                withResource(thenValues) { _ =>
+                  withResource(gather(whenBoolAdjusted.getBase, thenValues)) { thenGathered =>
+                    currentValue match {
+                      case Some(_currentValue) =>
+                        withResource(_currentValue) { _ =>
+                          val x = whenBoolAdjusted.getBase.ifElse(
+                            thenGathered, _currentValue.getBase)
+                          currentValue = Some(GpuColumnVector.from(x, dataType))
+                        }
+                      case _ =>
+                        currentValue = Some(GpuColumnVector.from(
+                          thenGathered.incRefCount(), dataType))
+                    }
+                  }
+
+                  cumulativePred match {
+                    case Some(prev) =>
+                      withResource(prev) { _ =>
+                        cumulativePred = Some(GpuColumnVector.from(
+                          whenBool.getBase.or(prev.getBase), DataTypes.BooleanType))
+                      }
+
+                    case _ =>
+                      cumulativePred = Some(whenBoolAdjusted.incRefCount())
+                  }
+                }
+              }
+
+            }
+        }
+
+        withResource(cumulativePred.get.getBase.not()) { _elsePred =>
+          // replace null with true
+          val elsePred = withResource(Scalar.fromBool(true)) { t =>
+            GpuColumnVector.from(_elsePred.replaceNulls(t), DataTypes.BooleanType)
+          }
+          withResource(elsePred) { _ =>
+            elseValue match {
+              case Some(expr) =>
+                if (isAllTrue(elsePred)) {
+                  GpuExpressionsUtils.columnarEvalToColumn(expr, batch)
+                } else {
+                  val elseValues = withResource(filterBatch(tbl, elsePred.getBase, colTypes)) {
+                    elseBatch => GpuExpressionsUtils.columnarEvalToColumn(expr, elseBatch)
+                  }
+                  withResource(elseValues) { _ =>
+                    withResource(gather(elsePred.getBase, elseValues)) { gather =>
+                      val v = elsePred.getBase.ifElse(gather, currentValue.get.getBase)
+                      GpuColumnVector.from(v, dataType)
+                    }
+                  }
+                }
+
+              case None =>
+                withResource(GpuScalar.from(null, dataType)) { nullScalar: Scalar =>
+                  if (isAllTrue(elsePred) && elsePred.getRowCount <= Int.MaxValue) {
+                    GpuColumnVector.from(nullScalar, elsePred.getRowCount.toInt, dataType)
+                  } else {
+                    val v = elsePred.getBase.ifElse(nullScalar, currentValue.get.getBase)
+                    GpuColumnVector.from(v, dataType)
+                  }
+                }
+            }
+          }
+        }
+      }
+    } finally {
+      currentValue.foreach(_.safeClose())
+      cumulativePred.foreach(_.safeClose())
+    }
+  }
+
+  def computeIfElse(
+    batch: ColumnarBatch,
+    predExpr: Expression,
+    trueExpr: Expression,
+    falseValue: Any)
+  : GpuColumnVector = {
+
+    withResourceIfAllowed(falseValue) { falseRet =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
+          val finalRet = (trueRet, falseRet) match {
+            case (t: GpuColumnVector, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuColumnVector, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t, f) =>
+              throw new IllegalStateException(s"Unexpected inputs" +
+                s" ($t: ${t.getClass}, $f: ${f.getClass})")
+          }
+          GpuColumnVector.from(finalRet, dataType)
+        }
+      }
     }
   }
 
