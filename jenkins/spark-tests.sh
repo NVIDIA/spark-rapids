@@ -242,11 +242,11 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     # --group: print stderr after test finished for better readability
     parallel --group --halt "now,fail=1" -j2 run_test_not_parallel ::: ${special_cases}
 
-    nightly_resource_consuming_test=$(get_cases_by_tags "nightly_resource_consuming_test \
+    resource_consuming_cases=$(get_cases_by_tags "nightly_resource_consuming_test \
                                                 and not nightly_gpu_mem_consuming_case \
                                                 and not nightly_host_mem_consuming_case")
     other_tests=$(get_tests_by_tags "not nightly_resource_consuming_test")
-    tests=$(echo "${nightly_resource_consuming_test} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
+    tests=$(echo "${resource_consuming_cases} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
 
     if [[ "${PARALLELISM}" == "" ]]; then
       PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
