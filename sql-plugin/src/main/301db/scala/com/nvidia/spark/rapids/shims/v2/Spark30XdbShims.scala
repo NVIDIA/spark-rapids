@@ -166,6 +166,25 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+
+          // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+          // if possible. Instead regarding filters as childExprs of current Meta, we create
+          // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+          // FileSourceScan is independent from the replacement of the partitionFilters. It is
+          // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+          // are on the GPU. And vice versa.
+          private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
+            filter.transformDown {
+              case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
+                if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
+
+                val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
+                subBcMeta.tagForExplain()
+                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+            }
+          }
+
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
@@ -182,6 +201,10 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
             GpuFileSourceScanExec.tagSupport(this)
           }
 
+          override def convertToCpu(): SparkPlan = {
+            wrapped.copy(partitionFilters = partitionFilters)
+          }
+
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
@@ -189,7 +212,7 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
             val location = replaceWithAlluxioPathIfNeeded(
               conf,
               wrapped.relation,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.dataFilters)
 
             val newRelation = HadoopFsRelation(
@@ -204,7 +227,7 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.optionalBucketSet,
               // TODO: Does Databricks have coalesced bucketing implemented?
               None,
