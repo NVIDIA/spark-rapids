@@ -63,6 +63,7 @@ class MortgageSparkSuite extends FunSuite with BeforeAndAfterAll {
     builder.getOrCreate()
   }
 
+  // Close the session to avoid hanging after all cases are completed
   override def afterAll() = {
     session.close()
   }
