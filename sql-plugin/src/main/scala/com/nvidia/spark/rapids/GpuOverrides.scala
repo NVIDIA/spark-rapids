@@ -3297,11 +3297,13 @@ object GpuOverrides extends Logging {
     expr[Sequence](
       desc = "Sequence",
       ExprChecks.projectOnly(
-        TypeSig.ARRAY.nested(TypeSig.INT), TypeSig.ARRAY.nested(TypeSig.INT + TypeSig.TIMESTAMP +
+        TypeSig.ARRAY.nested(TypeSig.integral), TypeSig.ARRAY.nested(TypeSig.integral +
+          TypeSig.TIMESTAMP + TypeSig.DATE),
+        Seq(ParamCheck("start", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
           TypeSig.DATE),
-        Seq(ParamCheck("start", TypeSig.INT, TypeSig.INT),
-          ParamCheck("stop", TypeSig.INT, TypeSig.INT)),
-        Some(RepeatingParamCheck("step", TypeSig.INT, TypeSig.INT))),
+          ParamCheck("stop", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+            TypeSig.DATE)),
+        Some(RepeatingParamCheck("step", TypeSig.integral, TypeSig.integral + TypeSig.CALENDAR))),
       (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap

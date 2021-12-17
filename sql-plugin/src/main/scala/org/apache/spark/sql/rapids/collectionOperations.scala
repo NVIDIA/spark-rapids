@@ -401,6 +401,12 @@ class GpuSequenceMeta(
     rule: DataFromReplacementRule)
   extends ExprMeta[Sequence](expr, conf, parent, rule) {
 
+  override def tagExprForGpu(): Unit = {
+    //  We have to fall back to the CPU if the timeZoneId is not UTC when
+    //  we are processing date/timestamp.
+    //  Date/Timestamp are not enabled right now so this is probably fine.
+  }
+
   override def convertToGpu(): GpuExpression = {
     if (expr.stepOpt.isDefined) {
       val Seq(start, stop, step) = childExprs.map(_.convertToGpu())
@@ -412,9 +418,22 @@ class GpuSequenceMeta(
   }
 }
 
+trait GpuSequenceTrait {
+
+  def numberScalar(dt: DataType, value: Int): Scalar = dt match {
+    case ByteType => Scalar.fromByte(value.toByte)
+    case ShortType => Scalar.fromShort(value.toShort)
+    case IntegerType => Scalar.fromInt(value)
+    case LongType => Scalar.fromLong(value.toLong)
+    case _ =>
+      throw new IllegalArgumentException("wrong data type: " + dt)
+  }
+
+}
+
 /** GpuSequence without step */
 case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[String] = None)
-    extends GpuBinaryExpression with TimeZoneAwareExpression {
+    extends GpuBinaryExpression with TimeZoneAwareExpression with GpuSequenceTrait {
 
   override def left: Expression = start
 
@@ -434,19 +453,21 @@ case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[S
    * @param stop
    * @return (size, step)
    */
-  private def calculateSizeAndStep(start: BinaryOperable, stop: BinaryOperable):
+  private def calculateSizeAndStep(start: BinaryOperable, stop: BinaryOperable, dt: DataType):
       Seq[ColumnVector] = {
     withResource(stop.sub(start)) { difference =>
-      withResource(Scalar.fromInt(1)) { scalarOne =>
-        val step = withResource(Scalar.fromInt(-1)) { scalarNegativeOne =>
-          withResource(Scalar.fromInt(0)) { scalarZero =>
+      withResource(numberScalar(dt, 1)) { one =>
+        val step = withResource(numberScalar(dt, -1)) { negativeOne =>
+          withResource(numberScalar(dt, 0)) { scalarZero =>
             withResource(difference.greaterOrEqualTo(scalarZero)) { pred =>
-              pred.ifElse(scalarOne, scalarNegativeOne)
+              pred.ifElse(one, negativeOne)
             }
           }
         }
-        val size = withResource(difference.abs()) { absDifference =>
-          absDifference.add(scalarOne)
+        val size = closeOnExcept(step) { _ =>
+          withResource(difference.abs()) { absDifference =>
+            absDifference.add(one)
+          }
         }
         Seq(size, step)
       }
@@ -454,13 +475,13 @@ case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[S
   }
 
   override def doColumnar(start: GpuColumnVector, stop: GpuColumnVector): ColumnVector = {
-    withResource(calculateSizeAndStep(start.getBase, stop.getBase)) { ret =>
+    withResource(calculateSizeAndStep(start.getBase, stop.getBase, start.dataType())) { ret =>
       ColumnVector.sequence(start.getBase, ret(0), ret(1))
     }
   }
 
   override def doColumnar(start: GpuScalar, stop: GpuColumnVector): ColumnVector = {
-    withResource(calculateSizeAndStep(start.getBase, stop.getBase)) { ret =>
+    withResource(calculateSizeAndStep(start.getBase, stop.getBase, stop.dataType())) { ret =>
       withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
         ColumnVector.sequence(startV, ret(0), ret(1))
       }
@@ -468,7 +489,7 @@ case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[S
   }
 
   override def doColumnar(start: GpuColumnVector, stop: GpuScalar): ColumnVector = {
-    withResource(calculateSizeAndStep(start.getBase, stop.getBase)) { ret =>
+    withResource(calculateSizeAndStep(start.getBase, stop.getBase, start.dataType())) { ret =>
       ColumnVector.sequence(start.getBase, ret(0), ret(1))
     }
   }
@@ -480,7 +501,8 @@ case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[S
 
 /** GpuSequence with step */
 case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expression,
-    timeZoneId: Option[String] = None) extends GpuTernaryExpression with TimeZoneAwareExpression {
+    timeZoneId: Option[String] = None) extends GpuTernaryExpression with TimeZoneAwareExpression
+    with GpuSequenceTrait {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Some(timeZoneId))
@@ -502,32 +524,36 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       start: BinaryOperable,
       stop: BinaryOperable,
       step: BinaryOperable,
-      rows: Int): ColumnVector = {
-    // First calculate sizeWithNegative=floor((stop-start)/step)+1
-    // Second calculate size=if(sizeWithNegative < 0) 0 else sizeWithNegative
-    // Third if start==stop && step == 0, let size = 1.
+      rows: Int,
+      dt: DataType): ColumnVector = {
+    // First, calculate sizeWithNegative=floor((stop-start)/step)+1.
+    //     if step = 0, the div operation in cudf will get MIN_VALUE, which is ok for this case,
+    //     since when size < 0, cudf will not generate sequence
+    // Second, calculate size = if(sizeWithNegative < 0) 0 else sizeWithNegative
+    // Third, if (start == stop && step == 0), let size = 1.
     withResource(stop.sub(start)) { difference =>
       withResource(difference.floorDiv(step)) { quotient =>
-        withResource(Scalar.fromInt(1)) { scalarOne =>
-          withResource(quotient.add(scalarOne)) { sizeWithNegative =>
-            withResource(Scalar.fromInt(0)) { scalarZero =>
-              withResource(sizeWithNegative.greaterOrEqualTo(scalarZero)) { pred =>
-                withResource(pred.ifElse(sizeWithNegative, scalarZero)) { tmpSize =>
-                  // when start==stop, step==0, size will be 0. but we should change size to 1
-                  withResource(difference.equalTo(scalarZero)) { diffHasZero =>
+        withResource(numberScalar(dt, 1)) { one =>
+          withResource(quotient.add(one)) { sizeWithNegative =>
+            withResource(numberScalar(dt, 0)) { zero =>
+              withResource(sizeWithNegative.greaterOrEqualTo(zero)) { pred =>
+                withResource(pred.ifElse(sizeWithNegative, zero)) { tmpSize =>
+                  // when start==stop && step==0, size will be 0.
+                  // but we should change size to 1
+                  withResource(difference.equalTo(zero)) { diffHasZero =>
                     step match {
                       case stepScalar: Scalar =>
                         withResource(ColumnVector.fromScalar(stepScalar, rows)) { stepV =>
-                          withResource(stepV.equalTo(scalarZero)) { stepHasZero =>
+                          withResource(stepV.equalTo(zero)) { stepHasZero =>
                             withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
-                              predWithZero.ifElse(scalarOne, tmpSize)
+                              predWithZero.ifElse(one, tmpSize)
                             }
                           }
                         }
                       case _ =>
-                        withResource(step.equalTo(scalarZero)) { stepHasZero =>
+                        withResource(step.equalTo(zero)) { stepHasZero =>
                           withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
-                            predWithZero.ifElse(scalarOne, tmpSize)
+                            predWithZero.ifElse(one, tmpSize)
                           }
                         }
                     }
@@ -545,16 +571,18 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       start: GpuColumnVector,
       stop: GpuColumnVector,
       step: GpuColumnVector): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt))
-    { size => ColumnVector.sequence(start.getBase, size, step.getBase) }
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
+      ColumnVector.sequence(start.getBase, size, step.getBase)
+    }
   }
 
   override def doColumnar(
       start: GpuScalar,
       stop: GpuColumnVector,
       step: GpuColumnVector): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt)) {
-      size =>
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt,
+        start.dataType)) { size =>
       withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
         ColumnVector.sequence(startV, size, step.getBase)
       }
@@ -566,8 +594,9 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       stop: GpuScalar,
       step: GpuColumnVector): ColumnVector = {
     withResource(ColumnVector.fromScalar(start.getBase, step.getRowCount.toInt)) { startV =>
-      withResource(calculateSize(startV, stop.getBase, step.getBase, step.getRowCount.toInt)) {
-        size => ColumnVector.sequence(startV, size, step.getBase)
+      withResource(calculateSize(startV, stop.getBase, step.getBase, step.getRowCount.toInt,
+          start.dataType)) { size =>
+        ColumnVector.sequence(startV, size, step.getBase)
       }
     }
   }
@@ -576,13 +605,13 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       start: GpuScalar,
       stop: GpuColumnVector,
       step: GpuScalar): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt)) {
-      size =>
-        withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
-          withResource(ColumnVector.fromScalar(step.getBase, stop.getRowCount.toInt)) { stepV =>
-            ColumnVector.sequence(startV, size, stepV)
-          }
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt,
+        start.dataType)) { size =>
+      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
+        withResource(ColumnVector.fromScalar(step.getBase, stop.getRowCount.toInt)) { stepV =>
+          ColumnVector.sequence(startV, size, stepV)
         }
+      }
     }
   }
 
@@ -590,16 +619,18 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       start: GpuColumnVector,
       stop: GpuScalar,
       step: GpuColumnVector): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt))
-    { size => ColumnVector.sequence(start.getBase, size, step.getBase) }
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
+      ColumnVector.sequence(start.getBase, size, step.getBase)
+    }
   }
 
   override def doColumnar(
       start: GpuColumnVector,
       stop: GpuScalar,
       step: GpuScalar): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt))
-    { size =>
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
       withResource(ColumnVector.fromScalar(step.getBase, start.getRowCount.toInt)) { stepV =>
         ColumnVector.sequence(start.getBase, size, stepV)
       }
@@ -610,8 +641,8 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       start: GpuColumnVector,
       stop: GpuColumnVector,
       step: GpuScalar): ColumnVector =
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt))
-    { size =>
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
       withResource(ColumnVector.fromScalar(step.getBase, start.getRowCount.toInt)) { stepV =>
         ColumnVector.sequence(start.getBase, size, stepV)
       }
