@@ -223,10 +223,22 @@ case class GpuArrayContains(left: Expression, right: Expression)
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val contains = lhs.getBase.listContains(rhs.getBase)
-    withResource(contains) { containsCV =>
-      val containsNull = lhs.getBase.listContainsNulls()
+  /**
+   * Helper function to account for `libcudf`'s `listContains()` semantics.
+   * 
+   * If a list row contains at least one null element, and is found not to contain 
+   * the search key, `libcudf` returns false instead of null.  SparkSQL expects to 
+   * return null in those cases.
+   * 
+   * This method determines the result's validity mask by ORing the output of 
+   * `listContains()` with the NOT of `listContainsNulls()`.
+   * A result row is thus valid if either the search key is found in the list, 
+   * or if the list does not contain any null elements.
+   */
+  private def orNotContainsNull(containsResult: ColumnVector, 
+                                inputListsColumn:ColumnVector): ColumnVector = {
+    withResource(containsResult) { containsCV =>
+      val containsNull = inputListsColumn.listContainsNulls()
       withResource(containsNull) { containsNullCV =>
         val notContainsNull = containsNullCV.not
         withResource(notContainsNull) { notContainsNullCV =>
@@ -239,6 +251,12 @@ case class GpuArrayContains(left: Expression, right: Expression)
     }
   }
 
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val inputListsColumn = lhs.getBase
+    val containsResult = inputListsColumn.listContains(rhs.getBase)
+    orNotContainsNull(containsResult, inputListsColumn)
+  }
+
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
@@ -246,19 +264,9 @@ case class GpuArrayContains(left: Expression, right: Expression)
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    val contains = lhs.getBase.listContainsColumn(rhs.getBase)
-    withResource(contains) { containsCV =>
-      val containsNull = lhs.getBase.listContainsNulls()
-      withResource(containsNull) { containsNullCV =>
-        val notContainsNull = containsNullCV.not
-        withResource(notContainsNull) { notContainsNullCV =>
-          val validity = containsCV.or(notContainsNullCV)
-          withResource(validity) { validityCV => 
-            containsCV.copyWithBooleanColumnAsValidity(validityCV)
-          }
-        }
-      }
-    }
+    val inputListsColumn = lhs.getBase
+    val containsResult = inputListsColumn.listContainsColumn(rhs.getBase)
+    orNotContainsNull(containsResult, inputListsColumn)
   }
 
   override def prettyName: String = "array_contains"
