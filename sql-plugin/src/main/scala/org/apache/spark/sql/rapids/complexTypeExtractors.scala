@@ -237,24 +237,22 @@ case class GpuArrayContains(left: Expression, right: Expression)
    */
   private def orNotContainsNull(containsResult: ColumnVector, 
                                 inputListsColumn:ColumnVector): ColumnVector = {
-    withResource(containsResult) { containsCV =>
-      val containsNull = inputListsColumn.listContainsNulls()
-      withResource(containsNull) { containsNullCV =>
-        val notContainsNull = containsNullCV.not
-        withResource(notContainsNull) { notContainsNullCV =>
-          val validity = containsCV.or(notContainsNullCV)
-          withResource(validity) { validityCV =>
-            containsCV.copyWithBooleanColumnAsValidity(validityCV)
-          }
-        }
-      }
+    val notContainsNull = withResource(inputListsColumn.listContainsNulls) {
+      _.not
+    }
+    val containsKeyOrNotContainsNull = withResource(notContainsNull) {
+      containsResult.or(_)
+    }
+    withResource(containsKeyOrNotContainsNull) {
+      containsResult.copyWithBooleanColumnAsValidity(_)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val inputListsColumn = lhs.getBase
-    val containsResult = inputListsColumn.listContains(rhs.getBase)
-    orNotContainsNull(containsResult, inputListsColumn)
+    withResource(inputListsColumn.listContains(rhs.getBase)) {
+      orNotContainsNull(_, inputListsColumn)
+    }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
@@ -265,8 +263,9 @@ case class GpuArrayContains(left: Expression, right: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val inputListsColumn = lhs.getBase
-    val containsResult = inputListsColumn.listContainsColumn(rhs.getBase)
-    orNotContainsNull(containsResult, inputListsColumn)
+    withResource(inputListsColumn.listContainsColumn(rhs.getBase)) { 
+      orNotContainsNull(_, inputListsColumn)
+    }
   }
 
   override def prettyName: String = "array_contains"
