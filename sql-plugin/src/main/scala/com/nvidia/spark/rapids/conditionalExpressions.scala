@@ -29,12 +29,10 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
   with ShimExpression {
 
   protected def computeIfElse(
-    batch: ColumnarBatch,
-    predExpr: Expression,
-    trueExpr: Expression,
-    falseValue: Any)
-  : GpuColumnVector = {
-
+      batch: ColumnarBatch,
+      predExpr: Expression,
+      trueExpr: Expression,
+      falseValue: Any): GpuColumnVector = {
     withResourceIfAllowed(falseValue) { falseRet =>
       withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
         withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
