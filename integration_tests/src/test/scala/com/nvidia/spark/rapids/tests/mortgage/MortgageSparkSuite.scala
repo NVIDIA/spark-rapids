@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids.tests.mortgage
 
 import com.nvidia.spark.rapids.ShimLoader
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 
-class MortgageSparkSuite extends FunSuite {
+class MortgageSparkSuite extends FunSuite with BeforeAndAfterAll {
 
   /**
    * This is intentionally a def rather than a val so that scalatest uses the correct value (from
@@ -61,6 +61,10 @@ class MortgageSparkSuite extends FunSuite {
       println("RAPIDS SHUFFLE MANAGER INACTIVE")
     }
     builder.getOrCreate()
+  }
+
+  override def afterAll() = {
+    session.close()
   }
 
   test("extract mortgage data") {
@@ -120,3 +124,4 @@ class MortgageSparkSuite extends FunSuite {
     assert(df.count() === 177)
   }
 }
+
