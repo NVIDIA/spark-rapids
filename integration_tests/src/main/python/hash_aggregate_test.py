@@ -26,6 +26,8 @@ from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
 
+pytestmark = pytest.mark.nightly_resource_consuming_test
+
 _approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
@@ -303,6 +305,7 @@ _init_list_full_decimal = [_grpkey_short_full_decimals,
     _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
+@nightly_gpu_mem_consuming_case
 @pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31, 30], ids=idfn)
 def test_hash_reduction_decimal_overflow_sum(precision):
     constant = '9' * precision
