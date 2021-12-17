@@ -657,11 +657,11 @@ object GpuCast extends Arm {
    *
    * when `legacyCastToString = false`, step 2, 5 are skipped
    */
-  private  def castArrayToString(input:                    ColumnView,
-                                 elementType:                DataType,
-                                 ansiMode:                    Boolean,
-                                 legacyCastToString:          Boolean,
-                                 stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+  private def castArrayToString(input: ColumnView,
+      elementType: DataType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     val (leftStr, rightStr) =  ("[", "]")
     val emptyStr = ""
@@ -676,11 +676,9 @@ object GpuCast extends Arm {
 
       /* -------------------------------- helper functions -----------------------*/
 
-      /**
-       * cast all not-null elements in a child column to string type <p>
+      /*
+       * Cast all not-null elements in a child column to string type
        * add `' '` to all elements when `legacyCastToString = true`
-       * @param child child column of an array column
-       * @return a string type child column
        */
       def castChildToStr(child: ColumnView): ColumnView = {
         withResource(
@@ -702,9 +700,8 @@ object GpuCast extends Arm {
         }
       }
 
-      /**
+      /*
        * If the first char of a string is ' ', remove it (only for legacyCastToString = true)
-       * @param strVec a string type column vector
        */
       def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
         if (legacyCastToString){
@@ -717,9 +714,8 @@ object GpuCast extends Arm {
         else {strVec.incRefCount}
       }
 
-      /**
+      /*
        * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-       * @param strVec a string vector
        */
       def addBrackets(strVec: ColumnVector): ColumnVector = {
         withResource(
