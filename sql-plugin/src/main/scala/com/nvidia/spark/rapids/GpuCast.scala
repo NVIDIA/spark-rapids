@@ -657,11 +657,11 @@ object GpuCast extends Arm {
    *
    * when `legacyCastToString = false`, step 2, 5 are skipped
    */
-  private def castArrayToString(input:                    ColumnView,
-                                 elementType:                DataType,
-                                 ansiMode:                    Boolean,
-                                 legacyCastToString:          Boolean,
-                                 stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+  private def castArrayToString(input: ColumnView,
+      elementType: DataType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     val (leftStr, rightStr) =  ("[", "]")
     val emptyStr = ""
@@ -677,7 +677,7 @@ object GpuCast extends Arm {
       /* -------------------------------- helper functions -----------------------*/
 
       /*
-       * cast all not-null elements in a child column to string type <p>
+       * Cast all not-null elements in a child column to string type
        * add `' '` to all elements when `legacyCastToString = true`
        */
       def castChildToStr(child: ColumnView): ColumnView = {
