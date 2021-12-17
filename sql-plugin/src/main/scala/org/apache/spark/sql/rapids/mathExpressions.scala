@@ -459,7 +459,25 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
         DecimalUtil.round(lhsValue, scaleVal, roundMode)
       case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType =>
         val scaleVal = scale.getValue.asInstanceOf[Int]
-        lhsValue.round(scaleVal, roundMode)
+        if (-scaleVal >= DecimalUtil.getPrecisionForIntegralType(lhsValue.getType)) {
+          withResource(GpuScalar.from(0, dataType)) { zero =>
+            ColumnVector.fromScalar(zero, lhsValue.getRowCount.toInt)
+          }
+        } else {
+          lhsValue.round(scaleVal, roundMode)
+        }
+      case FloatType | DoubleType =>
+        val scaleVal = scale.getValue.asInstanceOf[Int]
+        val maxDigits = if (dataType == FloatType) 39 else 309
+        if (-scaleVal >= maxDigits) {
+          withResource(GpuScalar.from(0, dataType)) { zero =>
+            ColumnVector.fromScalar(zero, lhsValue.getRowCount.toInt)
+          }
+        } else if (scaleVal >= maxDigits) {
+          lhsValue.incRefCount()
+        } else {
+          lhsValue.round(scaleVal, roundMode)
+        }
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
   }
