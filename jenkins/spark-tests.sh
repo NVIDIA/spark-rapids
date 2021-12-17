@@ -232,7 +232,8 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
     # separate run for special cases that require smaller parallelism
-    special_cases=$(get_cases_by_tags "nightly_gpu_mem_consuming_case or nightly_host_mem_consuming_case")
+    special_cases=$(get_cases_by_tags "nightly_resource_consuming_test \
+                                      and (nightly_gpu_mem_consuming_case or nightly_host_mem_consuming_case)")
     # hardcode parallelism as 2 for special cases
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.45 \
     --conf spark.rapids.memory.gpu.maxAllocFraction=0.45"
@@ -241,11 +242,11 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     # --group: print stderr after test finished for better readability
     parallel --group --halt "now,fail=1" -j2 run_test_not_parallel ::: ${special_cases}
 
-    nightly_test_to_cases=$(get_cases_by_tags "nightly_test_to_cases \
+    nightly_resource_consuming_test=$(get_cases_by_tags "nightly_resource_consuming_test \
                                                 and not nightly_gpu_mem_consuming_case \
                                                 and not nightly_host_mem_consuming_case")
-    other_tests=$(get_tests_by_tags "not nightly_test_to_cases")
-    tests=$(echo "${nightly_test_to_cases} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
+    other_tests=$(get_tests_by_tags "not nightly_resource_consuming_test")
+    tests=$(echo "${nightly_resource_consuming_test} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
 
     if [[ "${PARALLELISM}" == "" ]]; then
       PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \

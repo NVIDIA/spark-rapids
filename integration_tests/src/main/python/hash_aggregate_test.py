@@ -26,7 +26,7 @@ from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
 
-pytestmark = pytest.mark.nightly_test_to_cases
+pytestmark = pytest.mark.nightly_resource_consuming_test
 
 _approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 

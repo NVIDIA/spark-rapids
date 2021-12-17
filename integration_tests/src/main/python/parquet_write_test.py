@@ -25,7 +25,7 @@ import pyspark.sql.utils
 import random
 from spark_session import is_before_spark_311
 
-pytestmark = pytest.mark.nightly_test_to_cases
+pytestmark = pytest.mark.nightly_resource_consuming_test
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
