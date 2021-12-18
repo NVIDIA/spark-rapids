@@ -151,9 +151,6 @@ class GpuShuffleCoalesceIterator(
   }
 
   private def concatenateBatch(): ColumnarBatch = {
-    // about to start using the GPU in this task
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
-
     withResource(new MetricRange(opTimeMetric)) { _ =>
       val firstHeader = serializedTables.peekFirst().header
       val batch = withResource(new MetricRange(concatTimeMetric)) { _ =>
@@ -194,8 +191,12 @@ class GpuShuffleCoalesceIterator(
       }
 
       withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-        withResource(JCudfSerialization.concatToContiguousTable(headers, buffers)) { table =>
-          GpuColumnVectorFromBuffer.from(table, sparkSchema)
+        withResource(JCudfSerialization.concatToHostBuffer(headers, buffers)) { hostConcatResult =>
+          // about to start using the GPU in this task
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
+          withResource(hostConcatResult.toContiguousTable) { contigTable =>
+            GpuColumnVectorFromBuffer.from(contigTable, sparkSchema)
+          }
         }
       }
     }
