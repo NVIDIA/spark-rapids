@@ -453,31 +453,74 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
 
   override def doColumnar(value: GpuColumnVector, scale: GpuScalar): ColumnVector = {
+
     val lhsValue = value.getBase
+
+    def intZeroReplacement(zero: Scalar): ColumnVector = {
+      val scaleVal = scale.getValue.asInstanceOf[Int]
+      if (-scaleVal >= DecimalUtil.getPrecisionForIntegralType(lhsValue.getType)) {
+        withResource(zero) { s =>
+          withResource(ColumnVector.fromScalar(s, lhsValue.getRowCount.toInt)) { cv =>
+            if (lhsValue.hasNulls) {
+              cv.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
+            } else {
+              cv.incRefCount()
+            }
+          }
+        }
+      } else {
+        lhsValue.round(scaleVal, roundMode)
+      }
+    }
+
+    def fpZeroReplacement(zero: Scalar, inf: Scalar, negInf: Scalar): ColumnVector = {
+      val scaleVal = scale.getValue.asInstanceOf[Int]
+      val maxDigits = if (dataType == FloatType) 39 else 309
+      if (-scaleVal >= maxDigits) {
+        withResource(Seq(zero, inf, negInf)) { _ =>
+          val joinedCondition = List(
+            () => lhsValue.isNan,
+            () => lhsValue.equalTo(inf),
+            () => lhsValue.equalTo(negInf)
+          ).foldLeft(lhsValue.isNull) { case (cond, fn) =>
+            withResource(cond) { _ =>
+              withResource(fn()) { newCondition =>
+                cond.or(newCondition)
+              }
+            }
+          }
+          withResource(joinedCondition) { cond =>
+            cond.ifElse(lhsValue, zero)
+          }
+        }
+      } else if (scaleVal >= maxDigits) {
+        lhsValue.incRefCount()
+      } else {
+        lhsValue.round(scaleVal, roundMode)
+      }
+    }
+
     dataType match {
       case DecimalType.Fixed(_, scaleVal) =>
         DecimalUtil.round(lhsValue, scaleVal, roundMode)
-      case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType =>
-        val scaleVal = scale.getValue.asInstanceOf[Int]
-        if (-scaleVal >= DecimalUtil.getPrecisionForIntegralType(lhsValue.getType)) {
-          withResource(GpuScalar.from(0, dataType)) { zero =>
-            ColumnVector.fromScalar(zero, lhsValue.getRowCount.toInt)
-          }
-        } else {
-          lhsValue.round(scaleVal, roundMode)
-        }
-      case FloatType | DoubleType =>
-        val scaleVal = scale.getValue.asInstanceOf[Int]
-        val maxDigits = if (dataType == FloatType) 39 else 309
-        if (-scaleVal >= maxDigits) {
-          withResource(GpuScalar.from(0, dataType)) { zero =>
-            ColumnVector.fromScalar(zero, lhsValue.getRowCount.toInt)
-          }
-        } else if (scaleVal >= maxDigits) {
-          lhsValue.incRefCount()
-        } else {
-          lhsValue.round(scaleVal, roundMode)
-        }
+      case ByteType =>
+        intZeroReplacement(Scalar.fromByte(0.toByte))
+      case ShortType =>
+        intZeroReplacement(Scalar.fromShort(0.toShort))
+      case IntegerType =>
+        intZeroReplacement(Scalar.fromInt(0))
+      case LongType =>
+        intZeroReplacement(Scalar.fromLong(0L))
+      case FloatType =>
+        fpZeroReplacement(
+          Scalar.fromFloat(0.0f),
+          Scalar.fromFloat(Float.PositiveInfinity),
+          Scalar.fromFloat(Float.NegativeInfinity))
+      case DoubleType =>
+        fpZeroReplacement(
+          Scalar.fromDouble(0.0),
+          Scalar.fromDouble(Double.PositiveInfinity),
+          Scalar.fromDouble(Double.NegativeInfinity))
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
   }
