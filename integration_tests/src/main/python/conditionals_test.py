@@ -208,6 +208,6 @@ def test_conditional_with_side_effects_cast(data_gen):
     gen = mk_str_gen('[0-9]{1,20}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, data_gen, gen).selectExpr(
-                'IF(a RLIKE "^[0-9]{1,5}$", CAST(a AS INT), 0)'),
+                'IF(b RLIKE "^[0-9]{1,5}$", CAST(b AS INT), 0)'),
             conf = {'spark.sql.ansi.enabled':True,
                     'spark.rapids.sql.expression.RLike': True})
