@@ -131,12 +131,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support null characters in regular expressions"))
   }
 
-  test("nothing to repeat") {
-    val patterns = Seq("$*", "^+")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, replace = false, "nothing to repeat"))
-  }
-
   test("end of line anchor with strings ending in valid newline") {
     val pattern = "2$"
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("2", "2\n", "2\r", "2\r\n"))
@@ -261,7 +255,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF does not support some uses of BOL/EOL in regexp_replace") {
-    Seq("^$", "^", "$").foreach(pattern =>
+    Seq("^$", "^", "$", "(^)($)", "(((^^^)))$", "^*", "$*", "^+", "$+").foreach(pattern =>
       assertUnsupported(pattern, replace = true,
         "sequences that only contain '^' or '$' are not supported")
     )

@@ -548,10 +548,15 @@ class CudfRegexTranspiler(replace: Boolean) {
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
         }
-        if (parts.forall {
-          case RegexChar(ch) => ch == '^' || ch == '$'
-          case _ => false
-        }) {
+        def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
+            case RegexSequence(parts) => parts.nonEmpty && parts.forall(isBeginOrEndLineAnchor)
+            case RegexGroup(_, term) => isBeginOrEndLineAnchor(term)
+            case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
+            case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
+            case RegexChar(ch) => ch == '^' || ch == '$'
+            case _ => false
+        }
+        if (parts.forall(isBeginOrEndLineAnchor)) {
           throw new RegexUnsupportedException(
             "sequences that only contain '^' or '$' are not supported")
         }
