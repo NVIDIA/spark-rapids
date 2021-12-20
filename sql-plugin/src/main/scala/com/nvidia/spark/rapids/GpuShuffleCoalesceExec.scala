@@ -155,6 +155,10 @@ class GpuShuffleCoalesceIterator(
       val firstHeader = serializedTables.peekFirst().header
       val batch = withResource(new MetricRange(concatTimeMetric)) { _ =>
         if (firstHeader.getNumColumns == 0) {
+          // acquire the GPU unconditionally for now in this case, as a downstream exec
+          // may need the GPU, and the assumption is that it is acquired in the coalesce
+          // code.
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
           (0 until numTablesInBatch).foreach(_ => serializedTables.removeFirst())
           new ColumnarBatch(Array.empty, numRowsInBatch)
         } else {
