@@ -416,6 +416,23 @@ def test_hash_avg_nulls_partial_only(data_gen):
         conf=_no_nans_float_conf_partial
     )
 
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+def test_intersectAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)),
+        conf=allow_negative_scale_of_decimal_conf)
+
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+def test_exceptAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @ignore_order(local=True)
