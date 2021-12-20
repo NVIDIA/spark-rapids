@@ -415,8 +415,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
               wrapped.requiredSchema,
               partitionFilters,
               wrapped.optionalBucketSet,
-              // TODO: Does Databricks have coalesced bucketing implemented?
-              None,
+              wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
               wrapped.tableIdentifier)(conf)
           }
