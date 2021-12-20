@@ -20,7 +20,7 @@ import org.rogach.scallop.{ScallopConf, ScallopOption}
 class ProfileArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
 
   banner("""
-RAPIDS Accelerator for Apache Spark profiling tool
+Profiling Tool for the RAPIDS Accelerator and Apache Spark
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
