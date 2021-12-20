@@ -1299,7 +1299,6 @@ def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
                                      ('v', ByteGen())], length=100),
         0.5, conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
@@ -1308,7 +1307,6 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
@@ -1317,7 +1315,6 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
@@ -1360,7 +1357,6 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
 
     assert_gpu_fallback_collect(lambda spark: approx_percentile_query(spark), 'ApproximatePercentile', conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32():
     compare_percentile_approx(
@@ -1368,7 +1364,6 @@ def test_hash_groupby_approx_percentile_decimal32():
                                      ('v', DecimalGen(6, 2))]),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32_single():
     compare_percentile_approx(
