@@ -16,10 +16,13 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
-class StringFallbackSuite extends SparkQueryCompareTestSuite {
+class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
-  private val conf = new SparkConf().set("spark.rapids.sql.expression.RegExpReplace", "true")
+  private val conf = new SparkConf()
+    .set("spark.rapids.sql.expression.RegExpReplace", "true")
+    .set("spark.rapids.sql.expression.RegExpExtract", "true")
 
   testGpuFallback(
     "String regexp_replace replace str columnar fall back",
@@ -86,4 +89,31 @@ class StringFallbackSuite extends SparkQueryCompareTestSuite {
     nullableStringsFromCsv, conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
   }
+
+  testSparkResultsAreEqual("String regexp_extract regex 1",
+    extractStrings, conf = conf) {
+    frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
+  }
+
+  testSparkResultsAreEqual("String regexp_extract regex 2",
+    extractStrings, conf = conf) {
+    frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
+  }
+
+  testSparkResultsAreEqual("String regexp_extract literal input",
+    extractStrings, conf = conf) {
+    frame => frame.selectExpr("regexp_extract('abc123def', '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
+  }
+
+  private def extractStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String)](
+      (""),
+      (null),
+      ("abc123def"),
+      ("abc\r\n12\r3\ndef"),
+      ("123abc456")
+    ).toDF("strings")
+  }
+
 }

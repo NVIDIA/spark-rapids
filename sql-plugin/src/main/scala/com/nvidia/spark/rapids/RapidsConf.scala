@@ -352,7 +352,7 @@ object RapidsConf {
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
           "system use such as memory needed for kernels and kernel launches.")
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(ByteUnit.MiB.toBytes(256))
+      .createWithDefault(ByteUnit.MiB.toBytes(640))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
@@ -641,14 +641,6 @@ object RapidsConf {
         "\"12300\", which spark produces \"1.23E+4\".")
       .booleanConf
       .createWithDefault(false)
-
-  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
-    .doc("The GPU-enabled version of the `CreateMap` expression (`map` SQL function) does not " +
-      "detect duplicate keys in all cases and does not guarantee which key wins if there are " +
-      "duplicates. When this config is set to true, `CreateMap` will be enabled to run on the " +
-      "GPU even when there might be duplicate keys.")
-    .booleanConf
-    .createWithDefault(false)
 
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
@@ -1327,6 +1319,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = false)
 
+  val ENABLE_FAST_SAMPLE = conf("spark.rapids.sql.fast.sample")
+    .doc("Option to turn on fast sample. If enable it is inconsistent with CPU sample " +
+      "because of GPU sample algorithm is inconsistent with CPU.")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1589,8 +1587,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
-  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
-
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
@@ -1742,6 +1738,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
+
+  lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

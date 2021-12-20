@@ -565,11 +565,14 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       })
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
+      val origSelectedAttributesWithUnambiguousNames = 
+        sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
           new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
-            cacheAttributes, newSelectedAttributes, broadcastedConf).getColumnBatchIterator
+            cacheAttributes, origSelectedAttributesWithUnambiguousNames, broadcastedConf)
+            .getColumnBatchIterator
         }
       }
     }
@@ -592,11 +595,12 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       conf: SQLConf): RDD[InternalRow] = {
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
+    val newSelectedAttributes = sanitizeColumnNames(selectedAttributes, selectedSchemaWithNames)
     val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
     input.mapPartitions {
       cbIter => {
         new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
-          cacheAttributes, selectedAttributes, broadcastedConf).getInternalRowIterator
+          cacheAttributes, newSelectedAttributes, broadcastedConf).getInternalRowIterator
       }
     }
   }
@@ -1354,6 +1358,14 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
         newType
       case _ =>
         dataType
+    }
+  }
+
+  // We want to change the original schema to have the new names as well
+  private def sanitizeColumnNames(originalSchema: Seq[Attribute],
+      schemaToCopyNamesFrom: Seq[Attribute]): Seq[Attribute] = {
+    originalSchema.zip(schemaToCopyNamesFrom).map {
+      case (origAttribute, newAttribute) => origAttribute.withName(newAttribute.name)
     }
   }
 

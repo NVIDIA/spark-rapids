@@ -126,8 +126,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.FloatType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  // https://github.com/NVIDIA/spark-rapids/issues/4246
-  ignore("Cast from string to float using hand-picked values") {
+  test("Cast from string to float using hand-picked values") {
     testCastStringTo(DataTypes.FloatType, Seq(".", "e", "Infinity", "+Infinity", "-Infinity",
       "+nAn", "-naN", "Nan", "5f", "1.2f", "\riNf", null))
   }
@@ -933,10 +932,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("CAST string to float - sanitize step") {
     val testPairs = Seq(
-      ("\tinf", "Inf"),
-      ("\t+InFinITy", "Inf"),
-      ("\tInFinITy", "Inf"),
-      ("\t-InFinITy", "-Inf"),
+      ("\tinf", "inf"),
+      ("\riNf", "iNf"),
+      ("\t+InFinITy", "+InFinITy"),
+      ("\tInFinITy", "InFinITy"),
+      ("\t-InFinITy", "-InFinITy"),
       ("\t61f", "61"),
       (".8E4f", ".8E4")
     )
@@ -1393,6 +1393,12 @@ object CastOpSuite {
   def validTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     val timestampStrings = Seq(
+      "8669-07-22T04:45:57.73",
+      "6233-08-04T19:30:55.701",
+      "8220-02-25T10:01:15.106",
+      "9754-01-21T16:53:02.137",
+      "7649-11-16T15:56:04.996",
+      "7027-04-09T15:08:52.627",
       "1920-12-31T11:59:59.999",
       "1969-12-31T23:59:59.999",
       "1969-12-31T23:59:59.999999",

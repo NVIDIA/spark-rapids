@@ -68,11 +68,24 @@ class RegularExpressionParserSuite extends FunSuite {
             RegexCharacterRange('A', 'Z'))))))
   }
 
+  test("character class complex example") {
+    assert(parse("[^]+d]+") === RegexSequence(ListBuffer(
+      RegexRepetition(
+        RegexCharacterClass(negated = true,
+          ListBuffer(RegexChar(']'), RegexChar('+'), RegexChar('d'))),
+        SimpleQuantifier('+')))))
+  }
+
   test("character classes containing ']'") {
     // "[]a]" is a valid character class containing ']' and 'a'
     assert(parse("[]a]") ===
       RegexSequence(ListBuffer(
         RegexCharacterClass(negated = false,
+          ListBuffer(RegexChar(']'), RegexChar('a'))))))
+    // "[^]a]" is a valid negated character class containing ']' and 'a'
+    assert(parse("[^]a]") ===
+      RegexSequence(ListBuffer(
+        RegexCharacterClass(negated = true,
           ListBuffer(RegexChar(']'), RegexChar('a'))))))
     // "[a]]" is a valid character class "[a]" followed by character ']'
     assert(parse("[a]]") ===

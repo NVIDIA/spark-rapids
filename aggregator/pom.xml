@@ -100,9 +100,25 @@
                             <pattern>org.apache.hadoop.hive.</pattern>
                             <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
                             <excludes>
+                                <!--
+                                    Class exclusions for Hive UDFs, to avoid the ClassNotFoundException,
+                                    For example:
+                                        E Caused by: java.lang.ClassNotFoundException: com.nvidia.shaded.spark.hadoop.hive.serde2.objectinspector.ObjectInspector
+                                        E     at java.net.URLClassLoader.findClass(URLClassLoader.java:382)
+                                -->
                                 <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.FunctionRegistry</exclude>
                                 <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.UDFMethodResolver</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.UDFType</exclude>
                                 <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF$DeferredObject</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDFUtils$ConversionHelper</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory$ObjectInspectorOptions</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.StructField</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.typeinfo.TypeInfo</exclude>
                             </excludes>
                         </relocation>
                         <relocation>
