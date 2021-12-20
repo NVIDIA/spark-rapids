@@ -387,6 +387,10 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
 
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
+          override def convertToCpu(): SparkPlan = {
+            wrapped.copy(partitionFilters = partitionFilters)
+          }
+
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
@@ -394,7 +398,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
             val location = replaceWithAlluxioPathIfNeeded(
               conf,
               wrapped.relation,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.dataFilters)
 
             val newRelation = HadoopFsRelation(
@@ -409,9 +413,10 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.optionalBucketSet,
-              wrapped.optionalNumCoalescedBuckets,
+              // TODO: Does Databricks have coalesced bucketing implemented?
+              None,
               wrapped.dataFilters,
               wrapped.tableIdentifier)(conf)
           }
