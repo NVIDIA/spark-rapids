@@ -55,7 +55,7 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 11.x => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
-- cudf-21.12.0-cuda11.jar
+- cudf-21.12.2-cuda11.jar
 - rapids-4-spark_2.12-21.12.0-SNAPSHOT.jar
 jar that your version of the accelerator depends on.
 
@@ -64,7 +64,7 @@ For simplicity export the location to these jars. This example assumes the sampl
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.12.0-cuda11.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.12.2-cuda11.jar
 export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.12.0-SNAPSHOT.jar
 ```
 
