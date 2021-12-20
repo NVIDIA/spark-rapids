@@ -14,12 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_311, is_before_spark_320
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -220,7 +221,7 @@ def test_concat_ws_sql_col_sep():
                 'concat_ws(c, b, a, cast(null as string)) from concat_ws_table')
 
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
+@pytest.mark.skipif(is_databricks_runtime(),
     reason='Databricks optimizes out concat_ws call in this case')
 @allow_non_gpu('ProjectExec', 'Alias', 'ConcatWs')
 def test_concat_ws_sql_col_sep_only_sep_specified():
@@ -483,6 +484,123 @@ def test_regexp_replace():
                 'regexp_replace(a, "a|b|c", "A")'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
+def test_regexp():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp(a, "a{2}")',
+                'regexp(a, "a{1,3}")',
+                'regexp(a, "a{1,}")',
+                'regexp(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
+def test_regexp_like():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_like(a, "a{2}")',
+                'regexp_like(a, "a{1,3}")',
+                'regexp_like(a, "a{1,}")',
+                'regexp_like(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.skipif(is_databricks_runtime(),
+    reason='Databricks optimizes out regexp_replace call in this case')
+@pytest.mark.skipif(not is_before_spark_311(),
+    reason='Spark 3.1.1 optimizes out regexp_replace call in this case')
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_null_pattern_fallback():
+    gen = mk_str_gen('[abcd]{0,3}')
+    # Spark 3.0.1 translates `NULL` to `CAST(NULL as STRING)` and we only support
+    # literal expressions for the regex pattern
+    # Spark 3.1.1 (and Databricks) replaces the whole regexp_replace expression with a
+    # literal null
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, NULL, "A")'),
+            'RegExpReplace',
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_regexp_replace_character_set_negated():
+    gen = mk_str_gen('[abcd]{0,3}[\r\n]{0,2}[abcd]{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "([^a])|([^b])", "1")',
+                'regexp_replace(a, "[^a]", "1")',
+                'regexp_replace(a, "([^a]|[\r\n])", "1")',
+                'regexp_replace(a, "[^a\r\n]", "1")',
+                'regexp_replace(a, "[^a\r]", "1")',
+                'regexp_replace(a, "[^a\n]", "1")',
+                'regexp_replace(a, "[^\r\n]", "1")',
+                'regexp_replace(a, "[^\r]", "1")',
+                'regexp_replace(a, "[^\n]", "1")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_regexp_extract():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 1)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 2)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_no_match():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 0)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 1)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 2)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 3)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+# if we determine that the index is out of range we fall back to CPU and let
+# Spark take care of the error handling
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
+def test_regexp_extract_idx_negative():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", -1)').collect(),
+            error_message = "The specified group index cannot be less than zero",
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+# if we determine that the index is out of range we fall back to CPU and let
+# Spark take care of the error handling
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
+def test_regexp_extract_idx_out_of_bounds():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 4)').collect(),
+            error_message = "Regex group count is 3, but the specified group index is 4",
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_multiline():
+    gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([\r\n]*)", 2)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_multiline_negated_character_class():
+    gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([^a-z]*)([a-d]*)$", 2)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_idx_0():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 0)',
+                'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)$", 0)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -502,6 +620,14 @@ def test_rlike_embedded_null():
                 'a rlike "a{1,3}"',
                 'a rlike "a{1,}"',
                 'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_null_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    # Spark optimizes out `RLIKE NULL` in this test
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike NULL'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
 @allow_non_gpu('ProjectExec', 'RLike')

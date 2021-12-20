@@ -876,10 +876,18 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast string to decimal") {
-    List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale, precision = 18,
+    List(-17, -10, -3, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale, precision = 17,
         customRandGenerator = Some(new scala.util.Random(1234L)))
     }
+  }
+
+  test("cast string to decimal (fail)") {
+    assertThrows[IllegalArgumentException](
+    List(-18, 18, 2, 32, 8).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    })
   }
 
   test("cast string to decimal (include NaN/INF/-INF)") {
@@ -889,7 +897,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       df1.unionAll(df2)
     }
     List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 18,
+      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 17,
         customDataGenerator = Some(doubleStrings))
     }
   }
@@ -899,15 +907,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       import ss.sqlContext.implicits._
       column.toDF("col")
     }
-    testCastToDecimal(DataTypes.StringType, scale = 7, precision = 18,
+    testCastToDecimal(DataTypes.StringType, scale = 7, precision = 17,
       customDataGenerator = Some(specialGenerator(Seq("9999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 18,
+    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 17,
       customDataGenerator = Some(specialGenerator(Seq("999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = 0, precision = 18,
+    testCastToDecimal(DataTypes.StringType, scale = 0, precision = 17,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -1, precision = 18,
+    testCastToDecimal(DataTypes.StringType, scale = -1, precision = 17,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -10, precision = 18,
+    testCastToDecimal(DataTypes.StringType, scale = -10, precision = 17,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
   }
 
@@ -916,7 +924,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       exponentsAsStringsDf(ss).select(col("c0").as("col"))
     }
     List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 18,
+      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 17,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
     }
@@ -924,10 +932,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("CAST string to float - sanitize step") {
     val testPairs = Seq(
-      ("\tinf", "Inf"),
-      ("\t+InFinITy", "Inf"),
-      ("\tInFinITy", "Inf"),
-      ("\t-InFinITy", "-Inf"),
+      ("\tinf", "inf"),
+      ("\riNf", "iNf"),
+      ("\t+InFinITy", "+InFinITy"),
+      ("\tInFinITy", "InFinITy"),
+      ("\t-InFinITy", "-InFinITy"),
       ("\t61f", "61"),
       (".8E4f", ".8E4")
     )
@@ -1384,6 +1393,12 @@ object CastOpSuite {
   def validTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     val timestampStrings = Seq(
+      "8669-07-22T04:45:57.73",
+      "6233-08-04T19:30:55.701",
+      "8220-02-25T10:01:15.106",
+      "9754-01-21T16:53:02.137",
+      "7649-11-16T15:56:04.996",
+      "7027-04-09T15:08:52.627",
       "1920-12-31T11:59:59.999",
       "1969-12-31T23:59:59.999",
       "1969-12-31T23:59:59.999999",

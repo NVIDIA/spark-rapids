@@ -164,7 +164,7 @@ def test_decimal128_count_window_no_part(data_gen):
         conf = allow_negative_scale_of_decimal_conf)
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
 def test_decimal_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
@@ -177,7 +177,7 @@ def test_decimal_sum_window(data_gen):
         conf = allow_negative_scale_of_decimal_conf)
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
 def test_decimal_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
@@ -191,7 +191,7 @@ def test_decimal_sum_window_no_part(data_gen):
 
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
 def test_decimal_running_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
@@ -205,7 +205,7 @@ def test_decimal_running_sum_window(data_gen):
             {'spark.rapids.sql.batchSizeBytes': '100'}))
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
 def test_decimal_running_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, LongRangeGen(), data_gen),

@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -389,6 +390,10 @@ object ExecutionPlanCaptureCallback {
       containsPlan(p.executedPlan, className)
     case p: QueryStageExec =>
       containsPlan(p.plan, className)
+    case p: ReusedSubqueryExec =>
+      containsPlan(p.child, className)
+    case p: ReusedExchangeExec =>
+      containsPlan(p.child, className)
     case p =>
       p.expressions.exists(containsExpression(_, className))
   }.nonEmpty

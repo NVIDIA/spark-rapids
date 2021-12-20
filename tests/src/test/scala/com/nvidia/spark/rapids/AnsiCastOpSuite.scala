@@ -407,22 +407,22 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to floats", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c0").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to floats", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c1").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to double", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c0").cast(DoubleType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to double", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c1").cast(DoubleType))
   }
 

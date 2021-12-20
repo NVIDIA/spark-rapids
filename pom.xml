@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>21.12.0-SNAPSHOT</version>
+    <version>22.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -122,6 +122,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -166,6 +167,7 @@
             </properties>
             <modules>
                 <module>aggregator</module>
+                <module>tools</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -209,6 +211,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -252,6 +255,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -286,7 +290,7 @@
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-apache/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
@@ -399,9 +403,8 @@
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-apache/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/31xdb/scala</source>
-                                        <source>${project.basedir}/src/main/312db/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -441,12 +444,12 @@
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-apache/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -456,6 +459,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
                 <module>tests-spark310+</module>
@@ -492,7 +496,7 @@
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-apache/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
@@ -503,6 +507,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
                 <module>tests-spark310+</module>
@@ -546,6 +551,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -588,6 +594,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -630,6 +637,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -682,6 +690,7 @@
                 </repository>
             </repositories>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -739,7 +748,7 @@
         <spark.test.version>${spark.version}</spark.test.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <cudf.version>21.12.0-SNAPSHOT</cudf.version>
+        <cudf.version>22.02.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.15</scala.version>
         <orc.version>1.5.10</orc.version>
@@ -961,16 +970,28 @@
                         <phase>generate-resources</phase>
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
-                            <target>
+                            <target name="build-info">
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                <exec executable="bash"
+                                      output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties"
+                                      resultproperty="build-info.exitCode"
+                                      errorproperty="build-info.errorMsg"
+                                      failonerror="false">
                                     <arg value="${spark.rapids.source.basedir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>
                                 </exec>
+                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
+                                    <condition>
+                                        <not>
+                                            <equals arg1="${build-info.exitCode}" arg2="0"/>
+                                        </not>
+                                    </condition>
+                                </fail>
                             </target>
                         </configuration>
+
                         <goals>
                             <goal>run</goal>
                         </goals>

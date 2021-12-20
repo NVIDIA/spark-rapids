@@ -121,7 +121,58 @@
         <concat destfile="${shimServiceFile}">
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
         </concat>
-        <exec executable="${project.basedir}/scripts/binary-dedupe.sh" failonerror="true"
-            dir="${project.build.directory}"/>
+
+        <!-- check shims revisions -->
+        <exec executable="${project.basedir}/scripts/check-shims-revisions.sh"
+              dir="${project.build.directory}"
+              resultproperty="build-parallel-worlds.checkRevisionsExitCode"
+              errorproperty="build-parallel-worlds.checkRevisionsErrorMsg"
+              failonerror="false">
+            <arg value="${included_buildvers}"/>
+        </exec>
+        <fail message="exec check-shims-revisions.sh failed, exit code is ${build-parallel-worlds.checkRevisionsExitCode}, error msg is ${build-parallel-worlds.checkRevisionsErrorMsg}">
+            <condition>
+                <not>
+                    <equals arg1="${build-parallel-worlds.checkRevisionsExitCode}" arg2="0"/>
+                </not>
+            </condition>
+        </fail>
+
+        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+              dir="${project.build.directory}"
+              resultproperty="build-parallel-worlds.dedupeExitCode"
+              errorproperty="build-parallel-worlds.dedupeErrorMsg"
+              failonerror="false"/>
+        <fail message="exec binary-dedupe.sh failed, exit code is ${build-parallel-worlds.dedupeExitCode}, error msg is ${build-parallel-worlds.dedupeErrorMsg}">
+            <condition>
+                <not>
+                    <equals arg1="${build-parallel-worlds.dedupeExitCode}" arg2="0"/>
+                </not>
+            </condition>
+        </fail>
+
+        <echo level="info">Generating dependency-reduced-pom.xml</echo>
+        <resources id="aggregatorDependencyRegexWithoutWhitespace">
+            <string>&lt;dependency&gt;</string>
+            <string>&lt;groupId&gt;com.nvidia&lt;/groupId&gt;</string>
+            <string>&lt;artifactId&gt;rapids-4-spark-aggregator_\S+?&lt;/artifactId&gt;</string>
+            <string>&lt;version&gt;\S+?&lt;/version&gt;</string>
+            <string>&lt;classifier&gt;\S+?&lt;/classifier&gt;</string>
+            <string>&lt;scope&gt;\S+?&lt;/scope&gt;</string>
+            <string>&lt;/dependency&gt;</string>
+        </resources>
+        <pathconvert property="aggregatorDependencyRegex" refid="aggregatorDependencyRegexWithoutWhitespace" pathsep="\s+?"/>
+
+        <echo level="info">Generated regex to remove aggregator dependencies:
+        ${aggregatorDependencyRegex}
+        </echo>
+        <copy file="${project.basedir}/pom.xml"
+            tofile="${project.build.directory}/extra-resources/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml"
+            overwrite="true">
+            <filterchain>
+                <replaceregex flags="gs" byline="false" replace=""
+                              pattern="${aggregatorDependencyRegex}"/>
+            </filterchain>
+        </copy>
     </target>
 </project>

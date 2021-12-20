@@ -20,6 +20,8 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
+pytestmark = pytest.mark.nightly_resource_consuming_test
+
 orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
@@ -39,7 +41,9 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
 orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
     lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
-    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
+    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable),
+    lambda nullable=True: DecimalGen(precision=15, scale=1, nullable=nullable),
+    lambda nullable=True: DecimalGen(precision=36, scale=5, nullable=nullable)]]
 
 orc_write_gens_list = [orc_write_basic_gens,
         orc_write_struct_gens_sample,
@@ -150,3 +154,15 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             data_path,
             'DataWritingCommandExec',
             conf = {'spark.rapids.sql.format.orc.write.enabled': True})
+
+@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
+def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
+    def create_empty_df(spark, path):
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+        return gen_df(spark, gen_list, length=0).write.orc(path)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        create_empty_df,
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf={'spark.rapids.sql.format.orc.write.enabled': True})

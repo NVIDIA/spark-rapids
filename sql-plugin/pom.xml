@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>21.12.0-SNAPSHOT</version>
+        <version>22.02.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>21.12.0-SNAPSHOT</version>
+    <version>22.02.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
@@ -151,6 +151,12 @@
                 <dependency>
                     <groupId>org.apache.hive</groupId>
                     <artifactId>hive-exec</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-serde</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>

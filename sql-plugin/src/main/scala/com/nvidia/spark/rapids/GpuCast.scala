@@ -95,6 +95,8 @@ final class CastExprMeta[INPUT <: CastBase](
             "converting floating point data types to strings and this can produce results that " +
             "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
             s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
+      case (_: StringType, dt: DecimalType) if dt.precision + 1 > Decimal.MAX_LONG_DIGITS =>
+        willNotWorkOnGpu(s"Because of rounding requirements we cannot support $dt on the GPU")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
             "that casting from string to float types on the GPU returns incorrect results when " +
@@ -113,24 +115,6 @@ final class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
-      case (_: StringType, dt: DecimalType) =>
-        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
-          willNotWorkOnGpu(s"string to decimal with a " +
-              s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
-        }
-        if (!conf.isCastStringToDecimalEnabled) {
-          // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
-          willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
-            "results which slightly differed from the correct results when the string represents " +
-            "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
-            "instance, the GPU returns 99999999999999987 when given the input string " +
-            "\"99999999999999999\". The cause of divergence is that we can not cast strings " +
-            "containing scientific notation to decimal directly. So, we have to cast strings " +
-            "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
-            "precision loss. To enable this operation on the GPU, set " +
-            s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-        }
-
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
@@ -183,73 +167,66 @@ object GpuCast extends Arm {
   val INVALID_INPUT_MESSAGE: String = "Column contains at least one value that is not in the " +
     "required range"
 
-  val INVALID_FLOAT_CAST_MSG: String = "At least one value is either null or is an invalid number"
+  val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  def sanitizeStringToFloat(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
+  def sanitizeStringToFloat(
+      input: ColumnVector,
+      ansiEnabled: Boolean): ColumnVector = {
 
-    // This regex gets applied after the transformation to normalize use of Inf and is
-    // just strict enough to filter out known edge cases that would result in incorrect
-    // values. We further filter out invalid values using the cuDF isFloat method.
+    // This regex is just strict enough to filter out known edge cases that would result
+    // in incorrect values. We further filter out invalid values using the cuDF isFloat method.
     val VALID_FLOAT_REGEX =
-      "^" +                         // start of line
-      "[+\\-]?" +                   // optional + or - at start of string
-      "(" +
+      "^" +                             // start of line
+        "[Nn][Aa][Nn]" +                // NaN
+        "|" +
         "(" +
+          "[+\\-]?" +                   // optional sign preceding Inf or numeric
           "(" +
-            "([0-9]+)|" +           // digits, OR
-            "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
-            "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+            "([Ii][Nn][Ff]" +           // Inf, Infinity
+            "([Ii][Nn][Ii][Tt][Yy])?)" +
+            "|" +
+            "(" +
+              "(" +
+                "([0-9]+)|" +           // digits, OR
+                "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
+                "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+              ")" +
+              "([eE][+\\-]?[0-9]+)?" +  // exponent
+              "[fFdD]?" +               // floating-point designator
+            ")" +
           ")" +
-          "([eE][+\\-]?[0-9]+)?" +  // exponent
-          "[fFdD]?" +               // floating-point designator
         ")" +
-        "|Inf" +                    // Infinity
-        "|[nN][aA][nN]" +           // NaN
-      ")" +
-      "$"                           // end of line
+      "$"                               // end of line
 
     withResource(input.lstrip()) { stripped =>
       withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
         // filter out strings containing breaking whitespace
         val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
-            verticalWhitespace =>
-          withResource(stripped.contains(verticalWhitespace)) {
-            _.ifElse(nullString, stripped)
-          }
-        }
-        // replace all possible versions of "Inf" and "Infinity" with "Inf"
-        val inf = withResource(withoutWhitespace) { _ =>
-            withoutWhitespace.stringReplaceWithBackrefs(
-          "(?:[iI][nN][fF])" + "(?:[iI][nN][iI][tT][yY])?", "Inf")
-        }
-        // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
-        val infWithoutPlus = withResource(inf) { _ =>
-          withResource(GpuScalar.from("+Inf", DataTypes.StringType)) { search =>
-            withResource(GpuScalar.from("Inf", DataTypes.StringType)) { replace =>
-              inf.stringReplace(search, replace)
+          verticalWhitespace =>
+            withResource(stripped.contains(verticalWhitespace)) {
+              _.ifElse(nullString, stripped)
             }
-          }
         }
         // filter out any strings that are not valid floating point numbers according
         // to the regex pattern
-        val floatOrNull = withResource(infWithoutPlus) { _ =>
-          withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
+        val floatOrNull = withResource(withoutWhitespace) { _ =>
+          withResource(withoutWhitespace.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
             if (ansiEnabled) {
               withResource(isFloat.all()) { allMatch =>
                 // Check that all non-null values are valid floats.
                 if (allMatch.isValid && !allMatch.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                  throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
                 }
-                infWithoutPlus.incRefCount()
+                withoutWhitespace.incRefCount()
               }
             } else {
-              isFloat.ifElse(infWithoutPlus, nullString)
+              isFloat.ifElse(withoutWhitespace, nullString)
             }
           }
         }
         // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
         withResource(floatOrNull) {
-          _.stringReplaceWithBackrefs("([^n])[fFdD]$", "\\1")
+          _.stringReplaceWithBackrefs("([^nN])[fFdD]$", "\\1")
         }
       }
     }
@@ -525,13 +502,8 @@ object GpuCast extends Arm {
           }
         }
       case (StringType, dt: DecimalType) =>
-        // To apply HALF_UP rounding strategy during casting to decimal, we firstly cast
-        // string to fp64. Then, cast fp64 to target decimal type to enforce HALF_UP rounding.
-        withResource(input.strip()) { trimmed =>
-          withResource(castStringToFloats(trimmed, ansiMode, DType.FLOAT64)) { fp =>
-            castFloatsToDecimal(fp, dt, ansiMode)
-          }
-        }
+        castStringToDecimal(input, ansiMode, dt)
+
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
 
@@ -548,6 +520,11 @@ object GpuCast extends Arm {
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
           }
         }
+
+      case (ArrayType(elementType, _), StringType) =>
+        castArrayToString(
+          input, elementType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled
+        )
 
       case (from: StructType, to: StructType) =>
         castStructToStruct(from, to, input, ansiMode, legacyCastToString,
@@ -654,6 +631,127 @@ object GpuCast extends Arm {
       }
     }
   }
+
+
+  /**
+   * A 8 steps solution for casting array to string. <p>
+   * Array is represented as `list column` in cudf, which has child column and offset column. <p>
+   * When `legacyCastToString = true`, given an input with 3 rows:
+   * `[ [1, 2, null, 3], [], null]` <p>
+   * Step 1: cast all not-null elements in array to string type:
+   * `[ ["1", "2", null, "3"], [], null]` <p>
+   * Step 2: add space char in the front of all not-null elements:
+   * `[ [" 1", " 2", null, " 3"], [], null]` <p>
+   * step 3: cast `null` elements to their string representation :
+   * `[ [" 1", " 2", "", " 3"], [], null]`(here we use "" to represent null) <p>
+   * step 4: concatenate list elements, seperated by `","`:
+   * `[" 1, 2,, 3", null, null]` <p>
+   * step 5: remove the first char, if it is an `' '`:
+   * `["1, 2,, 3", null, null]` <p>
+   * step 6: replace nulls with empty string:
+   * `["1, 2,, 3", "", ""]` <p>
+   * step 7: add brackets:
+   * `["[1, 2,, 3]", "[]", "[]"]` <p>
+   * step 8: add `null` masks using original input:
+   * `["[1, 2,, 3]", "[]", null]` <p>
+   *
+   * when `legacyCastToString = false`, step 2, 5 are skipped
+   */
+  private def castArrayToString(input: ColumnView,
+      elementType: DataType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+
+    val (leftStr, rightStr) =  ("[", "]")
+    val emptyStr = ""
+    val spaceStr = " "
+    val nullStr = if (legacyCastToString) emptyStr  else "null"
+    val sepStr = "," + (if (legacyCastToString) emptyStr else spaceStr)
+    val numRows = input.getRowCount.toInt
+
+    withResource(
+      Seq(leftStr, rightStr, emptyStr, spaceStr, nullStr, sepStr).safeMap(Scalar.fromString)
+    ){ case Seq(left, right, empty, space, nullRep, sep) =>
+
+      /* -------------------------------- helper functions -----------------------*/
+
+      /*
+       * Cast all not-null elements in a child column to string type
+       * add `' '` to all elements when `legacyCastToString = true`
+       */
+      def castChildToStr(child: ColumnView): ColumnView = {
+        withResource(
+          doCast(child, elementType, StringType, ansiMode,
+            legacyCastToString, stringToDateAnsiModeEnabled)
+        ) { strChildWithNull =>
+          withResource(strChildWithNull.replaceNulls(nullRep)) { strChild =>
+            if (legacyCastToString) {// add a space string to each non-null element
+              withResource(ColumnVector.fromScalar(space, child.getRowCount.toInt)) { spaceVec =>
+                withResource(
+                  ColumnVector.stringConcatenate(Array(spaceVec, strChild))
+                ) { addSpace =>
+                  withResource(child.isNotNull) {_.ifElse(addSpace, strChild)}
+                }
+              }
+            }
+            else { strChild.incRefCount }
+          }
+        }
+      }
+
+      /*
+       * If the first char of a string is ' ', remove it (only for legacyCastToString = true)
+       */
+      def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
+        if (legacyCastToString){
+          withResource(strVec.substring(0,1)) { fstChar =>
+            withResource(strVec.substring(1)) { remain =>
+              withResource(fstChar.equalTo(space)) {_.ifElse(remain, strVec)}
+            }
+          }
+        }
+        else {strVec.incRefCount}
+      }
+
+      /*
+       * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
+       */
+      def addBrackets(strVec: ColumnVector): ColumnVector = {
+        withResource(
+          Seq(left, right).safeMap(s => ColumnVector.fromScalar(s, numRows))
+        ) { case Seq(leftColumn, rightColumn) =>
+          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, strVec, rightColumn))
+        }
+      }
+      /* -------------------------------- helper functions -----------------------*/
+
+
+      // cast child column to string type
+      withResource(input.getChildColumnView(0)) { childView =>
+        withResource(castChildToStr(childView)){ stringChild =>
+          withResource(input.replaceListChild(stringChild)) {strArr =>
+            // concatenate each row. cast from list column to string column
+            withResource(ColumnVector.fromScalar(sep, numRows)){ sepCol =>
+              withResource(
+                strArr.stringConcatenateListElements(sepCol)
+              ) { strColContainsNull =>
+                withResource(strColContainsNull.replaceNulls(empty)){strCol =>
+                  withResource(removeFirstSpace(strCol)){withoutBrackets =>
+                    withResource(addBrackets(withoutBrackets))(
+                      _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+
 
   private def castStructToString(
       input: ColumnView,
@@ -800,18 +898,61 @@ object GpuCast extends Arm {
     }
   }
 
+  def castStringToDecimal(
+      input: ColumnView,
+      ansiEnabled: Boolean,
+      dt: DecimalType): ColumnVector = {
+    // 1. Sanitize strings to make sure all are fixed points
+    // 2. Identify all fixed point values
+    // 3. Cast String to newDt (newDt = dt. precision + 1, dt.scale + 1). Promote precision if
+    //    needed. This step is required so we can round up if needed in the final step
+    // 4. Now cast newDt to dt (Decimal to Decimal)
+    def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
+      if (dt.precision + 1 > Decimal.MAX_LONG_DIGITS) {
+        //We don't support Decimal 128
+        throw new IllegalArgumentException("One or more values exceed the maximum supported " +
+            "Decimal precision while conversion")
+      }
+      DecimalType(dt.precision + 1, dt.scale + 1)
+    }
+
+    val interimSparkDt = getInterimDecimalPromoteIfNeeded(dt)
+    val interimDt = DecimalUtil.createCudfDecimal(interimSparkDt)
+    val isFixedPoints = withResource(input.strip()) {
+      // We further filter out invalid values using the cuDF isFixedPoint method.
+      _.isFixedPoint(interimDt)
+    }
+
+    withResource(isFixedPoints) { isFixedPoints =>
+      if (ansiEnabled) {
+        withResource(isFixedPoints.all()) { allFixedPoints =>
+          if (allFixedPoints.isValid && !allFixedPoints.getBoolean) {
+            throw new ArithmeticException(s"One or more values cannot be " +
+                s"represented as Decimal(${dt.precision}, ${dt.scale})")
+          }
+        }
+      }
+      // intermediate step needed so we can make sure we can round up
+      withResource(input.castTo(interimDt)) { interimDecimals =>
+        withResource(Scalar.fromNull(interimDt)) { nulls =>
+          withResource(isFixedPoints.ifElse(interimDecimals, nulls)) { decimals =>
+            // cast Decimal to the Decimal that's needed
+            castDecimalToDecimal(decimals, interimSparkDt, dt, ansiEnabled)
+          }
+        }
+      }
+    }
+  }
+
   def castStringToFloats(
       input: ColumnVector,
       ansiEnabled: Boolean,
       dType: DType): ColumnVector = {
-
-    // 1. convert the different infinities to "Inf"/"-Inf" which is the only variation cudf
-    // understands
-    // 2. identify the nans
-    // 3. identify the floats. "nan", "null" and letters are not considered floats
-    // 4. if ansi is enabled we want to throw and exception if the string is neither float nor nan
-    // 5. convert everything thats not floats to null
-    // 6. set the indices where we originally had nans to Float.NaN
+    // 1. identify the nans
+    // 2. identify the floats. "null" and letters are not considered floats
+    // 3. if ansi is enabled we want to throw an exception if the string is neither float nor nan
+    // 4. convert everything that's not floats to null
+    // 5. set the indices where we originally had nans to Float.NaN
     //
     // NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
     // Inf even though Spark does
@@ -828,7 +969,7 @@ object GpuCast extends Arm {
               withResource(nanOrFloat.all()) { allNanOrFloat =>
                 // Check that all non-null values are valid floats or NaN.
                 if (allNanOrFloat.isValid && !allNanOrFloat.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                  throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
                 }
               }
             }
@@ -1200,24 +1341,30 @@ object GpuCast extends Arm {
     }
   }
 
+  def fixDecimalBounds(input: ColumnView,
+      outOfBounds: ColumnView,
+      ansiMode: Boolean): ColumnVector = {
+    if (ansiMode) {
+      withResource(outOfBounds.any()) { isAny =>
+        if (isAny.isValid && isAny.getBoolean) {
+          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+        }
+      }
+      input.copyToColumnVector()
+    } else {
+      withResource(Scalar.fromNull(input.getType)) { nullVal =>
+        outOfBounds.ifElse(nullVal, input)
+      }
+    }
+  }
+
   def checkNFixDecimalBounds(
       input: ColumnView,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
-      if (ansiMode) {
-        withResource(outOfBounds.any()) { isAny =>
-          if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-          }
-        }
-        input.copyToColumnVector()
-      } else {
-        withResource(Scalar.fromNull(input.getType)) { nullVal =>
-          outOfBounds.ifElse(nullVal, input)
-        }
-      }
+      fixDecimalBounds(input, outOfBounds, ansiMode)
     }
   }
 
@@ -1299,6 +1446,23 @@ case class GpuCast(
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   import GpuCast._
+
+  // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
+  override def hasSideEffects: Boolean = {
+    (child.dataType, dataType) match {
+      case (StringType, _) if ansiMode => true
+      case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
+      case (_: DecimalType, LongType) if ansiMode => true
+      case (LongType | _: DecimalType, IntegerType) if ansiMode => true
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode => true
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode => true
+      case (FloatType | DoubleType, ByteType) if ansiMode => true
+      case (FloatType | DoubleType, ShortType) if ansiMode => true
+      case (FloatType | DoubleType, IntegerType) if ansiMode => true
+      case (FloatType | DoubleType, LongType) if ansiMode => true
+      case _ => false
+    }
+  }
 
   override def toString: String = if (ansiMode) {
     s"ansi_cast($child as ${dataType.simpleString})"
