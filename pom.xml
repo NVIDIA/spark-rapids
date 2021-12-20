@@ -1191,6 +1191,7 @@
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
+                        <exclude>**/cufile.log</exclude>
                     </excludes>
                 </configuration>
             </plugin>
