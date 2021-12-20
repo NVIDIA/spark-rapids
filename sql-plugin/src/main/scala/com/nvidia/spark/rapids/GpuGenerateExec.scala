@@ -24,11 +24,11 @@ import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
-import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuGenerateExecSparkPlanMeta(
@@ -66,6 +66,22 @@ abstract class GeneratorExprMeta[INPUT <: Generator](
     r: DataFromReplacementRule) extends ExprMeta[INPUT](gen, conf, p, r) {
   /* whether supporting outer generate or not */
   val supportOuter: Boolean = false
+}
+
+/**
+ * Base class for metadata around GeneratorExprMeta.
+ */
+abstract class ReplicateRowsExprMeta[INPUT <: ReplicateRows](
+    gen: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends GeneratorExprMeta[INPUT](gen, conf, parent, rule) {
+
+  override final def convertToGpu(): GpuExpression =
+    convertToGpu(childExprs.map(_.convertToGpu()))
+
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }
 
 /**
@@ -161,6 +177,63 @@ trait GpuGenerator extends GpuUnevaluable {
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
     throw new NotImplementedError("The method should be implemented by specific generators.")
+  }
+}
+
+case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator {
+
+  override def elementSchema: StructType =
+    StructType(children.tail.zipWithIndex.map {
+      case (e, index) => StructField(s"col$index", e.dataType)
+    })
+
+  override def generate(inputBatch: ColumnarBatch,
+      generatorOffset: Int,
+      outer: Boolean): ColumnarBatch = {
+
+    val schema = GpuColumnVector.extractTypes(inputBatch)
+    val vectors = GpuColumnVector.extractBases(inputBatch)
+    val replicateVector = vectors(generatorOffset)
+
+    def replicateRows(inputTable: Table, genOffset: ColumnVector): Table = {
+      inputTable.repeat(genOffset)
+    }
+
+    withResource(GpuColumnVector.from(inputBatch)) { table =>
+      withResource(replicateRows(table, replicateVector)) { replicatedTable =>
+        GpuColumnVector.from(replicatedTable, schema)
+      }
+    }
+  }
+
+  override def inputSplitIndices(inputBatch: ColumnarBatch,
+      generatorOffset: Int,
+      outer: Boolean,
+      targetSizeBytes: Long): Array[Int] = {
+    val vectors = GpuColumnVector.extractBases(inputBatch)
+    val inputRows = inputBatch.numRows()
+    if (inputRows == 0) return Array()
+
+    // Calculate the number of rows that needs to be replicated. Here we find the mean of the
+    // generator column. Multiplying the mean with size of projected columns would give us the
+    // approximate memory required.
+    val meanOutputRows = math.ceil(vectors(generatorOffset).mean().getDouble)
+    val estimatedOutputRows = meanOutputRows * inputRows
+
+    // input size of columns to be repeated
+    val repeatColsInputSize = vectors.slice(0, generatorOffset).map(_.getDeviceMemorySize).sum
+    // estimated total output size
+    val estimatedOutputSizeBytes = repeatColsInputSize * estimatedOutputRows / inputRows
+
+    // how may splits will we need to keep the output size under the target size
+    val numSplitsForTargetSize = math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
+    // how may splits will we need to keep the output rows under max value
+    val numSplitsForTargetRow = math.ceil(estimatedOutputRows / Int.MaxValue).toInt
+    // how may splits will we need to keep replicateRows working safely
+    val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
+
+    if (numSplits == 0) Array()
+    else GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
   }
 }
 
