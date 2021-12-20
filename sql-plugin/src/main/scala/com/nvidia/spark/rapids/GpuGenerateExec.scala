@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -180,7 +180,7 @@ trait GpuGenerator extends GpuUnevaluable {
   }
 }
 
-case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator {
+case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with ShimExpression {
 
   override def elementSchema: StructType =
     StructType(children.tail.zipWithIndex.map {
@@ -192,15 +192,10 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator {
       outer: Boolean): ColumnarBatch = {
 
     val schema = GpuColumnVector.extractTypes(inputBatch)
-    val vectors = GpuColumnVector.extractBases(inputBatch)
-    val replicateVector = vectors(generatorOffset)
-
-    def replicateRows(inputTable: Table, genOffset: ColumnVector): Table = {
-      inputTable.repeat(genOffset)
-    }
+    val replicateVector = GpuColumnVector.extractBases(inputBatch)(generatorOffset)
 
     withResource(GpuColumnVector.from(inputBatch)) { table =>
-      withResource(replicateRows(table, replicateVector)) { replicatedTable =>
+      withResource(table.repeat(replicateVector)) { replicatedTable =>
         GpuColumnVector.from(replicatedTable, schema)
       }
     }
@@ -232,8 +227,11 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator {
     // how may splits will we need to keep replicateRows working safely
     val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
 
-    if (numSplits == 0) Array()
-    else GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
+    if (numSplits == 0) {
+      Array()
+    } else {
+      GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
+    }
   }
 }
 

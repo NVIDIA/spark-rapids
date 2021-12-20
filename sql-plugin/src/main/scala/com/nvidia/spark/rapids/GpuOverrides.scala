@@ -3109,12 +3109,12 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         // The plan is optimized to run HashAggregate on the rows to be replicated. So this
         // currently supports DECIMAL 64 and HashAggregateExec doesn't support DECIMAL 128 yet.
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
-              + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ReplicateRowsExprMeta[ReplicateRows](a, conf, p, r) {
         override def convertToGpu(childExpr: Seq[Expression]): GpuExpression =
