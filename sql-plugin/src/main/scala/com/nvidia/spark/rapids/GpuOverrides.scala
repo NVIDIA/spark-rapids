@@ -3107,8 +3107,9 @@ object GpuOverrides extends Logging {
     expr[ReplicateRows](
       "Given an input row replicates the row N times",
       ExprChecks.projectOnly(
-        // The plan is optimized to run HashAggregate on the rows to be replicated. So this
-        // currently supports DECIMAL 64 and HashAggregateExec doesn't support DECIMAL 128 yet.
+        // The plan is optimized to run HashAggregate on the rows to be replicated.
+        // HashAggregateExec doesn't support grouping by 128-bit decimal value yet.
+        // Issue to track decimal 128 support: https://github.com/NVIDIA/spark-rapids/issues/4410
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),

@@ -192,9 +192,9 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with
       outer: Boolean): ColumnarBatch = {
 
     val schema = GpuColumnVector.extractTypes(inputBatch)
-    val replicateVector = GpuColumnVector.extractBases(inputBatch)(generatorOffset)
 
     withResource(GpuColumnVector.from(inputBatch)) { table =>
+      val replicateVector = table.getColumn(generatorOffset)
       withResource(table.repeat(replicateVector)) { replicatedTable =>
         GpuColumnVector.from(replicatedTable, schema)
       }
