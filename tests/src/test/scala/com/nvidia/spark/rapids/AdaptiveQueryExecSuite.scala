@@ -75,9 +75,9 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuShuffledHashJoinBase] = {
+  private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuShuffledHashJoinExec] = {
     collect(plan) {
-      case j: GpuShuffledHashJoinBase => j
+      case j: GpuShuffledHashJoinExec => j
     }
   }
 
@@ -197,7 +197,7 @@ class AdaptiveQueryExecSuite
 
       // assert that both inputs to the SHJ are coalesced
       val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
-        _.isInstanceOf[GpuShuffledHashJoinBase]).get
+        _.isInstanceOf[GpuShuffledHashJoinExec]).get
       assert(shj.children.length == 2)
       assert(shj.children.forall {
         case GpuShuffleCoalesceExec(_, _) => true
@@ -637,7 +637,7 @@ class AdaptiveQueryExecSuite
   }
 
   def checkSkewJoin(
-      joins: Seq[GpuShuffledHashJoinBase],
+      joins: Seq[GpuShuffledHashJoinExec],
       leftSkewNum: Int,
       rightSkewNum: Int): Unit = {
     assert(joins.size == 1 && joins.head.isSkewJoin)

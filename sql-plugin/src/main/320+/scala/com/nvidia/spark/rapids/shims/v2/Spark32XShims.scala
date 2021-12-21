@@ -42,7 +42,6 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, DynamicPruningExpression, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
@@ -166,14 +165,6 @@ trait Spark32XShims extends SparkShims  with Logging {
     case _ => false
   }
 
-  override def getBuildSide(join: HashJoin): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
   override def getDateFormatter(): DateFormatter = {
     // TODO verify
     DateFormatter()
@@ -226,31 +217,7 @@ trait Spark32XShims extends SparkShims  with Logging {
       startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
-  override def getGpuBroadcastNestedLoopJoinShim(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression],
-      targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
-  }
-
-  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuBroadcastHashJoinExec => true
-      case _ => false
-    }
-  }
-
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
-
-  override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuShuffledHashJoinExec => true
-      case _ => false
-    }
-  }
 
   override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
     sqlConf.maxMetadataStringLength
@@ -657,18 +624,6 @@ trait Spark32XShims extends SparkShims  with Logging {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
             + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
-      GpuOverrides.exec[SortMergeJoinExec](
-        "Sort merge join, replacing with shuffled hash join",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[ShuffledHashJoinExec](
-        "Implementation of join using hashed shuffled data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
             " Java process and the Python process. It also supports scheduling GPU resources" +

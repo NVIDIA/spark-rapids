@@ -36,11 +36,10 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InMemoryFileIndex}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
 import org.apache.spark.sql.types._
@@ -181,18 +180,6 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
               wrapped.tableIdentifier)(conf)
           }
         }),
-      GpuOverrides.exec[SortMergeJoinExec](
-        "Sort merge join, replacing with shuffled hash join",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[ShuffledHashJoinExec](
-        "Implementation of join using hashed shuffled data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
           " Java process and the Python process. It also supports scheduling GPU resources" +

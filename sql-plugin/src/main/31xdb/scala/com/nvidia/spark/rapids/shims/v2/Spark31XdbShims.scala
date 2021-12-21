@@ -40,7 +40,6 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
@@ -54,12 +53,11 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
 import org.apache.spark.sql.rapids.shims.v2._
@@ -95,32 +93,8 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
-  override def getGpuBroadcastNestedLoopJoinShim(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression],
-      targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
-  }
-
-  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuBroadcastHashJoinExec => true
-      case _ => false
-    }
-  }
-
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
-
-  override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuShuffledHashJoinExec => true
-      case _ => false
-    }
-  }
 
   override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
     sqlConf.maxMetadataStringLength
@@ -475,18 +449,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
             + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
-      GpuOverrides.exec[SortMergeJoinExec](
-        "Sort merge join, replacing with shuffled hash join",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[ShuffledHashJoinExec](
-        "Implementation of join using hashed shuffled data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -574,14 +536,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             conf)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getBuildSide(join: HashJoin): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
 
   override def getPartitionFileNames(
       partitions: Seq[PartitionDirectory]): Seq[String] = {

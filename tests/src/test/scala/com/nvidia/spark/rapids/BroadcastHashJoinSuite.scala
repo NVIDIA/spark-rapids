@@ -40,10 +40,10 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       df5.collect()
       val plan = df5.queryExecution.executedPlan
 
-      val bhjCount = PlanUtils.findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+      val bhjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastHashJoinExec])
       assert(bhjCount.size === 1)
 
-      val shjCount = PlanUtils.findOperators(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
+      val shjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuShuffledHashJoinExec])
       assert(shjCount.size === 1)
     }, conf)
   }
@@ -60,13 +60,13 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan1.collect()
         val finalPlan1 = findOperator(plan1.queryExecution.executedPlan,
-          ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+          _.isInstanceOf[GpuBroadcastHashJoinExec])
         assert(finalPlan1.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildLeft)
 
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan2.collect()
         val finalPlan2 = findOperator(plan2.queryExecution.executedPlan,
-          ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+          _.isInstanceOf[GpuBroadcastHashJoinExec])
         assert(finalPlan2.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildRight)
       }
     })

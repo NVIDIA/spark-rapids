@@ -70,7 +70,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val plan = rdf.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
-      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      val joinNode = findOperator(plan, _.isInstanceOf[GpuBroadcastHashJoinExec])
       assert(joinNode.isDefined, "No broadcast join node found")
       // should not have sort, because of not have GpuDataWritingCommandExec
       val sortNode = findOperator(plan, _.isInstanceOf[GpuSortExec])
@@ -87,7 +87,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val plan = rdf.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
-      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
+      val joinNode = findOperator(plan, _.isInstanceOf[GpuShuffledHashJoinExec])
       assert(joinNode.isDefined, "No broadcast join node found")
       // should not have sort, because of not have GpuDataWritingCommandExec
       val sortNode = findOperator(plan, _.isInstanceOf[GpuSortExec])
@@ -183,7 +183,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val sortExec = findOperator(plan, _.isInstanceOf[GpuSortExec])
       assert(sortExec.isDefined)
 
-      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      val joinNode = findOperator(plan, _.isInstanceOf[GpuBroadcastHashJoinExec])
       validateOptimizeSort(plan, joinNode.get)
     }, conf)
   }
