@@ -186,37 +186,33 @@ def test_ifnull(data_gen):
                 'ifnull({}, b)'.format(null_lit),
                 'ifnull(a, {})'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [IntegerGen().with_special_case(2147483647)], ids=idfn)
 def test_conditional_with_side_effects_col_col(data_gen):
-    gen = IntegerGen().with_special_case(2147483647)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, gen).selectExpr(
-                'IF(b < 2147483647, b + 1, b)'),
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'IF(a < 2147483647, a + 1, a)'),
             conf = {'spark.sql.ansi.enabled':True})
 
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [IntegerGen().with_special_case(2147483647)], ids=idfn)
 def test_conditional_with_side_effects_col_scalar(data_gen):
-    gen = IntegerGen().with_special_case(2147483647)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, gen).selectExpr(
-                'IF(b < 2147483647, b + 1, 2147483647)',
-                'IF(b >= 2147483646, 2147483647, b + 1)'),
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'IF(a < 2147483647, a + 1, 2147483647)',
+                'IF(a >= 2147483646, 2147483647, a + 1)'),
             conf = {'spark.sql.ansi.enabled':True})
 
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
 def test_conditional_with_side_effects_cast(data_gen):
-    gen = mk_str_gen('[0-9]{1,20}')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, gen).selectExpr(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a RLIKE "^[0-9]{1,5}$", CAST(a AS INT), 0)'),
             conf = {'spark.sql.ansi.enabled':True,
                     'spark.rapids.sql.expression.RLike': True})
 
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
 def test_conditional_with_side_effects_case_when(data_gen):
-    gen = mk_str_gen('[0-9]{1,20}')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, gen).selectExpr(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'CASE \
                 WHEN a RLIKE "^[0-9]{1,3}$" THEN CAST(a AS INT) \
                 WHEN a RLIKE "^[0-9]{4,6}$" THEN CAST(a AS INT) + 123 \

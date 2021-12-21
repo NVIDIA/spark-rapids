@@ -327,8 +327,8 @@ case class GpuCaseWhen(
   private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
     val colTypes = GpuColumnVector.extractTypes(batch)
 
-    // track cumulative state of predicates so that never evaluate expressions
-    // if an earlier expression has already been evaluated
+    // track cumulative state of predicate evaluation per row so that we never evaluate expressions
+    // for a row if an earlier expression has already been evaluated to true for that row
     var cumulativePred: Option[GpuColumnVector] = None
 
     // this variable contains the currently evaluated value for each row and gets updated
@@ -386,12 +386,17 @@ case class GpuCaseWhen(
                     case _ =>
                       whenBoolAdjusted.incRefCount()
                   })
+
+                  if (isAllTrue(cumulativePred.get)) {
+                    // no need to process any more branches or the else condition
+                    return currentValue.get.incRefCount()
+                  }
                 }
               }
-
             }
         }
 
+        // invert the cumulative predicate to get the ELSE predicate
         withResource(cumulativePred.get.getBase.not()) { elsePredicate =>
           // replace null predicates with true (because this is an inverted predicate)
           val elsePredNoNulls = withResource(Scalar.fromBool(true)) { t =>
@@ -416,6 +421,8 @@ case class GpuCaseWhen(
                 }
 
               case None =>
+                // if there is no ELSE condition then we return NULL for any rows not matched by
+                // previous branches
                 withResource(GpuScalar.from(null, dataType)) { nullScalar =>
                   if (isAllTrue(elsePredNoNulls) && elsePredNoNulls.getRowCount <= Int.MaxValue) {
                     GpuColumnVector.from(nullScalar, elsePredNoNulls.getRowCount.toInt, dataType)

@@ -57,6 +57,14 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
         "ELSE CAST(a AS INT) END"))
   }
 
+  testSparkResultsAreEqual("CASE WHEN first or second branch is true", testData3, conf) { df =>
+    df.withColumn("test", expr(
+      "CASE " +
+        "WHEN a RLIKE '^[0-9]{1,3}$' THEN CAST(a AS INT) " +
+        "WHEN a RLIKE '^[0-9]{4,6}$' THEN CAST(a AS INT) + 123 " +
+        "ELSE -1 END"))
+  }
+
   private def testData(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
@@ -73,6 +81,14 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
     Seq(
       "123",
       "456"
+    ).toDF("a").repartition(2)
+  }
+
+  private def testData3(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      "123",
+      "123456"
     ).toDF("a").repartition(2)
   }
 
