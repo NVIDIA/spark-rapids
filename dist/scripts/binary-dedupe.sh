@@ -56,30 +56,22 @@ echo "Retrieving class files hashing to a single value ..."
 
 
 echo "$((++STEP))/ SHA1 of all classes > tmp-sha1-class.txt"
-time (
-  find ./parallel-world/spark3* -type f -name '*.class' | \
-    xargs $SHASUM > tmp-sha1-class.txt
-) 2>&1
+find ./parallel-world/spark3* -type f -name '*.class' | \
+  xargs $SHASUM > tmp-sha1-class.txt
 
 echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-class.txt"
-time (
-  < tmp-sha1-class.txt awk -F/ '$1=$1' | \
-    awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
-    tr -s  ' ' > tmp-shim-sha-package-class.txt
-) 2>&1
+< tmp-sha1-class.txt awk -F/ '$1=$1' | \
+  awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
+  tr -s  ' ' > tmp-shim-sha-package-class.txt
 
 echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-shim-sha-package-class.txt"
-time (
-  sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
-    uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
-) 2>&1
+sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
+  uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
 
 echo "$((++STEP))/ class files with unique sha1 > $SPARK3XX_COMMON_TXT"
-time (
-  grep '^\s\+1 .*' tmp-count-shim-sha-package-class.txt | \
-    awk '{$1=""; $3=""; print $0 }' | \
-    tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
-) 2>&1
+grep '^\s\+1 .*' tmp-count-shim-sha-package-class.txt | \
+  awk '{$1=""; $3=""; print $0 }' | \
+  tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 
 function retain_single_copy() {
   set -e
@@ -119,23 +111,19 @@ rm -rf "$SPARK3XX_COMMON_DIR"
 mkdir -p "$SPARK3XX_COMMON_DIR"
 
 echo "$((++STEP))/ retaining a single copy of spark3xx-common classes"
-time (
-  while read spark_common_class; do
-    retain_single_copy "$spark_common_class"
-  done < "$SPARK3XX_COMMON_TXT"
-) 2>&1
+while read spark_common_class; do
+  retain_single_copy "$spark_common_class"
+done < "$SPARK3XX_COMMON_TXT"
 
 echo "$((++STEP))/ rsyncing common classes to $SPARK3XX_COMMON_DIR"
-time (
-  for copy_list in from-spark3*-to-spark3xx-common.txt; do
-    echo Initializing rsync of "$copy_list"
-    IFS='-' <<< "$copy_list" read -ra copy_list_parts
-    # declare -p copy_list_parts
-    shim="${copy_list_parts[1]}"
-    # use rsync to reduce process forking
-    rsync --files-from="$copy_list" ./parallel-world/"$shim" "$SPARK3XX_COMMON_DIR"
-  done
-) 2>&1
+for copy_list in from-spark3*-to-spark3xx-common.txt; do
+  echo Initializing rsync of "$copy_list"
+  IFS='-' <<< "$copy_list" read -ra copy_list_parts
+  # declare -p copy_list_parts
+  shim="${copy_list_parts[1]}"
+  # use rsync to reduce process forking
+  rsync --files-from="$copy_list" ./parallel-world/"$shim" "$SPARK3XX_COMMON_DIR"
+done
 
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
@@ -169,11 +157,8 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # Determine the list of unshimmed class files
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
 echo "$((++STEP))/ creating sorted list of unshimmed classes > $UNSHIMMED_LIST_TXT"
-time (
-  find . -name '*.class' -not -path './parallel-world/spark3*' | \
-    cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
-) 2>&1
-
+find . -name '*.class' -not -path './parallel-world/spark3*' | \
+  cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
 
 function verify_same_sha_for_unshimmed() {
   set -e
@@ -198,27 +183,23 @@ function verify_same_sha_for_unshimmed() {
 }
 
 echo "$((++STEP))/ verifying unshimmed classes have unique sha1 across shims"
-time (
-  while read unshimmed_class; do
-    verify_same_sha_for_unshimmed "$unshimmed_class"
-  done < "$UNSHIMMED_LIST_TXT"
-) 2>&1
+while read unshimmed_class; do
+  verify_same_sha_for_unshimmed "$unshimmed_class"
+done < "$UNSHIMMED_LIST_TXT"
 
 # Remove unshimmed classes from parallel worlds
 # TODO rework with low priority, only a few classes.
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
 
-time (
-  while read unshimmed_class; do
-    for pw in ./parallel-world/spark3* ; do
-      unshimmed_path="$pw/$unshimmed_class"
-      [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true
-    done >> "$DELETE_DUPLICATES_TXT"
-  done < "$UNSHIMMED_LIST_TXT"
-) 2>&1
+while read unshimmed_class; do
+  for pw in ./parallel-world/spark3* ; do
+    unshimmed_path="$pw/$unshimmed_class"
+    [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true
+  done >> "$DELETE_DUPLICATES_TXT"
+done < "$UNSHIMMED_LIST_TXT"
 
 echo "$((++STEP))/ deleting all class files listed in $DELETE_DUPLICATES_TXT"
-time (< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm) 2>&1
+< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm
 
 end_time=$(date +%s)
 echo "binary-dedupe completed in $((end_time - start_time)) seconds"

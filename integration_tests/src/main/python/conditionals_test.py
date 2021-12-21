@@ -20,6 +20,9 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
+def mk_str_gen(pattern):
+    return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
+
 all_gens = all_gen + [NullGen()]
 all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
@@ -182,3 +185,26 @@ def test_ifnull(data_gen):
                 'ifnull({}, b)'.format(s1),
                 'ifnull({}, b)'.format(null_lit),
                 'ifnull(a, {})'.format(null_lit)))
+
+@pytest.mark.parametrize('data_gen', [IntegerGen().with_special_case(2147483647)], ids=idfn)
+def test_conditional_with_side_effects_col_col(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'IF(a < 2147483647, a + 1, a)'),
+            conf = {'spark.sql.ansi.enabled':True})
+
+@pytest.mark.parametrize('data_gen', [IntegerGen().with_special_case(2147483647)], ids=idfn)
+def test_conditional_with_side_effects_col_scalar(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'IF(a < 2147483647, a + 1, 2147483647)',
+                'IF(a >= 2147483646, 2147483647, a + 1)'),
+            conf = {'spark.sql.ansi.enabled':True})
+
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
+def test_conditional_with_side_effects_cast(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'IF(a RLIKE "^[0-9]{1,5}$", CAST(a AS INT), 0)'),
+            conf = {'spark.sql.ansi.enabled':True,
+                    'spark.rapids.sql.expression.RLike': True})
