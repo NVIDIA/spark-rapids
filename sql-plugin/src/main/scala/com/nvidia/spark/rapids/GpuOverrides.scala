@@ -3684,6 +3684,52 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
     ),
+    exec[SubqueryBroadcastExec](
+      "Plan to collect and transform the broadcast key values",
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
+
+        private var broadcastMeta: GpuBroadcastMeta = _
+
+        override val childExprs: Seq[BaseExprMeta[_]] = Nil
+
+        override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+
+        /**
+         * The rule PlanDynamicPruningFilters will insert SubqueryBroadcastExec if there exists
+         * available broadcast exchange for reuse. The plan stack of SubqueryBroadcastExec:
+         * SubqueryBroadcast -> BroadcastExchange -> executedPlan
+         * Since the GPU overrides rule has been applied on executedPlan, the plan stack become:
+         * SubqueryBroadcast -> BroadcastExchange -> GpuColumnarToRow -> GpuPlanStack...
+         * , if the wrapped subquery can run on the GPU.
+         * To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
+         * GpuSubqueryBroadcast -> GpuBroadcastExchange -> GpuPlanStack...
+         */
+        override def tagPlanForGpu(): Unit = s.child match {
+          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
+            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
+            exMeta.tagForGpu()
+            if (exMeta.canThisBeReplaced) {
+              broadcastMeta = exMeta
+            } else {
+              willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+            }
+          case _ =>
+            willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
+        }
+
+        /**
+         * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
+         * need to change if SubqueryBroadcastExec falls back to the CPU.
+         */
+        override def convertToCpu(): SparkPlan = s
+
+        override def convertToGpu(): GpuExec = {
+          val gpuEx = broadcastMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
+          GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
+        }
+      }
+    ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +

@@ -203,6 +203,26 @@ run_test_not_parallel() {
 }
 export -f run_test_not_parallel
 
+get_cases_by_tags() {
+  local cases
+  local args=${2}
+  cases=$(TEST_TAGS="${1}" \
+           ./run_pyspark_from_build.sh "${args}" --collect-only -p no:warnings -qq 2>/dev/null \
+           | grep -oP '(?<=::).*?(?=\[)' | uniq | shuf | xargs)
+  echo "$cases"
+}
+export -f get_cases_by_tags
+
+get_tests_by_tags() {
+  local tests
+  local args=${2}
+  tests=$(TEST_TAGS="${1}" \
+           ./run_pyspark_from_build.sh "${args}" --collect-only -qqq -p no:warnings 2>/dev/null \
+           | grep -oP '(?<=python/).*?(?=.py)' | xargs)
+  echo "$tests"
+}
+export -f get_tests_by_tags
+
 # TEST_MODE
 # - IT_ONLY
 # - CUDF_UDF_ONLY
@@ -211,32 +231,22 @@ TEST_MODE=${TEST_MODE:-'IT_ONLY'}
 if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-    # We separate tests/cases into different categories for parallel run to try avoid long tail distribution
-    # time_consuming_tests: tests that would cost over 1 hour if run sequentially, we split them into cases (time_consuming_tests_cases)
-    # mem_consuming_cases: cases in time_consuming_tests that would consume much more GPU memory than normal cases
-    # other_tests: tests except time_consuming_tests_cases and mem_consuming_cases
-
-    # TODO: Tag these tests/cases
-    # time-consuming tests, space-separated
-    time_consuming_tests="join_test hash_aggregate_test generate_expr_test parquet_write_test orc_test orc_write_test"
-    # GPU memory-consuming cases in time_consuming_tests, space-separated
-    mem_consuming_cases="test_hash_reduction_decimal_overflow_sum"
-    # hardcode parallelism as 2 for gpu-mem consuming cases
+    # separate run for special cases that require smaller parallelism
+    special_cases=$(get_cases_by_tags "nightly_resource_consuming_test \
+                                      and (nightly_gpu_mem_consuming_case or nightly_host_mem_consuming_case)")
+    # hardcode parallelism as 2 for special cases
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.45 \
     --conf spark.rapids.memory.gpu.maxAllocFraction=0.45"
     # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
     #                      we can set it to "never" and print failed ones after finish running all tests if needed
     # --group: print stderr after test finished for better readability
-    parallel --group --halt "now,fail=1" -j2 run_test_not_parallel ::: ${mem_consuming_cases}
+    parallel --group --halt "now,fail=1" -j2 run_test_not_parallel ::: ${special_cases}
 
-    time_consuming_tests_str=$(echo ${time_consuming_tests} | xargs | sed 's/ / or /g')
-    mem_consuming_cases_str=$(echo ${mem_consuming_cases} | xargs | sed 's/ / and not /g')
-    time_consuming_tests_cases=$(./run_pyspark_from_build.sh -k \
-                                 "(${time_consuming_tests_str}) and not ${mem_consuming_cases_str}" \
-                                  --collect-only -qq 2>/dev/null | grep -oP '(?<=::).*?(?=\[)' | uniq | shuf | xargs)
-    other_tests=$(./run_pyspark_from_build.sh --collect-only -qqq 2>/dev/null | grep -oP '(?<=python/).*?(?=.py)' \
-                  | grep -vP "$(echo ${time_consuming_tests} | xargs | tr ' ' '|')")
-    tests=$(echo "${time_consuming_tests_cases} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
+    resource_consuming_cases=$(get_cases_by_tags "nightly_resource_consuming_test \
+                                                and not nightly_gpu_mem_consuming_case \
+                                                and not nightly_host_mem_consuming_case")
+    other_tests=$(get_tests_by_tags "not nightly_resource_consuming_test")
+    tests=$(echo "${resource_consuming_cases} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
 
     if [[ "${PARALLELISM}" == "" ]]; then
       PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
@@ -245,15 +255,14 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
     --conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"
-    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test_not_parallel ::: $tests
+    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test_not_parallel ::: ${tests}
   else
     run_test_not_parallel all
   fi
 
   if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
     if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-      cache_test_cases=$(./run_pyspark_from_build.sh -k "cache_test" \
-                            --collect-only -qq 2>/dev/null | grep -oP '(?<=::).*?(?=\[)' | uniq | shuf | xargs)
+      cache_test_cases=$(get_cases_by_tags "" "-k cache_test")
       # hardcode parallelism as 5
       export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
       --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
