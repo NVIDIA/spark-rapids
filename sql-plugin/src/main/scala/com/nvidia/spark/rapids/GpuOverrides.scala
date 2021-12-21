@@ -3104,6 +3104,23 @@ object GpuOverrides extends Logging {
         override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
+    expr[ReplicateRows](
+      "Given an input row replicates the row N times",
+      ExprChecks.projectOnly(
+        // The plan is optimized to run HashAggregate on the rows to be replicated.
+        // HashAggregateExec doesn't support grouping by 128-bit decimal value yet.
+        // Issue to track decimal 128 support: https://github.com/NVIDIA/spark-rapids/issues/4410
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+            TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          TypeSig.all))),
+      (a, conf, p, r) => new ReplicateRowsExprMeta[ReplicateRows](a, conf, p, r) {
+        override def convertToGpu(childExpr: Seq[Expression]): GpuExpression =
+          GpuReplicateRows(childExpr)
+      }),
     expr[CollectList](
       "Collect a list of non-unique elements, not supported in reduction",
       // GpuCollectList is not yet supported in Reduction context.
