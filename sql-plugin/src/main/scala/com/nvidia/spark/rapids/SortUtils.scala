@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, OrderByArg, Table}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.types.DataType
@@ -210,6 +210,17 @@ class GpuSorter(
     }
   }
 
+  private def isOrHasListType(cv: ColumnView): Boolean = cv.getType match {
+    case DType.LIST => true
+    case DType.STRUCT =>
+      (0 until cv.getNumChildren).exists { i =>
+        withResource(cv.getChildColumnView(i)) { colView =>
+          isOrHasListType(colView)
+        }
+      }
+    case _ => false
+  }
+
   /**
    * Merge multiple batches together. All of these batches should be the output of
    * `appendProjectedColumns` and the output of this will also be in that same format.
@@ -228,13 +239,15 @@ class GpuSorter(
           }
           // In the current version of cudf merge does not work for structs or lists (nested types)
           // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-          val hasNested = {
+          // List and Map type is not supported for now.
+          val hasUnsupportedNested = {
             val tab = tabs.head
             (0 until tab.getNumberOfColumns).exists { i =>
-              tab.getColumn(i).getType.isNestedType
+              // Map is list of struct in cudf, so checking list type covers the map type.
+              isOrHasListType(tab.getColumn(i))
             }
           }
-          if (hasNested) {
+          if (hasUnsupportedNested) {
             // so as a work around we concatenate all of the data together and then sort it.
             // It is slower, but it works
             withResource(Table.concatenate(tabs: _*)) { concatenated =>
