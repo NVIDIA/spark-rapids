@@ -456,15 +456,18 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
     val lhsValue = value.getBase
 
-    def intZeroReplacement(zero: Scalar): ColumnVector = {
+    def intZeroReplacement(zeroFn: () => Scalar): ColumnVector = {
       val scaleVal = scale.getValue.asInstanceOf[Int]
-      if (-scaleVal >= DecimalUtil.getPrecisionForIntegralType(lhsValue.getType)) {
-        withResource(zero) { s =>
-          withResource(ColumnVector.fromScalar(s, lhsValue.getRowCount.toInt)) { cv =>
+
+      if (-scaleVal == 19 && lhsValue.getType == DType.INT64) {
+        longBoundReplacement(zeroFn)
+      } else if (-scaleVal >= DecimalUtil.getPrecisionForIntegralType(lhsValue.getType)) {
+        withResource(zeroFn()) { s =>
+          withResource(ColumnVector.fromScalar(s, lhsValue.getRowCount.toInt)) { zero =>
             if (lhsValue.hasNulls) {
-              cv.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
+              zero.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
             } else {
-              cv.incRefCount()
+              zero.incRefCount()
             }
           }
         }
@@ -473,24 +476,56 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
       }
     }
 
-    def fpZeroReplacement(zero: Scalar, inf: Scalar, negInf: Scalar): ColumnVector = {
+    def longBoundReplacement(zeroFn: () => Scalar): ColumnVector = {
+      val scalars = Seq(zeroFn(),
+        Scalar.fromLong(1000000000000000000L),
+        Scalar.fromLong(4L), Scalar.fromLong(-4L),
+        Scalar.fromLong(8446744073709551616L), Scalar.fromLong(-8446744073709551616L))
+      withResource(scalars) { case Seq(zero, base, five, negFive, repLit, negRepLit) =>
+        val (needPosRep, needNegRep) = withResource(lhsValue.div(base)) { headDigit =>
+          closeOnExcept(headDigit.greaterThan(five)) { posRep =>
+            closeOnExcept(headDigit.lessThan(negFive)) { negRep =>
+              posRep -> negRep
+            }
+          }
+        }
+        val repVal = withResource(needPosRep) { _ =>
+          withResource(needNegRep) { _ =>
+            withResource(needNegRep.ifElse(repLit, zero)) { negBranch =>
+              needPosRep.ifElse(negRepLit, negBranch)
+            }
+          }
+        }
+        withResource(repVal) { _ =>
+          if (lhsValue.hasNulls) {
+            repVal.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
+          } else {
+            repVal.incRefCount()
+          }
+        }
+      }
+    }
+
+    def fpZeroReplacement(zeroFn: () => Scalar,
+                          infFn: () => Scalar,
+                          negInfFn: () => Scalar): ColumnVector = {
       val scaleVal = scale.getValue.asInstanceOf[Int]
       val maxDigits = if (dataType == FloatType) 39 else 309
       if (-scaleVal >= maxDigits) {
-        withResource(Seq(zero, inf, negInf)) { _ =>
+        withResource(Array(zeroFn(), infFn(), negInfFn())) { case Array(zero, inf, negInf) =>
           val joinedCondition = List(
-            () => lhsValue.isNan,
-            () => lhsValue.equalTo(inf),
-            () => lhsValue.equalTo(negInf)
-          ).foldLeft(lhsValue.isNull) { case (cond, fn) =>
+            () => lhsValue.isNotNan,
+            () => lhsValue.notEqualTo(inf),
+            () => lhsValue.notEqualTo(negInf)
+          ).foldLeft(lhsValue.isNotNull) { case (cond, fn) =>
             withResource(cond) { _ =>
               withResource(fn()) { newCondition =>
-                cond.or(newCondition)
+                cond.and(newCondition)
               }
             }
           }
           withResource(joinedCondition) { cond =>
-            cond.ifElse(lhsValue, zero)
+            cond.ifElse(zero, lhsValue)
           }
         }
       } else if (scaleVal >= maxDigits) {
@@ -504,23 +539,23 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
       case DecimalType.Fixed(_, scaleVal) =>
         DecimalUtil.round(lhsValue, scaleVal, roundMode)
       case ByteType =>
-        intZeroReplacement(Scalar.fromByte(0.toByte))
+        intZeroReplacement(() => Scalar.fromByte(0.toByte))
       case ShortType =>
-        intZeroReplacement(Scalar.fromShort(0.toShort))
+        intZeroReplacement(() => Scalar.fromShort(0.toShort))
       case IntegerType =>
-        intZeroReplacement(Scalar.fromInt(0))
+        intZeroReplacement(() => Scalar.fromInt(0))
       case LongType =>
-        intZeroReplacement(Scalar.fromLong(0L))
+        intZeroReplacement(() => Scalar.fromLong(0L))
       case FloatType =>
         fpZeroReplacement(
-          Scalar.fromFloat(0.0f),
-          Scalar.fromFloat(Float.PositiveInfinity),
-          Scalar.fromFloat(Float.NegativeInfinity))
+          () => Scalar.fromFloat(0.0f),
+          () => Scalar.fromFloat(Float.PositiveInfinity),
+          () => Scalar.fromFloat(Float.NegativeInfinity))
       case DoubleType =>
         fpZeroReplacement(
-          Scalar.fromDouble(0.0),
-          Scalar.fromDouble(Double.PositiveInfinity),
-          Scalar.fromDouble(Double.NegativeInfinity))
+          () => Scalar.fromDouble(0.0),
+          () => Scalar.fromDouble(Double.PositiveInfinity),
+          () => Scalar.fromDouble(Double.NegativeInfinity))
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
   }
