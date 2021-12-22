@@ -139,11 +139,12 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("*"))
   }
 
-  /** Parquet file with 2 columns
-    * <simple_uint64, UINT64>
-    * <arr_uint64, array(UINT64)>
-    */
- *
+  /**
+   * Parquet file with 2 columns
+   * <simple_uint64, UINT64>
+   * <arr_uint64, array(UINT64)>
+   */
+
   testSparkResultsAreEqual("Test Parquet unsigned int: uint64",
     frameFromParquet("test_unsigned64.parquet"),
     // CPU version throws an exception when Spark < 3.2, so skip when Spark < 3.2.
