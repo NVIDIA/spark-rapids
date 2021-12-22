@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
+import com.nvidia.spark.rapids.{TypeEnum, TypeSig, TypeSigUtilTrait}
 
 import org.apache.spark.sql.types.DataType
 
 /** TypeSig Support for [3.0.1, 3.2.0) */
-object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
+object TypeSigUtil extends TypeSigUtilTrait {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
