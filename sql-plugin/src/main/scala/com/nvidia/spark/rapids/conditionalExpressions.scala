@@ -424,7 +424,7 @@ case class GpuCaseWhen(
                 // if there is no ELSE condition then we return NULL for any rows not matched by
                 // previous branches
                 withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-                  if (isAllTrue(elsePredNoNulls) && elsePredNoNulls.getRowCount <= Int.MaxValue) {
+                  if (isAllTrue(elsePredNoNulls)) {
                     GpuColumnVector.from(nullScalar, elsePredNoNulls.getRowCount.toInt, dataType)
                   } else {
                     GpuColumnVector.from(
