@@ -497,7 +497,8 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
+      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions,
+        requiredSchema)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
       // if they are small files before sending it down to the GPU

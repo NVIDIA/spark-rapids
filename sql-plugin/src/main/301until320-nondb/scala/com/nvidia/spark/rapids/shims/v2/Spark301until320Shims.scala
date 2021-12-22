@@ -276,7 +276,9 @@ trait Spark301until320Shims extends SparkShims {
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 

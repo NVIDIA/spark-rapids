@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
@@ -170,9 +170,11 @@ trait SparkShims {
       maxSplitBytes: Long,
       relation: HadoopFsRelation): Array[PartitionedFile]
   def getFileScanRDD(
-    sparkSession: SparkSession,
-    readFunction: (PartitionedFile) => Iterator[InternalRow],
-    filePartitions: Seq[FilePartition]): RDD[InternalRow]
+      sparkSession: SparkSession,
+      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
   def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
 
