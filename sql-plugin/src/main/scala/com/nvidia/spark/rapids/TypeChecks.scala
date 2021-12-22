@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryEx
 import org.apache.spark.sql.types._
 
 /** TypeSigUtilTrait for different spark versions */
-trait TypeSigUtilTrait {
+trait TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
