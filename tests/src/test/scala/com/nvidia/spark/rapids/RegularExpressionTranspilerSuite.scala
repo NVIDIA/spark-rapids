@@ -132,6 +132,24 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       assertUnsupported(pattern, "nothing to repeat"))
   }
 
+  test("string anchors - find") {
+    val patterns = Seq("\\Atest", "test\\z", "test\\Z")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
+      "\ntest", "test\n", "\ntest\n"))
+  }
+
+  test("string anchors - replace") {
+    val patterns = Seq("\\Atest", "test\\z")
+    assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
+      "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
+  }
+
+  ignore("unsupported string anchors in replace mode") {
+    val patterns = Seq("test\\Z")
+    assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
+      "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
+  }
+
   test("end of line anchor with strings ending in valid newline") {
     val pattern = "2$"
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("2", "2\n", "2\r", "2\r\n"))
@@ -233,13 +251,19 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  private val REGEXP_LIMITED_CHARS = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
+
+  //TODO: we can support \\z in replace mode
+  // once https://github.com/NVIDIA/spark-rapids/pull/4155 is merged
+  private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON + "zZ"
+
+  private val REGEXP_LIMITED_CHARS_REPLACE = REGEXP_LIMITED_CHARS_COMMON
 
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
     // CR and LF has been excluded due to known issues
-    doFuzzTest(Some(REGEXP_LIMITED_CHARS), replace = false)
+    doFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), replace = false)
   }
 
   test("compare CPU and GPU: regexp replace simple regular expressions") {
@@ -259,7 +283,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
     // LF has been excluded due to known issues
-    doFuzzTest(Some(REGEXP_LIMITED_CHARS), replace = true)
+    doFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), replace = true)
   }
 
   test("compare CPU and GPU: regexp find fuzz test printable ASCII chars plus CR and TAB") {

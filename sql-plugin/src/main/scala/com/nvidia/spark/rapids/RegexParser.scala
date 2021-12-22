@@ -265,8 +265,8 @@ class RegexParser(pattern: String) {
         throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
         ch match {
-          case 'A' | 'Z' =>
-            // BOL / EOL anchors
+          case 'A' | 'Z' | 'z' =>
+            // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
           case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
@@ -474,6 +474,20 @@ class CudfRegexTranspiler(replace: Boolean) {
           // this needs further analysis to determine why words boundaries behave
           // differently between Java and cuDF
           throw new RegexUnsupportedException("word boundaries are not supported")
+        case 'z' =>
+          // cuDF does not support \z
+          RegexChar('$')
+        case 'Z' =>
+          if (replace) {
+            throw new RegexUnsupportedException("string anchor \\Z not supported in replace mode")
+          }
+          // Java definition: The end of the input but for the final terminator, if any
+          // cuDF definition: Matches at the end of the string
+          RegexGroup(capture = false, RegexSequence(
+            ListBuffer(RegexRepetition(
+              RegexCharacterClass(negated = false,
+                ListBuffer(RegexChar('\r'), RegexChar('\n'))), SimpleQuantifier('?')),
+            RegexChar('$'))))
         case _ =>
           regex
       }
