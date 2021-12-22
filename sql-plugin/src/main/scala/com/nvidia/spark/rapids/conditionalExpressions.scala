@@ -352,9 +352,9 @@ case class GpuCaseWhen(
                   // been true then we can return immediately
                   return GpuExpressionsUtils.columnarEvalToColumn(thenExpr, batch)
                 }
-                val gathered = filterEvaluateWhenThen(colTypes, tbl, firstTrueWhen, thenExpr)
-                withResource(gathered) { _ =>
-                  currentValue = Some(calcCurrentValue(currentValue, firstTrueWhen, gathered))
+                val thenValues = filterEvaluateWhenThen(colTypes, tbl, firstTrueWhen, thenExpr)
+                withResource(thenValues) { _ =>
+                  currentValue = Some(calcCurrentValue(currentValue, firstTrueWhen, thenValues))
                 }
                 cumulativePred = Some(calcCumulativePredicate(
                   cumulativePred, whenBool, firstTrueWhen))
@@ -379,16 +379,10 @@ case class GpuCaseWhen(
                 if (isAllFalse(cumulativePred.get)) {
                   GpuExpressionsUtils.columnarEvalToColumn(expr, batch)
                 } else {
-                  val elseValues = withResource(
-                      filterBatch(tbl, elsePredNoNulls.getBase, colTypes)) {
-                    elseBatch => GpuExpressionsUtils.columnarEvalToColumn(expr, elseBatch)
-                  }
-                  val gathered = withResource(elseValues) { _ =>
-                    gather(elsePredNoNulls.getBase, elseValues)
-                  }
-                  withResource(gathered) { _ =>
+                  val elseValues = filterEvaluateWhenThen(colTypes, tbl, elsePredNoNulls, expr)
+                  withResource(elseValues) { _ =>
                     GpuColumnVector.from(elsePredNoNulls.getBase.ifElse(
-                      gathered, currentValue.get.getBase), dataType)
+                      elseValues, currentValue.get.getBase), dataType)
                   }
                 }
 
@@ -457,7 +451,7 @@ case class GpuCaseWhen(
   private def calcCurrentValue(
       prevValue: Option[GpuColumnVector],
       whenBool: GpuColumnVector,
-      thenValues: ColumnVector) = {
+      thenValues: ColumnVector): GpuColumnVector = {
     prevValue match {
       case Some(v) =>
         withResource(v) { _ =>
