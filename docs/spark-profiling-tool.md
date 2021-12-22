@@ -1,9 +1,9 @@
 ---
 layout: page
-title: Spark Profiling tool
+title: Profiling tool
 nav_order: 9
 ---
-# Spark Profiling tool
+# Profiling tool
 
 The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
 which can be used for debugging and profiling Apache Spark applications.
@@ -464,7 +464,7 @@ Failed jobs:
 ## Profiling tool options
   
 ```bash
-RAPIDS Accelerator for Apache Spark Profiling tool
+Profiling tool for the RAPIDS Accelerator and Apache Spark
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]

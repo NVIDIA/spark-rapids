@@ -25,6 +25,8 @@ def create_dim_table(table_name, table_format, length=500):
     def fn(spark):
         df = gen_df(spark, [
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
+            ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
+            ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=3, special_cases=[])),
             ('value', int_gen),
             ('filter', RepeatSeqGen(
                 IntegerGen(min_val=0, max_val=length, special_cases=[]), length=length // 20))
@@ -42,10 +44,13 @@ def create_fact_table(table_name, table_format, length=2000):
     def fn(spark):
         df = gen_df(spark, [
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
+            ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
+            # ex_key is not a partition column
+            ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=3, special_cases=[])),
             ('value', int_gen)], length)
         df.write.format(table_format) \
             .mode("overwrite") \
-            .partitionBy('key') \
+            .partitionBy('key', 'skey') \
             .saveAsTable(table_name)
     with_cpu_session(fn)
 
@@ -81,11 +86,19 @@ _statements = [
     ''',
     '''
     SELECT f.key, sum(f.value)
-    FROM (SELECT *, struct(key) AS keys FROM {0} fact) f
-    JOIN (SELECT *, struct(key) AS keys FROM {1} dim) d
+    FROM (SELECT *, struct(key, skey) AS keys FROM {0} fact) f
+    JOIN (SELECT *, struct(key, skey) AS keys FROM {1} dim) d
     ON f.keys = d.keys
     WHERE d.filter = {2}
     GROUP BY f.key
+    ''',
+    '''
+    SELECT fact.key, fact.skey, fact.ex_key, sum(fact.value)
+    FROM {0} fact
+    JOIN {1} dim
+    ON fact.key = dim.key AND fact.skey = dim.skey AND fact.ex_key = dim.ex_key
+    WHERE dim.filter = {2}
+    GROUP BY fact.key, fact.skey, fact.ex_key
     ''',
 ]
 
