@@ -413,11 +413,12 @@ case class GpuCaseWhen(
                       filterBatch(tbl, elsePredNoNulls.getBase, colTypes)) {
                     elseBatch => GpuExpressionsUtils.columnarEvalToColumn(expr, elseBatch)
                   }
-                  withResource(elseValues) { _ =>
-                    withResource(gather(elsePredNoNulls.getBase, elseValues)) { gather =>
-                      GpuColumnVector.from(elsePredNoNulls.getBase.ifElse(
-                        gather, currentValue.get.getBase), dataType)
-                    }
+                  val gathered = withResource(elseValues) { _ =>
+                    gather(elsePredNoNulls.getBase, elseValues)
+                  }
+                  withResource(gathered) { _ =>
+                    GpuColumnVector.from(elsePredNoNulls.getBase.ifElse(
+                      gathered, currentValue.get.getBase), dataType)
                   }
                 }
 
