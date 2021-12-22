@@ -316,9 +316,9 @@ case class GpuCaseWhen(
       branches.foldRight[Any](elseRet) {
         case ((predicateExpr, trueExpr), falseRet) =>
           computeIfElse(batch, predicateExpr, trueExpr, falseRet)
-        }
       }
     }
+  }
 
   /**
    * Perform lazy evaluation of each branch sa that we only evaluate the THEN expressions
