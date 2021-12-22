@@ -364,33 +364,34 @@ case class GpuCaseWhen(
                     whenBoolAdjusted.getBase, colTypes)) {
                   trueBatch => GpuExpressionsUtils.columnarEvalToColumn(thenExpr, trueBatch)
                 }
-                withResource(thenValues) { _ =>
-                  withResource(gather(whenBoolAdjusted.getBase, thenValues)) { gather =>
-                    currentValue = Some(currentValue match {
-                      case Some(v) =>
-                        withResource(v) { _ =>
-                          GpuColumnVector.from(whenBoolAdjusted.getBase.ifElse(gather, v.getBase),
-                            dataType)
-                        }
-                      case _ =>
-                        GpuColumnVector.from(gather.incRefCount(), dataType)
-                    })
-                  }
-
-                  cumulativePred = Some(cumulativePred match {
-                    case Some(prev) =>
-                      withResource(prev) { _ =>
-                        GpuColumnVector.from(whenBool.getBase.or(prev.getBase),
-                          DataTypes.BooleanType)
+                val gathered = withResource(thenValues) { _ =>
+                  gather(whenBoolAdjusted.getBase, thenValues)
+                }
+                withResource(gathered) { _ =>
+                  currentValue = Some(currentValue match {
+                    case Some(v) =>
+                      withResource(v) { _ =>
+                        GpuColumnVector.from(whenBoolAdjusted.getBase.ifElse(gathered, v.getBase),
+                          dataType)
                       }
                     case _ =>
-                      whenBoolAdjusted.incRefCount()
+                      GpuColumnVector.from(gathered.incRefCount(), dataType)
                   })
+                }
 
-                  if (isAllTrue(cumulativePred.get)) {
-                    // no need to process any more branches or the else condition
-                    return currentValue.get.incRefCount()
-                  }
+                cumulativePred = Some(cumulativePred match {
+                  case Some(prev) =>
+                    withResource(prev) { _ =>
+                      GpuColumnVector.from(whenBool.getBase.or(prev.getBase),
+                        DataTypes.BooleanType)
+                    }
+                  case _ =>
+                    whenBoolAdjusted.incRefCount()
+                })
+
+                if (isAllTrue(cumulativePred.get)) {
+                  // no need to process any more branches or the else condition
+                  return currentValue.get.incRefCount()
                 }
               }
             }
