@@ -456,14 +456,28 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
     val lhsValue = value.getBase
 
-    def intZeroReplacement(zeroFn: () => Scalar): ColumnVector = {
+    // Fixes up integral values rounded by a scale exceeding/reaching the max digits of data
+    // type. Under this circumstance, cuDF may produce different results to Spark.
+    //
+    // In this method, we handle round overflow, aligning the inconsistent results to Spark.
+    //
+    // For scales exceeding max digits, we can simply return zero values.
+    //
+    // For scales equaling to max digits, we need to perform round. Fortunately, round up
+    // will NOT occur on the max digits of numeric types except LongType. Therefore, we only
+    // need to handle round down for most of types, through returning zero values.
+    def fixUpOverflowInts(zeroFn: () => Scalar): ColumnVector = {
       val scaleVal = scale.getValue.asInstanceOf[Int]
 
+      // Rounding on the max digit of long values, which should be specialized handled since
+      // it may be needed to round up, which will produce inconsistent results because of
+      // overflow. Otherwise, we only need to handle round down situations.
       if (-scaleVal == 19 && lhsValue.getType == DType.INT64) {
-        longBoundReplacement(zeroFn)
+        fixUpInt64OnBounds(zeroFn)
       } else if (-scaleVal >= DecimalUtil.getPrecisionForIntegralType(lhsValue.getType)) {
         withResource(zeroFn()) { s =>
           withResource(ColumnVector.fromScalar(s, lhsValue.getRowCount.toInt)) { zero =>
+            // set null mask if necessary
             if (lhsValue.hasNulls) {
               zero.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
             } else {
@@ -476,59 +490,96 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
       }
     }
 
-    def longBoundReplacement(zeroFn: () => Scalar): ColumnVector = {
-      val scalars = Seq(zeroFn(),
-        Scalar.fromLong(1000000000000000000L),
-        Scalar.fromLong(4L), Scalar.fromLong(-4L),
-        Scalar.fromLong(8446744073709551616L), Scalar.fromLong(-8446744073709551616L))
-      withResource(scalars) { case Seq(zero, base, five, negFive, repLit, negRepLit) =>
-        val (needPosRep, needNegRep) = withResource(lhsValue.div(base)) { headDigit =>
-          closeOnExcept(headDigit.greaterThan(five)) { posRep =>
-            closeOnExcept(headDigit.lessThan(negFive)) { negRep =>
+    // Compared to other non-decimal numeric types, Int64(LongType) is a bit special in terms of
+    // rounding by the max digit. Because the bound values of LongType can be rounded up, while
+    // other numeric types can only be rounded down:
+    //
+    //  the max value of Byte: 127
+    //  The first digit is up to 1, which can't be rounded up.
+    //  the max value of Short: 32767
+    //  The first digit is up to 3, which can't be rounded up.
+    //  the max value of Int32: 2147483647
+    //  The first digit is up to 2, which can't be rounded up.
+    //  the max value of Float32: 3.4028235E38
+    //  The first digit is up to 3, which can't be rounded up.
+    //  the max value of Float64: 1.7976931348623157E308
+    //  The first digit is up to 1, which can't be rounded up.
+    //  the max value of Int64: 9223372036854775807
+    //  The first digit is up to 9, which can be rounded up.
+    //
+    // When rounding up 19-digits long values on the first digit, the result can be 1e19 or -1e19.
+    // Since LongType can not hold these two values, the 1e19 overflows as -8446744073709551616L,
+    // and the -1e19 overflows as 8446744073709551616L. The overflow happens in the same way for
+    // HALF_UP (round) and HALF_EVEN (bround).
+    def fixUpInt64OnBounds(zeroFn: () => Scalar): ColumnVector = {
+      // Builds predicates on whether there is a round up on the max digit or not
+      val litForCmp = Seq(Scalar.fromLong(1000000000000000000L),
+                          Scalar.fromLong(4L),
+                          Scalar.fromLong(-4L))
+      val (needRep, needNegRep) = withResource(litForCmp) { case Seq(base, four, minusFour) =>
+        withResource(lhsValue.div(base)) { headDigit =>
+          closeOnExcept(headDigit.greaterThan(four)) { posRep =>
+            closeOnExcept(headDigit.lessThan(minusFour)) { negRep =>
               posRep -> negRep
             }
           }
         }
-        val repVal = withResource(needPosRep) { _ =>
+      }
+      // Replaces with corresponding literals
+      val litForRep = Seq(zeroFn(),
+                          Scalar.fromLong(8446744073709551616L),
+                          Scalar.fromLong(-8446744073709551616L))
+      val repVal = withResource(litForRep) { case Seq(zero, upLit, negUpLit) =>
+        withResource(needRep) { _ =>
           withResource(needNegRep) { _ =>
-            withResource(needNegRep.ifElse(repLit, zero)) { negBranch =>
-              needPosRep.ifElse(negRepLit, negBranch)
+            withResource(needNegRep.ifElse(upLit, zero)) { negBranch =>
+              needRep.ifElse(negUpLit, negBranch)
             }
           }
         }
-        withResource(repVal) { _ =>
-          if (lhsValue.hasNulls) {
-            repVal.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
-          } else {
-            repVal.incRefCount()
-          }
+      }
+      // Handles null values
+      withResource(repVal) { _ =>
+        if (lhsValue.hasNulls) {
+          repVal.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhsValue)
+        } else {
+          repVal.incRefCount()
         }
       }
     }
 
+    // Fixes up float points rounded by a scale exceeding the max digits of data type. Under this
+    // circumstance, cuDF produces different results to Spark.
+    // Compared to integral values, fixing up round overflow of float points needs to take care
+    // of some special values: nan, inf, -inf.
     def fpZeroReplacement(zeroFn: () => Scalar,
-                          infFn: () => Scalar,
-                          negInfFn: () => Scalar): ColumnVector = {
+        infFn: () => Scalar,
+        negInfFn: () => Scalar): ColumnVector = {
       val scaleVal = scale.getValue.asInstanceOf[Int]
       val maxDigits = if (dataType == FloatType) 39 else 309
       if (-scaleVal >= maxDigits) {
-        withResource(Array(zeroFn(), infFn(), negInfFn())) { case Array(zero, inf, negInf) =>
-          val joinedCondition = List(
-            () => lhsValue.isNotNan,
-            () => lhsValue.notEqualTo(inf),
-            () => lhsValue.notEqualTo(negInf)
-          ).foldLeft(lhsValue.isNotNull) { case (cond, fn) =>
-            withResource(cond) { _ =>
-              withResource(fn()) { newCondition =>
-                cond.and(newCondition)
+        // replaces common values (!Null AND !Nan AND !Inf And !-Inf) with zero, while keeps
+        // all the special values unchanged
+        withResource(Seq(zeroFn(), infFn(), negInfFn())) { case Seq(zero, inf, negInf) =>
+          // builds joined predicate: !Null AND !Nan AND !Inf And !-Inf
+          val joinedPredicate = {
+            val conditions = Seq(() => lhsValue.isNotNan,
+                                 () => lhsValue.notEqualTo(inf),
+                                 () => lhsValue.notEqualTo(negInf))
+            conditions.foldLeft(lhsValue.isNotNull) { case (buffer, builder) =>
+              withResource(buffer) { _ =>
+                withResource(builder()) { predicate =>
+                  buffer.and(predicate)
+                }
               }
             }
           }
-          withResource(joinedCondition) { cond =>
+          withResource(joinedPredicate) { cond =>
             cond.ifElse(zero, lhsValue)
           }
         }
       } else if (scaleVal >= maxDigits) {
+        // just returns the original values
         lhsValue.incRefCount()
       } else {
         lhsValue.round(scaleVal, roundMode)
@@ -539,13 +590,13 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
       case DecimalType.Fixed(_, scaleVal) =>
         DecimalUtil.round(lhsValue, scaleVal, roundMode)
       case ByteType =>
-        intZeroReplacement(() => Scalar.fromByte(0.toByte))
+        fixUpOverflowInts(() => Scalar.fromByte(0.toByte))
       case ShortType =>
-        intZeroReplacement(() => Scalar.fromShort(0.toShort))
+        fixUpOverflowInts(() => Scalar.fromShort(0.toShort))
       case IntegerType =>
-        intZeroReplacement(() => Scalar.fromInt(0))
+        fixUpOverflowInts(() => Scalar.fromInt(0))
       case LongType =>
-        intZeroReplacement(() => Scalar.fromLong(0L))
+        fixUpOverflowInts(() => Scalar.fromLong(0L))
       case FloatType =>
         fpZeroReplacement(
           () => Scalar.fromFloat(0.0f),
