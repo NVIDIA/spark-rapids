@@ -138,4 +138,17 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {
     frame => frame.select(col("*"))
   }
+
+  /** Parquet file with 2 columns
+    * <simple_uint64, UINT64>
+    * <arr_uint64, array(UINT64)>
+    */
+ *
+  testSparkResultsAreEqual("Test Parquet unsigned int: uint64",
+    frameFromParquet("test_unsigned64.parquet"),
+    // CPU version throws an exception when Spark < 3.2, so skip when Spark < 3.2.
+    // The exception is like "Parquet type not supported: INT32 (UINT_8)"
+    assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {
+    frame => frame.select(col("*"))
+  }
 }
