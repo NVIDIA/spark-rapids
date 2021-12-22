@@ -321,7 +321,7 @@ case class GpuCaseWhen(
   }
 
   /**
-   * Perform lazy evaluation of each branch sa that we only evaluate the THEN expressions
+   * Perform lazy evaluation of each branch so that we only evaluate the THEN expressions
    * against rows where the WHEN expression is true.
    */
   private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
