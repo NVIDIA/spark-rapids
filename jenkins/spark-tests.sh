@@ -111,6 +111,9 @@ export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/pyt
 IS_SPARK_311_OR_LATER=0
 [[ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
 
+IS_SPARK_320_OR_LATER=0
+[[ "$(printf '%s\n' "3.2.0" "$SPARK_VER" | sort -V | head -n1)" = "3.2.0" ]] && IS_SPARK_320_OR_LATER=1
+
 export SPARK_TASK_MAXFAILURES=1
 [[ "$IS_SPARK_311_OR_LATER" -eq "0" ]] && SPARK_TASK_MAXFAILURES=4
 
@@ -276,6 +279,14 @@ fi
 
 # cudf_udf_test
 if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  if [[ "$IS_SPARK_320_OR_LATER" -eq "1" ]]; then
+    # Extract 'value' from conda config string 'key: value'
+    CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
+    PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
+    # Put conda package path ahead of the env 'PYTHONPATH',
+    # to import the right pandas from conda instead of spark binary path.
+    export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
+  fi
   run_test_not_parallel cudf_udf_test
 fi
 
