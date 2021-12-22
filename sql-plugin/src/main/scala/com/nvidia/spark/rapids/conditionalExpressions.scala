@@ -123,8 +123,8 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
           outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
         }
 
-        withResource(new Table(t.getBase)) { tbl =>
-          withResource(gatherMap) { _ =>
+        withResource(gatherMap) { _ =>
+          withResource(new Table(t.getBase)) { tbl =>
             withResource(tbl.gather(gatherMap)) { gatherTbl =>
               gatherTbl.getColumn(0).incRefCount()
             }
