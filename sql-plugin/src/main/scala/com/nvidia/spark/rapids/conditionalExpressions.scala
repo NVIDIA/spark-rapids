@@ -344,50 +344,20 @@ case class GpuCaseWhen(
             // evaluate the WHEN predicate
             withResource(GpuExpressionsUtils.columnarEvalToColumn(whenExpr, batch)) { whenBool =>
               // we only want to evaluate where this WHEN is true and no previous WHEN has been true
-              val whenBoolAdjusted: GpuColumnVector = cumulativePred match {
-                case Some(prev) =>
-                  withResource(prev.getBase.not()) { notPreviouslyTrue =>
-                    GpuColumnVector.from(
-                      whenBool.getBase.and(notPreviouslyTrue), DataTypes.BooleanType)
-                  }
-                case None =>
-                  whenBool.incRefCount()
-              }
+              val firstTrueWhen = isFirstTrueWhen(cumulativePred, whenBool)
 
-              withResource(whenBoolAdjusted) { _ =>
-                if (isAllTrue(whenBoolAdjusted)) {
+              withResource(firstTrueWhen) { _ =>
+                if (isAllTrue(firstTrueWhen)) {
                   // if this WHEN predicate is true for all rows and no previous predicate has
                   // been true then we can return immediately
                   return GpuExpressionsUtils.columnarEvalToColumn(thenExpr, batch)
                 }
-                val thenValues = withResource(filterBatch(tbl,
-                    whenBoolAdjusted.getBase, colTypes)) {
-                  trueBatch => GpuExpressionsUtils.columnarEvalToColumn(thenExpr, trueBatch)
-                }
-                val gathered = withResource(thenValues) { _ =>
-                  gather(whenBoolAdjusted.getBase, thenValues)
-                }
+                val gathered = filterEvaluateWhenThen(colTypes, tbl, firstTrueWhen, thenExpr)
                 withResource(gathered) { _ =>
-                  currentValue = Some(currentValue match {
-                    case Some(v) =>
-                      withResource(v) { _ =>
-                        GpuColumnVector.from(whenBoolAdjusted.getBase.ifElse(gathered, v.getBase),
-                          dataType)
-                      }
-                    case _ =>
-                      GpuColumnVector.from(gathered.incRefCount(), dataType)
-                  })
+                  currentValue = Some(calcCurrentValue(currentValue, firstTrueWhen, gathered))
                 }
-
-                cumulativePred = Some(cumulativePred match {
-                  case Some(prev) =>
-                    withResource(prev) { _ =>
-                      GpuColumnVector.from(whenBool.getBase.or(prev.getBase),
-                        DataTypes.BooleanType)
-                    }
-                  case _ =>
-                    whenBoolAdjusted.incRefCount()
-                })
+                cumulativePred = Some(calcCumulativePredicate(
+                  cumulativePred, whenBool, firstTrueWhen))
 
                 if (isAllTrue(cumulativePred.get)) {
                   // no need to process any more branches or the else condition
@@ -406,7 +376,7 @@ case class GpuCaseWhen(
           withResource(elsePredNoNulls) { _ =>
             elseValue match {
               case Some(expr) =>
-                if (isAllTrue(elsePredNoNulls)) {
+                if (isAllFalse(cumulativePred.get)) {
                   GpuExpressionsUtils.columnarEvalToColumn(expr, batch)
                 } else {
                   val elseValues = withResource(
@@ -426,7 +396,7 @@ case class GpuCaseWhen(
                 // if there is no ELSE condition then we return NULL for any rows not matched by
                 // previous branches
                 withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-                  if (isAllTrue(elsePredNoNulls)) {
+                  if (isAllFalse(cumulativePred.get)) {
                     GpuColumnVector.from(nullScalar, elsePredNoNulls.getRowCount.toInt, dataType)
                   } else {
                     GpuColumnVector.from(
@@ -441,6 +411,76 @@ case class GpuCaseWhen(
     } finally {
       currentValue.foreach(_.safeClose())
       cumulativePred.foreach(_.safeClose())
+    }
+  }
+
+  /**
+   * Filter the batch to just the rows where the WHEN condition is true and
+   * then evaluate the THEN expression.
+   */
+  private def filterEvaluateWhenThen(
+      colTypes: Array[DataType],
+      tbl: Table,
+      whenBool: GpuColumnVector,
+      thenExpr: Expression): ColumnVector = {
+    val filteredBatch = filterBatch(tbl, whenBool.getBase, colTypes)
+    val thenValues = withResource(filteredBatch) { trueBatch =>
+      GpuExpressionsUtils.columnarEvalToColumn(thenExpr, trueBatch)
+    }
+    withResource(thenValues) { _ =>
+      gather(whenBool.getBase, thenValues)
+    }
+  }
+
+  /**
+   * Calculate the cumulative predicate so far using the logical expression
+   * `prevPredicate OR thisPredicate`.
+   */
+  private def calcCumulativePredicate(
+      cumulativePred: Option[GpuColumnVector],
+      whenBool: GpuColumnVector,
+      firstTrueWhen: GpuColumnVector): GpuColumnVector = {
+    cumulativePred match {
+      case Some(prev) =>
+        withResource(prev) { _ =>
+          GpuColumnVector.from(whenBool.getBase.or(prev.getBase), DataTypes.BooleanType)
+        }
+      case _ =>
+        firstTrueWhen.incRefCount()
+    }
+  }
+
+  /**
+   * Calculate the current values by merging the THEN values for this branch (where the WHEN
+   * predicate was true) with the previous values.
+   */
+  private def calcCurrentValue(
+      prevValue: Option[GpuColumnVector],
+      whenBool: GpuColumnVector,
+      thenValues: ColumnVector) = {
+    prevValue match {
+      case Some(v) =>
+        withResource(v) { _ =>
+          GpuColumnVector.from(whenBool.getBase.ifElse(thenValues, v.getBase), dataType)
+        }
+      case _ =>
+        GpuColumnVector.from(thenValues.incRefCount(), dataType)
+    }
+  }
+
+  /**
+   * Determine for each row whether this is the first WHEN predicate so far to evaluate to true
+   */
+  private def isFirstTrueWhen(
+      cumulativePred: Option[GpuColumnVector],
+      whenBool: GpuColumnVector): GpuColumnVector = {
+    cumulativePred match {
+      case Some(prev) =>
+        withResource(prev.getBase.not()) { notPreviouslyTrue =>
+          GpuColumnVector.from(whenBool.getBase.and(notPreviouslyTrue), DataTypes.BooleanType)
+        }
+      case None =>
+        whenBool.incRefCount()
     }
   }
 
