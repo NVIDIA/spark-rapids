@@ -206,8 +206,8 @@ cd custom-images
 export CUSTOMIZATION_SCRIPT=/path/to/gpu_dataproc_packages_ubuntu_sample.sh
 export ZONE=[Your Preferred GCP Zone]
 export GCS_BUCKET=[Your GCS Bucket]
-export IMAGE_NAME=a209-ubuntu18-gpu-t4
-export DATAPROC_VERSION=2.0.9-ubuntu18
+export IMAGE_NAME=sample-2027-ubuntu18-gpu-t4
+export DATAPROC_VERSION=2.0.27-ubuntu18
 export GPU_NAME=nvidia-tesla-t4
 export GPU_COUNT=1
 
@@ -251,7 +251,7 @@ export NUM_WORKERS=2
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region $REGION \
-    --image=sample-209-ubuntu18-gpu-t4 \
+    --image=sample-2027-ubuntu18-gpu-t4 \
     --master-machine-type n1-standard-4 \
     --num-workers $NUM_WORKERS \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
