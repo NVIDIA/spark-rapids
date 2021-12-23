@@ -276,6 +276,12 @@ fi
 
 # cudf_udf_test
 if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  # Extract 'value' from conda config string 'key: value'
+  CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
+  PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
+  # Put conda package path ahead of the env 'PYTHONPATH',
+  # to import the right pandas from conda instead of spark binary path.
+  export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
   run_test_not_parallel cudf_udf_test
 fi
 
