@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** TypeSigUtilBase for different spark versions */
+/** Trait of TypeSigUtil for different spark versions */
 trait TypeSigUtilBase {
 
   /**
