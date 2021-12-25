@@ -193,14 +193,6 @@
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>add-profile-src-30+</id>
-                        <phase>none</phase>
-                    </execution>
-                    <execution>
-                        <id>add-profile-src-31+</id>
-                        <phase>none</phase>
-                    </execution>
-                    <execution>
                         <!-- WORKAROUND: default-jar does not contain classes by design.
                              there seems to be a race between shade and empty default-jar
                              So attaching here manually because maven complains when we try

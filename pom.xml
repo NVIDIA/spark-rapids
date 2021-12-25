@@ -103,7 +103,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -143,7 +143,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -192,7 +192,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -236,7 +236,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -280,7 +280,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -342,7 +342,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301db/scala</source>
@@ -396,7 +396,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -438,7 +438,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -486,7 +486,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -534,7 +534,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -577,7 +577,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -620,7 +620,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -663,7 +663,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
