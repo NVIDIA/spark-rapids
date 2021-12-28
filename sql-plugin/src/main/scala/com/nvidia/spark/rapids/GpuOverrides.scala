@@ -2236,9 +2236,13 @@ object GpuOverrides extends Logging {
     expr[Max](
       "Max aggregate operator",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL, TypeSig.orderable,
+        // Max supports single level struct, e.g.:  max(struct(string, string))
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
+          .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL),
+        TypeSig.orderable,
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
               .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
               .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
           TypeSig.orderable))

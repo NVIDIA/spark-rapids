@@ -1695,3 +1695,22 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_type',  all_gen + [NullGen()], ids=idfn)
+def test_max_single_level_struct(data_type):
+    data_gen = [
+        ('a', StructGen([
+                ('aa', data_type),
+                ('ab', data_type)])),
+        ('b', IntegerGen())]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1024),
+        "hash_agg_table",
+        'select b, max(a) from hash_agg_table group by b',
+        _no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1024),
+        "hash_agg_table",
+        'select max(a) from hash_agg_table',
+        _no_nans_float_conf)
