@@ -20,7 +20,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExecParent, GpuExec, GpuMetric, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta}
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
@@ -28,8 +28,114 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BoundReference, Cast, Expression, NamedExpression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.util.ThreadUtils
+
+
+class GpuSubqueryBroadcastMeta(
+    s: SubqueryBroadcastExec,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends
+    SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
+
+  private var broadcastBuilder: () => SparkPlan = _
+
+  override val childExprs: Seq[BaseExprMeta[_]] = Nil
+
+  override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+
+  override def tagPlanForGpu(): Unit = s.child match {
+
+    // For AQE off:
+    //
+    // The rule PlanDynamicPruningFilters will insert SubqueryBroadcast if there exists
+    // available broadcast exchange for reuse. The plan stack of SubqueryBroadcast:
+    //
+    // +- SubqueryBroadcast
+    //    +- BroadcastExchange (can be reused)
+    //       +- [executed subquery...]
+    //
+    // Since the GPU overrides rule has been applied on executedSubQuery, if the
+    // executedSubQuery can be replaced by GPU overrides, the plan stack becomes:
+    //
+    // +- SubqueryBroadcast
+    //    +- BroadcastExchange
+    //       +- GpuColumnarToRow
+    //          +- [GPU overrides of executed subquery...]
+    //
+    // To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
+    //
+    // +- GpuSubqueryBroadcast
+    //    +- GpuBroadcastExchange (can be reused)
+    //       +- [GPU overrides of executed subquery...]
+    //
+    case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
+      val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
+      exMeta.tagForGpu()
+      if (exMeta.canThisBeReplaced) {
+        broadcastBuilder = () => exMeta.convertToGpu()
+      } else {
+        willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+      }
+
+    // For AQE on:
+    //
+    // In Spark 320+, DPP can cooperate with AQE. The insertion of SubqueryBroadcast is
+    // similar with non-AQE circumstance. During the creation of AdaptiveSparkPlan, the
+    // rule PlanAdaptiveSubqueries insert an intermediate plan SubqueryAdaptiveBroadcast to
+    // preserve the initial physical plan of DPP subquery filters. During the optimization,
+    // the rule PlanAdaptiveDynamicPruningFilters inserts the SubqueryBroadcast as the parent
+    // of adaptive subqueries:
+    //
+    // +- SubqueryBroadcast
+    //    +- AdaptiveSparkPlan (supportColumnar=false)
+    //    +- == Initial Plan ==
+    //       BroadcastExchange
+    //       +- [executed subquery...]
+    //
+    // Since AdaptiveSparkPlan can be explicitly set as a columnar plan from Spark 320+,
+    // we can simply build GpuSubqueryBroadcast on the base of columnar adaptive plans
+    // whose root plan are GpuBroadcastExchange:
+    //
+    // +- GpuSubqueryBroadcast
+    //    +- AdaptiveSparkPlan (supportColumnar=true)
+    //    +- == Final Plan ==
+    //       BroadcastQueryStage
+    //       +- GpuBroadcastExchange (can be reused)
+    //          +- [GPU overrides of executed subquery...]
+    //
+    case a: AdaptiveSparkPlanExec =>
+      ShimLoader.getSparkShims.getAdaptiveInputPlan(a) match {
+        case ex: BroadcastExchangeExec =>
+          val exMeta = new GpuBroadcastMeta(ex, conf, p, r)
+          exMeta.tagForGpu()
+          if (exMeta.canThisBeReplaced) {
+            broadcastBuilder = () =>
+              ShimLoader.getSparkShims.columnarAdaptivePlan(a, null)
+          } else {
+            willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+          }
+        case _ =>
+          throw new AssertionError("should not reach here")
+      }
+
+    case _ =>
+      willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
+  }
+
+  /**
+   * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
+   * need to change if SubqueryBroadcastExec falls back to the CPU.
+   */
+  override def convertToCpu(): SparkPlan = s
+
+  override def convertToGpu(): GpuExec = {
+    GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, broadcastBuilder())
+  }
+}
 
 
 case class GpuSubqueryBroadcastExec(

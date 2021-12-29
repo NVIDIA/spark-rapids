@@ -37,8 +37,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.ScalarSubquery
+import org.apache.spark.sql.execution.{ScalarSubquery, _}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
@@ -47,7 +46,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
+import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -3704,48 +3703,7 @@ object GpuOverrides extends Logging {
     exec[SubqueryBroadcastExec](
       "Plan to collect and transform the broadcast key values",
       ExecChecks(TypeSig.all, TypeSig.all),
-      (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
-
-        private var broadcastMeta: GpuBroadcastMeta = _
-
-        override val childExprs: Seq[BaseExprMeta[_]] = Nil
-
-        override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
-
-        /**
-         * The rule PlanDynamicPruningFilters will insert SubqueryBroadcastExec if there exists
-         * available broadcast exchange for reuse. The plan stack of SubqueryBroadcastExec:
-         * SubqueryBroadcast -> BroadcastExchange -> executedPlan
-         * Since the GPU overrides rule has been applied on executedPlan, the plan stack become:
-         * SubqueryBroadcast -> BroadcastExchange -> GpuColumnarToRow -> GpuPlanStack...
-         * , if the wrapped subquery can run on the GPU.
-         * To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
-         * GpuSubqueryBroadcast -> GpuBroadcastExchange -> GpuPlanStack...
-         */
-        override def tagPlanForGpu(): Unit = s.child match {
-          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
-            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
-            exMeta.tagForGpu()
-            if (exMeta.canThisBeReplaced) {
-              broadcastMeta = exMeta
-            } else {
-              willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
-            }
-          case _ =>
-            willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
-        }
-
-        /**
-         * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
-         * need to change if SubqueryBroadcastExec falls back to the CPU.
-         */
-        override def convertToCpu(): SparkPlan = s
-
-        override def convertToGpu(): GpuExec = {
-          val gpuEx = broadcastMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
-          GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
-        }
-      }
+      (s, conf, p, r) => new GpuSubqueryBroadcastMeta(s, conf, p, r)
     ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
