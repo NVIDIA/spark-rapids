@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, RapidsConf, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.sql.SparkSession
@@ -129,5 +129,5 @@ trait Spark30XdbShimsBase extends SparkShims {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
-  override def isNegativeDecimalScaleSupportEnabled: Boolean = true
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 }

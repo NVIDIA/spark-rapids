@@ -166,8 +166,8 @@ def test_cast_long_to_decimal_overflow():
             f.col('a').cast(DecimalType(18, -1))),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
-@pytest.mark.skip(not is_before_spark_311(), reason="Only in Spark 3.1.1+ do we have incompatibility with negative decimal scale")
-def test_cast_string_to_decimal(spark_tmp_path):
+@pytest.mark.skip(not is_before_spark_311(), reason="Only in Spark 3.1.1+ do we have incompatibility with negative decimal scale. There is an issue filed for it SPARK-37451")
+def test_cast_string_to_negative_scale_decimal():
         assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
                 f.col('a').cast(DecimalType(8, -3))), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})

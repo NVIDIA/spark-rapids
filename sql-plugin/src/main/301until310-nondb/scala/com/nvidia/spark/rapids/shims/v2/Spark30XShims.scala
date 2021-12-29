@@ -361,7 +361,7 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
     adaptivePlan.initialPlan
   }
 
-  override def isNegativeDecimalScaleSupportEnabled: Boolean = true
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 
   override def supportsColumnarAdaptivePlans: Boolean = false
 

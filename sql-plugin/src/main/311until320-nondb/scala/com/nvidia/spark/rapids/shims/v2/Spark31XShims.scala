@@ -520,7 +520,7 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
 
   override def hasCastFloatTimestampUpcast: Boolean = false
 
-  override def isNegativeDecimalScaleSupportEnabled: Boolean = false
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 
   override def supportsColumnarAdaptivePlans: Boolean = false
 

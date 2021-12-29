@@ -116,9 +116,9 @@ final class CastExprMeta[INPUT <: CastBase](
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, dt:DecimalType) =>
-        if (dt.scale < 0 && !ShimLoader.getSparkShims.isNegativeDecimalScaleSupportEnabled) {
-          willNotWorkOnGpu("Rapids doesn't support negative decimal scale for this version of " +
-            "Spark")
+        if (dt.scale < 0 && !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported) {
+          willNotWorkOnGpu("RAPIDS doesn't support casting string to decimal for " +
+              "negative scale decimal in this version of Spark because of SPARK-37451")
         }
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
