@@ -47,7 +47,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FileIndex, FilePartition, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
@@ -77,9 +77,12 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       pushDownStartWith: Boolean,
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
+      lookupFileMeta: String => String,
+      modeByConfig: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(lookupFileMeta, modeByConfig)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+  }
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)

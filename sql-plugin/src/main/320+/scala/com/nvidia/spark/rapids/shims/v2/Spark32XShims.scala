@@ -108,7 +108,7 @@ trait Spark32XShims extends SparkShims  with Logging {
     plan.session
   }
 
-  override final def getParquetFilters(
+  override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
       pushDownTimestamp: Boolean,
@@ -116,7 +116,9 @@ trait Spark32XShims extends SparkShims  with Logging {
       pushDownStartWith: Boolean,
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
+      lookupFileMeta: String => String,
+      modeByConfig: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(lookupFileMeta, modeByConfig)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
