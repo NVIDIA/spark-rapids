@@ -34,7 +34,6 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
@@ -852,13 +851,6 @@ trait Spark32XShims extends SparkShims  with Logging {
         )
       }
     }
-  }
-
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
