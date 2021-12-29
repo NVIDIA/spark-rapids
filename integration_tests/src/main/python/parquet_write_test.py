@@ -25,6 +25,8 @@ import pyspark.sql.utils
 import random
 from spark_session import is_before_spark_311
 
+pytestmark = pytest.mark.nightly_resource_consuming_test
+
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
 original_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
@@ -389,3 +391,25 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
             if allow_non_empty or e.desc.find('non-empty directory') == -1:
                 raise e
     with_gpu_session(test_it, conf)
+
+@pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
+def test_write_empty_parquet_round_trip(spark_tmp_path,
+                                        parquet_gens,
+                                        v1_enabled_list,
+                                        ts_type,
+                                        reader_confs):
+    def create_empty_df(spark, path):
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+        return gen_df(spark, gen_list, length=0).write.parquet(path)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = copy_and_update(reader_confs, writer_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.outputTimestampType': ts_type})
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        create_empty_df,
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=all_confs)

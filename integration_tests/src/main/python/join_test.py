@@ -22,7 +22,7 @@ from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_p
 from spark_session import with_cpu_session, with_spark_session
 
 # Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
+pytestmark = [pytest.mark.premerge_ci_1, pytest.mark.nightly_resource_consuming_test]
 
 all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
 
@@ -127,6 +127,33 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type, batch_siz
         return left.join(broadcast(right), how=join_type)
     conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Disabled for databricks because of lack of AQE support, and "
+                           "differences in BroadcastMode.transform")
+@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
+    def do_join(spark):
+        left, right = create_df(spark, long_gen, 50, 0)
+        return left.join(broadcast(right), how=join_type)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+            {'spark.sql.adaptive.enabled': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Disabled for databricks because of lack of AQE support, and "
+                           "differences in BroadcastMode.transform")
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_empty_broadcast_hash_join(join_type):
+    def do_join(spark):
+        left, right = create_df(spark, long_gen, 50, 0)
+        return left.join(right.hint("broadcast"), left.a == right.r_a, join_type)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+            {'spark.sql.adaptive.enabled': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this

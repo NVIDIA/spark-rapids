@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
@@ -47,7 +47,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class Spark30XShims extends Spark301util320Shims with Logging {
+abstract class Spark30XShims extends Spark301until320Shims with Logging {
   override def int96ParquetRebaseRead(conf: SQLConf): String =
     parquetRebaseRead(conf)
   override def int96ParquetRebaseWrite(conf: SQLConf): String =
@@ -125,10 +125,32 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
           TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
+          // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+          // if possible. Instead regarding filters as childExprs of current Meta, we create
+          // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+          // FileSourceScan is independent from the replacement of the partitionFilters. It is
+          // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+          // are on the GPU. And vice versa.
+          private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
+            filter.transformDown {
+              case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
+                if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
+
+                val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
+                subBcMeta.tagForExplain()
+                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+            }
+          }
+
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+
+          override def convertToCpu(): SparkPlan = {
+            wrapped.copy(partitionFilters = partitionFilters)
+          }
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
@@ -137,7 +159,7 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
             val location = replaceWithAlluxioPathIfNeeded(
               conf,
               wrapped.relation,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.dataFilters)
 
             val newRelation = HadoopFsRelation(
@@ -152,7 +174,7 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.optionalBucketSet,
               None,
               wrapped.dataFilters,
@@ -362,6 +384,10 @@ abstract class Spark30XShims extends Spark301util320Shims with Logging {
   }
 
   override def isCastingStringToNegDecimalScaleSupported: Boolean = true
+
+  // this is to help with an optimization in Spark 3.1, so we disable it by default in Spark 3.0.x
+  override def isEmptyRelation(relation: Any): Boolean = false
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None
 
   override def supportsColumnarAdaptivePlans: Boolean = false
 

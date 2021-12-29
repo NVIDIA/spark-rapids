@@ -2294,14 +2294,7 @@ object GpuOverrides extends Logging {
       }),
     expr[First](
       "first aggregate operator", {
-        val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
-          Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
-        ).asInstanceOf[ExprChecksImpl]
-        // TODO: support GpuFirst on nested types for reduction
-        //  https://github.com/NVIDIA/spark-rapids/issues/3221
-        val nestedChecks = ContextChecks(
+        ExprChecks.aggNotWindow(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
@@ -2310,7 +2303,6 @@ object GpuOverrides extends Logging {
                 TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
-        ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
       (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -2321,14 +2313,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Last](
       "last aggregate operator", {
-        val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
-          Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
-        ).asInstanceOf[ExprChecksImpl]
-        // TODO: support GpuLast on nested types for reduction
-        // https://github.com/NVIDIA/spark-rapids/issues/3221
-        val nestedChecks = ContextChecks(
+        ExprChecks.aggNotWindow(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
@@ -2337,7 +2322,6 @@ object GpuOverrides extends Logging {
                 TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
-        ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
       (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -3046,6 +3030,17 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
       "the implementation is not 100% compatible. " +
         "See the compatibility guide for more information."),
+    expr[RegExpExtract](
+      "RegExpExtract",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
+            TypeSig.lit(TypeEnum.INT)))),
+      (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r))
+      .disabledByDefault(
+      "the implementation is not 100% compatible. " +
+        "See the compatibility guide for more information."),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -3108,6 +3103,23 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
         override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
+      }),
+    expr[ReplicateRows](
+      "Given an input row replicates the row N times",
+      ExprChecks.projectOnly(
+        // The plan is optimized to run HashAggregate on the rows to be replicated.
+        // HashAggregateExec doesn't support grouping by 128-bit decimal value yet.
+        // Issue to track decimal 128 support: https://github.com/NVIDIA/spark-rapids/issues/4410
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+            TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          TypeSig.all))),
+      (a, conf, p, r) => new ReplicateRowsExprMeta[ReplicateRows](a, conf, p, r) {
+        override def convertToGpu(childExpr: Seq[Expression]): GpuExpression =
+          GpuReplicateRows(childExpr)
       }),
     expr[CollectList](
       "Collect a list of non-unique elements, not supported in reduction",
@@ -3688,6 +3700,52 @@ object GpuOverrides extends Logging {
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
         TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
+    ),
+    exec[SubqueryBroadcastExec](
+      "Plan to collect and transform the broadcast key values",
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
+
+        private var broadcastMeta: GpuBroadcastMeta = _
+
+        override val childExprs: Seq[BaseExprMeta[_]] = Nil
+
+        override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+
+        /**
+         * The rule PlanDynamicPruningFilters will insert SubqueryBroadcastExec if there exists
+         * available broadcast exchange for reuse. The plan stack of SubqueryBroadcastExec:
+         * SubqueryBroadcast -> BroadcastExchange -> executedPlan
+         * Since the GPU overrides rule has been applied on executedPlan, the plan stack become:
+         * SubqueryBroadcast -> BroadcastExchange -> GpuColumnarToRow -> GpuPlanStack...
+         * , if the wrapped subquery can run on the GPU.
+         * To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
+         * GpuSubqueryBroadcast -> GpuBroadcastExchange -> GpuPlanStack...
+         */
+        override def tagPlanForGpu(): Unit = s.child match {
+          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
+            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
+            exMeta.tagForGpu()
+            if (exMeta.canThisBeReplaced) {
+              broadcastMeta = exMeta
+            } else {
+              willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+            }
+          case _ =>
+            willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
+        }
+
+        /**
+         * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
+         * need to change if SubqueryBroadcastExec falls back to the CPU.
+         */
+        override def convertToCpu(): SparkPlan = s
+
+        override def convertToGpu(): GpuExec = {
+          val gpuEx = broadcastMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
+          GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
+        }
+      }
     ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](

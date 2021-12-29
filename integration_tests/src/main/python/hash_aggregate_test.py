@@ -26,6 +26,8 @@ from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
 
+pytestmark = pytest.mark.nightly_resource_consuming_test
+
 _approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
@@ -303,6 +305,7 @@ _init_list_full_decimal = [_grpkey_short_full_decimals,
     _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
+@nightly_gpu_mem_consuming_case
 @pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31, 30], ids=idfn)
 def test_hash_reduction_decimal_overflow_sum(precision):
     constant = '9' * precision
@@ -328,6 +331,17 @@ def test_hash_reduction_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).agg(f.sum('b'))
     )
+
+# Make sure that we can do computation in the group by columns
+@ignore_order
+def test_computation_in_grpby_columns():
+    conf = {'spark.rapids.sql.batchSizeBytes' : '1000'}
+    data_gen = [
+            ('a', RepeatSeqGen(StringGen('a{1,20}'), length=50)),
+            ('b', short_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).groupby(f.substring(f.col('a'), 2, 10)).agg(f.sum('b')),
+        conf = conf)
 
 @shuffle_test
 @approximate_float
@@ -402,6 +416,34 @@ def test_hash_avg_nulls_partial_only(data_gen):
         conf=_no_nans_float_conf_partial
     )
 
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+def test_intersectAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)),
+        conf=allow_negative_scale_of_decimal_conf)
+
+# Grouping by a 128-bit decimal value is not currently supported, so HashAggregateExec runs on
+# CPU followed by expression replicateRows which supports decimal128.
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_short_big_decimals], ids=idfn)
+def test_intersectAll_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
+
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+def test_exceptAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @ignore_order(local=True)
@@ -1008,28 +1050,22 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
-def test_first_last_reductions_extra_types(data_gen):
+def test_first_last_reductions_decimal_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            # Coalesce and sort are to make sure that first and last, which are non-deterministic
-            # become deterministic
-            lambda spark : unary_op_df(spark, data_gen)\
-                    .coalesce(1).selectExpr(
-                'first(a)',
-                'last(a)'),
-            conf = allow_negative_scale_of_decimal_conf)
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
-# TODO: https://github.com/NVIDIA/spark-rapids/issues/3221
-@allow_non_gpu('HashAggregateExec', 'SortAggregateExec',
-               'ShuffleExchangeExec', 'HashPartitioning',
-               'AggregateExpression', 'Alias', 'First', 'Last')
 @pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
-def test_first_last_reductions_nested_types_fallback(data_gen):
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: unary_op_df(spark, data_gen, num_slices=1)\
-                    .selectExpr('first(a)', 'last(a)', 'first(a, True)', 'last(a, True)'),
-            exist_classes='First,Last',
-            non_exist_classes='GpuFirst,GpuLast',
-            conf=allow_negative_scale_of_decimal_conf)
+def test_first_last_reductions_nested_types(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(

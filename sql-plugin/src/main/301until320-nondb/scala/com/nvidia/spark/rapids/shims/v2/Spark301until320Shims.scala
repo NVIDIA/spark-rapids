@@ -59,7 +59,7 @@ import org.apache.spark.sql.types._
 /**
 * Shim base class that can be compiled with from 301 until 320
 */
-trait Spark301util320Shims extends SparkShims {
+trait Spark301until320Shims extends SparkShims {
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
@@ -276,7 +276,9 @@ trait Spark301util320Shims extends SparkShims {
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 

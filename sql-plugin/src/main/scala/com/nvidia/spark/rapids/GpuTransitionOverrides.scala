@@ -76,14 +76,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan: SparkPlan,
       parent: Option[SparkPlan]): SparkPlan = plan match {
 
-    case GpuBringBackToHost(child) if parent.isEmpty =>
+    case bb @ GpuBringBackToHost(child) if parent.isEmpty =>
       // This is hacky but we need to remove the GpuBringBackToHost from the final
       // query stage, if there is one. It gets inserted by
       // GpuTransitionOverrides.insertColumnarFromGpu around columnar adaptive
       // plans when we are writing to columnar formats on the GPU. It would be nice to avoid
       // inserting it in the first place but we just don't have enough context
       // at the time GpuTransitionOverrides is applying rules.
-      child
+      optimizeAdaptiveTransitions(child, Some(bb))
 
     // HostColumnarToGpu(RowToColumnarExec(..)) => GpuRowToColumnarExec(..)
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>

@@ -18,9 +18,10 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{ColumnarToRowIterator, GpuBatchUtilsSuite, NoopMetric, SparkQueryCompareTestSuite}
+import com.nvidia.spark.rapids.{ColumnarToRowIterator, GpuBatchUtilsSuite, NoopMetric, SparkQueryCompareTestSuite, TestResourceFinder}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.util.MapData
 import org.apache.spark.sql.types._
 
@@ -270,6 +271,17 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
         }
       }
     }
+  }
+
+  test("InternalColumnarRddConverter should extractRDDTable RDD[ColumnarBatch]") {
+    withGpuSparkSession(spark => {
+      val path = TestResourceFinder.getResourcePath("disorder-read-schema.parquet")
+      val df = spark.read.parquet(path)
+      val (optionRddColumnBatch, _) = InternalColumnarRddConverter.extractRDDColumnarBatch(df)
+
+      assert(optionRddColumnBatch.isDefined, "Can't extract RDD[ColumnarBatch]")
+
+    }, new SparkConf().set("spark.rapids.sql.test.allowedNonGpu", "DeserializeToObjectExec"))
   }
 
 }

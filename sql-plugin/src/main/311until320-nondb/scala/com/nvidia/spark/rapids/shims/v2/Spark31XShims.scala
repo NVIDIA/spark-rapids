@@ -27,11 +27,12 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
@@ -50,7 +51,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 // 31x nondb shims, used by 311cdh and 31x
-abstract class Spark31XShims extends Spark301util320Shims with Logging {
+abstract class Spark31XShims extends Spark301until320Shims with Logging {
 
   override def int96ParquetRebaseRead(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
@@ -60,6 +61,17 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+
+  override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = {
+    Some(broadcastModeTransform(mode, Array.empty)).filter(isEmptyRelation)
+  }
+
+  override def isEmptyRelation(relation: Any): Boolean = relation match {
+    case EmptyHashedRelation => true
+    case arr: Array[InternalRow] if arr.isEmpty => true
+    case _ => false
+  }
+
   override def hasSeparateINT96RebaseConf: Boolean = true
 
   override def getScalaUDFAsExpression(
@@ -351,10 +363,33 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+
+          // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+          // if possible. Instead regarding filters as childExprs of current Meta, we create
+          // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+          // FileSourceScan is independent from the replacement of the partitionFilters. It is
+          // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+          // are on the GPU. And vice versa.
+          private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
+            filter.transformDown {
+              case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
+                if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
+
+                val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
+                subBcMeta.tagForExplain()
+                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+            }
+          }
+
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+
+          override def convertToCpu(): SparkPlan = {
+            wrapped.copy(partitionFilters = partitionFilters)
+          }
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
@@ -363,7 +398,7 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
             val location = replaceWithAlluxioPathIfNeeded(
               conf,
               wrapped.relation,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.dataFilters)
 
             val newRelation = HadoopFsRelation(
@@ -378,7 +413,7 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
@@ -454,9 +489,9 @@ abstract class Spark31XShims extends Spark301util320Shims with Logging {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = ShimLoader.loadClass(serName)
     if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan)
+      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
     } else {
-      GpuColumnarToRowExec(plan)
+      GpuColumnarToRowExec(plan, exportColumnRdd)
     }
   }
 

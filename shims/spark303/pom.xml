@@ -45,14 +45,25 @@
                         <id>dependency</id>
                         <phase>generate-resources</phase>
                         <configuration>
-                            <target>
+                            <target name="dependency-info">
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/spark-${spark303.version}-info.properties">
+                                <exec executable="bash"
+                                      output="${project.build.directory}/extra-resources/spark-${spark303.version}-info.properties"
+                                      resultproperty="dependency-info.exitCode"
+                                      errorproperty="dependency-info.errorMsg"
+                                      failonerror="false">
                                     <arg value="${spark.rapids.source.basedir}/build/dependency-info.sh"/>
                                     <arg value="${cudf.version}"/>
                                     <arg value="${cuda.version}"/>
                                     <arg value="${spark303.version}"/>
                                 </exec>
+                                <fail message="exec dependency-info.sh failed, exit code is ${dependency-info.exitCode}, error msg is ${dependency-info.errorMsg}">
+                                    <condition>
+                                        <not>
+                                            <equals arg1="${dependency-info.exitCode}" arg2="0"/>
+                                        </not>
+                                    </condition>
+                                </fail>
                             </target>
                         </configuration>
                         <goals>
