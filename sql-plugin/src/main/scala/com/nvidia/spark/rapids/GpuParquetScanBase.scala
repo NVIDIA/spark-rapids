@@ -489,7 +489,7 @@ case class GpuParquetPartitionReaderFactory(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
-  private val filterHandler = new GpuParquetFileFilterHandler(sqlConf)
+  private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -520,6 +520,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
   // Configuration
   def conf: Configuration
+  def execMetrics: Map[String, GpuMetric]
 
   // Schema to read
   def readDataSchema: StructType
@@ -589,6 +590,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       in: FSDataInputStream,
       out: OutputStream,
       copyBuffer: Array[Byte]): Unit = {
+    var readTime = 0L
+    var writeTime = 0L
     if (in.getPos != range.offset) {
       in.seek(range.offset)
     }
@@ -596,10 +599,17 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     while (bytesLeft > 0) {
       // downcast is safe because copyBuffer.length is an int
       val readLength = Math.min(bytesLeft, copyBuffer.length).toInt
+      val start = System.nanoTime()
       in.readFully(copyBuffer, 0, readLength)
+      val mid = System.nanoTime()
       out.write(copyBuffer, 0, readLength)
+      val end = System.nanoTime()
+      readTime += (mid - start)
+      writeTime += (end - mid)
       bytesLeft -= readLength
     }
+    execMetrics.get(READ_FS_TIME).foreach(_.add(readTime))
+    execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(writeTime))
   }
 
   /**
@@ -987,7 +997,7 @@ class MultiFileParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
@@ -1185,7 +1195,7 @@ class MultiFileCloudParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     maxNumFileProcessed: Int,
@@ -1437,7 +1447,7 @@ class ParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
