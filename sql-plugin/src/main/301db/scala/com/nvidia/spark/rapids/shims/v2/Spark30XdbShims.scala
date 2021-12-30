@@ -77,9 +77,10 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       pushDownStartWith: Boolean,
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
+      datetimeRebaseMode: Any): ParquetFilters =
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode.asInstanceOf[
+      SQLConf.LegacyBehaviorPolicy.Value])
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)

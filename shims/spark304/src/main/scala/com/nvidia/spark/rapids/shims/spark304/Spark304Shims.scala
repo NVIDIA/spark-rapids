@@ -35,7 +35,12 @@ class Spark304Shims extends Spark30XShims with Spark30Xuntil33XShims {
       pushDownStartWith: Boolean,
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
+      datetimeRebaseMode: Any): ParquetFilters =
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode.asInstanceOf[
+        SQLConf.LegacyBehaviorPolicy.Value])
+
+  def getDateTimeRebaseMode(lookupFileMeta: String => String,
+    modeByConfig: String) : Any = DataSourceUtils.datetimeRebaseMode(
+    lookupFileMeta, modeByConfig)
 }

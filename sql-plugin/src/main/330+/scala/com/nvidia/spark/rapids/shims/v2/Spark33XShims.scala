@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.types.StructType
 
-trait Spark33XShims extends Spark32XShims {
+trait Spark33XShims extends SparkShims {
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
   override def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {

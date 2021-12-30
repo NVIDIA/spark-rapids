@@ -18,12 +18,15 @@ package com.nvidia.spark.rapids.shims.spark321
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
+import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
 class Spark321Shims extends Spark32XShims with Spark30Xuntil33XShims {
@@ -37,4 +40,21 @@ class Spark321Shims extends Spark32XShims with Spark30Xuntil33XShims {
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
+  override final def getParquetFilters(
+    schema: MessageType,
+    pushDownDate: Boolean,
+    pushDownTimestamp: Boolean,
+    pushDownDecimal: Boolean,
+    pushDownStartWith: Boolean,
+    pushDownInFilterThreshold: Int,
+    caseSensitive: Boolean,
+    datetimeRebaseMode: Any): ParquetFilters = {
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode.asInstanceOf[
+        SQLConf.LegacyBehaviorPolicy.Value])
+  }
+
+  def getDateTimeRebaseMode(lookupFileMeta: String => String,
+    modeByConfig: String) : Any = DataSourceUtils.datetimeRebaseMode(
+    lookupFileMeta, modeByConfig)
 }

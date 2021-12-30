@@ -19,6 +19,26 @@ package com.nvidia.spark.rapids.shims.spark330
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
-class Spark330Shims extends Spark33XShims {
+import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+
+class Spark330Shims extends Spark33XShims with Spark30Xuntil33XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override final def getParquetFilters(
+    schema: MessageType,
+    pushDownDate: Boolean,
+    pushDownTimestamp: Boolean,
+    pushDownDecimal: Boolean,
+    pushDownStartWith: Boolean,
+    pushDownInFilterThreshold: Int,
+    caseSensitive: Boolean,
+    datetimeRebaseSpec: Any): ParquetFilters = {
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseSpec.asInstanceOf[RebaseSpec])
+  }
+
+  def getDateTimeRebaseMode(lookupFileMeta: String => String,
+    modeByConfig: String) : Any = DataSourceUtils.datetimeRebaseSpec(
+    lookupFileMeta, modeByConfig)
 }

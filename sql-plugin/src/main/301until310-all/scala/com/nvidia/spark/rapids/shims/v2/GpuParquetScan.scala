@@ -16,9 +16,14 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{GpuParquetScanBase, RapidsConf}
+import com.nvidia.spark.rapids.{Arm, GpuParquetPartitionReaderFactoryBase, GpuParquetScanBase, ParquetFileInfoWithBlockMeta, ParquetPartitionReader, RapidsConf, ShimLoader}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.parquet.column.ColumnDescriptor
+import org.apache.parquet.filter2.predicate.FilterApi
+import org.apache.parquet.format.converter.ParquetMetadataConverter
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
+import org.apache.parquet.hadoop.metadata.ColumnPath
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression

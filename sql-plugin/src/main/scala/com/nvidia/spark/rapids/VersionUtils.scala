@@ -24,6 +24,8 @@ object VersionUtils {
 
   lazy val isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
 
+  lazy val isSpark330OrLater: Boolean = cmpSparkVersion(3, 3, 0) >= 0
+
   lazy val isSpark: Boolean = {
     ShimLoader.getSparkShims.getSparkShimVersion.isInstanceOf[SparkShimVersion]
   }

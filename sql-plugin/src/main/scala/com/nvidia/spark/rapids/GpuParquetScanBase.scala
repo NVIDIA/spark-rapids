@@ -298,7 +298,7 @@ object GpuParquetPartitionReaderFactoryBase {
 }
 
 // contains meta about all the blocks in a file
-private case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
+case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean, hasInt96Timestamps: Boolean)
 
@@ -313,7 +313,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val rebaseMode = ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
   private val isCorrectedRebase = "CORRECTED" == rebaseMode
   val int96RebaseMode = ShimLoader.getSparkShims.int96ParquetRebaseRead(sqlConf)
-  private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
+  val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
 
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
@@ -341,7 +341,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
-      val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
+      val datetimeRebaseMode = ShimLoader.getSparkShims.getDateTimeRebaseMode(
         footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
         pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
