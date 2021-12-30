@@ -27,7 +27,8 @@ abstract class TimelineTiming(
     val endTime: Long)
 
 class TimelineTaskInfo(val stageId: Int, val taskId: Long,
-    startTime: Long, endTime: Long, val duration: Long)
+    startTime: Long, endTime: Long, val duration: Long,
+    val readTime: Long, val semTime: Long, val opTime: Long)
     extends TimelineTiming(startTime, endTime)
 
 class TimelineStageInfo(val stageId: Int,
@@ -154,6 +155,29 @@ object GenerateTimeline {
     textBoxVirtCentered(text, PADDING * 2, boxMiddleY, fileWriter)
   }
 
+  private def subTimingMark(
+      color: String,
+      startTime: Long,
+      endTime: Long,
+      slot: Int,
+      xStart: Long,
+      yStart: Long,
+      minStart: Long,
+      fileWriter: ToolTextFileWriter): Unit = {
+    val x = xStart + (startTime - minStart)/MS_PER_PIXEL
+    val y = (slot * TASK_HEIGHT) + yStart + TASK_HEIGHT/2
+    val width = (endTime - startTime)/MS_PER_PIXEL
+    val height = TASK_HEIGHT/2
+    fileWriter.write(
+      s"""<rect x="$x" y="$y" width="$width" height="$height"
+         | style="fill:$color;fill-opacity:0.5;stroke:#ffffff;stroke-width:0"/>
+         |""".stripMargin)
+    fileWriter.write(
+      s"""<line x1="${x+width}" y1="$y" x2="${x+width}" y2="${y+height}"
+         | style="stroke:#ffffff;stroke-width:1"/>
+         |""".stripMargin)
+  }
+
   private def timingBox[A <: TimelineTiming](
       text: String,
       color: String,
@@ -162,7 +186,8 @@ object GenerateTimeline {
       xStart: Long,
       yStart: Long,
       minStart: Long,
-      fileWriter: ToolTextFileWriter): Unit = {
+      fileWriter: ToolTextFileWriter,
+      subMarks: Seq[(String, Long)] = Seq.empty): Unit = {
     val startTime = timing.startTime
     val endTime = timing.endTime
     val x = xStart + (startTime - minStart)/MS_PER_PIXEL
@@ -172,6 +197,19 @@ object GenerateTimeline {
       s"""<rect x="$x" y="$y" width="$width" height="$TASK_HEIGHT"
          | style="fill:$color;fill-opacity:1.0;stroke:#00ff00;stroke-width:1"/>
          |""".stripMargin)
+    var subStart = startTime
+    subMarks.foreach {
+      case (subColor, subTimeLength) =>
+        subTimingMark(subColor,
+          subStart,
+          subStart + subTimeLength,
+          slot,
+          xStart,
+          yStart,
+          minStart,
+          fileWriter)
+        subStart = subStart + subTimeLength
+    }
     textBoxVirtCentered(text, x, y + TASK_HEIGHT/2, fileWriter)
   }
 
@@ -216,6 +254,40 @@ object GenerateTimeline {
     var minStartTime = Long.MaxValue
     var maxEndTime = 0L
 
+    // We want to show sub-timings here too.
+    // semaphore wait time
+    // scan time
+    // op time
+    val semWaitIds = new mutable.HashSet[Long]()
+    val readTimeIds = new mutable.HashSet[Long]()
+    val opTimeIds = new mutable.HashSet[Long]()
+    app.allSQLMetrics.foreach { f =>
+      f.name match {
+        case "op time" | "GPU decode time" if f.metricType == "nsTiming" =>
+          opTimeIds += f.accumulatorId
+        case "GPU semaphore wait time" if f.metricType == "nsTiming" =>
+          semWaitIds += f.accumulatorId
+        case "buffer time" if f.metricType == "nsTiming" =>
+          readTimeIds += f.accumulatorId
+        case _ =>
+      }
+    }
+
+    // look through this for the corresponding metrics we care about...
+    //app.taskStageAccumMap
+
+    val semMetrics = semWaitIds.toList.flatMap { id =>
+      app.taskStageAccumMap.get(id)
+    }.flatten
+
+    val readMetrics = readTimeIds.toList.flatMap { id =>
+      app.taskStageAccumMap.get(id)
+    }.flatten
+
+    val opMetrics = opTimeIds.toList.flatMap { id =>
+      app.taskStageAccumMap.get(id)
+    }.flatten
+
     app.taskEnd.foreach { tc =>
       val host = tc.host
       val execId = tc.executorId
@@ -224,7 +296,17 @@ object GenerateTimeline {
       val launchTime = tc.launchTime
       val finishTime = tc.finishTime
       val duration = tc.duration
-      val taskInfo = new TimelineTaskInfo(stageId, taskId, launchTime, finishTime, duration)
+      val semTimeMs = semMetrics.filter { m =>
+        m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
+      }.flatMap(_.update).sum / 1000000
+      val readTimeMs = readMetrics.filter { m =>
+        m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
+      }.flatMap(_.update).sum / 1000000
+      val opTimeMs = opMetrics.filter { m =>
+        m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
+      }.flatMap(_.update).sum / 1000000
+      val taskInfo = new TimelineTaskInfo(stageId, taskId, launchTime, finishTime, duration,
+        readTimeMs, semTimeMs, opTimeMs)
       val execHost = s"$execId/$host"
       execHostToTaskList.getOrElseUpdate(execHost, ArrayBuffer.empty) += taskInfo
       minStartTime = Math.min(launchTime, minStartTime)
@@ -379,6 +461,16 @@ object GenerateTimeline {
           sectionBox(execHost, currentExecsStartY, numElements, fileWriter)
           doLayout(taskList, numElements) {
             case (taskInfo, slot) =>
+              val subTimings = new ArrayBuffer[(String, Long)]()
+              if (taskInfo.readTime > 0) {
+                subTimings += (("white", taskInfo.readTime))
+              }
+              if (taskInfo.semTime > 0) {
+                subTimings += (("red", taskInfo.semTime))
+              }
+              if (taskInfo.opTime > 0) {
+                subTimings += (("green", taskInfo.opTime))
+              }
               timingBox(s"${taskInfo.duration} ms",
                 stageIdToColor(taskInfo.stageId),
                 taskInfo,
@@ -386,7 +478,8 @@ object GenerateTimeline {
                 timingsStartX,
                 currentExecsStartY,
                 minStartTime,
-                fileWriter)
+                fileWriter,
+                subTimings)
           }
           currentExecsStartY += execHostHeight
 
