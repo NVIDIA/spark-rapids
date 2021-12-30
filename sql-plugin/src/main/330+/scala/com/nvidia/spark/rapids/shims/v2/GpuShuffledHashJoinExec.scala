@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
@@ -90,9 +91,10 @@ case class GpuShuffledHashJoinExec(
   extends GpuShuffledHashJoinBase(
     buildSide,
     condition,
-    isSkewJoin = isSkewJoin,
-    cpuLeftKeys,
-    cpuRightKeys) {
+    isSkewJoin = isSkewJoin) {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuLeftKeys :: cpuRightKeys :: Nil
+
+  override def requiredChildDistribution: Seq[Distribution] =
+    ClusteredDistribution(cpuLeftKeys) :: ClusteredDistribution(cpuRightKeys) :: Nil
 }
