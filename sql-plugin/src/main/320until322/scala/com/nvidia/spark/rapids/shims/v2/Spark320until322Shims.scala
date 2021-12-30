@@ -75,7 +75,7 @@ import org.apache.spark.unsafe.types.CalendarInterval
 /**
 * Shim base class that can be compiled with every supported 3.2.x
 */
-trait Spark32XShims extends SparkShims  with Logging {
+trait Spark320until322Shims extends SparkShims  with Logging {
   override final def parquetRebaseReadKey: String =
     SQLConf.PARQUET_REBASE_MODE_IN_READ.key
   override final def parquetRebaseWriteKey: String =
