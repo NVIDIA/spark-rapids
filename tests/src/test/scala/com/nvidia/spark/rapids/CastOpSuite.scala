@@ -885,7 +885,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // There is a bug filed against it in Spark https://issues.apache.org/jira/browse/SPARK-37451
 
     List(-1, 0, 1, 5, 15).foreach { scale =>
-      if (scale < 0 && cmpSparkVersion(3, 1, 1) < 0) {
+      if (cmpSparkVersion(3, 1, 1) < 0 || scale >= 0) {
         testCastToDecimal(DataTypes.StringType, scale, precision = 37,
           customRandGenerator = Some(new scala.util.Random(1234L)))
       }
@@ -910,7 +910,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // There is a bug filed against it in Spark https://issues.apache.org/jira/browse/SPARK-37451
 
     List(-1, 0, 1, 10).foreach { scale =>
-      if (scale < 0 && cmpSparkVersion(3, 1, 1) < 0) {
+      if (cmpSparkVersion(3, 1, 1) < 0 || scale >= 0) {
         testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
           customDataGenerator = Some(doubleStrings))
       }
@@ -922,16 +922,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
       import ss.sqlContext.implicits._
       column.toDF("col")
     }
+
     testCastToDecimal(DataTypes.StringType, scale = 7, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("9999999999"))))
     testCastToDecimal(DataTypes.StringType, scale = 2, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("999999999999999"))))
     testCastToDecimal(DataTypes.StringType, scale = 0, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -1, precision = 37,
-      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -10, precision = 37,
-      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+    if (cmpSparkVersion(3, 1, 1) < 0) {
+      testCastToDecimal(DataTypes.StringType, scale = -1, precision = 37,
+        customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+      testCastToDecimal(DataTypes.StringType, scale = -10, precision = 37,
+        customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+    }
   }
 
   test("ansi_cast string to decimal exp") {
@@ -939,9 +942,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       exponentsAsStringsDf(ss).select(col("c0").as("col"))
     }
     List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
-        customDataGenerator = Some(exponentsAsStrings),
-        ansiEnabled = true)
+      if (cmpSparkVersion(3, 1, 1) < 0 || scale >= 0) {
+        testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
+          customDataGenerator = Some(exponentsAsStrings),
+          ansiEnabled = true)
+      }
     }
   }
 
