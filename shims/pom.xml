@@ -85,6 +85,10 @@
             <id>release321</id>
             <modules><module>spark321</module></modules>
         </profile>
+        <profile>
+            <id>release322</id>
+            <modules><module>spark322</module></modules>
+        </profile>
     </profiles>
 
     <dependencies>

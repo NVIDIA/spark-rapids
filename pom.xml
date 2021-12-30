@@ -600,6 +600,49 @@
             </modules>
         </profile>
         <profile>
+            <id>release322</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>322</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version>${spark322.version}</spark.version>
+                <spark.test.version>${spark322.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/scala</source>
+                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>tools</module>
+                <module>aggregator</module>
+                <module>tests-spark310+</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release330</id>
             <activation>
                 <property>
@@ -783,6 +826,7 @@
         <spark313.version>3.1.3-SNAPSHOT</spark313.version>
         <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1-SNAPSHOT</spark321.version>
+        <spark322.version>3.2.2-SNAPSHOT</spark322.version>
         <spark330.version>3.3.0-SNAPSHOT</spark330.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
