@@ -28,7 +28,8 @@ abstract class TimelineTiming(
 
 class TimelineTaskInfo(val stageId: Int, val taskId: Long,
     startTime: Long, endTime: Long, val duration: Long,
-    val readTime: Long, val semTime: Long, val opTime: Long)
+    val deserTime: Long, val readTime: Long, val semTime: Long, val opTime: Long,
+    val writeTime: Long)
     extends TimelineTiming(startTime, endTime)
 
 class TimelineStageInfo(val stageId: Int,
@@ -301,12 +302,12 @@ object GenerateTimeline {
       }.flatMap(_.update).sum / 1000000
       val readTimeMs = readMetrics.filter { m =>
         m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
-      }.flatMap(_.update).sum / 1000000
+      }.flatMap(_.update).sum / 1000000 + tc.sr_fetchWaitTime
       val opTimeMs = opMetrics.filter { m =>
         m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
       }.flatMap(_.update).sum / 1000000
       val taskInfo = new TimelineTaskInfo(stageId, taskId, launchTime, finishTime, duration,
-        readTimeMs, semTimeMs, opTimeMs)
+        tc.executorDeserializeTime, readTimeMs, semTimeMs, opTimeMs, tc.sw_writeTime)
       val execHost = s"$execId/$host"
       execHostToTaskList.getOrElseUpdate(execHost, ArrayBuffer.empty) += taskInfo
       minStartTime = Math.min(launchTime, minStartTime)
@@ -462,6 +463,9 @@ object GenerateTimeline {
           doLayout(taskList, numElements) {
             case (taskInfo, slot) =>
               val subTimings = new ArrayBuffer[(String, Long)]()
+              if (taskInfo.deserTime > 0) {
+                subTimings += (("yellow", taskInfo.deserTime))
+              }
               if (taskInfo.readTime > 0) {
                 subTimings += (("white", taskInfo.readTime))
               }
@@ -470,6 +474,9 @@ object GenerateTimeline {
               }
               if (taskInfo.opTime > 0) {
                 subTimings += (("green", taskInfo.opTime))
+              }
+              if (taskInfo.writeTime > 0) {
+                subTimings += (("blue", taskInfo.writeTime))
               }
               timingBox(s"${taskInfo.duration} ms",
                 stageIdToColor(taskInfo.stageId),
