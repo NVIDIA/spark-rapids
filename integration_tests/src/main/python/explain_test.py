@@ -91,3 +91,11 @@ def test_explain_udf():
 
     with_cpu_session(do_explain)
 
+
+def test_explain_bucketed_scan():
+    """
+    https://github.com/NVIDIA/spark-rapids/issues/3952
+    https://github.com/apache/spark/commit/79515e4b6c
+    """
+    return -1
+

@@ -56,6 +56,7 @@ import org.apache.spark.util.collection.BitSet
  * @param queryUsesInputFile This is a parameter to easily allow turning it
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
+ * @param disableBucketedScan Disable bucketed scan based on physical query plan.
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -66,7 +67,8 @@ case class GpuFileSourceScanExec(
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
-    queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
+    queryUsesInputFile: Boolean = false,
+    disableBucketedScan: Boolean = false)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
@@ -244,20 +246,30 @@ case class GpuFileSourceScanExec(
         "DataFilters" -> seqToString(dataFilters),
         "Location" -> locationDesc)
 
-    val withSelectedBucketsCount = relation.bucketSpec.map { spec =>
-      val numSelectedBuckets = optionalBucketSet.map { b =>
-        b.cardinality()
-      } getOrElse {
-        spec.numBuckets
+
+
+    relation.bucketSpec.map { spec =>
+      val bucketedKey = "Bucketed"
+      if (bucketedScan){
+        val numSelectedBuckets = optionalBucketSet.map { b =>
+          b.cardinality()
+        } getOrElse {
+          spec.numBuckets
+        }
+
+        metadata + ("SelectedBucketsCount" ->
+          (s"$numSelectedBuckets out of ${spec.numBuckets}" +
+            optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)"}.getOrElse("")))
+      } else if (!relation.sparkSession.sessionState.conf.bucketingEnabled) {
+        metadata + (bucketedKey -> "false (disabled by configuration)")
+      } else if (disableBucketedScan) {
+        metadata + (bucketedKey -> "false (disabled by query planner)")
+      } else {
+        metadata + (bucketedKey -> "false (bucket column(s) not read)")
       }
-      metadata + ("SelectedBucketsCount" ->
-        (s"$numSelectedBuckets out of ${spec.numBuckets}" +
-          optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)"}.getOrElse("")))
     } getOrElse {
       metadata
     }
-
-    withSelectedBucketsCount
   }
 
   override def verboseStringWithOperatorId(): String = {
