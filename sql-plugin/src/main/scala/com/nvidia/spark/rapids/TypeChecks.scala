@@ -682,7 +682,7 @@ object TypeSig {
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
   /** All types that can appear in AST expressions */
-  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP
+  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP + DATE
 
   /** All AST types that work for comparisons */
   val comparisonAstTypes: TypeSig = astTypes - fp
