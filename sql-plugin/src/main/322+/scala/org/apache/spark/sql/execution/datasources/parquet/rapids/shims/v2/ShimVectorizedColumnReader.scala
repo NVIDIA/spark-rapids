@@ -62,6 +62,6 @@ class ShimVectorizedColumnReader(
       pageReadStore.getRowIndexes().orElse(null),
       convertTz,
       datetimeRebaseMode,
-      TimeZone.getDefault.getID, // use default zone because of no need to rebase
+      TimeZone.getDefault.getID, // use default zone because of no rebase
       int96RebaseMode,
-      TimeZone.getDefault.getID) // use default zone because of no need to rebase
+      TimeZone.getDefault.getID) // use default zone because of will throw exception if rebase
