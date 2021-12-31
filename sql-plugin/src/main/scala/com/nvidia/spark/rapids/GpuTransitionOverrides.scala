@@ -161,21 +161,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // We wrap custom shuffle readers with a coalesce batches operator here.
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
-    // Query stages that have already executed on the GPU could be used by CPU operators
-    // in future query stages. Note that because these query stages have already executed, we
-    // don't need to recurse down and optimize them again
-    case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
-      e.plan match {
-        case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) =>
-          // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
-          // hash join but Spark will sometimes try and do this (see
-          // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
-          // need to convert the output to rows in the driver before broadcasting the data
-          // to the executors
-          val newChild = ReusedExchangeExec(output, GpuBroadcastToCpuExec(b.mode, b.child))
-          ShimLoader.getSparkShims.newBroadcastQueryStageExec(e, newChild)
-        case _ => getColumnarToRowExec(e)
-      }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
