@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ object GpuJoinUtils {
     buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
+      case unknownBuildSide =>
+        throw new IllegalArgumentException(s"unknown buildSide Type: $unknownBuildSide")
     }
   }
 }
@@ -93,8 +94,8 @@ case class GpuShuffledHashJoinExec(
     condition,
     isSkewJoin = isSkewJoin) {
 
-  override def otherCopyArgs: Seq[AnyRef] = cpuLeftKeys :: cpuRightKeys :: Nil
+  override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys)
 
   override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(cpuLeftKeys) :: HashClusteredDistribution(cpuRightKeys) :: Nil
+    Seq(HashClusteredDistribution(cpuLeftKeys), HashClusteredDistribution(cpuRightKeys))
 }

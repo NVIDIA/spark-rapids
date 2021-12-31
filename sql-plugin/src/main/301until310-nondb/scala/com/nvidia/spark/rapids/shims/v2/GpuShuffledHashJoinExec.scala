@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ object GpuJoinUtils {
     buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
+      case unknownBuildSide => throw new Exception(s"unknown buildSide Type: $unknownBuildSide")
     }
   }
 }

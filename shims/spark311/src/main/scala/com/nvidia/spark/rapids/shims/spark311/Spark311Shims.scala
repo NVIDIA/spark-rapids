@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ class Spark311Shims extends Spark31XShims with Spark30Xuntil33XShims {
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
       lookupFileMeta: String => String,
-      modeByConfig: String): ParquetFilters = {
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive)
   }

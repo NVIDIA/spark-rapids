@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,8 +36,9 @@ class Spark304Shims extends Spark30XShims with Spark30Xuntil33XShims {
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
       lookupFileMeta: String => String,
-      modeByConfig: String): ParquetFilters = {
-    val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(lookupFileMeta, modeByConfig)
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils
+      .datetimeRebaseMode(lookupFileMeta, dateTimeRebaseModeFromConf)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
