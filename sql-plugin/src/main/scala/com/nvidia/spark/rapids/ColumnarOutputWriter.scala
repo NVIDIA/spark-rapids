@@ -102,7 +102,7 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
       }
 
       // Update statistics
-      val writeTime = System.nanoTime - writeStartTimestamp
+      val writeTime = System.nanoTime - writeStartTimestamp - gpuTime
       statsTrackers.foreach {
         case gpuTracker: GpuWriteTaskStatsTracker =>
           gpuTracker.addWriteTime(writeTime)

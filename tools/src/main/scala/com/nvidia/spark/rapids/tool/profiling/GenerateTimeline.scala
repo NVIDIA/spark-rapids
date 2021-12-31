@@ -171,11 +171,7 @@ object GenerateTimeline {
     val height = TASK_HEIGHT/2
     fileWriter.write(
       s"""<rect x="$x" y="$y" width="$width" height="$height"
-         | style="fill:$color;fill-opacity:0.5;stroke:#ffffff;stroke-width:0"/>
-         |""".stripMargin)
-    fileWriter.write(
-      s"""<line x1="${x+width}" y1="$y" x2="${x+width}" y2="${y+height}"
-         | style="stroke:#ffffff;stroke-width:1"/>
+         | style="fill:$color;fill-opacity:1;stroke:gray;stroke-width:0.5"/>
          |""".stripMargin)
   }
 
@@ -262,14 +258,17 @@ object GenerateTimeline {
     val semWaitIds = new mutable.HashSet[Long]()
     val readTimeIds = new mutable.HashSet[Long]()
     val opTimeIds = new mutable.HashSet[Long]()
+    val writeTimeIds = new mutable.HashSet[Long]()
     app.allSQLMetrics.foreach { f =>
       f.name match {
-        case "op time" | "GPU decode time" if f.metricType == "nsTiming" =>
+        case "op time" | "GPU decode time" | "GPU Time" if f.metricType == "nsTiming" =>
           opTimeIds += f.accumulatorId
         case "GPU semaphore wait time" if f.metricType == "nsTiming" =>
           semWaitIds += f.accumulatorId
         case "buffer time" if f.metricType == "nsTiming" =>
           readTimeIds += f.accumulatorId
+        case "write time" if f.metricType == "nsTiming" =>
+          writeTimeIds += f.accumulatorId
         case _ =>
       }
     }
@@ -286,6 +285,10 @@ object GenerateTimeline {
     }.flatten
 
     val opMetrics = opTimeIds.toList.flatMap { id =>
+      app.taskStageAccumMap.get(id)
+    }.flatten
+
+    val writeMetrics = writeTimeIds.toList.flatMap { id =>
       app.taskStageAccumMap.get(id)
     }.flatten
 
@@ -306,8 +309,11 @@ object GenerateTimeline {
       val opTimeMs = opMetrics.filter { m =>
         m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
       }.flatMap(_.update).sum / 1000000
+      val writeTimeMs = writeMetrics.filter { m =>
+        m.stageId == stageId && m.taskId.contains(taskId) && m.update.isDefined
+      }.flatMap(_.update).sum / 1000000 + tc.sw_writeTime
       val taskInfo = new TimelineTaskInfo(stageId, taskId, launchTime, finishTime, duration,
-        tc.executorDeserializeTime, readTimeMs, semTimeMs, opTimeMs, tc.sw_writeTime)
+        tc.executorDeserializeTime, readTimeMs, semTimeMs, opTimeMs, writeTimeMs)
       val execHost = s"$execId/$host"
       execHostToTaskList.getOrElseUpdate(execHost, ArrayBuffer.empty) += taskInfo
       minStartTime = Math.min(launchTime, minStartTime)
