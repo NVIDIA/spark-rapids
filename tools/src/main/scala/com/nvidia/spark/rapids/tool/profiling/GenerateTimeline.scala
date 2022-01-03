@@ -273,9 +273,6 @@ object GenerateTimeline {
       }
     }
 
-    // look through this for the corresponding metrics we care about...
-    //app.taskStageAccumMap
-
     val semMetrics = semWaitIds.toList.flatMap { id =>
       app.taskStageAccumMap.get(id)
     }.flatten
