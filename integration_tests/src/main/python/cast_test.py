@@ -301,7 +301,7 @@ def test_cast_struct_with_unsupported_element_to_string_fallback(data_gen, legac
          "spark.sql.legacy.allowNegativeScaleOfDecimal": 'true'}
     )
     
-@pytest.mark.skipif(not is_before_spark_311() and is_before_spark_330(), reason="Only in Spark 3.1.1+ do we have incompatibility with negative decimal scale. There is an issue filed for it SPARK-37451")
+@pytest.mark.skipif(not is_before_spark_311() and is_before_spark_330(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
