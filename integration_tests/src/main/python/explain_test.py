@@ -18,7 +18,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_gpu_session
 
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
@@ -92,10 +92,25 @@ def test_explain_udf():
     with_cpu_session(do_explain)
 
 
-def test_explain_bucketed_scan():
+def test_explain_bucketed_scan(spark_tmp_table_factory):
     """
     https://github.com/NVIDIA/spark-rapids/issues/3952
     https://github.com/apache/spark/commit/79515e4b6c
     """
-    return -1
+    def do_explain(spark):
+        tbl_1 = spark_tmp_table_factory.get()
+
+        spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl_1)
+        #spark.createDataFrame([2, 3], "i").write.bucketBy(8, "i").saveAsTable("t2")
+
+        df1 = spark.table(tbl_1)
+        #df2 = spark.table("t2")
+        # join_df = df1.join(df2, df1.col("i") == df2.col("i"), "Inner")
+
+        not_read_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df1.select(f.col("j"))._jdf, "ALL")
+        print(not_read_str)
+        assert "Bucketed: false (bucket column(s) not read)" in not_read_str
+
+
+    with_cpu_session(do_explain)
 
