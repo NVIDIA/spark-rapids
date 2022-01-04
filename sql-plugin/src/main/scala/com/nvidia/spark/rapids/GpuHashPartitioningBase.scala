@@ -20,31 +20,16 @@ import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.rapids.GpuMurmur3Hash
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
-  extends GpuExpression with ShimExpression with GpuPartitioning {
+abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitions: Int)
+  extends GpuExpression with ShimExpression with GpuPartitioning with Serializable {
 
   override def children: Seq[Expression] = expressions
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
-
-  override def satisfies0(required: Distribution): Boolean = {
-    super.satisfies0(required) || {
-      required match {
-        case h: HashClusteredDistribution =>
-          expressions.length == h.expressions.length && expressions.zip(h.expressions).forall {
-            case (l, r) => l.semanticEquals(r)
-          }
-        case ClusteredDistribution(requiredClustering, _) =>
-          expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
-        case _ => false
-      }
-    }
-  }
 
   def partitionInternalAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val types = GpuColumnVector.extractTypes(batch)

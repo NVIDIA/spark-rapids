@@ -25,8 +25,8 @@ import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** TypeSigUtil for different spark versions */
-trait TypeSigUtil {
+/** Trait of TypeSigUtil for different spark versions */
+trait TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
