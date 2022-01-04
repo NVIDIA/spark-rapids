@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -154,37 +154,40 @@ class CrossJoinIterator(
   override def setupNextGatherer(): Option[JoinGatherer] = {
     val streamBatch = stream.next()
 
-    // Don't close the built side because it will be used for each stream and closed
-    // when the iterator is done.
-    val (leftBatch, rightBatch) = buildSide match {
-      case GpuBuildLeft => (LazySpillableColumnarBatch.spillOnly(builtBatch), streamBatch)
-      case GpuBuildRight => (streamBatch, LazySpillableColumnarBatch.spillOnly(builtBatch))
-    }
+    // Don't include stream in op time.
+    opTime.ns {
+      // Don't close the built side because it will be used for each stream and closed
+      // when the iterator is done.
+      val (leftBatch, rightBatch) = buildSide match {
+        case GpuBuildLeft => (LazySpillableColumnarBatch.spillOnly(builtBatch), streamBatch)
+        case GpuBuildRight => (streamBatch, LazySpillableColumnarBatch.spillOnly(builtBatch))
+      }
 
-    val leftMap = LazySpillableGatherMap.leftCross(leftBatch.numRows, rightBatch.numRows)
-    val rightMap = LazySpillableGatherMap.rightCross(leftBatch.numRows, rightBatch.numRows)
+      val leftMap = LazySpillableGatherMap.leftCross(leftBatch.numRows, rightBatch.numRows)
+      val rightMap = LazySpillableGatherMap.rightCross(leftBatch.numRows, rightBatch.numRows)
 
-    // Cross joins do not need to worry about bounds checking because the gather maps
-    // are generated using mod and div based on the number of rows on the left and
-    // right, so we specify here `DONT_CHECK` for all.
-    val joinGatherer = (leftBatch.numCols, rightBatch.numCols) match {
-      case (_, 0) =>
-        rightBatch.close()
-        rightMap.close()
-        JoinGatherer(leftMap, leftBatch, OutOfBoundsPolicy.DONT_CHECK)
-      case (0, _) =>
-        leftBatch.close()
-        leftMap.close()
-        JoinGatherer(rightMap, rightBatch, OutOfBoundsPolicy.DONT_CHECK)
-      case (_, _) =>
-        JoinGatherer(leftMap, leftBatch, rightMap, rightBatch,
-          OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.DONT_CHECK)
-    }
-    if (joinGatherer.isDone) {
-      joinGatherer.close()
-      None
-    } else {
-      Some(joinGatherer)
+      // Cross joins do not need to worry about bounds checking because the gather maps
+      // are generated using mod and div based on the number of rows on the left and
+      // right, so we specify here `DONT_CHECK` for all.
+      val joinGatherer = (leftBatch.numCols, rightBatch.numCols) match {
+        case (_, 0) =>
+          rightBatch.close()
+          rightMap.close()
+          JoinGatherer(leftMap, leftBatch, OutOfBoundsPolicy.DONT_CHECK)
+        case (0, _) =>
+          leftBatch.close()
+          leftMap.close()
+          JoinGatherer(rightMap, rightBatch, OutOfBoundsPolicy.DONT_CHECK)
+        case (_, _) =>
+          JoinGatherer(leftMap, leftBatch, rightMap, rightBatch,
+            OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.DONT_CHECK)
+      }
+      if (joinGatherer.isDone) {
+        joinGatherer.close()
+        None
+      } else {
+        Some(joinGatherer)
+      }
     }
   }
 }

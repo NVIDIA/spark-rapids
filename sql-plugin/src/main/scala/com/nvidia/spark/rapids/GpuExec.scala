@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -156,6 +156,15 @@ sealed abstract class GpuMetric extends Serializable {
   def set(v: Long): Unit
   def +=(v: Long): Unit
   def add(v: Long): Unit
+
+  def ns[T](f: => T): T = {
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      add(System.nanoTime() - start)
+    }
+  }
 }
 
 object NoopMetric extends GpuMetric {
