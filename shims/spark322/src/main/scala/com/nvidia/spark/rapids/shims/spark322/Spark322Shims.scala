@@ -37,4 +37,6 @@ class Spark322Shims extends Spark322PlusShims with Spark30Xuntil33XShims {
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
+
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 }

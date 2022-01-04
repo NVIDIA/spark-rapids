@@ -917,7 +917,6 @@ object GpuCast extends Arm {
     // 4. Now cast newDt to dt (Decimal to Decimal)
     def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
       if (dt.precision + 1 > DecimalType.MAX_PRECISION) {
-        //We don't support Decimal 128
         throw new IllegalArgumentException("One or more values exceed the maximum supported " +
             "Decimal precision while conversion")
       }
