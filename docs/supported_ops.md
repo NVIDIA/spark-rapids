@@ -16771,12 +16771,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>the array's child type must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>The array's child type must also support being cast to the desired child type(s);<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17175,12 +17175,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>the array's child type must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>The array's child type must also support being cast to the desired child type(s);<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
