@@ -1458,7 +1458,6 @@ class ParquetPartitionReader(
   with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
-  private var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -1471,14 +1470,12 @@ class ParquetPartitionReader(
         batch = readBatch()
       }
     }
-    if (isFirstBatch) {
-      if (batch.isEmpty) {
-        // This is odd, but some operators return data even when there is no input so we need to
-        // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      }
-      isFirstBatch = false
-    }
+
+    // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
+    // We are not acquiring the semaphore here since this next() is getting called from
+    // the `PartitionReaderIterator` which implements a standard iterator pattern, and
+    // advertises `hasNext` as false when we return false here (no downstream tasks should
+    // consume this empty batch)
     batch.isDefined
   }
 

@@ -308,7 +308,6 @@ abstract class MultiFileCloudPartitionReaderBase(
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
   private var isInitted = false
-  private var isFirstBatch = true
   private val tasks = new ConcurrentLinkedQueue[Future[HostMemoryBuffersWithMetaDataBase]]()
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
@@ -426,15 +425,11 @@ abstract class MultiFileCloudPartitionReaderBase(
       next()
     }
 
-    if (isFirstBatch) {
-      if (batch.isEmpty) {
-        // This is odd, but some operators return data even when there is no input so we need to
-        // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      }
-      isFirstBatch = false
-    }
-
+    // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
+    // We are not acquiring the semaphore here since this next() is getting called from
+    // the `PartitionReaderIterator` which implements a standard iterator pattern, and
+    // advertises `hasNext` as false when we return false here (no downstream tasks should
+    // consume this empty batch)
     batch.isDefined
   }
 
@@ -564,7 +559,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
-  private[this] var isFirstBatch = true
 
   private case class CurrentChunkMeta(
     clippedSchema: SchemaBase,
@@ -709,15 +703,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       }
     }
 
-    if (isFirstBatch) {
-      if (batch.isEmpty) {
-        // This is odd, but some operators return data even when there is no input so we need to
-        // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      }
-      isFirstBatch = false
-    }
-
+    // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
+    // We are not acquiring the semaphore here since this next() is getting called from
+    // the `PartitionReaderIterator` which implements a standard iterator pattern, and
+    // advertises `hasNext` as false when we return false here (no downstream tasks should
+    // consume this empty batch)
     batch.isDefined
   }
 
