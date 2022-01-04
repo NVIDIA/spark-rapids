@@ -22,16 +22,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.FullOuter
-import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuShuffledHashJoinBase(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    val isSkewJoin: Boolean,
-    cpuLeftKeys: Seq[Expression],
-    cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin {
+    val isSkewJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
@@ -43,9 +40,6 @@ abstract class GpuShuffledHashJoinBase(
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
-
-  override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(cpuLeftKeys) :: HashClusteredDistribution(cpuRightKeys) :: Nil
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException(

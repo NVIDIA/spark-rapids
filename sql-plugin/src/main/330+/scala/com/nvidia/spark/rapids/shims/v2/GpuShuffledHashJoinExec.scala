@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
@@ -30,7 +31,7 @@ object GpuJoinUtils {
     buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
+      case unknownBuildSide => throw new Exception(s"unknown buildSide Type: $unknownBuildSide")
     }
   }
 }
@@ -90,9 +91,10 @@ case class GpuShuffledHashJoinExec(
   extends GpuShuffledHashJoinBase(
     buildSide,
     condition,
-    isSkewJoin = isSkewJoin,
-    cpuLeftKeys,
-    cpuRightKeys) {
+    isSkewJoin = isSkewJoin) {
 
-  override def otherCopyArgs: Seq[AnyRef] = cpuLeftKeys :: cpuRightKeys :: Nil
+  override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys)
+
+  override def requiredChildDistribution: Seq[Distribution] =
+    Seq(ClusteredDistribution(cpuLeftKeys), ClusteredDistribution(cpuRightKeys))
 }
