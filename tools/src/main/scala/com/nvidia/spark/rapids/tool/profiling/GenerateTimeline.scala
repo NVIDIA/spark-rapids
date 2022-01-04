@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -165,10 +165,10 @@ object GenerateTimeline {
       yStart: Long,
       minStart: Long,
       fileWriter: ToolTextFileWriter): Unit = {
-    val x = xStart + (startTime - minStart)/MS_PER_PIXEL
-    val y = (slot * TASK_HEIGHT) + yStart + TASK_HEIGHT/2
-    val width = (endTime - startTime)/MS_PER_PIXEL
-    val height = TASK_HEIGHT/2
+    val x = xStart + (startTime - minStart) / MS_PER_PIXEL
+    val y = (slot * TASK_HEIGHT) + yStart + TASK_HEIGHT / 2
+    val width = (endTime - startTime) / MS_PER_PIXEL
+    val height = TASK_HEIGHT / 2
     fileWriter.write(
       s"""<rect x="$x" y="$y" width="$width" height="$height"
          | style="fill:$color;fill-opacity:1;stroke:gray;stroke-width:0.5"/>
@@ -187,9 +187,9 @@ object GenerateTimeline {
       subMarks: Seq[(String, Long)] = Seq.empty): Unit = {
     val startTime = timing.startTime
     val endTime = timing.endTime
-    val x = xStart + (startTime - minStart)/MS_PER_PIXEL
+    val x = xStart + (startTime - minStart) / MS_PER_PIXEL
     val y = (slot * TASK_HEIGHT) + yStart
-    val width = (endTime - startTime)/MS_PER_PIXEL
+    val width = (endTime - startTime) / MS_PER_PIXEL
     fileWriter.write(
       s"""<rect x="$x" y="$y" width="$width" height="$TASK_HEIGHT"
          | style="fill:$color;fill-opacity:1.0;stroke:#00ff00;stroke-width:1"/>
@@ -207,7 +207,7 @@ object GenerateTimeline {
           fileWriter)
         subStart = subStart + subTimeLength
     }
-    textBoxVirtCentered(text, x, y + TASK_HEIGHT/2, fileWriter)
+    textBoxVirtCentered(text, x, y + TASK_HEIGHT / 2, fileWriter)
   }
 
   private def scaleWithLines(x: Long,
@@ -217,14 +217,14 @@ object GenerateTimeline {
       height: Long,
       fileWriter: ToolTextFileWriter): Unit = {
     val timeRange = maxFinish - minStart
-    val xEnd = x + timeRange/MS_PER_PIXEL
+    val xEnd = x + timeRange / MS_PER_PIXEL
     val yEnd = y + height
     fileWriter.write(
       s"""<line x1="$x" y1="$yEnd" x2="$xEnd" y2="$yEnd" style="stroke:black;stroke-width:1"/>
          |<line x1="$x" y1="$y" x2="$xEnd" y2="$y" style="stroke:black;stroke-width:1"/>
          |""".stripMargin)
     (0L until timeRange).by(100L).foreach { timeForTick =>
-      val xTick = timeForTick/MS_PER_PIXEL + x
+      val xTick = timeForTick / MS_PER_PIXEL + x
       fileWriter.write(
         s"""<line x1="$xTick" y1="$y" x2="$xTick" y2="$yEnd"
            | style="stroke:black;stroke-width:1;opacity:0.5"/>
