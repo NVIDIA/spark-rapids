@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -189,7 +189,7 @@ echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 export MVN_BASE_DIR=$(mvn help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 
 function build_single_shim() {
-  set -x
+  set -ex
   BUILD_VER=$1
   mkdir -p "$MVN_BASE_DIR/target"
   (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )) && LOG_FILE="/dev/tty" || \
@@ -210,6 +210,23 @@ function build_single_shim() {
     SKIP_CHECKS="true"
     MVN_PHASE="package"
   fi
+
+  echo "#### REDIRECTING mvn output to $LOG_FILE ####"
+  # Compile and install udf-compiler, otherwise will pull from Maven repository.
+  # If not, the first build all will fail because of remote repository does not have udf-compiler jar.
+  # And should not pull from remote to avoid the inconsistent code of different sub-modules.
+  # This will compile and install the corresponded shim dependency also.
+  mvn -U "install" \
+      -DskipTests \
+      -Dbuildver="$BUILD_VER" \
+      -Drat.skip="$SKIP_CHECKS" \
+      -Dmaven.javadoc.skip="$SKIP_CHECKS" \
+      -Dskip="$SKIP_CHECKS" \
+      -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
+      -pl udf-compiler -am > "$LOG_FILE" 2>&1 || {
+        [[ "$LOG_FILE" != "/dev/tty" ]] && tail -20 "$LOG_FILE" || true
+        exit 255
+      }
 
   echo "#### REDIRECTING mvn output to $LOG_FILE ####"
   mvn -U "$MVN_PHASE" \
