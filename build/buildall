@@ -132,6 +132,7 @@ case $DIST_PROFILE in
       313
       320
       321
+      322
       330
     )
     ;;

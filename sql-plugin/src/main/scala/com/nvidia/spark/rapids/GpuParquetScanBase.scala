@@ -341,11 +341,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
-      val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
-        footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
         pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
-        isCaseSensitive, datetimeRebaseMode)
+        isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
     } else {
       None
