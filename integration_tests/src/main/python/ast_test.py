@@ -42,6 +42,7 @@ ast_comparable_descrs = [
     (float_gen, False),
     (double_gen, False),
     (timestamp_gen, True),
+    (date_gen, True),
     (string_gen, False)
 ]
 
@@ -69,7 +70,7 @@ def assert_binary_ast(data_descr, func, conf={}):
     (data_gen, is_supported) = data_descr
     assert_gpu_ast(is_supported, lambda spark: func(binary_op_df(spark, data_gen)), conf=conf)
 
-@pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen, date_gen], ids=idfn)
 def test_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
@@ -78,7 +79,7 @@ def test_literal(spark_tmp_path, data_gen):
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(scalar))
 
-@pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen, date_gen], ids=idfn)
 def test_null_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'

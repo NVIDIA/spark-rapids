@@ -25,8 +25,8 @@ import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** TypeSigUtil for different spark versions */
-trait TypeSigUtil {
+/** Trait of TypeSigUtil for different spark versions */
+trait TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
@@ -682,7 +682,7 @@ object TypeSig {
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
   /** All types that can appear in AST expressions */
-  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP
+  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP + DATE
 
   /** All AST types that work for comparisons */
   val comparisonAstTypes: TypeSig = astTypes - fp
@@ -1270,10 +1270,11 @@ class CastChecks extends ExprChecks {
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = STRING + ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
+  val arrayChecks: TypeSig = psNote(TypeEnum.STRING, "the array's child type must also support " +
+    "being cast to string") + ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
       ARRAY + BINARY + STRUCT + MAP) +
-      psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
-          "the desired child type")
+      psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to the " +
+          "desired child type(s)")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
