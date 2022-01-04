@@ -343,7 +343,7 @@ This displays several data sections.
    and the shuffle read time as reported by Spark. The shuffle time works for both CPU and GPU
    tasks, but "buffer time" only is reported for GPU accelerated file reads.
    3. Red is the semaphore wait time. This is the amount of time a task spent waiting to get access
-   to the GPU. This only shows p on GPU tasks when DEBUG metrics are enabled. It does not apply to
+   to the GPU. This only shows up on GPU tasks when DEBUG metrics are enabled. It does not apply to
    CPU tasks, as they don't go through the Semaphore.
    4. Green is the "op time" SQL metric along with a few other metrics that also indicate the amount
    of time the GPU was being used to process data. This is GPU specific.
