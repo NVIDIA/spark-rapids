@@ -124,8 +124,8 @@ final class CastExprMeta[INPUT <: CastBase](
           case (fromChild, toChild) =>
             recursiveTagExprForGpuCheck(fromChild.dataType, toChild.dataType, depth + 1)
         }
-      case (ArrayType(element_type, _), StringType) =>
-        recursiveTagExprForGpuCheck(element_type, StringType, depth + 1)
+      case (ArrayType(elementType, _), StringType) =>
+        recursiveTagExprForGpuCheck(elementType, StringType, depth + 1)
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         recursiveTagExprForGpuCheck(nestedFrom, nestedTo, depth + 1)
