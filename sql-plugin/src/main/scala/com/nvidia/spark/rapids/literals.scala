@@ -673,6 +673,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       case TimestampType =>
         ast.Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
           value.asInstanceOf[java.lang.Long])
+      case DateType => ast.Literal.ofTimestampDaysFromInt(value.asInstanceOf[java.lang.Integer])
       case _ => throw new IllegalStateException(s"$dataType is an unsupported literal type")
     }
   }
