@@ -94,6 +94,13 @@ class RegularExpressionParserSuite extends FunSuite {
           ListBuffer(RegexChar('a'))), RegexChar(']'))))
   }
 
+  test("unclosed character class") {
+    val e = intercept[RegexUnsupportedException] {
+      parse("[ab")
+    }
+    assert(e.getMessage === "Unclosed character class near index 3")
+  }
+
   test("hex digit") {
     assert(parse(raw"\xFF") ===
       RegexSequence(ListBuffer(RegexHexDigit("FF"))))
