@@ -1774,7 +1774,7 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -1795,7 +1795,7 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -2664,7 +2664,7 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -5183,7 +5183,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -5204,7 +5204,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6028,7 +6028,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6049,7 +6049,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6186,7 +6186,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6207,7 +6207,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -7509,7 +7509,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -7530,7 +7530,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -7641,7 +7641,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -7662,7 +7662,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -7825,7 +7825,7 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -10117,6 +10117,53 @@ are limited.
 <th>MAP</th>
 <th>STRUCT</th>
 <th>UDT</th>
+</tr>
+<tr>
+<td rowSpan="2">ReplicateRows</td>
+<td rowSpan="2"> </td>
+<td rowSpan="2">Given an input row replicates the row N times</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="4">Rint</td>
@@ -16724,12 +16771,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>the array's child type must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>The array's child type must also support being cast to the desired child type(s);<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17128,12 +17175,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>the array's child type must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>The array's child type must also support being cast to the desired child type(s);<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

@@ -75,9 +75,9 @@ New functionality and performance improvements for this release include:
 * regexp_replace supports more patterns such as replacing null
 * ParquetCachedBatchSerializer supports map
 * Add function explainPotentialGpuPlan to print GPU query plan in a CPU Spark cluster
-* Spark Qualification Tool
+* Qualification Tool
   * Detect RDD APIs and JDBC Scan
-* Spark Profiling Tool
+* Profiling Tool
   * Catch OOM errors and log a hint to increase java heap size
   * Print potential problems
 
@@ -129,13 +129,13 @@ New functionality and performance improvements for this release include:
 * Parquet writing of map
 * ORC reader supports reading map/struct columns
 * ORC reader support decimal64 
-* Spark Qualification Tool
+* Qualification Tool
   * Add conjunction and disjunction filters
   * Filtering specific configuration values
   * Filtering user name
   * Reporting nested data types
   * Reporting write data formats
-* Spark Profiling Tool
+* Profiling Tool
   * Generating structured output format
   * Improved profiling tool performance
 

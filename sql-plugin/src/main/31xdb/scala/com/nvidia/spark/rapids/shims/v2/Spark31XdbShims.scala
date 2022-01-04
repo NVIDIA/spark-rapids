@@ -627,7 +627,9 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 

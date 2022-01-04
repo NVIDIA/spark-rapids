@@ -41,7 +41,7 @@ class ParquetRecordMaterializer(
     parquetSchema,
     catalystSchema,
     convertTz,
-    datetimeRebaseMode,
+    datetimeRebaseMode, // always LegacyBehaviorPolicy.CORRECTED
     LegacyBehaviorPolicy.EXCEPTION,
     false,
     NoopUpdater)

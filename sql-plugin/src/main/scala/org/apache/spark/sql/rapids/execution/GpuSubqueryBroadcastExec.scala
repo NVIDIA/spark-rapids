@@ -26,7 +26,8 @@ import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BoundReference, Cast, Expression, NamedExpression, UnsafeProjection}
+import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution}
 import org.apache.spark.util.ThreadUtils
 
@@ -37,9 +38,31 @@ case class GpuSubqueryBroadcastExec(
     buildKeys: Seq[Expression],
     child: SparkPlan) extends BaseSubqueryExec with GpuExec with ShimUnaryExecNode {
 
+  // As `SubqueryBroadcastExec`, `GpuSubqueryBroadcastExec` is only used with `InSubqueryExec`.
+  // No one would reference this output, so the exprId doesn't matter here. But it's important to
+  // correctly report the output length, so that `InSubqueryExec` can know it's the single-column
+  // execution mode, not multi-column.
+  override def output: Seq[Attribute] = {
+    val key = buildKeys(index)
+    val name = key match {
+      case n: NamedExpression =>
+        n.name
+      case cast: Cast if cast.child.isInstanceOf[NamedExpression] =>
+        cast.child.asInstanceOf[NamedExpression].name
+      case _ =>
+        "key"
+    }
+    Seq(AttributeReference(name, key.dataType, key.nullable)())
+  }
+
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME))
+
+  override def doCanonicalize(): SparkPlan = {
+    val keys = buildKeys.map(k => QueryPlan.normalizeExpressions(k, child.output))
+    GpuSubqueryBroadcastExec("dpp", index, keys, child.canonicalized)
+  }
 
   @transient
   private lazy val relationFuture: Future[Array[InternalRow]] = {
@@ -52,17 +75,25 @@ case class GpuSubqueryBroadcastExec(
       SQLExecution.withExecutionId(sparkSession, executionId) {
         val beforeCollect = System.nanoTime()
 
-        val batchBc = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
+        val serBatch = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-        val toUnsafe = UnsafeProjection.create(output, output)
-        val result = withResource(batchBc.value.hostBatches) { hostBatches =>
+        // Creates projection to extract target field from Row, as what Spark does.
+        val rowProject = {
+          val extractKey = BoundReference(
+            index, buildKeys(index).dataType, buildKeys(index).nullable)
+          UnsafeProjection.create(extractKey)
+        }
+
+        // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
+        // projection. We should NOT run any device operation on the driver node.
+        val result = withResource(serBatch.value.hostBatches) { hostBatches =>
           hostBatches.flatMap { cb =>
             cb.rowIterator().asScala
-              .map(toUnsafe(_).copy().asInstanceOf[InternalRow])
+              .map(rowProject(_).copy().asInstanceOf[InternalRow])
           }
         }
 
-        gpuLongMetric("dataSize") += batchBc.value.dataSize
+        gpuLongMetric("dataSize") += serBatch.value.dataSize
         gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
 
         result
