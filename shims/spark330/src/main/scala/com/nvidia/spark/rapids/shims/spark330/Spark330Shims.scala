@@ -21,4 +21,6 @@ import com.nvidia.spark.rapids.shims.v2._
 
 class Spark330Shims extends Spark33XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 }
