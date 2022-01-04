@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.types.StructType
 
-class Spark321Shims extends Spark32XShims with Spark30Xuntil33XShims {
+class Spark321Shims extends Spark320until322Shims with Spark30Xuntil33XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getFileScanRDD(

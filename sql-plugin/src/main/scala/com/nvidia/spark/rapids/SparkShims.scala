@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,6 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.sources.BaseRelation
@@ -109,7 +108,8 @@ trait SparkShims {
     pushDownStartWith: Boolean,
     pushDownInFilterThreshold: Int,
     caseSensitive: Boolean,
-    datetimeRebaseMode: LegacyBehaviorPolicy.Value): ParquetFilters
+    lookupFileMeta: String => String,
+    dateTimeRebaseModeFromConf: String): ParquetFilters
 
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
