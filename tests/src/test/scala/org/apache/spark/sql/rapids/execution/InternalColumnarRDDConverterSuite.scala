@@ -57,6 +57,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
           }
           assert(input.getSeq[Byte](1) sameElements output.getBinary(1))
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
@@ -118,6 +119,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
             }
           }
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
@@ -143,6 +145,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
           }
           assert(input.getString(1) == output.getString(1))
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
@@ -169,6 +172,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
           }
           assert(input.getByte(1) == output.getByte(1))
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
@@ -194,6 +198,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
           }
           assert(input.getSeq(1) sameElements output.getArray(1).toDoubleArray())
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
@@ -221,6 +226,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
           }
           compareMapAndMapDate(input.getMap(1), output.getMap(1))
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
@@ -269,6 +275,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
             }
           }
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }
