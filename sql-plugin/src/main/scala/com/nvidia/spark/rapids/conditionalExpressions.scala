@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -98,12 +98,23 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     }
   }
 
+  /**
+   * Invert boolean values and convert null values to true
+   */
+  def boolInverted(cv: ColumnVector): ColumnVector = {
+    withResource(GpuScalar.from(true, DataTypes.BooleanType)) { t =>
+      withResource(GpuScalar.from(false, DataTypes.BooleanType)) { f =>
+        cv.ifElse(f, t)
+      }
+    }
+  }
+
   protected def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
     // convert the predicate boolean column to numeric where 1 = true
-    // amd 0 = false and then use `scan` with `sum` to convert to
+    // and 0 (or null) = false and then use `scan` with `sum` to convert to
     // indices.
     //
-    // For example, if the predicate evaluates to [F, F, T, F, T] then this
+    // For example, if the predicate evaluates to [F, null, T, F, T] then this
     // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
     // will perform an exclusive sum on these values and
     // produce [0, 0, 0, 1, 1]. Combining this with the original
@@ -352,7 +363,8 @@ case class GpuCaseWhen(
                   // been true then we can return immediately
                   return GpuExpressionsUtils.columnarEvalToColumn(thenExpr, batch)
                 }
-                val thenValues = filterEvaluateWhenThen(colTypes, tbl, firstTrueWhen, thenExpr)
+                val thenValues = filterEvaluateWhenThen(colTypes, tbl, firstTrueWhen.getBase,
+                  thenExpr)
                 withResource(thenValues) { _ =>
                   currentValue = Some(calcCurrentValue(currentValue, firstTrueWhen, thenValues))
                 }
@@ -368,37 +380,31 @@ case class GpuCaseWhen(
         }
 
         // invert the cumulative predicate to get the ELSE predicate
-        withResource(cumulativePred.get.getBase.not()) { elsePredicate =>
-          // replace null predicates with true (because this is an inverted predicate)
-          val elsePredNoNulls = withResource(Scalar.fromBool(true)) { t =>
-            GpuColumnVector.from(elsePredicate.replaceNulls(t), DataTypes.BooleanType)
-          }
-          withResource(elsePredNoNulls) { _ =>
-            elseValue match {
-              case Some(expr) =>
-                if (isAllFalse(cumulativePred.get)) {
-                  GpuExpressionsUtils.columnarEvalToColumn(expr, batch)
-                } else {
-                  val elseValues = filterEvaluateWhenThen(colTypes, tbl, elsePredNoNulls, expr)
-                  withResource(elseValues) { _ =>
-                    GpuColumnVector.from(elsePredNoNulls.getBase.ifElse(
-                      elseValues, currentValue.get.getBase), dataType)
-                  }
+        withResource(boolInverted(cumulativePred.get.getBase)) { elsePredNoNulls =>
+          elseValue match {
+            case Some(expr) =>
+              if (isAllFalse(cumulativePred.get)) {
+                GpuExpressionsUtils.columnarEvalToColumn(expr, batch)
+              } else {
+                val elseValues = filterEvaluateWhenThen(colTypes, tbl, elsePredNoNulls, expr)
+                withResource(elseValues) { _ =>
+                  GpuColumnVector.from(elsePredNoNulls.ifElse(
+                    elseValues, currentValue.get.getBase), dataType)
                 }
+              }
 
-              case None =>
-                // if there is no ELSE condition then we return NULL for any rows not matched by
-                // previous branches
-                withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-                  if (isAllFalse(cumulativePred.get)) {
-                    GpuColumnVector.from(nullScalar, elsePredNoNulls.getRowCount.toInt, dataType)
-                  } else {
-                    GpuColumnVector.from(
-                      elsePredNoNulls.getBase.ifElse(nullScalar, currentValue.get.getBase),
-                        dataType)
-                  }
+            case None =>
+              // if there is no ELSE condition then we return NULL for any rows not matched by
+              // previous branches
+              withResource(GpuScalar.from(null, dataType)) { nullScalar =>
+                if (isAllFalse(cumulativePred.get)) {
+                  GpuColumnVector.from(nullScalar, elsePredNoNulls.getRowCount.toInt, dataType)
+                } else {
+                  GpuColumnVector.from(
+                    elsePredNoNulls.ifElse(nullScalar, currentValue.get.getBase),
+                      dataType)
                 }
-            }
+              }
           }
         }
       }
@@ -415,14 +421,14 @@ case class GpuCaseWhen(
   private def filterEvaluateWhenThen(
       colTypes: Array[DataType],
       tbl: Table,
-      whenBool: GpuColumnVector,
+      whenBool: ColumnVector,
       thenExpr: Expression): ColumnVector = {
-    val filteredBatch = filterBatch(tbl, whenBool.getBase, colTypes)
+    val filteredBatch = filterBatch(tbl, whenBool, colTypes)
     val thenValues = withResource(filteredBatch) { trueBatch =>
       GpuExpressionsUtils.columnarEvalToColumn(thenExpr, trueBatch)
     }
     withResource(thenValues) { _ =>
-      gather(whenBool.getBase, thenValues)
+      gather(whenBool, thenValues)
     }
   }
 
