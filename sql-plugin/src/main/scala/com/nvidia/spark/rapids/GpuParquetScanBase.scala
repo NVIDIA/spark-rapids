@@ -795,7 +795,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       field => {
         if (field.isPrimitive) {
           val t = field.getOriginalType
-          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) || (t == OriginalType.UINT_32)
+          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) ||
+            (t == OriginalType.UINT_32) || (t == OriginalType.UINT_64)
         } else {
           existsUnsignedType(field.asGroupType)
         }
@@ -804,7 +805,12 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
-    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType())
+    // UINT64 is casted to Decimal(20,0) by Spark to accommodate
+    // the largest possible values this type can take. Other Unsigned data types are converted to
+    // basic types like LongType, this is analogous to that except we spill over to large
+    // decimal/ints.
+    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()) ||
+      cv.getType.equals(DType.UINT64)
   }
 
   def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {

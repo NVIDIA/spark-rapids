@@ -824,9 +824,9 @@ object GpuOverrides extends Logging {
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.atomics)),
     (ParquetFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.ARRAY +
-          TypeSig.MAP).nested(),
-      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT +
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT +
+        TypeSig.ARRAY + TypeSig.MAP).nested(),
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
@@ -3480,7 +3480,7 @@ object GpuOverrides extends Logging {
     exec[DataWritingCommandExec](
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL.withPsNote(
-          TypeEnum.DECIMAL, "128bit decimal only supported for Orc") +
+          TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
           TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
           TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
           TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
