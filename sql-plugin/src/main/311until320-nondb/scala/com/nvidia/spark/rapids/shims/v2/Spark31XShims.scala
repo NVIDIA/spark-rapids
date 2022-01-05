@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -554,6 +554,8 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
     SQLConf.get.legacyStatisticalAggregate
 
   override def hasCastFloatTimestampUpcast: Boolean = false
+
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 
   override def supportsColumnarAdaptivePlans: Boolean = false
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +14,11 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from functools import reduce
-from spark_session import is_before_spark_311, is_before_spark_320
+from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
-from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
 
 def test_cast_empty_string_to_int():
     assert_gpu_and_cpu_are_equal_collect(
@@ -167,14 +165,12 @@ def test_cast_long_to_decimal_overflow():
             f.col('a').cast(DecimalType(18, -1))),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
-
-
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, null_gen, timestamp_gen] + decimal_gens_no_neg
 # casting these types to string is not exact match, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [float_gen, double_gen, decimal_gen_neg_scale]
 # casting these types to string is not supported, marked as xfail when testing
-not_support_gens_for_cast_to_string = decimal_128_gens + [MapGen(ByteGen(False), ByteGen())]
+not_support_gens_for_cast_to_string = [MapGen(ByteGen(False), ByteGen())]
 
 single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
 nested_array_gens_for_cast_to_string = [
@@ -305,3 +301,8 @@ def test_cast_struct_with_unsupported_element_to_string_fallback(data_gen, legac
          "spark.sql.legacy.allowNegativeScaleOfDecimal": 'true'}
     )
     
+@pytest.mark.skipif(not is_before_spark_311() and is_before_spark_330(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
+def test_cast_string_to_negative_scale_decimal():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
+            f.col('a').cast(DecimalType(8, -3))), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
