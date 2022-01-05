@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -3598,6 +3598,10 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT),
         TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
+    exec[BroadcastHashJoinExec](
+      "Implementation of join using broadcast data",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force. Full outer joins and joins where the " +
           "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
@@ -3657,6 +3661,10 @@ object GpuOverrides extends Logging {
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
+    exec[ShuffledHashJoinExec](
+      "Implementation of join using hashed shuffled data",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
@@ -3678,6 +3686,10 @@ object GpuOverrides extends Logging {
       ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + 
           TypeSig.STRUCT +TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+    exec[SortMergeJoinExec](
+      "Sort merge join, replacing with shuffled hash join",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(

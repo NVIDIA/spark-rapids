@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.v2
+package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.{GpuJoinUtils, ShimBinaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Dist
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastHelper, GpuHashJoin, JoinTypeChecks}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -43,6 +43,7 @@ class GpuBroadcastHashJoinMeta(
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val buildSide: GpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
@@ -52,33 +53,33 @@ class GpuBroadcastHashJoinMeta(
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
     val Seq(leftChild, rightChild) = childPlans
-    val buildSide = join.buildSide match {
-      case BuildLeft => leftChild
-      case BuildRight => rightChild
+    val buildSideMeta = buildSide match {
+      case GpuBuildLeft => leftChild
+      case GpuBuildRight => rightChild
     }
 
-    if (!canBuildSideBeReplaced(buildSide)) {
+    if (!canBuildSideBeReplaced(buildSideMeta)) {
       willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
     }
 
     if (!canThisBeReplaced) {
-      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+      buildSideMeta.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
     }
   }
 
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     // The broadcast part of this must be a BroadcastExchangeExec
-    val buildSide = join.buildSide match {
-      case BuildLeft => left
-      case BuildRight => right
+    val buildSideMeta = buildSide match {
+      case GpuBuildLeft => left
+      case GpuBuildRight => right
     }
-    verifyBuildSideWasReplaced(buildSide)
+    verifyBuildSideWasReplaced(buildSideMeta)
     val joinExec = GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
-      GpuJoinUtils.getGpuBuildSide(join.buildSide),
+      buildSide,
       None,
       left, right)
     // The GPU does not yet support conditional joins, so conditions are implemented
@@ -124,9 +125,10 @@ case class GpuBroadcastHashJoinExec(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
-    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExec) => gpu
-    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-      reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
+      bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
+      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }

@@ -124,6 +124,18 @@ object GpuHashJoin extends Arm {
     }
   }
 
+  /** Determine if this type of join supports using the right side of the join as the build side. */
+  def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
+    case _ => false
+  }
+
+  /** Determine if this type of join supports using the left side of the join as the build side. */
+  def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | RightOuter | FullOuter => true
+    case _ => false
+  }
+
   def extractTopLevelAttributes(
       exprs: Seq[Expression],
       includeAlias: Boolean): Seq[Option[Attribute]] =
