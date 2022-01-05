@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -219,7 +219,7 @@ class HashJoinIterator(
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
-    private val opTime: GpuMetric,
+    opTime: GpuMetric,
     private val joinTime: GpuMetric)
     extends SplittableJoinIterator(
       s"hash $joinType gather",

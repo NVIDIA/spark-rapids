@@ -336,6 +336,13 @@ def test_re_replace():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
+                'REGEXP_REPLACE(a, "^TEST", "PROD")',
+                'REGEXP_REPLACE(a, "^TEST$", "PROD")',
+                'REGEXP_REPLACE(a, "TEST$", "PROD")',
+                'REGEXP_REPLACE(a, "$TEST", "PROD")',
+                'REGEXP_REPLACE(a, "TEST\\$", "PROD")',
+                'REGEXP_REPLACE(a, "\\^TEST$", "PROD")',
+                'REGEXP_REPLACE(a, "\\^TEST\\$", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
                 'REGEXP_REPLACE(a, "TEST", NULL)'),

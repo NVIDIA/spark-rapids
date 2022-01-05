@@ -309,6 +309,7 @@ case class OrcPartitionReaderContext(
 
 /** Collections of some common functions for ORC */
 trait OrcCommonFunctions extends OrcCodecWritingHelper {
+  def execMetrics: Map[String, GpuMetric]
 
   /** Copy the stripe to the channel */
   protected def copyStripeData(
@@ -317,7 +318,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
       inputDataRanges: DiskRangeList): Unit = {
 
     withResource(OrcTools.buildDataReader(ctx)) { dataReader =>
+      val start = System.nanoTime()
       val bufferChunks = dataReader.readFileData(inputDataRanges, 0, false)
+      val mid = System.nanoTime()
       var current = bufferChunks
       while (current != null) {
         out.write(current.getData)
@@ -326,6 +329,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
         }
         current = current.next
       }
+      val end = System.nanoTime()
+      execMetrics.get(READ_FS_TIME).foreach(_.add(mid - start))
+      execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(end - mid))
     }
   }
 
@@ -602,7 +608,7 @@ class GpuOrcPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics : Map[String, GpuMetric],
+    override val execMetrics : Map[String, GpuMetric],
     isCaseSensitive: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
   private[this] var isFirstBatch = true
@@ -1320,7 +1326,7 @@ class MultiFileCloudOrcPartitionReader(
     debugDumpPrefix: String,
     filters: Array[Filter],
     filterHandler: GpuOrcFileFilterHandler,
-    execMetrics: Map[String, GpuMetric])
+    override val execMetrics: Map[String, GpuMetric])
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics) with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
@@ -1642,7 +1648,7 @@ class MultiFileOrcPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     isCaseSensitive: Boolean)
