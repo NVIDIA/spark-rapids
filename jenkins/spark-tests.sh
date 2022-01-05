@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -258,6 +258,8 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
       PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
                     awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2 * 1024))}')
     fi
+    # parallelism > 8 could slow down the whole process, so we have a limitation for it
+    [[ ${PARALLELISM} -gt 8 ]] && PARALLELISM=8
     MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
     --conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"

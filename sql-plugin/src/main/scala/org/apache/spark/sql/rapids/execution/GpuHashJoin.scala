@@ -231,7 +231,7 @@ class HashJoinIterator(
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
-    private val opTime: GpuMetric,
+    opTime: GpuMetric,
     private val joinTime: GpuMetric)
     extends SplittableJoinIterator(
       s"hash $joinType gather",
