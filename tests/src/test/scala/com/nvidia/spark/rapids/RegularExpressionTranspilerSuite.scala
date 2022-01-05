@@ -138,13 +138,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchors - replace") {
-    val patterns = Seq("\\Atest", "test\\z")
+    val patterns = Seq("\\Atest")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
+  // see https://github.com/NVIDIA/spark-rapids/issues/4425
   ignore("unsupported string anchors in replace mode") {
-    val patterns = Seq("test\\Z")
+    val patterns = Seq("test\\z", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
@@ -252,8 +253,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
 
-  //TODO: we can support \\z in replace mode
-  // once https://github.com/NVIDIA/spark-rapids/pull/4155 is merged
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON + "zZ"
 
   private val REGEXP_LIMITED_CHARS_REPLACE = REGEXP_LIMITED_CHARS_COMMON
@@ -352,7 +351,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuContains(cudfPattern, input)
       } catch {
         case e: CudfException =>
-          fail(s"cuDF failed to compile pattern: $cudfPattern", e)
+          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -375,7 +374,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuReplace(cudfPattern, input)
       } catch {
         case e: CudfException =>
-          fail(s"cuDF failed to compile pattern: $cudfPattern", e)
+          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {

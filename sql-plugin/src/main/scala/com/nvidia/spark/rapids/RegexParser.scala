@@ -471,7 +471,10 @@ class CudfRegexTranspiler(replace: Boolean) {
           // differently between Java and cuDF
           throw new RegexUnsupportedException("word boundaries are not supported")
         case 'z' =>
-          // cuDF does not support \z
+          if (replace) {
+            throw new RegexUnsupportedException("string anchor \\z not supported in replace mode")
+          }
+          // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>
           if (replace) {
