@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta, ShimLoader}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
@@ -126,9 +126,8 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
           if (failOnError &&
             (ordinal < 0 || minNumElements < ordinal + 1) &&
             numElementsCV.getRowCount != numElementsCV.getNullCount) {
-            throw new ArrayIndexOutOfBoundsException(
-              s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
-                s"$minNumElements")
+            ShimLoader.getSparkShims
+                .throwIndexOutOfBoundsException(ordinal, minNumElements)
           } else if (!failOnError && ordinal < 0) {
             GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
           } else {

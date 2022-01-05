@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark330
+package org.apache.spark
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
 
-class Spark330Shims extends Spark33XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
-
-  override def throwIndexOutOfBoundsException(
+object RapidsSparkIndexOutOfBoundsException {
+  def throwSparkArrayIndexOutOfBoundsException(
       ordinalValue: Int,
       minNumElements: Int): ColumnVector = {
-    org.apache.spark.RapidsSparkIndexOutOfBoundsException.throww(ordinalValue, minNumElements)
+    throw new org.apache.spark.SparkArrayIndexOutOfBoundsException(
+      "java.lang.ArrayIndexOutOfBoundsException",
+      Array(ordinalValue.toString(), minNumElements.toString()))
   }
 }
