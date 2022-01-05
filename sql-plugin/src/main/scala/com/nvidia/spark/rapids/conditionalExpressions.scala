@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, NullPolicy, Scalar, ScanAggregation, ScanType, Table, UnaryOp}
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
@@ -440,7 +441,16 @@ case class GpuCaseWhen(
     cumulativePred match {
       case Some(prev) =>
         withResource(prev) { _ =>
-          GpuColumnVector.from(whenBool.getBase.or(prev.getBase), DataTypes.BooleanType)
+          val result = withResource(new Table(prev.getBase, whenBool.getBase)) { t =>
+            val or = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_OR,
+              new ast.ColumnReference(0),
+              new ast.ColumnReference(1)
+            )
+            withResource(or.compile()) {
+              _.computeColumn(t)
+            }
+          }
+          GpuColumnVector.from(result, DataTypes.BooleanType)
         }
       case _ =>
         firstTrueWhen.incRefCount()
