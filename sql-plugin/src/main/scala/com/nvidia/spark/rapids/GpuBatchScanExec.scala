@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,12 @@ package com.nvidia.spark.rapids
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
-import scala.math.max
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.io.compress.CompressionCodecFactory
 
-import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -37,8 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read._
-import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
@@ -372,7 +368,6 @@ case class GpuCSVPartitionReaderFactory(
   }
 }
 
-
 class CSVPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -381,38 +376,10 @@ class CSVPartitionReader(
     parsedOptions: CSVOptions,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, GpuMetric])
-  extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
-  import GpuMetric._
-
-  private var batch: Option[ColumnarBatch] = None
-  private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead,
-    conf)
-  private var isFirstChunkForIterator: Boolean = true
-  private var isExhausted: Boolean = false
-  private var isFirstBatch: Boolean = true
-  private var maxDeviceMemory: Long = 0
-
-  metrics = execMetrics
-
-  private lazy val estimatedHostBufferSize: Long = {
-    val rawPath = new Path(partFile.filePath)
-    val fs = rawPath.getFileSystem(conf)
-    val path = fs.makeQualified(rawPath)
-    val fileSize = fs.getFileStatus(path).getLen
-    val codecFactory = new CompressionCodecFactory(conf)
-    val codec = codecFactory.getCodec(path)
-    if (codec != null) {
-      // wild guess that compression is 2X or less
-      partFile.length * 2
-    } else if (partFile.start + partFile.length == fileSize) {
-      // last split doesn't need to read an additional record
-      partFile.length
-    } else {
-      // wild guess for extra space needed for the record after the split end offset
-      partFile.length + 128 * 1024
-    }
-  }
+    execMetrics: Map[String, GpuMetric]) extends
+  GpuTextBasedPartitionReader(conf, partFile, dataSchema, readDataSchema,
+    parsedOptions.lineSeparatorInRead, parsedOptions.headerFlag, maxRowsPerChunk, maxBytesPerChunk,
+    execMetrics) {
 
   def buildCsvOptions(
       parsedOptions: CSVOptions,
@@ -430,142 +397,29 @@ class CSVPartitionReader(
   }
 
   /**
-   * Grows a host buffer, returning a new buffer and closing the original
-   * after copying the data into the new buffer.
-   * @param original the original host memory buffer
+   * Read the host buffer to GPU table
+   *
+   * @param dataBuffer     host buffer to be read
+   * @param dataSize       the size of host buffer
+   * @param cudfSchema     the cudf schema of the data
+   * @param readDataSchema the Spark schema describing what will be read
+   * @param hasHeader      if it has header
+   * @return table
    */
-  private def growHostBuffer(original: HostMemoryBuffer, needed: Long): HostMemoryBuffer = {
-    val newSize = Math.max(original.getLength * 2, needed)
-    closeOnExcept(HostMemoryBuffer.allocate(newSize)) { result =>
-      result.copyFromHostBuffer(0, original, 0, original.getLength)
-      original.close()
-      result
-    }
+  override def readToTable(
+      dataBuffer: HostMemoryBuffer,
+      dataSize: Long, cudfSchema: Schema,
+      readDataSchema: StructType,
+      hasHeader: Boolean): Table = {
+    val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
+    Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
   }
 
-  private def readPartFile(): (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-        metrics("bufferTime"))) { _ =>
-      isFirstChunkForIterator = false
-      val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
-      var succeeded = false
-      var totalSize: Long = 0L
-      var totalRows: Integer = 0
-      var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
-      try {
-        while (lineReader.hasNext
-          && totalRows != maxRowsPerChunk
-          && totalSize <= maxBytesPerChunk /* soft limit and returns at least one row */) {
-          val line = lineReader.next()
-          val lineSize = line.getLength
-          val newTotal = totalSize + lineSize + separator.length
-          if (newTotal > hmb.getLength) {
-            hmb = growHostBuffer(hmb, newTotal)
-          }
-          // Can have an empty line, do not write this to buffer but add the separator
-          // and totalRows
-          if (lineSize != 0) {
-            hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
-          }
-          hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
-          totalRows += 1
-          totalSize = newTotal
-        }
-        //Indicate this is the last chunk
-        isExhausted = !lineReader.hasNext
-        succeeded = true
-      } finally {
-        if (!succeeded) {
-          hmb.close()
-        }
-      }
-      (hmb, totalSize)
-    }
-  }
-
-  private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxRange("CSV readBatch", NvtxColor.GREEN)) { _ =>
-      val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
-      val table = readToTable(hasHeader)
-      try {
-        if (readDataSchema.isEmpty) {
-          table.map(t => new ColumnarBatch(Array.empty, t.getRowCount.toInt))
-        } else {
-          table.map(GpuColumnVector.from(_, readDataSchema.toArray.map(_.dataType)))
-        }
-      } finally {
-        metrics(NUM_OUTPUT_BATCHES) += 1
-        table.foreach(_.close())
-      }
-    }
-  }
-
-  private def readToTable(hasHeader: Boolean): Option[Table] = {
-    val (dataBuffer, dataSize) = readPartFile()
-    try {
-      if (dataSize == 0) {
-        None
-      } else {
-        val newReadDataSchema: StructType = if (readDataSchema.isEmpty) {
-          val smallestField =
-              dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
-          StructType(Seq(smallestField))
-        } else {
-          readDataSchema
-        }
-        val cudfSchema = GpuColumnVector.from(dataSchema)
-        val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
-        // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-
-        // The buffer that is sent down
-        val table = withResource(new NvtxWithMetrics("CSV decode", NvtxColor.DARK_GREEN,
-            metrics(GPU_DECODE_TIME))) { _ =>
-          Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
-        }
-        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
-        val numColumns = table.getNumberOfColumns
-        if (newReadDataSchema.length != numColumns) {
-          table.close()
-          throw new QueryExecutionException(s"Expected ${newReadDataSchema.length} columns " +
-            s"but only read ${table.getNumberOfColumns} from $partFile")
-        }
-        Some(table)
-      }
-    } finally {
-      dataBuffer.close()
-    }
-  }
-
-  override def next(): Boolean = {
-    batch.foreach(_.close())
-    batch = if (isExhausted) {
-      metrics(PEAK_DEVICE_MEMORY).set(maxDeviceMemory)
-      None
-    } else {
-      readBatch()
-    }
-    if (isFirstBatch) {
-      if (batch.isEmpty) {
-        // This is odd, but some operators return data even when there is no input so we need to
-        // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      }
-      isFirstBatch = false
-    }
-    batch.isDefined
-  }
-
-  override def get(): ColumnarBatch = {
-    val ret = batch.getOrElse(throw new NoSuchElementException)
-    batch = None
-    ret
-  }
-
-  override def close(): Unit = {
-    lineReader.close()
-    batch.foreach(_.close())
-    batch = None
-    isExhausted = true
-  }
+  /**
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
+   */
+  override def getFileFormatShortName: String = "CSV"
 }
