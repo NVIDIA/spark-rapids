@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -237,9 +237,8 @@ class GpuSorter(
           batches.foreach { cb =>
             tabs += GpuColumnVector.from(cb)
           }
-          // In the current version of cudf merge does not work for structs or lists (nested types)
+          // In the current version of cudf merge does not work for lists
           // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-          // List and Map type is not supported for now.
           val hasUnsupportedNested = {
             val tab = tabs.head
             (0 until tab.getNumberOfColumns).exists { i =>
