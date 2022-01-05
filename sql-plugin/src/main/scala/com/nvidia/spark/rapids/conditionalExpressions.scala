@@ -483,9 +483,21 @@ case class GpuCaseWhen(
       whenBool: GpuColumnVector): GpuColumnVector = {
     cumulativePred match {
       case Some(prev) =>
-        withResource(prev.getBase.not()) { notPreviouslyTrue =>
-          GpuColumnVector.from(whenBool.getBase.and(notPreviouslyTrue), DataTypes.BooleanType)
+        val notPreviouslyTrue = withResource(prev.getBase.not()) { previouslyFalse =>
+          withResource(prev.getBase.isNull) { previouslyNull =>
+            previouslyFalse.or(previouslyNull)
+          }
         }
+        val result = withResource(new Table(whenBool.getBase, notPreviouslyTrue)) { t =>
+          val expr = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_AND,
+            new ast.ColumnReference(0),
+            new ast.ColumnReference(1)
+          )
+          withResource(expr.compile()) {
+            _.computeColumn(t)
+          }
+        }
+        GpuColumnVector.from(result, DataTypes.BooleanType)
       case None =>
         whenBool.incRefCount()
     }
