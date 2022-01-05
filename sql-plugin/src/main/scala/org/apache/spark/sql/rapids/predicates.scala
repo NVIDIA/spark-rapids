@@ -56,11 +56,6 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
   }
 }
 
-object GpuLogicHelper {
-  def eqNullAware(lhs: GpuScalar, rhs: Boolean): Boolean =
-    lhs.isValid && (lhs.getValue.asInstanceOf[Boolean] == rhs)
-}
-
 case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
   override def inputType: AbstractDataType = BooleanType
 
@@ -70,47 +65,34 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
 
   override def binaryOp: BinaryOp = BinaryOp.LOGICAL_AND
 
-  import GpuLogicHelper._
-
-  // The CUDF implementation of `and` will return a null if either input is null
-  // Spark does not.
-  // |LHS/RHS| TRUE  | FALSE | NULL  |
-  // |TRUE   | TRUE  | FALSE | NULL  |
-  // |FALSE  | FALSE | FALSE | FALSE |
-  // |NULL   | NULL  | FALSE | NULL  |
-  // So we have to make some adjustments.
-  //  IF (A <=> FALSE, FALSE,
-  //    IF (B <=> FALSE, FALSE,
-  //      A cudf_and B))
-
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val l = lhs.getBase
     val r = rhs.getBase
-    withResource(Scalar.fromBool(false)) { falseVal =>
-      val firstPass = withResource(l.and(r)) { lAndR =>
-        withResource(l.equalToNullAware(falseVal)) { lIsFalse =>
-          lIsFalse.ifElse(falseVal, lAndR)
-        }
-      }
-      withResource(firstPass) { firstPass =>
-        withResource(r.equalToNullAware(falseVal)) { rIsFalse =>
-          rIsFalse.ifElse(falseVal, firstPass)
+    withResource(new Table(l, r)) {
+      table => {
+        val astOp = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_AND,
+          new ast.ColumnReference(0),
+          new ast.ColumnReference(1))
+        withResource(astOp.compile()) { compiledAstExpr =>
+          compiledAstExpr.computeColumn(table)
         }
       }
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    val l = lhs.getBase
     val r = rhs.getBase
-    withResource(Scalar.fromBool(false)) { falseVal =>
-      if (eqNullAware(lhs, false)) {
-        ColumnVector.fromScalar(falseVal, r.getRowCount.toInt)
-      } else {
-        withResource(l.and(r)) { lAndR =>
-          withResource(r.equalToNullAware(falseVal)) { rIsFalse =>
-            rIsFalse.ifElse(falseVal, lAndR)
-          }
+    val lhsLit = if (lhs.isValid) {
+      ast.Literal.ofBoolean(lhs.getValue.asInstanceOf[Boolean])
+    } else {
+      ast.Literal.ofNull(DType.BOOL8)
+    }
+    withResource(new Table(r)) {
+      table => {
+        val astOp = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_AND,
+          lhsLit, new ast.ColumnReference(0))
+        withResource(astOp.compile()) { compiledAstExpr =>
+          compiledAstExpr.computeColumn(table)
         }
       }
     }
@@ -118,15 +100,17 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val l = lhs.getBase
-    val r = rhs.getBase
-    withResource(Scalar.fromBool(false)) { falseVal =>
-      if (eqNullAware(rhs, false)) {
-        ColumnVector.fromScalar(falseVal, l.getRowCount.toInt)
-      } else {
-        withResource(l.and(r)) { lAndR =>
-          withResource(l.equalToNullAware(falseVal)) { lIsFalse =>
-            lIsFalse.ifElse(falseVal, lAndR)
-          }
+    val rhsLit = if (rhs.isValid) {
+      ast.Literal.ofBoolean(rhs.getValue.asInstanceOf[Boolean])
+    } else {
+      ast.Literal.ofNull(DType.BOOL8)
+    }
+    withResource(new Table(l)) {
+      table => {
+        val astOp = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_AND,
+          new ast.ColumnReference(0), rhsLit)
+        withResource(astOp.compile()) { compiledAstExpr =>
+          compiledAstExpr.computeColumn(table)
         }
       }
     }
@@ -142,47 +126,34 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
 
   override def binaryOp: BinaryOp = BinaryOp.LOGICAL_OR
 
-  import GpuLogicHelper._
-
-  // The CUDF implementation of `or` will return a null if either input is null
-  // Spark does not.
-  // |LHS/RHS| TRUE  | FALSE | NULL  |
-  // |TRUE   | TRUE  | TRUE  | TRUE  |
-  // |FALSE  | TRUE  | FALSE | NULL  |
-  // |NULL   | TRUE  | NULL  | NULL  |
-  // So we have to make some adjustments.
-  //  IF (A <=> TRUE, TRUE,
-  //    IF (B <=> TRUE, TRUE,
-  //      A cudf_or B))
-
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val l = lhs.getBase
     val r = rhs.getBase
-    withResource(Scalar.fromBool(true)) { trueVal =>
-      val firstPass = withResource(l.or(r)) { lOrR =>
-        withResource(l.equalToNullAware(trueVal)) { lIsTrue =>
-          lIsTrue.ifElse(trueVal, lOrR)
-        }
-      }
-      withResource(firstPass) { firstPass =>
-        withResource(r.equalToNullAware(trueVal)) { rIsTrue =>
-          rIsTrue.ifElse(trueVal, firstPass)
+    withResource(new Table(l, r)) {
+      table => {
+        val astOp = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_OR,
+          new ast.ColumnReference(0),
+          new ast.ColumnReference(1))
+        withResource(astOp.compile()) { compiledAstExpr =>
+          compiledAstExpr.computeColumn(table)
         }
       }
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    val l = lhs.getBase
     val r = rhs.getBase
-    withResource(Scalar.fromBool(true)) { trueVal =>
-      if (eqNullAware(lhs, true)) {
-        ColumnVector.fromScalar(trueVal, r.getRowCount.toInt)
-      } else {
-        withResource(l.or(r)) { lOrR =>
-          withResource(r.equalToNullAware(trueVal)) { rIsTrue =>
-            rIsTrue.ifElse(trueVal, lOrR)
-          }
+    val lhsLit = if (lhs.isValid) {
+      ast.Literal.ofBoolean(lhs.getValue.asInstanceOf[Boolean])
+    } else {
+      ast.Literal.ofNull(DType.BOOL8)
+    }
+    withResource(new Table(r)) {
+      table => {
+        val astOp = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_OR,
+          lhsLit, new ast.ColumnReference(0))
+        withResource(astOp.compile()) { compiledAstExpr =>
+          compiledAstExpr.computeColumn(table)
         }
       }
     }
@@ -190,15 +161,17 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val l = lhs.getBase
-    val r = rhs.getBase
-    withResource(Scalar.fromBool(true)) { trueVal =>
-      if (eqNullAware(rhs, true)) {
-        ColumnVector.fromScalar(trueVal, l.getRowCount.toInt)
-      } else {
-        withResource(l.or(r)) { lOrR =>
-          withResource(l.equalToNullAware(trueVal)) { lIsFalse =>
-            lIsFalse.ifElse(trueVal, lOrR)
-          }
+    val rhsLit = if (rhs.isValid) {
+      ast.Literal.ofBoolean(rhs.getValue.asInstanceOf[Boolean])
+    } else {
+      ast.Literal.ofNull(DType.BOOL8)
+    }
+    withResource(new Table(l)) {
+      table => {
+        val astOp = new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_OR,
+          new ast.ColumnReference(0), rhsLit)
+        withResource(astOp.compile()) { compiledAstExpr =>
+          compiledAstExpr.computeColumn(table)
         }
       }
     }
