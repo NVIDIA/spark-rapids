@@ -91,26 +91,53 @@ def test_explain_udf():
 
     with_cpu_session(do_explain)
 
-
+@allow_non_gpu(any=True)
 def test_explain_bucketed_scan(spark_tmp_table_factory):
     """
     https://github.com/NVIDIA/spark-rapids/issues/3952
     https://github.com/apache/spark/commit/79515e4b6c
     """
-    def do_explain(spark):
+
+    def bucket_column_not_read(spark):
+        tbl = spark_tmp_table_factory.get()
+        spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl)
+        df = spark.table(tbl).select(f.col("j"))
+
+        assert "Bucketed: false (bucket column(s) not read)" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+
+    def disable_by_conf(spark):
         tbl_1 = spark_tmp_table_factory.get()
-
+        tbl_2 = spark_tmp_table_factory.get()
         spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl_1)
-        #spark.createDataFrame([2, 3], "i").write.bucketBy(8, "i").saveAsTable("t2")
-
+        spark.createDataFrame([(2,), (3,)], ("i",)).write.bucketBy(8, "i").saveAsTable(tbl_2)
         df1 = spark.table(tbl_1)
-        #df2 = spark.table("t2")
-        # join_df = df1.join(df2, df1.col("i") == df2.col("i"), "Inner")
+        df2 = spark.table(tbl_2)
+        joined_df = df1.join(df2, df1.i == df2.i , "inner")
 
-        not_read_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df1.select(f.col("j"))._jdf, "ALL")
-        print(not_read_str)
-        assert "Bucketed: false (bucket column(s) not read)" in not_read_str
+        assert "Bucketed: false (disabled by configuration)" in joined_df._sc._jvm.PythonSQLUtils.explainString(joined_df._jdf.queryExecution(), "simple")
+
+    def bucket_true(spark):
+        tbl_1 = spark_tmp_table_factory.get()
+        tbl_2 = spark_tmp_table_factory.get()
+        spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl_1)
+        spark.createDataFrame([(2,), (3,)], ("i",)).write.bucketBy(8, "i").saveAsTable(tbl_2)
+        df1 = spark.table(tbl_1)
+        df2 = spark.table(tbl_2)
+        joined_df = df1.join(df2, df1.i == df2.i , "inner")
+
+        assert "Bucketed: true" in joined_df._sc._jvm.PythonSQLUtils.explainString(joined_df._jdf.queryExecution(), "simple")
+
+    def disable_by_query_planner(spark):
+        tbl = spark_tmp_table_factory.get()
+        spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl)
+        df = spark.table(tbl)
+
+        assert "Bucketed: false (disabled by query planner)" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
 
 
-    with_cpu_session(do_explain)
+    with_gpu_session(bucket_column_not_read)
+    with_gpu_session(disable_by_conf, {"spark.sql.sources.bucketing.enabled": "false"})
+    with_gpu_session(bucket_true, {"spark.sql.autoBroadcastJoinThreshold": "0"})
+    with_gpu_session(disable_by_query_planner)
 

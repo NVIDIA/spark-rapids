@@ -67,8 +67,8 @@ case class GpuFileSourceScanExec(
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
-    queryUsesInputFile: Boolean = false,
-    disableBucketedScan: Boolean = false)(@transient val rapidsConf: RapidsConf)
+    disableBucketedScan: Boolean = false,
+    queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
@@ -155,7 +155,8 @@ case class GpuFileSourceScanExec(
 
   // exposed for testing
   lazy val bucketedScan: Boolean = {
-    if (relation.sparkSession.sessionState.conf.bucketingEnabled && relation.bucketSpec.isDefined) {
+    if (relation.sparkSession.sessionState.conf.bucketingEnabled && relation.bucketSpec.isDefined
+      && !disableBucketedScan) {
       val spec = relation.bucketSpec.get
       val bucketColumns = spec.bucketColumnNames.flatMap(n => toAttribute(n))
       bucketColumns.size == spec.bucketColumnNames.size

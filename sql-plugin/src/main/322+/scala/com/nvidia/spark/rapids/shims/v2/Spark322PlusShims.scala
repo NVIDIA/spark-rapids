@@ -630,7 +630,8 @@ trait Spark322PlusShims extends SparkShims with RebaseShims with Logging {
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
-              wrapped.tableIdentifier)(conf)
+              wrapped.tableIdentifier,
+              wrapped.disableBucketedScan)(conf)
           }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](

@@ -467,7 +467,8 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
               // TODO: Does Databricks have coalesced bucketing implemented?
               None,
               wrapped.dataFilters,
-              wrapped.tableIdentifier)(conf)
+              wrapped.tableIdentifier,
+              wrapped.disableBucketedScan)(conf)
             }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
