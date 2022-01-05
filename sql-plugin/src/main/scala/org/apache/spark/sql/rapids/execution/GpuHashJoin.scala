@@ -97,6 +97,7 @@ object GpuHashJoin extends Arm {
   def tagJoin(
       meta: RapidsMeta[_, _, _],
       joinType: JoinType,
+      buildSide: GpuBuildSide,
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
@@ -121,6 +122,14 @@ object GpuHashJoin extends Arm {
         unSupportStructKeys()
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
+    }
+
+    buildSide match {
+      case GpuBuildLeft if !canBuildLeft(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support left-side build")
+      case GpuBuildRight if !canBuildRight(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support right-side build")
+      case _ =>
     }
   }
 
