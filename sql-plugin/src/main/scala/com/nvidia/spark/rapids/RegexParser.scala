@@ -480,8 +480,10 @@ class CudfRegexTranspiler(replace: Boolean) {
           if (replace) {
             throw new RegexUnsupportedException("string anchor \\Z not supported in replace mode")
           }
-          // Java definition: The end of the input but for the final terminator, if any
-          // cuDF definition: Matches at the end of the string
+          // We transpile "\\Z" to "(?:[\r\n]?$)" because of the different meanings of "\\Z"
+          // between Java and cuDF:
+          // Java: The end of the input but for the final terminator, if any
+          // cuDF: Matches at the end of the string
           RegexGroup(capture = false, RegexSequence(
             ListBuffer(RegexRepetition(
               RegexCharacterClass(negated = false,

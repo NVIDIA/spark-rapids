@@ -227,6 +227,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         .replaceAll("\\$", Matcher.quoteReplacement("[\r]?[\n]?$")))
   }
 
+  test("transpile \\z") {
+    doTranspileTest("\\z", "$")
+  }
+
+  test("transpile \\Z") {
+    doTranspileTest("\\Z", "(?:[\r\n]?$)")
+  }
+
   test("compare CPU and GPU: character range including unescaped + and -") {
     val patterns = Seq("a[-]+", "a[a-b-]+", "a[-a-b]", "a[-+]", "a[+-]")
     val inputs = Seq("a+", "a-", "a", "a-+", "a[a-b-]")
@@ -438,7 +446,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def doTranspileTest(pattern: String, expected: String) {
     val transpiled: String = transpile(pattern, replace = false)
-    assert(transpiled === expected)
+    assert(toReadableString(transpiled) === toReadableString(expected))
   }
 
   private def transpile(pattern: String, replace: Boolean): String = {
