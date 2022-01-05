@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -444,13 +444,12 @@ case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[S
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Some(timeZoneId))
 
-  /** Calculate the size between start and stop, both inclusive
-   * |stop - start| + 1 */
-
   /**
-   * Calculate the size between start and stop both inclusive and the step
-   * @param start
-   * @param stop
+   * Calculate the size and step (1 or -1) between start and stop both inclusive
+   * size = |stop - start| + 1
+   * step = 1 if stop >= start else -1
+   * @param start first values in the result sequences
+   * @param stop end values in the result sequences
    * @return (size, step)
    */
   private def calculateSizeAndStep(start: BinaryOperable, stop: BinaryOperable, dt: DataType):
@@ -502,7 +501,7 @@ case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[S
 /** GpuSequence with step */
 case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expression,
     timeZoneId: Option[String] = None) extends GpuTernaryExpression with TimeZoneAwareExpression
-    with GpuSequenceTrait {
+  with GpuSequenceTrait {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Some(timeZoneId))
@@ -531,35 +530,48 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
     //     since when size < 0, cudf will not generate sequence
     // Second, calculate size = if(sizeWithNegative < 0) 0 else sizeWithNegative
     // Third, if (start == stop && step == 0), let size = 1.
-    withResource(stop.sub(start)) { difference =>
-      withResource(difference.floorDiv(step)) { quotient =>
-        withResource(numberScalar(dt, 1)) { one =>
-          withResource(quotient.add(one)) { sizeWithNegative =>
-            withResource(numberScalar(dt, 0)) { zero =>
-              withResource(sizeWithNegative.greaterOrEqualTo(zero)) { pred =>
-                withResource(pred.ifElse(sizeWithNegative, zero)) { tmpSize =>
-                  // when start==stop && step==0, size will be 0.
-                  // but we should change size to 1
-                  withResource(difference.equalTo(zero)) { diffHasZero =>
-                    step match {
-                      case stepScalar: Scalar =>
-                        withResource(ColumnVector.fromScalar(stepScalar, rows)) { stepV =>
-                          withResource(stepV.equalTo(zero)) { stepHasZero =>
-                            withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
-                              predWithZero.ifElse(one, tmpSize)
-                            }
-                          }
-                        }
-                      case _ =>
-                        withResource(step.equalTo(zero)) { stepHasZero =>
-                          withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
-                            predWithZero.ifElse(one, tmpSize)
-                          }
-                        }
+    withResource(numberScalar(dt, 1)) { one =>
+      withResource(numberScalar(dt, 0)) { zero =>
+
+        val (sizeWithNegative, diffHasZero) = withResource(stop.sub(start)) { difference =>
+          // sizeWithNegative=floor((stop-start)/step)+1
+          val sizeWithNegative = withResource(difference.floorDiv(step)) { quotient =>
+            quotient.add(one)
+          }
+          val tmpDiffHasZero = closeOnExcept(sizeWithNegative) { _ =>
+            difference.equalTo(zero)
+          }
+          (sizeWithNegative, tmpDiffHasZero)
+        }
+
+        val tmpSize = closeOnExcept(diffHasZero) { _ =>
+          // tmpSize = if(sizeWithNegative < 0) 0 else sizeWithNegative
+          withResource(sizeWithNegative) { _ =>
+            withResource(sizeWithNegative.greaterOrEqualTo(zero)) { pred =>
+              pred.ifElse(sizeWithNegative, zero)
+            }
+          }
+        }
+
+        // when start==stop && step==0, size will be 0.
+        // but we should change size to 1
+        withResource(tmpSize) { tmpSize =>
+          withResource(diffHasZero) { diffHasZero =>
+            step match {
+              case stepScalar: Scalar =>
+                withResource(ColumnVector.fromScalar(stepScalar, rows)) { stepV =>
+                  withResource(stepV.equalTo(zero)) { stepHasZero =>
+                    withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
+                      predWithZero.ifElse(one, tmpSize)
                     }
                   }
                 }
-              }
+              case _ =>
+                withResource(step.equalTo(zero)) { stepHasZero =>
+                  withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
+                    predWithZero.ifElse(one, tmpSize)
+                  }
+                }
             }
           }
         }
@@ -654,5 +666,4 @@ case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expres
       val1: GpuScalar,
       val2: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
-
 }
