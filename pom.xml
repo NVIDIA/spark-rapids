@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2021, NVIDIA CORPORATION.
+  Copyright (c) 2020-2022, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -1323,18 +1323,12 @@
                             <target>
                                 <dirset dir="${project.basedir}" includes="**/target" id="target.dirs.for.clean"/>
                                 <pathconvert property="target.dirs.str" pathsep=" ">
-                                    <sort>
-                                        <dirset refid="target.dirs.for.clean"/>
-                                        <!-- remove subdirs first if we have something like target/somedir/target -->
-                                        <reverse xmlns="antlib:org.apache.tools.ant.types.resources.comparators">
-                                            <name/>
-                                        </reverse>
-                                    </sort>
+                                   <dirset refid="target.dirs.for.clean"/>
                                 </pathconvert>
                                 <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
                                 <!-- workaround ant delete does not work with dirset -->
                                 <exec dir="${project.basedir}" executable="rm">
-                                    <arg value="-r"/>
+                                    <arg value="-rf"/>
                                     <arg line="${target.dirs.str}"/>
                                 </exec>
                             </target>
