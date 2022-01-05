@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,28 +75,7 @@ import org.apache.spark.unsafe.types.CalendarInterval
 /**
 * Shim base class that can be compiled with every supported 3.2.x
 */
-trait Spark32XShims extends SparkShims  with Logging {
-  override final def parquetRebaseReadKey: String =
-    SQLConf.PARQUET_REBASE_MODE_IN_READ.key
-  override final def parquetRebaseWriteKey: String =
-    SQLConf.PARQUET_REBASE_MODE_IN_WRITE.key
-  override final def avroRebaseReadKey: String =
-    SQLConf.AVRO_REBASE_MODE_IN_READ.key
-  override final def avroRebaseWriteKey: String =
-    SQLConf.AVRO_REBASE_MODE_IN_WRITE.key
-  override final def parquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ)
-  override final def parquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
-  override def int96ParquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ)
-  override def int96ParquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE)
-  override def int96ParquetRebaseReadKey: String =
-    SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ.key
-  override def int96ParquetRebaseWriteKey: String =
-    SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-  override def hasSeparateINT96RebaseConf: Boolean = true
+trait Spark320until322Shims extends SparkShims with RebaseShims with Logging {
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
@@ -108,7 +87,7 @@ trait Spark32XShims extends SparkShims  with Logging {
     plan.session
   }
 
-  override final def getParquetFilters(
+  override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
       pushDownTimestamp: Boolean,
@@ -116,7 +95,10 @@ trait Spark32XShims extends SparkShims  with Logging {
       pushDownStartWith: Boolean,
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
+      lookupFileMeta: String => String,
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils
+      .datetimeRebaseMode(lookupFileMeta, dateTimeRebaseModeFromConf)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
