@@ -170,7 +170,7 @@ basic_gens_for_cast_to_string = [byte_gen, short_gen, int_gen, long_gen, string_
 # casting these types to string is not exact match, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [float_gen, double_gen, decimal_gen_neg_scale]
 # casting these types to string is not supported, marked as xfail when testing
-not_support_gens_for_cast_to_string = decimal_128_gens + [MapGen(ByteGen(False), ByteGen())]
+not_support_gens_for_cast_to_string = [MapGen(ByteGen(False), ByteGen())]
 
 single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
 nested_array_gens_for_cast_to_string = [
