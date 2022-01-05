@@ -121,19 +121,20 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     // predicate boolean array results in the two T values mapping to
     // indices 0 and 1, respectively.
 
-    withResource(boolToInt(predicate)) { boolsAsInts =>
-      withResource(boolsAsInts.scan(
+    val prefixSumExclusive = withResource(boolToInt(predicate)) { boolsAsInts =>
+      boolsAsInts.scan(
         ScanAggregation.sum(),
         ScanType.EXCLUSIVE,
-        NullPolicy.INCLUDE)) { prefixSumExclusive =>
-
-        // for the entries in the gather map that do not represent valid
-        // values to be gathered, we change the value to -MAX_INT which
-        // will be treated as null values in the gather algorithm
-        val gatherMap = withResource(Scalar.fromInt(Int.MinValue)) {
-          outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
-        }
-
+        NullPolicy.INCLUDE)
+    }
+    val gatherMap = withResource(prefixSumExclusive) { prefixSumExclusive =>
+      // for the entries in the gather map that do not represent valid
+      // values to be gathered, we change the value to -MAX_INT which
+      // will be treated as null values in the gather algorithm
+      withResource(Scalar.fromInt(Int.MinValue)) {
+        outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
+      }
+    }
         withResource(gatherMap) { _ =>
           withResource(new Table(t.getBase)) { tbl =>
             withResource(tbl.gather(gatherMap)) { gatherTbl =>
