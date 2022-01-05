@@ -135,18 +135,14 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
         outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
       }
     }
-        withResource(gatherMap) { _ =>
-          withResource(new Table(t.getBase)) { tbl =>
-            withResource(tbl.gather(gatherMap)) { gatherTbl =>
-              gatherTbl.getColumn(0).incRefCount()
-            }
-          }
+    withResource(gatherMap) { _ =>
+      withResource(new Table(t.getBase)) { tbl =>
+        withResource(tbl.gather(gatherMap)) { gatherTbl =>
+          gatherTbl.getColumn(0).incRefCount()
         }
       }
     }
   }
-
-
 }
 
 case class GpuIf(
