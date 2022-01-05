@@ -122,7 +122,7 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
@@ -256,10 +256,10 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
           Seq(ParamCheck("input",
-            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL,
+            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
             TypeSig.numeric))),
         (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
           override def tagAggForGpu(): Unit = {
@@ -294,7 +294,7 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
       GpuOverrides.expr[Abs](
         "Absolute value",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
-          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
           TypeSig.numeric),
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
           // ANSI support for ABS was added in 3.2.0 SPARK-33275
