@@ -116,10 +116,10 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING + DECIMAL_128
         override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + DECIMAL_128
+        override val integralChecks: TypeSig = TypeSig.numeric + BOOLEAN + STRING
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING + DECIMAL_128)
+        override val fpChecks: TypeSig = (TypeSig.numeric + BOOLEAN + STRING)
             .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
@@ -131,7 +131,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128 + STRING
+        override val decimalChecks: TypeSig = TypeSig.numeric + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
@@ -200,7 +200,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.implicitCastsAstTypes, TypeSig.numeric,
         TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
