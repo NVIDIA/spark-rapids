@@ -143,13 +143,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
-  // see https://github.com/NVIDIA/spark-rapids/issues/4425
-  ignore("unsupported string anchors in replace mode") {
-    val patterns = Seq("test\\z", "test\\Z")
-    assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
-      "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
-  }
-
   test("end of line anchor with strings ending in valid newline") {
     val pattern = "2$"
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("2", "2\n", "2\r", "2\r\n"))
@@ -261,6 +254,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
 
+  // we currently only support \\z and \\Z in find mode
+  // see https://github.com/NVIDIA/spark-rapids/issues/4425
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON + "zZ"
 
   private val REGEXP_LIMITED_CHARS_REPLACE = REGEXP_LIMITED_CHARS_COMMON
