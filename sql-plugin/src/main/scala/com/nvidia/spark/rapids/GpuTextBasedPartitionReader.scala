@@ -37,7 +37,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param dataSchema schema of the data
  * @param readDataSchema the Spark schema describing what will be read
  * @param lineSeparatorInRead An optional byte line sep.
- * @param headerFlag if it has header
  * @param maxRowsPerChunk maximum number of rows to read in a batch
  * @param maxBytesPerChunk maximum number of bytes to read in a batch
  * @param execMetrics metrics to update during read
@@ -48,7 +47,6 @@ abstract class GpuTextBasedPartitionReader(
     dataSchema: StructType,
     readDataSchema: StructType,
     lineSeparatorInRead: Option[Array[Byte]],
-    headerFlag: Boolean,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric])
@@ -139,8 +137,8 @@ abstract class GpuTextBasedPartitionReader(
 
   private def readBatch(): Option[ColumnarBatch] = {
     withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
-      val hasHeader = partFile.start == 0 && isFirstChunkForIterator && headerFlag
-      val table = readToTable(hasHeader)
+      val isFirstChunk = partFile.start == 0 && isFirstChunkForIterator
+      val table = readToTable(isFirstChunk)
       try {
         if (readDataSchema.isEmpty) {
           table.map(t => new ColumnarBatch(Array.empty, t.getRowCount.toInt))
@@ -154,7 +152,7 @@ abstract class GpuTextBasedPartitionReader(
     }
   }
 
-  private def readToTable(hasHeader: Boolean): Option[Table] = {
+  private def readToTable(isFirstChunk: Boolean): Option[Table] = {
     val (dataBuffer, dataSize) = readPartFile()
     try {
       if (dataSize == 0) {
@@ -174,7 +172,7 @@ abstract class GpuTextBasedPartitionReader(
         // The buffer that is sent down
         val table = withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
           NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-          readToTable(dataBuffer, dataSize, cudfSchema, newReadDataSchema, hasHeader)
+          readToTable(dataBuffer, dataSize, cudfSchema, newReadDataSchema, isFirstChunk)
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
@@ -196,7 +194,7 @@ abstract class GpuTextBasedPartitionReader(
    * @param dataSize the size of host buffer
    * @param cudfSchema the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
-   * @param hasHeader if it has header
+   * @param isFirstChunk if it is the first chunk
    * @return table
    */
   def readToTable(
@@ -204,7 +202,7 @@ abstract class GpuTextBasedPartitionReader(
     dataSize: Long,
     cudfSchema: Schema,
     readDataSchema: StructType,
-    hasHeader: Boolean): Table
+    isFirstChunk: Boolean): Table
 
   /**
    * File format short name used for logging and other things to uniquely identity

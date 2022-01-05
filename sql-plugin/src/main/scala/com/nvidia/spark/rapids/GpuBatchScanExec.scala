@@ -378,8 +378,7 @@ class CSVPartitionReader(
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric]) extends
   GpuTextBasedPartitionReader(conf, partFile, dataSchema, readDataSchema,
-    parsedOptions.lineSeparatorInRead, parsedOptions.headerFlag, maxRowsPerChunk, maxBytesPerChunk,
-    execMetrics) {
+    parsedOptions.lineSeparatorInRead, maxRowsPerChunk, maxBytesPerChunk, execMetrics) {
 
   def buildCsvOptions(
       parsedOptions: CSVOptions,
@@ -403,14 +402,15 @@ class CSVPartitionReader(
    * @param dataSize       the size of host buffer
    * @param cudfSchema     the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
-   * @param hasHeader      if it has header
+   * @param isFirstChunk   if it is the first chunk
    * @return table
    */
   override def readToTable(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long, cudfSchema: Schema,
       readDataSchema: StructType,
-      hasHeader: Boolean): Table = {
+      isFirstChunk: Boolean): Table = {
+    val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
     Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
   }
