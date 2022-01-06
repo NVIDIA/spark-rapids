@@ -270,6 +270,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
 <a name="sql.expression.ScalaUDF"></a>spark.rapids.sql.expression.ScalaUDF| |User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface to get better performance.|true|None|
 <a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|`second`|Returns the second component of the string/timestamp|true|None|
+<a name="sql.expression.Sequence"></a>spark.rapids.sql.expression.Sequence|`sequence`|Sequence|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|`shiftleft`|Bitwise shift left (<<)|true|None|
 <a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|`shiftright`|Bitwise shift right (>>)|true|None|
 <a name="sql.expression.ShiftRightUnsigned"></a>spark.rapids.sql.expression.ShiftRightUnsigned|`shiftrightunsigned`|Bitwise unsigned shift right (>>>)|true|None|
