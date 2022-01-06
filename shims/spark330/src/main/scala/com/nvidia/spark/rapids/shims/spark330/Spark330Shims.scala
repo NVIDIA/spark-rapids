@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.spark330
 
-import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
@@ -25,9 +24,4 @@ class Spark330Shims extends Spark33XShims {
 
   override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 
-  override def throwIndexOutOfBoundsException(
-      ordinalValue: Int,
-      minNumElements: Int): ColumnVector = {
-    org.apache.spark.RapidsSparkIndexOutOfBoundsException.throww(ordinalValue, minNumElements)
-  }
 }

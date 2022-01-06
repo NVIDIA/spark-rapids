@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
@@ -47,6 +48,13 @@ trait Spark33XShims extends Spark322PlusShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
+  }
+
+  override def throwIndexOutOfBoundsException(
+      ordinalValue: Int,
+      minNumElements: Int): ColumnVector = {
+    org.apache.spark.RapidsSparkIndexOutOfBoundsException
+        .throwSparkArrayIndexOutOfBoundsException(ordinalValue, minNumElements)
   }
 
   override def getParquetFilters(
