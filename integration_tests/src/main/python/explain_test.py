@@ -152,13 +152,13 @@ def test_explain_bucket_disabled_by_conf(spark_tmp_table_factory):
 
 
 @allow_non_gpu(any=True)
-@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.0+ do the `GpuFileSourceScanExec` has the attribute `disableBucketedScan`")
+@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.0+ does the `GpuFileSourceScanExec` have the attribute `disableBucketedScan`")
 def test_explain_bucket_disabled_by_query_planner(spark_tmp_table_factory):
     """
     Test the physical plan includes the info of disabling bucketed scan and the reason.
     The code is copied from:
     https://github.com/apache/spark/commit/79515e4b6c#diff-03f119698c3637b87c9ce2634c34c14bb0f7efc043ea37a0891c1ab9fbc3ebadR700
-    
+
     This test will be skipped if spark version is before 3.1.0. Because the attribute `disableBucketedScan` is not included in `GpuFileSourceScanExec` before 3.1.0.
     """
     def do_explain(spark):
