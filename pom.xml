@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2021, NVIDIA CORPORATION.
+  Copyright (c) 2020-2022, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -103,7 +103,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -143,7 +143,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -192,7 +192,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -236,7 +236,7 @@
                             <execution>
                                 <id>add-profile-src-30+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -280,7 +280,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -343,7 +343,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301db/scala</source>
@@ -397,7 +397,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -440,7 +440,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -489,7 +489,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -538,7 +538,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -583,7 +583,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -673,7 +673,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -717,7 +717,7 @@
                             <execution>
                                 <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
@@ -1323,18 +1323,12 @@
                             <target>
                                 <dirset dir="${project.basedir}" includes="**/target" id="target.dirs.for.clean"/>
                                 <pathconvert property="target.dirs.str" pathsep=" ">
-                                    <sort>
-                                        <dirset refid="target.dirs.for.clean"/>
-                                        <!-- remove subdirs first if we have something like target/somedir/target -->
-                                        <reverse xmlns="antlib:org.apache.tools.ant.types.resources.comparators">
-                                            <name/>
-                                        </reverse>
-                                    </sort>
+                                   <dirset refid="target.dirs.for.clean"/>
                                 </pathconvert>
                                 <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
                                 <!-- workaround ant delete does not work with dirset -->
                                 <exec dir="${project.basedir}" executable="rm">
-                                    <arg value="-r"/>
+                                    <arg value="-rf"/>
                                     <arg line="${target.dirs.str}"/>
                                 </exec>
                             </target>

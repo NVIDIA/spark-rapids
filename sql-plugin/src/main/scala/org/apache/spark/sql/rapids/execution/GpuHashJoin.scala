@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -124,6 +124,18 @@ object GpuHashJoin extends Arm {
     }
   }
 
+  /** Determine if this type of join supports using the right side of the join as the build side. */
+  def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
+    case _ => false
+  }
+
+  /** Determine if this type of join supports using the left side of the join as the build side. */
+  def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | RightOuter | FullOuter => true
+    case _ => false
+  }
+
   def extractTopLevelAttributes(
       exprs: Seq[Expression],
       includeAlias: Boolean): Seq[Option[Attribute]] =
@@ -219,7 +231,7 @@ class HashJoinIterator(
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
-    private val opTime: GpuMetric,
+    opTime: GpuMetric,
     private val joinTime: GpuMetric)
     extends SplittableJoinIterator(
       s"hash $joinType gather",
