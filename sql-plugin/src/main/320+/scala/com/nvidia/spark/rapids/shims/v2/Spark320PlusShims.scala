@@ -195,6 +195,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
       new CastChecks {
+
         import TypeSig._
         // nullChecks are the same
 
@@ -374,7 +375,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
-      (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
+      (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r) {
         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
           GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
       }),
@@ -383,7 +384,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
         ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
-      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r){
+      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r) {
         override def convertToGpu(map: Expression, key: Expression): GpuExpression =
           GpuGetMapValue(map, key, SQLConf.get.ansiEnabled)
       }),
@@ -396,7 +397,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP) +
           TypeSig.MAP.nested(TypeSig.STRING)
-            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
+            .withPsNote(TypeEnum.MAP, "If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
         ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
           .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
@@ -427,6 +428,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           }
           checks.tag(this)
         }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
@@ -534,7 +536,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           // are on the GPU. And vice versa.
           private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
             filter.transformDown {
-              case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
+              case dpe@DynamicPruningExpression(inSub: InSubqueryExec)
                 if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
 
                 val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
@@ -603,6 +605,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
             override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
 
             override def replaceMessage: String = "partially run on GPU"
+
             override def noReplacementPossibleMessage(reasons: String): String =
               s"cannot run even partially on the GPU because $reasons"
 
@@ -781,18 +784,18 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       queryUsesInputFile: Boolean): GpuBatchScanExec = {
     val scanCopy = batchScanExec.scan match {
       case parquetScan: GpuParquetScan =>
-        parquetScan.copy(queryUsesInputFile=queryUsesInputFile)
+        parquetScan.copy(queryUsesInputFile = queryUsesInputFile)
       case orcScan: GpuOrcScan =>
-        orcScan.copy(queryUsesInputFile=queryUsesInputFile)
+        orcScan.copy(queryUsesInputFile = queryUsesInputFile)
       case _ => throw new RuntimeException("Wrong format") // never reach here
     }
-    batchScanExec.copy(scan=scanCopy)
+    batchScanExec.copy(scan = scanCopy)
   }
 
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
+    scanExec.copy(queryUsesInputFile = queryUsesInputFile)(scanExec.rapidsConf)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
@@ -1012,6 +1015,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       }
       accum
     }
+
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
