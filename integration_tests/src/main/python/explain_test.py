@@ -18,7 +18,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_311
 
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
@@ -91,22 +91,53 @@ def test_explain_udf():
 
     with_cpu_session(do_explain)
 
-@allow_non_gpu(any=True)
-def test_explain_bucketed_scan(spark_tmp_table_factory):
-    """
-    https://github.com/NVIDIA/spark-rapids/issues/3952
-    https://github.com/apache/spark/commit/79515e4b6c
-    """
 
-    def bucket_column_not_read(spark):
+@allow_non_gpu(any = True)
+def test_explain_bucketd_scan(spark_tmp_table_factory):
+    """
+    Test the physical plan includes the info of enabling bucketed scan.
+    The code is copied from: 
+    https://github.com/apache/spark/commit/79515e4b6c#diff-03f119698c3637b87c9ce2634c34c14bb0f7efc043ea37a0891c1ab9fbc3ebadR688
+    """
+    def do_explain(spark):
+        tbl_1 = spark_tmp_table_factory.get()
+        tbl_2 = spark_tmp_table_factory.get()
+        spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl_1)
+        spark.createDataFrame([(2,), (3,)], ("i",)).write.bucketBy(8, "i").saveAsTable(tbl_2)
+        df1 = spark.table(tbl_1)
+        df2 = spark.table(tbl_2)
+        joined_df = df1.join(df2, df1.i == df2.i , "inner")
+
+        assert "Bucketed: true" in joined_df._sc._jvm.PythonSQLUtils.explainString(joined_df._jdf.queryExecution(), "simple")
+    
+    with_gpu_session(do_explain, {"spark.sql.autoBroadcastJoinThreshold": "0"})
+
+
+@allow_non_gpu(any = True)
+def test_explain_bucket_column_not_read(spark_tmp_table_factory):
+    """
+    Test the physical plan includes the info of disabling bucketed scan and the reason.
+    The code is copied from:
+    https://github.com/apache/spark/commit/79515e4b6c#diff-03f119698c3637b87c9ce2634c34c14bb0f7efc043ea37a0891c1ab9fbc3ebadR702
+    """
+    def do_explain(spark):
         tbl = spark_tmp_table_factory.get()
         spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl)
         df = spark.table(tbl).select(f.col("j"))
 
         assert "Bucketed: false (bucket column(s) not read)" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
 
+    with_gpu_session(do_explain)
 
-    def disable_by_conf(spark):
+
+@allow_non_gpu(any = True)
+def test_explain_bucket_disabled_by_conf(spark_tmp_table_factory):
+    """
+    Test the physical plan includes the info of disabling bucketed scan and the reason.
+    The code is copied from:
+    https://github.com/apache/spark/commit/79515e4b6c#diff-03f119698c3637b87c9ce2634c34c14bb0f7efc043ea37a0891c1ab9fbc3ebadR694
+    """
+    def do_explain(spark):
         tbl_1 = spark_tmp_table_factory.get()
         tbl_2 = spark_tmp_table_factory.get()
         spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl_1)
@@ -117,27 +148,24 @@ def test_explain_bucketed_scan(spark_tmp_table_factory):
 
         assert "Bucketed: false (disabled by configuration)" in joined_df._sc._jvm.PythonSQLUtils.explainString(joined_df._jdf.queryExecution(), "simple")
 
-    def bucket_true(spark):
-        tbl_1 = spark_tmp_table_factory.get()
-        tbl_2 = spark_tmp_table_factory.get()
-        spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl_1)
-        spark.createDataFrame([(2,), (3,)], ("i",)).write.bucketBy(8, "i").saveAsTable(tbl_2)
-        df1 = spark.table(tbl_1)
-        df2 = spark.table(tbl_2)
-        joined_df = df1.join(df2, df1.i == df2.i , "inner")
+    with_gpu_session(do_explain, {"spark.sql.sources.bucketing.enabled": "false"}) 
 
-        assert "Bucketed: true" in joined_df._sc._jvm.PythonSQLUtils.explainString(joined_df._jdf.queryExecution(), "simple")
 
-    def disable_by_query_planner(spark):
+@allow_non_gpu(any=True)
+@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.0+ do the `GpuFileSourceScanExec` has the attribute `disableBucketedScan`")
+def test_explain_bucket_disabled_by_query_planner(spark_tmp_table_factory):
+    """
+    Test the physical plan includes the info of disabling bucketed scan and the reason.
+    The code is copied from:
+    https://github.com/apache/spark/commit/79515e4b6c#diff-03f119698c3637b87c9ce2634c34c14bb0f7efc043ea37a0891c1ab9fbc3ebadR700
+    
+    This test will be skipped if spark version is before 3.1.0. Because the attribute `disableBucketedScan` is not included in `GpuFileSourceScanExec` before 3.1.0.
+    """
+    def do_explain(spark):
         tbl = spark_tmp_table_factory.get()
         spark.createDataFrame([(1, 2), (2, 3)], ("i", "j")).write.bucketBy(8, "i").saveAsTable(tbl)
         df = spark.table(tbl)
 
         assert "Bucketed: false (disabled by query planner)" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
 
-
-    with_gpu_session(bucket_column_not_read)
-    with_gpu_session(disable_by_conf, {"spark.sql.sources.bucketing.enabled": "false"})
-    with_gpu_session(bucket_true, {"spark.sql.autoBroadcastJoinThreshold": "0"})
-    with_gpu_session(disable_by_query_planner)
-
+    with_gpu_session(do_explain)
