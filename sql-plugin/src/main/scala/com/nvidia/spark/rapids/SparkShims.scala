@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.net.URI
 import java.nio.ByteBuffer
 
-import ai.rapids.cudf.ColumnVector
 import com.esotericsoftware.kryo.Kryo
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -101,12 +100,6 @@ trait SparkShims {
   def int96ParquetRebaseReadKey: String
   def int96ParquetRebaseWriteKey: String
   def isCastingStringToNegDecimalScaleSupported: Boolean
-
-  def throwIndexOutOfBoundsException(ordinalValue: Int, minNumElements: Int): ColumnVector = {
-    throw new ArrayIndexOutOfBoundsException(
-      s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
-          s"$minNumElements")
-  }
 
   def getParquetFilters(
     schema: MessageType,

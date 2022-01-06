@@ -17,9 +17,9 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta, ShimLoader}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
+import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -124,10 +124,9 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
         withResource(numElementsCV.min) { minScalar =>
           val minNumElements = minScalar.getInt
           if (failOnError &&
-            (ordinal < 0 || minNumElements < ordinal + 1) &&
-            numElementsCV.getRowCount != numElementsCV.getNullCount) {
-            ShimLoader.getSparkShims
-                .throwIndexOutOfBoundsException(ordinal, minNumElements)
+              (ordinal < 0 || minNumElements < ordinal + 1) &&
+              numElementsCV.getRowCount != numElementsCV.getNullCount) {
+            RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinal, minNumElements)
           } else if (!failOnError && ordinal < 0) {
             GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
           } else {
