@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,6 +65,26 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
         "ELSE -1 END"))
   }
 
+  testSparkResultsAreEqual("CASE WHEN with null predicate values on first branch",
+    testData3, conf) { df =>
+    df.withColumn("test", expr(
+      "CASE " +
+        "WHEN char_length(a) < 4 THEN CAST(a AS INT) " +
+        "WHEN char_length(a) < 7 THEN CAST(a AS INT) + 123 " +
+        "WHEN char_length(a) IS NULL THEN -999 " +
+        "ELSE -1 END"))
+  }
+
+  testSparkResultsAreEqual("CASE WHEN with null predicate values after first branch",
+      testData3, conf) { df =>
+    df.withColumn("test", expr(
+      "CASE " +
+        "WHEN char_length(a) IS NULL THEN -999 " +
+        "WHEN char_length(a) < 4 THEN CAST(a AS INT) " +
+        "WHEN char_length(a) < 7 THEN CAST(a AS INT) + 123 " +
+        "ELSE -1 END"))
+  }
+
   private def testData(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
@@ -79,6 +99,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   private def testData2(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
+      null,
       "123",
       "456"
     ).toDF("a").repartition(2)
@@ -87,6 +108,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   private def testData3(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
+      null,
       "123",
       "123456"
     ).toDF("a").repartition(2)
