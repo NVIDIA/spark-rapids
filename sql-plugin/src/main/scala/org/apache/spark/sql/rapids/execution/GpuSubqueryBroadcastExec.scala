@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExecParent, GpuExec, GpuMetric, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExecParent, GpuExec, GpuMetric, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
@@ -114,7 +114,8 @@ class GpuSubqueryBroadcastMeta(
           exMeta.tagForGpu()
           if (exMeta.canThisBeReplaced) {
             broadcastBuilder = () =>
-              ShimLoader.getSparkShims.columnarAdaptivePlan(a, null)
+              ShimLoader.getSparkShims.columnarAdaptivePlan(
+                a, TargetSize(conf.gpuTargetBatchSizeBytes))
           } else {
             willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
           }

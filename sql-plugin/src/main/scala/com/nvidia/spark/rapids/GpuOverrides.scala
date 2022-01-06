@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{ScalarSubquery, _}
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
@@ -3293,15 +3293,16 @@ object GpuOverrides extends Logging {
           GpuGetJsonObject(lhs, rhs)
       }
     ),
-    expr[ScalarSubquery](
+    expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         Nil, None),
-      (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
-      }
+      (a, conf, p, r) =>
+        new ExprMeta[org.apache.spark.sql.execution.ScalarSubquery](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
+        }
     ),
     expr[CreateMap](
       desc = "Create a map",
