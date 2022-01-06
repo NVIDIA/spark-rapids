@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2235,18 +2235,27 @@ object GpuOverrides extends Logging {
       }),
     expr[Max](
       "Max aggregate operator",
-      ExprChecks.fullAgg(
-        // Max supports single level struct, e.g.:  max(struct(string, string))
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
-          .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL),
-        TypeSig.orderable,
-        Seq(ParamCheck("input",
+      ExprChecksImpl(
+        ExprChecks.reductionAndGroupByAgg(
+          // Max supports single level struct, e.g.:  max(struct(string, string))
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL),
+          TypeSig.orderable,
+          Seq(ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
               .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
               .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-          TypeSig.orderable))
-      ),
+            TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL),
+            TypeSig.orderable,
+            Seq(ParamCheck("input",
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val dataType = max.child.dataType
@@ -2261,14 +2270,27 @@ object GpuOverrides extends Logging {
       }),
     expr[Min](
       "Min aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+      ExprChecksImpl(
+        ExprChecks.reductionAndGroupByAgg(
+          // Min supports single level struct, e.g.:  max(struct(string, string))
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL),
+          TypeSig.orderable,
+          Seq(ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRUCT)
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
               .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
               .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-          TypeSig.orderable))
-      ),
+            TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL),
+            TypeSig.orderable,
+            Seq(ParamCheck("input",
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
