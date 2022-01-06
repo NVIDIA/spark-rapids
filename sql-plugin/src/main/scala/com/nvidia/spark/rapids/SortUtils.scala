@@ -19,10 +19,11 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils extends Arm {
@@ -210,15 +211,21 @@ class GpuSorter(
     }
   }
 
-  private def isOrHasListType(cv: ColumnView): Boolean = cv.getType match {
-    case DType.LIST => true
-    case DType.STRUCT =>
-      (0 until cv.getNumChildren).exists { i =>
-        withResource(cv.getChildColumnView(i)) { colView =>
-          isOrHasListType(colView)
-        }
-      }
-    case _ => false
+  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
+    projectedBatchTypes(order.child.asInstanceOf[BoundReference].ordinal) match {
+      case _: ArrayType | _: StructType | _: MapType => true
+      case _ => false
+    }
+  }
+
+  /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
+  private[this] lazy val hasUnsupportedNestedInRideColumns = {
+    val keyColumnIndices = cpuOrderingInternal.map(_.child.asInstanceOf[BoundReference].ordinal)
+    val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
+    rideColumnIndices.exists { idx =>
+      TrampolineUtil.dataTypeExistsRecursively(projectedBatchTypes(idx),
+        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType])
+    }
   }
 
   /**
@@ -237,16 +244,10 @@ class GpuSorter(
           batches.foreach { cb =>
             tabs += GpuColumnVector.from(cb)
           }
-          // In the current version of cudf merge does not work for lists
+          // In the current version of cudf merge does not work for lists and maps.
           // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-          val hasUnsupportedNested = {
-            val tab = tabs.head
-            (0 until tab.getNumberOfColumns).exists { i =>
-              // Map is list of struct in cudf, so checking list type covers the map type.
-              isOrHasListType(tab.getColumn(i))
-            }
-          }
-          if (hasUnsupportedNested) {
+          // Nested types in sort key columns is not supported either.
+          if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
             // so as a work around we concatenate all of the data together and then sort it.
             // It is slower, but it works
             withResource(Table.concatenate(tabs: _*)) { concatenated =>
