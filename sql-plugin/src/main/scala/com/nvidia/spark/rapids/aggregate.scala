@@ -22,7 +22,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{DType, NvtxColor}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -826,14 +826,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
         dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
     if (arrayOrMapGroupings) {
       willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
-    }
-
-    val dec128Grouping = agg.groupingExpressions.exists(e =>
-      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[DecimalType] &&
-            dt.asInstanceOf[DecimalType].precision > DType.DECIMAL64_MAX_PRECISION))
-    if (dec128Grouping) {
-      willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
     }
 
     tagForReplaceMode()

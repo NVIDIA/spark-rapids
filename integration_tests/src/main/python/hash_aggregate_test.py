@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -257,6 +257,11 @@ _grpkey_small_decimals = [
     ('b', DecimalGen(precision=5, scale=2)),
     ('c', DecimalGen(precision=8, scale=3))]
 
+_grpkey_big_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=32, scale=10, nullable=(True, 10.0)), length=50)),
+    ('b', DecimalGen(precision=20, scale=2)),
+    ('c', DecimalGen(precision=36, scale=5))]
+
 _grpkey_short_mid_decimals = [
     ('a', RepeatSeqGen(short_gen, length=50)),
     ('b', decimal_gen_18_3),
@@ -296,7 +301,7 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
 _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
-    _grpkey_small_decimals, _grpkey_short_mid_decimals, 
+    _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
@@ -448,7 +453,7 @@ def test_exceptAll(data_gen):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -456,7 +461,7 @@ def test_hash_grpby_pivot(data_gen, conf):
             .groupby('a')
             .pivot('b')
             .agg(f.sum('c')),
-        conf=conf)
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
 
 @approximate_float
 @ignore_order(local=True)
