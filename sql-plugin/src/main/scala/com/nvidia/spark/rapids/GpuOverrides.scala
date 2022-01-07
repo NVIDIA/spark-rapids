@@ -821,13 +821,13 @@ object GpuOverrides extends Logging {
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes,
       cudfWrite = TypeSig.none,
-      sparkSig = TypeSig.atomics)),
+      sparkSig = TypeSig.cpuAtomics)),
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
         TypeSig.ARRAY + TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP).nested(),
-      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_128 +
@@ -835,7 +835,7 @@ object GpuOverrides extends Logging {
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
           // Note Map is not put into nested, now CUDF only support single level map
           TypeSig.STRUCT + TypeSig.DECIMAL_128).nested() + TypeSig.MAP,
-      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(

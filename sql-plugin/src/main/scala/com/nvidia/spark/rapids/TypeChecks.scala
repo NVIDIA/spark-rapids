@@ -635,7 +635,7 @@ object TypeSig {
   /**
    * All values that correspond to Spark's AtomicType
    */
-  val atomics: TypeSig = cpuNumeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
+  val cpuAtomics: TypeSig = cpuNumeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
 
   /**
    * numeric + CALENDAR but only for GPU
