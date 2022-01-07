@@ -23,7 +23,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -89,7 +89,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -147,7 +147,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -202,7 +202,7 @@ This is a patch release to address an issue with the plugin in the Databricks 8.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -244,7 +244,7 @@ This is a patch release to address an issue with the plugin in the Databricks 7.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -290,7 +290,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
