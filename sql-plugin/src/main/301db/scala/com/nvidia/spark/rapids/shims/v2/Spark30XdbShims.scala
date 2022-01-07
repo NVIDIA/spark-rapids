@@ -373,7 +373,7 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       GpuOverrides.expr[Abs](
         "Absolute value",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
-          TypeSig.implicitCastsAstTypes, TypeSig.numeric,
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
           TypeSig.numeric),
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
           // ANSI support for ABS was added in 3.2.0 SPARK-33275
