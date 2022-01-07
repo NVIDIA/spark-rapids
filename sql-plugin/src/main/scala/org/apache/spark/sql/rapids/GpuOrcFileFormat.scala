@@ -57,8 +57,8 @@ object GpuOrcFileFormat extends Logging {
         s"${RapidsConf.ENABLE_ORC_WRITE} to true.\n" +
         "Please note that, the ORC file written by spark-rapids will not include statistics " +
         "in RowIndex, which will result in Spark 3.1.1+ failed to read ORC file when the filter " +
-        "is pushed down. This is not spark-rapids or spark bug. It's the ORC issue, " +
-        "Please refer to https://issues.apache.org/jira/browse/ORC-1075")
+        "is pushed down. This is an ORC issue, " +
+        "please refer to https://issues.apache.org/jira/browse/ORC-1075")
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)
