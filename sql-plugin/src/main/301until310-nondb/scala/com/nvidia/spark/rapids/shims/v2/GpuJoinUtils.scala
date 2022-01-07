@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,18 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark330
+package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
+import com.nvidia.spark.rapids.{GpuBuildLeft, GpuBuildRight, GpuBuildSide}
 
-class Spark330Shims extends Spark33XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
+object GpuJoinUtils {
+  def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
+    buildSide match {
+      case BuildRight => GpuBuildRight
+      case BuildLeft => GpuBuildLeft
+      case _ => throw new Exception(s"unknown build side type $buildSide")
+    }
+  }
 }

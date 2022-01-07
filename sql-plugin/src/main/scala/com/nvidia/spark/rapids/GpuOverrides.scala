@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,6 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.ScalarSubquery
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
@@ -47,7 +46,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
+import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -3294,15 +3293,16 @@ object GpuOverrides extends Logging {
           GpuGetJsonObject(lhs, rhs)
       }
     ),
-    expr[ScalarSubquery](
+    expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
         Nil, None),
-      (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
-      }
+      (a, conf, p, r) =>
+        new ExprMeta[org.apache.spark.sql.execution.ScalarSubquery](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
+        }
     ),
     expr[CreateMap](
       desc = "Create a map",
@@ -3310,6 +3310,18 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
       }
+    ),
+    expr[Sequence](
+      desc = "Sequence",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.integral), TypeSig.ARRAY.nested(TypeSig.integral +
+          TypeSig.TIMESTAMP + TypeSig.DATE),
+        Seq(ParamCheck("start", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+          TypeSig.DATE),
+          ParamCheck("stop", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+            TypeSig.DATE)),
+        Some(RepeatingParamCheck("step", TypeSig.integral, TypeSig.integral + TypeSig.CALENDAR))),
+      (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
@@ -3598,6 +3610,10 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.STRUCT),
         TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
+    exec[BroadcastHashJoinExec](
+      "Implementation of join using broadcast data",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force. Full outer joins and joins where the " +
           "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
@@ -3657,6 +3673,10 @@ object GpuOverrides extends Logging {
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
+    exec[ShuffledHashJoinExec](
+      "Implementation of join using hashed shuffled data",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
@@ -3678,6 +3698,10 @@ object GpuOverrides extends Logging {
       ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
           TypeSig.STRUCT +TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+    exec[SortMergeJoinExec](
+      "Sort merge join, replacing with shuffled hash join",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(
@@ -3704,48 +3728,7 @@ object GpuOverrides extends Logging {
     exec[SubqueryBroadcastExec](
       "Plan to collect and transform the broadcast key values",
       ExecChecks(TypeSig.all, TypeSig.all),
-      (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
-
-        private var broadcastMeta: GpuBroadcastMeta = _
-
-        override val childExprs: Seq[BaseExprMeta[_]] = Nil
-
-        override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
-
-        /**
-         * The rule PlanDynamicPruningFilters will insert SubqueryBroadcastExec if there exists
-         * available broadcast exchange for reuse. The plan stack of SubqueryBroadcastExec:
-         * SubqueryBroadcast -> BroadcastExchange -> executedPlan
-         * Since the GPU overrides rule has been applied on executedPlan, the plan stack become:
-         * SubqueryBroadcast -> BroadcastExchange -> GpuColumnarToRow -> GpuPlanStack...
-         * , if the wrapped subquery can run on the GPU.
-         * To reuse BroadcastExchange on the GPU, we shall transform above pattern into:
-         * GpuSubqueryBroadcast -> GpuBroadcastExchange -> GpuPlanStack...
-         */
-        override def tagPlanForGpu(): Unit = s.child match {
-          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
-            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
-            exMeta.tagForGpu()
-            if (exMeta.canThisBeReplaced) {
-              broadcastMeta = exMeta
-            } else {
-              willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
-            }
-          case _ =>
-            willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
-        }
-
-        /**
-         * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
-         * need to change if SubqueryBroadcastExec falls back to the CPU.
-         */
-        override def convertToCpu(): SparkPlan = s
-
-        override def convertToGpu(): GpuExec = {
-          val gpuEx = broadcastMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
-          GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
-        }
-      }
+      (s, conf, p, r) => new GpuSubqueryBroadcastMeta(s, conf, p, r)
     ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](

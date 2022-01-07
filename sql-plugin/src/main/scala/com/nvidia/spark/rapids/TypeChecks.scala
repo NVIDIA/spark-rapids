@@ -623,7 +623,7 @@ object TypeSig {
   val gpuNumeric: TypeSig = integral + fp + DECIMAL_128
 
   /**
-   * All numeric types fp + integral + DECIMAL_128_FULL
+   * All numeric types fp + integral + DECIMAL_128
    */
   val numeric: TypeSig = integral + fp + DECIMAL_128
 
