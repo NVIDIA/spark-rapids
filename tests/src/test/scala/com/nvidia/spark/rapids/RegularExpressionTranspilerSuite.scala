@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -230,6 +230,21 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\\\141")
     val inputs = Seq("a", "b")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: find digits") {
+    val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?",
+      "\\D", "\\D+", "\\D*", "\\D?")
+    val inputs = Seq("a", "1", "12", "a12z", "1az2")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: replace digits") {
+    // note that we do not test with quantifiers `?` or `*` due
+    // to https://github.com/NVIDIA/spark-rapids/issues/4468
+    val patterns = Seq("\\d", "\\d+", "\\D", "\\D+")
+    val inputs = Seq("a", "1", "12", "a12z", "1az2")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
   private val REGEXP_LIMITED_CHARS = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
