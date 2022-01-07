@@ -178,7 +178,7 @@ class GpuDynamicPartitionDataWriter(
   private val isPartitioned = description.partitionColumns.nonEmpty
 
   /** Flag saying whether or not the data to be written out is bucketed. */
-  private val isBucketed = description.bucketIdExpression.isDefined
+  private val isBucketed = description.bucketSpec.isDefined
 
   if (isBucketed) {
     throw new UnsupportedOperationException("Bucketing is not supported on the GPU yet.")
@@ -396,6 +396,16 @@ class GpuDynamicPartitionDataWriter(
 }
 
 /**
+ * Bucketing specification for all the write tasks.
+ * This is the GPU version of `org.apache.spark.sql.execution.datasources.WriterBucketSpec`
+ * @param bucketIdExpression Expression to calculate bucket id based on bucket column(s).
+ * @param bucketFileNamePrefix Prefix of output file name based on bucket id.
+ */
+case class GpuWriterBucketSpec(
+  bucketIdExpression: Expression,
+  bucketFileNamePrefix: Int => String)
+
+/**
  * A shared job description for all the GPU write tasks.
  * This is the GPU version of `org.apache.spark.sql.execution.datasources.WriteJobDescription`.
  */
@@ -406,7 +416,7 @@ class GpuWriteJobDescription(
     val allColumns: Seq[Attribute],
     val dataColumns: Seq[Attribute],
     val partitionColumns: Seq[Attribute],
-    val bucketIdExpression: Option[Expression],
+    val bucketSpec: Option[GpuWriterBucketSpec],
     val path: String,
     val customPartitionLocations: Map[TablePartitionSpec, String],
     val maxRecordsPerFile: Long,
