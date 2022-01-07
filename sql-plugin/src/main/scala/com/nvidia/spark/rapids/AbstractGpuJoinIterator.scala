@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 abstract class AbstractGpuJoinIterator(
     gatherNvtxName: String,
     targetSize: Long,
-    opTime: GpuMetric,
+    val opTime: GpuMetric,
     joinTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
   private[this] var nextCb: Option[ColumnarBatch] = None
   private[this] var gathererStore: Option[JoinGatherer] = None
@@ -48,15 +48,10 @@ abstract class AbstractGpuJoinIterator(
   /** Returns whether there are any more batches on the stream side of the join */
   protected def hasNextStreamBatch: Boolean
 
-  private def timedHasNextStreamBatch: (Boolean, Long) = {
-    val start = System.nanoTime()
-    val ret = hasNextStreamBatch
-    (ret, System.nanoTime() - start)
-  }
-
   /**
    * Called to setup the next join gatherer instance when the previous instance is done or
-   * there is no previous instance.
+   * there is no previous instance. Because this is likely to call next or has next on the
+   * stream side all implementations must track their own opTime metrics.
    * @param startNanoTime system nanoseconds timestamp at the top of the iterator loop, useful for
    *                      calculating the time spent producing the next stream batch
    * @return some gatherer to use next or None if there is no next gatherer or the loop should try
@@ -68,22 +63,23 @@ abstract class AbstractGpuJoinIterator(
     if (closed) {
       return false
     }
-    val startTime = System.nanoTime()
-    var totalHasNextTime = 0L
     var mayContinue = true
     while (nextCb.isEmpty && mayContinue) {
       if (gathererStore.exists(!_.isDone)) {
-        nextCb = nextCbFromGatherer()
-      } else {
-        // The only part we want to skip in the timing is hasNextStreamBatch
-        val (hasNextValue, hasNextTime) = timedHasNextStreamBatch
-        totalHasNextTime += hasNextTime
-        if (hasNextValue) {
-          // Need to refill the gatherer
-          gathererStore.foreach(_.close())
-          gathererStore = None
-          gathererStore = setupNextGatherer()
+        opTime.ns {
           nextCb = nextCbFromGatherer()
+        }
+      } else {
+        if (hasNextStreamBatch) {
+          // Need to refill the gatherer
+          opTime.ns {
+            gathererStore.foreach(_.close())
+            gathererStore = None
+          }
+          gathererStore = setupNextGatherer()
+          opTime.ns {
+            nextCb = nextCbFromGatherer()
+          }
         } else {
           mayContinue = false
         }
@@ -91,9 +87,8 @@ abstract class AbstractGpuJoinIterator(
     }
     if (nextCb.isEmpty) {
       // Nothing is left to return so close ASAP.
-      close()
+      opTime.ns(close())
     }
-    opTime += (System.nanoTime() - startTime) - totalHasNextTime
     nextCb.isDefined
   }
 
@@ -187,40 +182,48 @@ abstract class SplittableJoinIterator(
     isInitialJoin = false
     if (pendingSplits.nonEmpty || stream.hasNext) {
       val cb = if (pendingSplits.nonEmpty) {
-        withResource(pendingSplits.dequeue()) {
-          _.getColumnarBatch()
+        opTime.ns {
+          withResource(pendingSplits.dequeue()) {
+            _.getColumnarBatch()
+          }
         }
       } else {
         val batch = withResource(stream.next()) { lazyBatch =>
-          lazyBatch.releaseBatch()
+          opTime.ns {
+            lazyBatch.releaseBatch()
+          }
         }
         batch
       }
-      withResource(cb) { cb =>
-        val numJoinRows = computeNumJoinRows(cb)
+      opTime.ns {
+        withResource(cb) { cb =>
+          val numJoinRows = computeNumJoinRows(cb)
 
-        // We want the gather maps size to be around the target size. There are two gather maps
-        // that are made up of ints, so compute how many rows on the stream side will produce the
-        // desired gather maps size.
-        val maxJoinRows = Math.max(1, targetSize / (2 * Integer.BYTES))
-        if (numJoinRows > maxJoinRows && cb.numRows() > 1) {
-          // Need to split the batch to reduce the gather maps size. This takes a simplistic
-          // approach of assuming the data is uniformly distributed in the stream table.
-          val numSplits = Math.min(cb.numRows(),
-            Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
-          splitAndSave(cb, numSplits)
+          // We want the gather maps size to be around the target size. There are two gather maps
+          // that are made up of ints, so compute how many rows on the stream side will produce the
+          // desired gather maps size.
+          val maxJoinRows = Math.max(1, targetSize / (2 * Integer.BYTES))
+          if (numJoinRows > maxJoinRows && cb.numRows() > 1) {
+            // Need to split the batch to reduce the gather maps size. This takes a simplistic
+            // approach of assuming the data is uniformly distributed in the stream table.
+            val numSplits = Math.min(cb.numRows(),
+              Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
+            splitAndSave(cb, numSplits)
 
-          // Return no gatherer so the outer loop will try again
-          return None
+            // Return no gatherer so the outer loop will try again
+            return None
+          }
+
+          createGatherer(cb, Some(numJoinRows))
         }
-
-        createGatherer(cb, Some(numJoinRows))
       }
     } else {
-      assert(wasInitialJoin)
-      import scala.collection.JavaConverters._
-      withResource(GpuColumnVector.emptyBatch(streamAttributes.asJava)) { cb =>
-        createGatherer(cb, None)
+      opTime.ns {
+        assert(wasInitialJoin)
+        import scala.collection.JavaConverters._
+        withResource(GpuColumnVector.emptyBatch(streamAttributes.asJava)) { cb =>
+          createGatherer(cb, None)
+        }
       }
     }
   }

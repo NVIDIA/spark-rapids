@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
@@ -44,11 +43,9 @@ import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -100,6 +97,7 @@ trait SparkShims {
   def int96ParquetRebaseWrite(conf: SQLConf): String
   def int96ParquetRebaseReadKey: String
   def int96ParquetRebaseWriteKey: String
+  def isCastingStringToNegDecimalScaleSupported: Boolean
 
   def getParquetFilters(
     schema: MessageType,
@@ -109,13 +107,10 @@ trait SparkShims {
     pushDownStartWith: Boolean,
     pushDownInFilterThreshold: Int,
     caseSensitive: Boolean,
-    datetimeRebaseMode: LegacyBehaviorPolicy.Value): ParquetFilters
+    lookupFileMeta: String => String,
+    dateTimeRebaseModeFromConf: String): ParquetFilters
 
-  def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
-  def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isWindowFunctionExec(plan: SparkPlan): Boolean
-  def getBuildSide(join: HashJoin): GpuBuildSide
-  def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getGpuColumnarToRowTransition(plan: SparkPlan,
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent
@@ -131,14 +126,6 @@ trait SparkShims {
     udfName: Option[String] = None,
     nullable: Boolean = true,
     udfDeterministic: Boolean = true): Expression
-
-  def getGpuBroadcastNestedLoopJoinShim(
-    left: SparkPlan,
-    right: SparkPlan,
-    join: BroadcastNestedLoopJoinExec,
-    joinType: JoinType,
-    condition: Option[Expression],
-    targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase
 
   def getGpuShuffleExchangeExec(
       gpuOutputPartitioning: GpuPartitioning,

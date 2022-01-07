@@ -341,11 +341,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
-      val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
-        footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
         pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
-        isCaseSensitive, datetimeRebaseMode)
+        isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
     } else {
       None
@@ -489,7 +487,7 @@ case class GpuParquetPartitionReaderFactory(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
-  private val filterHandler = new GpuParquetFileFilterHandler(sqlConf)
+  private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -520,6 +518,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
   // Configuration
   def conf: Configuration
+  def execMetrics: Map[String, GpuMetric]
 
   // Schema to read
   def readDataSchema: StructType
@@ -589,6 +588,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       in: FSDataInputStream,
       out: OutputStream,
       copyBuffer: Array[Byte]): Unit = {
+    var readTime = 0L
+    var writeTime = 0L
     if (in.getPos != range.offset) {
       in.seek(range.offset)
     }
@@ -596,10 +597,17 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     while (bytesLeft > 0) {
       // downcast is safe because copyBuffer.length is an int
       val readLength = Math.min(bytesLeft, copyBuffer.length).toInt
+      val start = System.nanoTime()
       in.readFully(copyBuffer, 0, readLength)
+      val mid = System.nanoTime()
       out.write(copyBuffer, 0, readLength)
+      val end = System.nanoTime()
+      readTime += (mid - start)
+      writeTime += (end - mid)
       bytesLeft -= readLength
     }
+    execMetrics.get(READ_FS_TIME).foreach(_.add(readTime))
+    execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(writeTime))
   }
 
   /**
@@ -787,7 +795,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       field => {
         if (field.isPrimitive) {
           val t = field.getOriginalType
-          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) || (t == OriginalType.UINT_32)
+          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) ||
+            (t == OriginalType.UINT_32) || (t == OriginalType.UINT_64)
         } else {
           existsUnsignedType(field.asGroupType)
         }
@@ -796,7 +805,12 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
-    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType())
+    // UINT64 is casted to Decimal(20,0) by Spark to accommodate
+    // the largest possible values this type can take. Other Unsigned data types are converted to
+    // basic types like LongType, this is analogous to that except we spill over to large
+    // decimal/ints.
+    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()) ||
+      cv.getType.equals(DType.UINT64)
   }
 
   def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {
@@ -987,7 +1001,7 @@ class MultiFileParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
@@ -1185,7 +1199,7 @@ class MultiFileCloudParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     maxNumFileProcessed: Int,
@@ -1437,7 +1451,7 @@ class ParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean) extends FilePartitionReaderBase(conf, execMetrics)

@@ -35,15 +35,14 @@ function check-shims-revisions() {
     if [[ -f "$shim_version_path" ]] ; then
       curr_revision=$(grep "revision=" "${shim_version_path}" | cut -d'=' -f2)
       if [ -n "$pre_revision" ] && [[ "$curr_revision" != "$pre_revision" ]] ; then
-        echo
-        echo "Check Failed: git revisions between shims are not equal"
-        echo "Please check the revisions of each shim to see which one is inconsistent. Note, if building with Databricks those jars are built separately."
+        echo >&2 "Check Failed: git revisions between shims are not equal"
+        echo >&2 "Please check the revisions of each shim to see which one is inconsistent. Note, if building with Databricks those jars are built separately."
         exit 1
       fi
       pre_revision="${curr_revision}"
       pre_shim_version_path="${shim_version_path}"
     else
-      echo "Error: version file missing: ${shim_version_path}"
+      echo >&2 "Error: version file missing: ${shim_version_path}"
       exit 1
     fi
   done
