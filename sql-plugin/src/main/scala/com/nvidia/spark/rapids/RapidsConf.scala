@@ -781,7 +781,7 @@ object RapidsConf {
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
     .doc("When set to false disables orc output acceleration")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
