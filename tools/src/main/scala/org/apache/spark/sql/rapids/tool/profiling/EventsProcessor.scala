@@ -190,10 +190,11 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     // Parse task accumulables
     for (res <- event.taskInfo.accumulables) {
       try {
-        val value = res.value.getOrElse(0L).toString.toLong
+        val value = res.value.map(_.toString.toLong)
+        val update = res.update.map(_.toString.toLong)
         val thisMetric = TaskStageAccumCase(
           event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
-          res.id, res.name, Some(value), res.internal)
+          res.id, res.name, value, update, res.internal)
         val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
           ArrayBuffer[TaskStageAccumCase]())
         app.accumIdToStageId.put(res.id, event.stageId)
@@ -205,7 +206,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
             + ": ")
           logWarning(e.toString)
           logWarning("The problematic accumulable is: name="
-            + res.name + ",value=" + res.value)
+            + res.name + ",value=" + res.value + ",update=" + res.update)
       }
     }
 
@@ -386,10 +387,11 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     // Parse stage accumulables
     for (res <- event.stageInfo.accumulables) {
       try {
-        val value = res._2.value.getOrElse("").toString.toLong
+        val value = res._2.value.map(_.toString.toLong)
+        val update = res._2.update.map(_.toString.toLong)
         val thisMetric = TaskStageAccumCase(
           event.stageInfo.stageId, event.stageInfo.attemptNumber(),
-          None, res._2.id, res._2.name, Some(value), res._2.internal)
+          None, res._2.id, res._2.name, value, update, res._2.internal)
         val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res._2.id,
           ArrayBuffer[TaskStageAccumCase]())
         app.accumIdToStageId.put(res._2.id, event.stageInfo.stageId)
@@ -400,7 +402,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
               "stageID=" + event.stageInfo.stageId + ": ")
           logWarning(e.toString)
           logWarning("The problematic accumulable is: name="
-              + res._2.name + ",value=" + res._2.value)
+              + res._2.name + ",value=" + res._2.value + ",update=" + res._2.update)
       }
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.v2
+package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids._
-
-import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
 
 class GpuSortMergeJoinMeta(
@@ -36,6 +33,13 @@ class GpuSortMergeJoinMeta(
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val condition: Option[BaseExprMeta[_]] = join.condition.map(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val buildSide: GpuBuildSide = if (GpuHashJoin.canBuildRight(join.joinType)) {
+    GpuBuildRight
+  } else if (GpuHashJoin.canBuildLeft(join.joinType)) {
+    GpuBuildLeft
+  } else {
+    throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
+  }
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
@@ -44,7 +48,8 @@ class GpuSortMergeJoinMeta(
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
+      join.condition)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -69,19 +74,12 @@ class GpuSortMergeJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val buildSide = if (canBuildRight(join.joinType)) {
-      BuildRight
-    } else if (canBuildLeft(join.joinType)) {
-      BuildLeft
-    } else {
-      throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
-    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val joinExec = GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
-      GpuJoinUtils.getGpuBuildSide(buildSide),
+      buildSide,
       None,
       left,
       right,
@@ -91,26 +89,5 @@ class GpuSortMergeJoinMeta(
     // The GPU does not yet support conditional joins, so conditions are implemented
     // as a filter after the join when possible.
     condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
-  }
-
-  /**
-   * Determine if this type of join supports using the right side of the join as the build side.
-   *
-   * These rules match those in Spark's ShuffleHashJoinExec.
-   */
-  private def canBuildRight(joinType: JoinType): Boolean = joinType match {
-    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
-    case _ => false
-  }
-
-  /**
-   * Determine if this type of join supports using the left side of the join as the build side.
-   *
-   * These rules match those in Spark's ShuffleHashJoinExec, with the addition of support for
-   * full outer joins.
-   */
-  private def canBuildLeft(joinType: JoinType): Boolean = joinType match {
-    case _: InnerLike | RightOuter | FullOuter => true
-    case _ => false
   }
 }

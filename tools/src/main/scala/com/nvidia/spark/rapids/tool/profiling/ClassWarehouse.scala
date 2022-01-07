@@ -251,7 +251,10 @@ case class TaskStageAccumCase(
     taskId: Option[Long],
     accumulatorId: Long,
     name: Option[String],
+    // The total accumulated so far for all tasks
     value: Option[Long],
+    // The amount for this particular task/update
+    update: Option[Long],
     isInternal: Boolean)
 
 // Note: sr = Shuffle Read; sw = Shuffle Write
