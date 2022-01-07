@@ -1825,9 +1825,9 @@ object GpuOverrides extends Logging {
       }),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.getCpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.getCpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.getCpuNumeric)),
+      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
@@ -1881,9 +1881,9 @@ object GpuOverrides extends Logging {
         TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
           "Because of Spark's inner workings the full range of decimal precision " +
               "(even for 128-bit values) is not supported."),
-        TypeSig.getCpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.getCpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.getCpuNumeric)),
+        TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -2115,9 +2115,9 @@ object GpuOverrides extends Logging {
     expr[Remainder](
       "Remainder or modulo",
       ExprChecks.binaryProject(
-        TypeSig.integral + TypeSig.fp, TypeSig.getCpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.getCpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.getCpuNumeric)),
+        TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRemainder(lhs, rhs)
@@ -2281,7 +2281,7 @@ object GpuOverrides extends Logging {
       ExprChecks.fullAgg(
         TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.getCpuNumeric))),
+        Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.cpuNumeric))),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
@@ -2332,11 +2332,11 @@ object GpuOverrides extends Logging {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.getCpuNumeric,
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
-            TypeSig.getCpuNumeric),
+            TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2353,11 +2353,11 @@ object GpuOverrides extends Logging {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.getCpuNumeric,
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
-            TypeSig.getCpuNumeric),
+            TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -3236,12 +3236,12 @@ object GpuOverrides extends Logging {
         // is a single number or an array
         TypeSig.gpuNumeric +
             TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
-        TypeSig.getCpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
-          TypeSig.getCpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+        TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
+          TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
         Seq(
           ParamCheck("input",
             TypeSig.gpuNumeric,
-            TypeSig.getCpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+            TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
           ParamCheck("percentage",
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
