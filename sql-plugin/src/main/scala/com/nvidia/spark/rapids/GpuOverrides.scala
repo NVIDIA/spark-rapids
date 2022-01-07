@@ -1178,7 +1178,7 @@ object GpuOverrides extends Logging {
       "Negate a numeric value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1196,7 +1196,7 @@ object GpuOverrides extends Logging {
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
@@ -1837,10 +1837,10 @@ object GpuOverrides extends Logging {
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        ("rhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1858,10 +1858,10 @@ object GpuOverrides extends Logging {
       "Subtraction",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        ("rhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1879,12 +1879,12 @@ object GpuOverrides extends Logging {
       "Multiplication",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128 + TypeSig.psNote(TypeEnum.DECIMAL,
+        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
           "Because of Spark's inner workings the full range of decimal precision " +
               "(even for 128-bit values) is not supported."),
         TypeSig.numeric,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric)),
+        ("lhs", TypeSig.gpuNumeric, TypeSig.numeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.numeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -2282,7 +2282,7 @@ object GpuOverrides extends Logging {
       ExprChecks.fullAgg(
         TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric))),
+        Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
@@ -2333,8 +2333,8 @@ object GpuOverrides extends Logging {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
+        TypeSig.gpuNumeric, TypeSig.numeric,
+        ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -2354,8 +2354,8 @@ object GpuOverrides extends Logging {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
+        TypeSig.gpuNumeric, TypeSig.numeric,
+        ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -2722,12 +2722,12 @@ object GpuOverrides extends Logging {
     expr[CreateArray](
       "Returns an array with the given elements",
       ExprChecks.projectOnly(
-        TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
+        TypeSig.ARRAY.nested(TypeSig.gpuNumeric +
           TypeSig.NULL + TypeSig.STRING + TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
           TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
-          TypeSig.gpuNumeric + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRING +
+          TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
               TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
               TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
                 TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
@@ -3235,13 +3235,13 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         // note that output can be single number or array depending on whether percentiles param
         // is a single number or an array
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
-            TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.DECIMAL_128),
+        TypeSig.gpuNumeric +
+            TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
         TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
           TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
         Seq(
           ParamCheck("input",
-            TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+            TypeSig.gpuNumeric,
             TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
           ParamCheck("percentage",
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),

@@ -344,7 +344,7 @@ trait Spark320until322Shims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
         TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
