@@ -200,14 +200,14 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         // nullChecks are the same
 
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
-        override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
-        override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
           .withPsNote(TypeEnum.STRING, fpToStringPsNote)
-        override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
@@ -224,7 +224,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
         // binaryChecks are the same
         override val decimalChecks: TypeSig = gpuNumeric + STRING
-        override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkDecimalSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         // calendarChecks are the same
 
@@ -295,7 +295,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
-        TypeSig.numeric),
+        TypeSig.cpuNumeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
 

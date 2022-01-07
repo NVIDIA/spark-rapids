@@ -113,14 +113,14 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         // nullChecks are the same
 
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING + DECIMAL_128
-        override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
-        override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
             .withPsNote(TypeEnum.STRING, fpToStringPsNote)
-        override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
@@ -131,7 +131,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         // stringChecks are the same
         // binaryChecks are the same
         override val decimalChecks: TypeSig = gpuNumeric + STRING
-        override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkDecimalSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         // calendarChecks are the same
 
@@ -165,7 +165,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         Seq(ParamCheck("input",
           TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
-          TypeSig.numeric))),
+          TypeSig.cpuNumeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
@@ -200,7 +200,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
-        TypeSig.numeric),
+        TypeSig.cpuNumeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)

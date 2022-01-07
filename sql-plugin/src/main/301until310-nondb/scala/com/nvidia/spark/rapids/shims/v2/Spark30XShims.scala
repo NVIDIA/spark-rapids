@@ -247,7 +247,7 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
           TypeSig.DOUBLE + TypeSig.DECIMAL_128,
           Seq(ParamCheck("input",
             TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
-            TypeSig.numeric))),
+            TypeSig.cpuNumeric))),
         (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
           override def tagAggForGpu(): Unit = {
             // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
@@ -282,7 +282,7 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
         "Absolute value",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
           TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
-          TypeSig.numeric),
+          TypeSig.cpuNumeric),
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
           // ANSI support for ABS was added in 3.2.0 SPARK-33275
           override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
