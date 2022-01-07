@@ -18,11 +18,10 @@ package com.nvidia.spark.rapids.shims.v2
 
 import ai.rapids.cudf.ColumnVector
 
-import org.apache.spark.RapidsSparkIndexOutOfBoundsException
+import org.apache.spark.sql.errors.QueryExecutionErrors
 
 object RapidsErrorUtils {
-  def throwArrayIndexOutOfBoundsException(ordinalValue: Int, minNumElements: Int): ColumnVector = {
-    RapidsSparkIndexOutOfBoundsException
-        .throwSparkArrayIndexOutOfBoundsException(ordinalValue, minNumElements)
+  def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
+    throw QueryExecutionErrors.invalidArrayIndexError(index, numElements)
   }
 }

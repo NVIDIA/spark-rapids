@@ -19,9 +19,8 @@ package com.nvidia.spark.rapids.shims.v2
 import ai.rapids.cudf.ColumnVector
 
 object RapidsErrorUtils {
-  def throwArrayIndexOutOfBoundsException(ordinalValue: Int, minNumElements: Int): ColumnVector = {
-    throw new ArrayIndexOutOfBoundsException(
-      s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
-          s"$minNumElements")
+  def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
+    throw new ArrayIndexOutOfBoundsException(s"index $index is beyond the max index allowed " +
+        s"${numElements - 1}")
   }
 }
