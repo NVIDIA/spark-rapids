@@ -48,9 +48,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.caseSensitiveResolution
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.QueryExecutionException
+import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch

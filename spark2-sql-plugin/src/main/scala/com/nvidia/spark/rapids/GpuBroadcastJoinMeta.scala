@@ -26,7 +26,8 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
     buildSide.wrapped match {
-      case reused: ReusedExchangeExec => reused.child.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec")
+      case reused: ReusedExchangeExec =>
+        reused.child.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec")
       case f if f.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec") => true
       case _ => buildSide.canThisBeReplaced
     }

@@ -46,9 +46,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
-import org.apache.spark.sql.execution.{FileSourceScanExec, QueryExecutionException}
+import org.apache.spark.sql.execution.{FileSourceScanExec, QueryExecutionException, TrampolineUtil}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch

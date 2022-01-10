@@ -2360,29 +2360,7 @@ object GpuOverrides extends Logging {
 
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimOverrides.exprs //  ++ TimeStamp.getExprs // ++
-        // ShimLoader.getSparkShims.getExprs
-
-/*
-  def wrapScan[INPUT <: Scan](
-      scan: INPUT,
-      conf: RapidsConf,
-      parent: Option[RapidsMeta[_, _, _]]): ScanMeta[INPUT] =
-    scans.get(scan.getClass)
-      .map(r => r.wrap(scan, conf, parent, r).asInstanceOf[ScanMeta[INPUT]])
-      .getOrElse(new RuleNotFoundScanMeta(scan, conf, parent))
-
-  val commonScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
-    GpuOverrides.scan[CSVScan](
-      "CSV parsing",
-      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
-
-      })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
-    commonScans ++ ShimLoader.getSparkShims.getScans
-*/
+    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimOverrides.exprs
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,

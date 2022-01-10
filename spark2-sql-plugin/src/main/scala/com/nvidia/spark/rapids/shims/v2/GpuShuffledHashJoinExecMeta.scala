@@ -41,7 +41,8 @@ class GpuShuffledHashJoinMeta(
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
 
   override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
+      join.condition)
   }
 
 }

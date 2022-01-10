@@ -22,18 +22,19 @@ import scala.collection.mutable
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.{SortExec, SparkPlan}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan, TrampolineUtil}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType}
 
-// Spark 2.x - had to copy the GpuBaseAggregateMeta into each Hash and Sort Meta because no BaseAggregateExec class in Spark 2.x
+// Spark 2.x - had to copy the GpuBaseAggregateMeta into each Hash and Sort Meta because no
+// BaseAggregateExec class in Spark 2.x
 
 class GpuHashAggregateMeta(
     val agg: HashAggregateExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _]],
-    rule: DataFromReplacementRule) extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
 
   val groupingExpressions: Seq[BaseExprMeta[_]] =
     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -136,7 +137,8 @@ class GpuSortAggregateExecMeta(
     val agg: SortAggregateExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _]],
-    rule: DataFromReplacementRule) extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
 
   val groupingExpressions: Seq[BaseExprMeta[_]] =
     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -260,7 +262,8 @@ class GpuSortAggregateExecMeta(
   }
 }
 
-// SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the ObjectHashAggregate
+// SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
+// ObjectHashAggregate
 /*
 class GpuObjectHashAggregateExecMeta(
     override val agg: ObjectHashAggregateExec,

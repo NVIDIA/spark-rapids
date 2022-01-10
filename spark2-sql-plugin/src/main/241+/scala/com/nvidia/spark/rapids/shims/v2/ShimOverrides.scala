@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, WindowInPandasExec}
-import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids.GpuSequenceMeta
 import org.apache.spark.sql.types._
 

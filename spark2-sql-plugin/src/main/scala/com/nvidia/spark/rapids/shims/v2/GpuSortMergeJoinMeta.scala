@@ -51,7 +51,8 @@ class GpuSortMergeJoinMeta(
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
-    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
+      join.condition)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +

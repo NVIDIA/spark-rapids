@@ -77,10 +77,10 @@ object DateUtils {
   private val MIN_SECONDS = Math.floorDiv(Long.MinValue, MICROS_PER_SECOND)
 
  /**
-   * Gets the number of microseconds since the epoch of 1970-01-01 00:00:00Z from the given
-   * instance of `java.time.Instant`. The epoch microsecond count is a simple incrementing count of
-   * microseconds where microsecond 0 is 1970-01-01 00:00:00Z.
-   */
+  * Gets the number of microseconds since the epoch of 1970-01-01 00:00:00Z from the given
+  * instance of `java.time.Instant`. The epoch microsecond count is a simple incrementing count of
+  * microseconds where microsecond 0 is 1970-01-01 00:00:00Z.
+  */
   def instantToMicros(instant: Instant): Long = {
     val secs = instant.getEpochSecond
     if (secs == MIN_SECONDS) {

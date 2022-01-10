@@ -23,10 +23,10 @@ import org.apache.parquet.hadoop.util.ContextUtil
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
-import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 

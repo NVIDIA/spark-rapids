@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.shims.v2._
+
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 
 /**
