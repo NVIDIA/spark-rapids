@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -110,6 +110,10 @@ def is_before_spark_320():
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
+
+# The bug SPARK-37451 only affects the following versions
+def is_neg_dec_scale_bug_version():
+    return ("3.1.1" <= spark_version() < "3.1.3") or ("3.2.0" <= spark_version() < "3.2.1")
 
 def is_databricks91_or_later():
     spark = get_spark_i_know_what_i_am_doing()

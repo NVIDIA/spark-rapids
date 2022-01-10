@@ -129,5 +129,5 @@ trait Spark31XdbShimsBase extends SparkShims {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 }
