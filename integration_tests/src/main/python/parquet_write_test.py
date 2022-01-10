@@ -329,6 +329,9 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             data_path,
             'DataWritingCommandExec')
 
+def test_write_hive_bucketed_table_fallback():
+    assert False
+
 # This test is testing how the parquet_writer will behave if column has a validity mask without having any nulls.
 # There is no straight forward to do it besides creating a vector with nulls and then dropping nulls
 # cudf will create a vector with a null_mask even though we have just filtered them
