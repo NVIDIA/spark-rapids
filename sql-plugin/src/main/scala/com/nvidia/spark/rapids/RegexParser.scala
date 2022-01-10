@@ -590,10 +590,11 @@ class CudfRegexTranspiler(replace: Boolean) {
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
           // cuDF: XXXX] b[
+          // see https://github.com/NVIDIA/spark-rapids/issues/4468
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(_), _) =>
+        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'D' =>
           // example: "\B?"
           throw new RegexUnsupportedException(nothingToRepeat)
 

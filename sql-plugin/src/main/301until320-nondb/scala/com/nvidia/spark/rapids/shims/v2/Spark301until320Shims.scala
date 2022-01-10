@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
@@ -51,7 +50,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuCustomShuffleReaderExec, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.shims.v2.GpuSchemaUtils
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -119,7 +118,7 @@ trait Spark301until320Shims extends SparkShims {
 
   override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[CustomShuffleReaderExec](
     "A wrapper of shuffle query stage",
-    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
+    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
@@ -157,31 +156,7 @@ trait Spark301until320Shims extends SparkShims {
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
 
-  override def getGpuBroadcastNestedLoopJoinShim(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression],
-      targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
-  }
-
-  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuBroadcastHashJoinExec => true
-      case _ => false
-    }
-  }
-
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
-
-  override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuShuffledHashJoinExec => true
-      case _ => false
-    }
-  }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
     GpuOverrides.scan[ParquetScan](
@@ -223,14 +198,6 @@ trait Spark301until320Shims extends SparkShims {
             conf)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getBuildSide(join: HashJoin): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
 
   override def getPartitionFileNames(
       partitions: Seq[PartitionDirectory]): Seq[String] = {

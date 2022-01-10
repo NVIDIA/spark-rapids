@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -605,18 +605,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_DECIMAL = conf("spark.rapids.sql.castStringToDecimal.enabled")
-    .doc("When set to true, enables casting from strings to decimal type on the GPU. Currently " +
-      "string to decimal type on the GPU might produce results which slightly differed from the " +
-      "correct results when the string represents any number exceeding the max precision that " +
-      "CAST_STRING_TO_FLOAT can keep. For instance, the GPU returns 99999999999999987 given " +
-      "input string \"99999999999999999\". The cause of divergence is that we can not cast " +
-      "strings containing scientific notation to decimal directly. So, we have to cast strings " +
-      "to floats firstly. Then, cast floats to decimals. The first step may lead to precision " +
-      "loss.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
     .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
       "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
@@ -791,9 +779,11 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration")
+    .doc("When set to true enables orc output acceleration. We default it to false is because " +
+      "there is an ORC bug that ORC Java library fails to read ORC file without statistics in " +
+      "RowIndex. For more details, please refer to https://issues.apache.org/jira/browse/ORC-1075")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
@@ -1560,8 +1550,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hasExtendedYearValues: Boolean = get(HAS_EXTENDED_YEAR_VALUES)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
-
-  lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 

@@ -34,3 +34,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     }
   }
 }
+
+object GpuHashPartitioning {
+  def getDistribution(exprs: Seq[Expression]): Distribution = ClusteredDistribution(exprs)
+}

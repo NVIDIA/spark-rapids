@@ -40,7 +40,6 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
@@ -54,12 +53,11 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
+import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
 import org.apache.spark.sql.rapids.shims.v2.{GpuFileScanRDD, GpuSchemaUtils}
@@ -111,16 +109,6 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
-  override def getGpuBroadcastNestedLoopJoinShim(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression],
-      targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
-  }
-
   override def getGpuShuffleExchangeExec(
       gpuOutputPartitioning: GpuPartitioning,
       child: SparkPlan,
@@ -136,27 +124,13 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuBroadcastHashJoinExec => true
-      case _ => false
-    }
-  }
-
-  override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuShuffledHashJoinExec => true
-      case _ => false
-    }
-  }
-
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[RunningWindowFunctionExec](
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all,
           Map("partitionSpec" ->
@@ -168,7 +142,7 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
@@ -260,18 +234,6 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
             )(winPy.partitionSpec)
           }
         }).disabledByDefault("it only supports row based frame for now"),
-      GpuOverrides.exec[SortMergeJoinExec](
-        "Sort merge join, replacing with shuffled hash join",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[ShuffledHashJoinExec](
-        "Implementation of join using hashed shuffled data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -335,11 +297,11 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
           Seq(ParamCheck("input", 
-            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL,
-            TypeSig.numeric))),
+            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
+            TypeSig.cpuNumeric))),
         (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
           override def tagAggForGpu(): Unit = {
             // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
@@ -373,8 +335,8 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
       GpuOverrides.expr[Abs](
         "Absolute value",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
-          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
-          TypeSig.numeric),
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
+          TypeSig.cpuNumeric),
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
           // ANSI support for ABS was added in 3.2.0 SPARK-33275
           override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
@@ -456,14 +418,6 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
             conf)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getBuildSide(join: HashJoin): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
-    GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
 
   override def getPartitionFileNames(
       partitions: Seq[PartitionDirectory]): Seq[String] = {

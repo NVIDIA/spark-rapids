@@ -260,6 +260,21 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private val REGEXP_LIMITED_CHARS_REPLACE = REGEXP_LIMITED_CHARS_COMMON
 
+  test("compare CPU and GPU: find digits") {
+    val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?",
+      "\\D", "\\D+", "\\D*", "\\D?")
+    val inputs = Seq("a", "1", "12", "a12z", "1az2")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: replace digits") {
+    // note that we do not test with quantifiers `?` or `*` due
+    // to https://github.com/NVIDIA/spark-rapids/issues/4468
+    val patterns = Seq("\\d", "\\d+", "\\D", "\\D+")
+    val inputs = Seq("a", "1", "12", "a12z", "1az2")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
