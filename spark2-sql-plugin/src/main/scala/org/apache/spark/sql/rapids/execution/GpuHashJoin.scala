@@ -15,7 +15,6 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{DType, GroupByAggregation, NullPolicy, NvtxColor, ReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}

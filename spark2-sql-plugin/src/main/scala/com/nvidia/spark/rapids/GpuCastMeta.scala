@@ -21,9 +21,6 @@ import java.time.DateTimeException
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import ai.rapids.cudf
-
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -74,9 +71,9 @@ final class CastExprMeta[INPUT <: Cast](
               s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
               s"equivalent decimal strings are sufficient for your application.")
         }
-        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+        if (dt.precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
-              s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
+              s"precision > ${GpuOverrides.DECIMAL128_MAX_PRECISION} is not supported yet")
         }
       case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
@@ -93,7 +90,7 @@ final class CastExprMeta[INPUT <: Cast](
             "converting floating point data types to strings and this can produce results that " +
             "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
             s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-      case (_: StringType, dt: DecimalType) if dt.precision + 1 > Decimal.MAX_LONG_DIGITS =>
+      case (_: StringType, dt: DecimalType) if dt.precision + 1 > DecimalType.MAX_PRECISION =>
         willNotWorkOnGpu(s"Because of rounding requirements we cannot support $dt on the GPU")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
@@ -112,6 +109,13 @@ final class CastExprMeta[INPUT <: Cast](
         }
       case (_: StringType, _: DateType) =>
         // NOOP for anything prior to 3.2.0
+      case (_: StringType, dt:DecimalType) =>
+        // Spark 2.x  since bug  and we don't know what version of Spark 3 they will be using 
+        // just always say it won't work and they can hopefully figure it out from warning.
+        if (dt.scale < 0) {
+          willNotWorkOnGpu("RAPIDS doesn't support casting string to decimal for " +
+              "negative scale decimal in this version of Spark because of SPARK-37451")
+        }
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)

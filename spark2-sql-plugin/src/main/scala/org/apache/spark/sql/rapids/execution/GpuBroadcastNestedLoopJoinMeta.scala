@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Table}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext

@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuOverrides, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,6 @@ import java.time.LocalDate
 import java.util.concurrent.TimeUnit._
 
 import scala.collection.mutable.ListBuffer
-
-import ai.rapids.cudf.{DType, Scalar}
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
@@ -117,23 +115,6 @@ object DateUtils {
       YESTERDAY -> (today - 1) * ONE_DAY_MICROSECONDS,
       TOMORROW -> (today + 1) * ONE_DAY_MICROSECONDS
     )
-  }
-
-  def fetchSpecialDates(unit: DType): Map[String, () => Scalar] = unit match {
-    case DType.TIMESTAMP_DAYS =>
-      DateUtils.specialDatesDays.map { case (k, v) =>
-        k -> (() => Scalar.timestampDaysFromInt(v))
-      }
-    case DType.TIMESTAMP_SECONDS =>
-      DateUtils.specialDatesSeconds.map { case (k, v) =>
-        k -> (() => Scalar.timestampFromLong(unit, v))
-      }
-    case DType.TIMESTAMP_MICROSECONDS =>
-      DateUtils.specialDatesMicros.map { case (k, v) =>
-        k -> (() => Scalar.timestampFromLong(unit, v))
-      }
-    case _ =>
-      throw new IllegalArgumentException(s"unsupported DType: $unit")
   }
 
   def currentDate(): Int = Math.toIntExact(LocalDate.now().toEpochDay)

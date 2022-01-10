@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.codec.CodecConfig
@@ -111,10 +110,11 @@ object GpuParquetFileFormat {
     */
   }
 
-  def parseCompressionType(compressionType: String): Option[CompressionType] = {
+  // SPARK 2.X  - just return String rather then CompressionType
+  def parseCompressionType(compressionType: String): Option[String] = {
     compressionType match {
-      case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
-      case "SNAPPY" => Some(CompressionType.SNAPPY)
+      case "NONE" | "UNCOMPRESSED" => Some("NONE")
+      case "SNAPPY" => Some("SNAPPY")
       case _ => None
     }
   }

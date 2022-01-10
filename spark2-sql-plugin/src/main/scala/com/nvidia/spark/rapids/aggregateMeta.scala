@@ -19,8 +19,6 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-import ai.rapids.cudf.DType
-
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -62,7 +60,7 @@ class GpuHashAggregateMeta(
     val dec128Grouping = agg.groupingExpressions.exists(e =>
       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
         dt => dt.isInstanceOf[DecimalType] &&
-            dt.asInstanceOf[DecimalType].precision > DType.DECIMAL64_MAX_PRECISION))
+            dt.asInstanceOf[DecimalType].precision > GpuOverrides.DECIMAL64_MAX_PRECISION))
     if (dec128Grouping) {
       willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
     }
@@ -165,7 +163,7 @@ class GpuSortAggregateExecMeta(
     val dec128Grouping = agg.groupingExpressions.exists(e =>
       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
         dt => dt.isInstanceOf[DecimalType] &&
-            dt.asInstanceOf[DecimalType].precision > DType.DECIMAL64_MAX_PRECISION))
+            dt.asInstanceOf[DecimalType].precision > GpuOverrides.DECIMAL64_MAX_PRECISION))
     if (dec128Grouping) {
       willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
     }

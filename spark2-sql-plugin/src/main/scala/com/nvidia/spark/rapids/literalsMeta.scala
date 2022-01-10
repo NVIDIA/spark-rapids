@@ -24,9 +24,6 @@ import javax.xml.bind.DatatypeConverter
 
 import scala.collection.JavaConverters._
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
-import ai.rapids.cudf.ast
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Literal, UnsafeArrayData}
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils, MapData}

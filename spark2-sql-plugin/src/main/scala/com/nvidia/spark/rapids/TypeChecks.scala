@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
-import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
@@ -165,7 +164,8 @@ object TypeEnum extends Enumeration {
  */
 final class TypeSig private(
     private val initialTypes: TypeEnum.ValueSet,
-    private val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
+    // TODO - needs upmerged
+    private val maxAllowedDecimalPrecision: Int = GpuOverrides.DECIMAL128_MAX_PRECISION,
     private val childTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val litOnlyTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val notes: Map[TypeEnum.Value, String] = Map.empty) {
@@ -559,14 +559,14 @@ object TypeSig {
   val DATE: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.DATE))
   val TIMESTAMP: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.TIMESTAMP))
   val STRING: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.STRING))
-  val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
+  val DECIMAL_64: TypeSig = decimal(GpuOverrides.DECIMAL64_MAX_PRECISION)
 
   /**
    * Full support for 128 bit DECIMAL. In the future we expect to have other types with
    * slightly less than full DECIMAL support. This are things like math operations where
    * we cannot replicate the overflow behavior of Spark. These will be added when needed.
    */
-  val DECIMAL_128_FULL: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
+  val DECIMAL_128_FULL: TypeSig = decimal(GpuOverrides.DECIMAL128_MAX_PRECISION)
 
   val NULL: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.NULL))
   val BINARY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BINARY))
@@ -1734,7 +1734,7 @@ object SupportedOpsDocs {
     println("The `Decimal` type in Spark supports a precision")
     println("up to 38 digits (128-bits). The RAPIDS Accelerator in most cases stores values up to")
     println("64-bits and will support 128-bit in the future. As such the accelerator currently only")
-    println(s"supports a precision up to ${DType.DECIMAL64_MAX_PRECISION} digits. Note that")
+    println(s"supports a precision up to ${GpuOverrides.DECIMAL64_MAX_PRECISION} digits. Note that")
     println("decimals are disabled by default in the plugin, because it is supported by a relatively")
     println("small number of operations presently. This can result in a lot of data movement to and")
     println("from the GPU, slowing down processing in some cases.")

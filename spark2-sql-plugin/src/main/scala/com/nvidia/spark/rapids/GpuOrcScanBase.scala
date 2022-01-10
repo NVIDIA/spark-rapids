@@ -31,7 +31,6 @@ import scala.collection.mutable
 import scala.language.implicitConversions
 import scala.math.max
 
-import ai.rapids.cudf._
 import com.google.protobuf.CodedOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}

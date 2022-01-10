@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark;
 
-import ai.rapids.cudf.ColumnVector;
+// import ai.rapids.cudf.ColumnVector;
 
 /** A RAPIDS accelerated version of a user-defined function (UDF). */
 public interface RapidsUDF {
@@ -36,5 +36,5 @@ public interface RapidsUDF {
    *             and should not be closed within this method.
    * @return columnar output from the user-defined function
    */
-  ColumnVector evaluateColumnar(ColumnVector... args);
+  // ColumnVector evaluateColumnar(ColumnVector... args);
 }

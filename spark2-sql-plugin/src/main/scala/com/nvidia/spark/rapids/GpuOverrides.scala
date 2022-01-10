@@ -22,7 +22,6 @@ import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.v2._
 
@@ -67,7 +66,6 @@ sealed trait TimeParserPolicy extends Serializable
 object LegacyTimeParserPolicy extends TimeParserPolicy
 object ExceptionTimeParserPolicy extends TimeParserPolicy
 object CorrectedTimeParserPolicy extends TimeParserPolicy
-
 
 /**
  * Base class for all ReplacementRules
@@ -426,6 +424,10 @@ object WriteFileOp extends FileFormatOp {
 }
 
 object GpuOverrides extends Logging {
+  // Spark 2.x - don't pull in cudf so hardcode here
+  val DECIMAL64_MAX_PRECISION = 18
+  val DECIMAL128_MAX_PRECISION = 38
+
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
@@ -644,7 +646,7 @@ object GpuOverrides extends Logging {
       case DateType => true
       case TimestampType => TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
       case StringType => true
-      case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
+      case dt: DecimalType if allowDecimal => dt.precision <= GpuOverrides.DECIMAL64_MAX_PRECISION
       case NullType => allowNull
       case BinaryType => allowBinary
       case CalendarIntervalType => allowCalendarInterval
@@ -1142,7 +1144,7 @@ object GpuOverrides extends Logging {
           a.dataType match {
             case dt: DecimalType =>
               val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
-              if (precision > DType.DECIMAL128_MAX_PRECISION) {
+              if (precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu(s"output precision $precision would require overflow " +
                     s"checks, which are not supported yet")
               }
@@ -1161,7 +1163,7 @@ object GpuOverrides extends Logging {
           a.dataType match {
             case dt: DecimalType =>
               val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
-              if (precision > DType.DECIMAL128_MAX_PRECISION) {
+              if (precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu(s"output precision $precision would require overflow " +
                     s"checks, which are not supported yet")
               }
