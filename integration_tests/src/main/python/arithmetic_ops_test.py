@@ -445,7 +445,7 @@ def test_non_decimal_round_overflow():
             'round(float_c, -38)', 'round(float_c, -39)',
             'round(float_c, 38)', 'round(float_c, 39)',
             'round(double_c, -308)', 'round(double_c, -309)',
-            'round(double_c, 309)', 'round(double_c, 309)',
+            'round(double_c, 308)', 'round(double_c, 309)',
             'bround(byte_c, -2)', 'bround(byte_c, -3)',
             'bround(short_c, -4)', 'bround(short_c, -5)',
             'bround(int_c, -9)', 'bround(int_c, -10)',
@@ -453,7 +453,7 @@ def test_non_decimal_round_overflow():
             'bround(float_c, -38)', 'bround(float_c, -39)',
             'bround(float_c, 38)', 'bround(float_c, 39)',
             'bround(double_c, -308)', 'bround(double_c, -309)',
-            'bround(double_c, 309)', 'bround(double_c, 309)'))
+            'bround(double_c, 308)', 'bround(double_c, 309)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
