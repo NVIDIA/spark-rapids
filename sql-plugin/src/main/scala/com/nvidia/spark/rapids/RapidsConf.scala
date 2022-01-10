@@ -779,9 +779,11 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration")
+    .doc("When set to true enables orc output acceleration. We default it to false is because " +
+      "there is an ORC bug that ORC Java library fails to read ORC file without statistics in " +
+      "RowIndex. For more details, please refer to https://issues.apache.org/jira/browse/ORC-1075")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
