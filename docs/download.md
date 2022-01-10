@@ -23,7 +23,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -43,7 +43,7 @@ for your hardware's minimum driver version.
 ### Download v21.12.0
 * Download the [RAPIDS
   Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
-* Download the [RAPIDS cuDF 21.12.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.12.0/cudf-21.12.0-cuda11.jar)
+* Download the [RAPIDS cuDF 21.12.2 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.12.2/cudf-21.12.2-cuda11.jar)
 
 This package is built against CUDA 11.5 and has [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
@@ -75,9 +75,9 @@ New functionality and performance improvements for this release include:
 * regexp_replace supports more patterns such as replacing null
 * ParquetCachedBatchSerializer supports map
 * Add function explainPotentialGpuPlan to print GPU query plan in a CPU Spark cluster
-* Spark Qualification Tool
+* Qualification Tool
   * Detect RDD APIs and JDBC Scan
-* Spark Profiling Tool
+* Profiling Tool
   * Catch OOM errors and log a hint to increase java heap size
   * Print potential problems
 
@@ -89,7 +89,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -129,13 +129,13 @@ New functionality and performance improvements for this release include:
 * Parquet writing of map
 * ORC reader supports reading map/struct columns
 * ORC reader support decimal64 
-* Spark Qualification Tool
+* Qualification Tool
   * Add conjunction and disjunction filters
   * Filtering specific configuration values
   * Filtering user name
   * Reporting nested data types
   * Reporting write data formats
-* Spark Profiling Tool
+* Profiling Tool
   * Generating structured output format
   * Improved profiling tool performance
 
@@ -147,7 +147,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -202,7 +202,7 @@ This is a patch release to address an issue with the plugin in the Databricks 8.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -244,7 +244,7 @@ This is a patch release to address an issue with the plugin in the Databricks 7.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -290,7 +290,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 

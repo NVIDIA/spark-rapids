@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "a*+",
       "\t+|a",
       "(\t+|a)Dc$1",
-      "(?d)"
+      "(?d)",
+      "$|$[^\n]2]}|B",
+      "a^|b",
+      "w$|b"
     )
     // data is not relevant because we are checking for compilation errors
     val inputs = Seq("a")
@@ -70,7 +73,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support choice with nothing to repeat") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, "nothing to repeat")
+      assertUnsupported(pattern, replace = false, "nothing to repeat")
     )
   }
 
@@ -94,14 +97,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support possessive quantifier") {
     val patterns = Seq("a*+", "a|(a?|a*+)")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, "nothing to repeat")
+      assertUnsupported(pattern, replace = false, "nothing to repeat")
     )
   }
 
   test("cuDF does not support empty sequence") {
     val patterns = Seq("", "a|", "()")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, "empty sequence not supported")
+      assertUnsupported(pattern, replace = false, "empty sequence not supported")
     )
   }
 
@@ -109,27 +112,23 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // note that we could choose to transpile and escape the '{' and '}' characters
     val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, "nothing to repeat")
+      assertUnsupported(pattern, replace = false, "nothing to repeat")
     )
   }
 
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
     patterns.foreach(pattern => {
-      assertUnsupported(pattern, "nothing to repeat")
+      assertUnsupported(pattern, replace = false,
+        "nothing to repeat")
     })
   }
 
   test("cuDF does not support null in pattern") {
     val patterns = Seq("\u0000", "a\u0000b", "a(\u0000)b", "a[a-b][\u0000]")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, "cuDF does not support null characters in regular expressions"))
-  }
-
-  test("nothing to repeat") {
-    val patterns = Seq("$*", "^+")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, "nothing to repeat"))
+      assertUnsupported(pattern, replace = false,
+        "cuDF does not support null characters in regular expressions"))
   }
 
   test("end of line anchor with strings ending in valid newline") {
@@ -233,6 +232,21 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
+  test("compare CPU and GPU: find digits") {
+    val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?",
+      "\\D", "\\D+", "\\D*", "\\D?")
+    val inputs = Seq("a", "1", "12", "a12z", "1az2")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: replace digits") {
+    // note that we do not test with quantifiers `?` or `*` due
+    // to https://github.com/NVIDIA/spark-rapids/issues/4468
+    val patterns = Seq("\\d", "\\d+", "\\D", "\\D+")
+    val inputs = Seq("a", "1", "12", "a12z", "1az2")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
   private val REGEXP_LIMITED_CHARS = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
 
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
@@ -246,6 +260,24 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val inputs = Seq("a", "b", "c")
     val patterns = Seq("a|b")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: regexp replace BOL / EOL supported use cases") {
+    val inputs = Seq("a", "b", "c", "cat", "", "^", "$", "^a", "t$")
+    val patterns = Seq("^a", "a$", "^a$", "(^a|t$)", "(^a)|(t$)", "^[ac]$", "^^^a$$$",
+        "[\\^\\$]")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("cuDF does not support some uses of BOL/EOL in regexp_replace") {
+    Seq("^$", "^", "$", "(^)($)", "(((^^^)))$", "^*", "$*", "^+", "$+").foreach(pattern =>
+      assertUnsupported(pattern, replace = true,
+        "sequences that only contain '^' or '$' are not supported")
+    )
+    Seq("^|$", "^^|$$").foreach(pattern =>
+      assertUnsupported(pattern, replace = true,
+        "nothing to repeat")
+    )
   }
 
   test("compare CPU and GPU: regexp replace negated character class") {
@@ -405,11 +437,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     new CudfRegexTranspiler(replace).transpile(pattern)
   }
 
-  private def assertUnsupported(pattern: String, message: String): Unit = {
+  private def assertUnsupported(pattern: String, replace: Boolean, message: String): Unit = {
     val e = intercept[RegexUnsupportedException] {
-      transpile(pattern, replace = false)
+      transpile(pattern, replace)
     }
-    assert(e.getMessage.startsWith(message))
+    assert(e.getMessage.startsWith(message), pattern)
   }
 
   private def parse(pattern: String): RegexAST = new RegexParser(pattern).parse()

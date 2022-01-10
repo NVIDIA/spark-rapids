@@ -25,8 +25,8 @@ import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** TypeSigUtil for different spark versions */
-trait TypeSigUtil {
+/** Trait of TypeSigUtil for different spark versions */
+trait TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
@@ -566,7 +566,7 @@ object TypeSig {
    * slightly less than full DECIMAL support. This are things like math operations where
    * we cannot replicate the overflow behavior of Spark. These will be added when needed.
    */
-  val DECIMAL_128_FULL: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
+  val DECIMAL_128: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
 
   val NULL: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.NULL))
   val BINARY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BINARY))
@@ -620,12 +620,12 @@ object TypeSig {
   /**
    * All numeric types fp + integral + DECIMAL_64
    */
-  val gpuNumeric: TypeSig = integral + fp + DECIMAL_64
+  val gpuNumeric: TypeSig = integral + fp + DECIMAL_128
 
   /**
-   * All numeric types fp + integral + DECIMAL_128_FULL
+   * All numeric types fp + integral + DECIMAL_128
    */
-  val numeric: TypeSig = integral + fp + DECIMAL_128_FULL
+  val cpuNumeric: TypeSig = integral + fp + DECIMAL_128
 
   /**
    * All values that correspond to Spark's AtomicType but supported by GPU
@@ -635,7 +635,7 @@ object TypeSig {
   /**
    * All values that correspond to Spark's AtomicType
    */
-  val atomics: TypeSig = numeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
+  val cpuAtomics: TypeSig = cpuNumeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
 
   /**
    * numeric + CALENDAR but only for GPU
@@ -657,7 +657,7 @@ object TypeSig {
    * All types that Spark supports sorting/ordering on (really everything but MAP)
    */
   val orderable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
-      TIMESTAMP + STRING + DECIMAL_128_FULL + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
+      TIMESTAMP + STRING + DECIMAL_128 + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
       UDT).nested()
 
   /**
@@ -665,7 +665,7 @@ object TypeSig {
    * to https://spark.apache.org/docs/latest/api/sql/index.html#_12), e.g. "<=>", "=", "==".
    */
   val comparable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
-      TIMESTAMP + STRING + DECIMAL_128_FULL + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
+      TIMESTAMP + STRING + DECIMAL_128 + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
       UDT).nested()
 
   /**
@@ -682,7 +682,7 @@ object TypeSig {
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
   /** All types that can appear in AST expressions */
-  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP
+  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP + DATE
 
   /** All AST types that work for comparisons */
   val comparisonAstTypes: TypeSig = astTypes - fp
@@ -1050,7 +1050,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  * This is specific to CaseWhen, because it does not follow the typical parameter convention.
  */
 object CaseWhenCheck extends ExprChecks {
-  val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+  val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
     TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
 
   val sparkSig: TypeSig = TypeSig.all
@@ -1101,8 +1101,8 @@ object CaseWhenCheck extends ExprChecks {
  */
 object WindowSpecCheck extends ExprChecks {
   val check: TypeSig =
-    TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
-      TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+    TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+      TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
   val sparkSig: TypeSig = TypeSig.all
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
@@ -1146,11 +1146,11 @@ object CreateMapCheck extends ExprChecks {
 
   // Spark supports all types except for Map for key (Map is not supported
   // even in child types)
-  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
     TypeSig.ARRAY + TypeSig.STRUCT).nested()
 
   private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL +
-    TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+    TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
     meta.willNotWorkInAst("CreateMap is not supported by AST")
@@ -1181,7 +1181,7 @@ object CreateMapCheck extends ExprChecks {
 object CreateNamedStructCheck extends ExprChecks {
   val nameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val sparkNameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
-  val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+  val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
       TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
   val sparkValueSig: TypeSig = TypeSig.all
   val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
@@ -1235,49 +1235,50 @@ class CastChecks extends ExprChecks {
   // When updating these please check child classes too
   import TypeSig._
   val nullChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING +
-    NULL + DECIMAL_128_FULL
+    NULL + DECIMAL_128
   val sparkNullSig: TypeSig = all
 
-  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128_FULL
-  val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128
+  val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
-    BINARY + DECIMAL_128_FULL
-  val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+    BINARY
+  val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
   val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
       s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
-  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128_FULL)
+  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING)
       .withPsNote(TypeEnum.STRING, fpToStringPsNote)
-  val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkDateSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkDateSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
-    BINARY + DECIMAL_128_FULL
-  val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
+    BINARY
+  val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128_FULL + STRING
-  val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  val decimalChecks: TypeSig = gpuNumeric + STRING
+  val sparkDecimalSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = STRING + ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
-      ARRAY + BINARY + STRUCT + MAP) +
-      psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
-          "the desired child type")
+  val arrayChecks: TypeSig = psNote(TypeEnum.STRING, "the array's child type must also support " +
+    "being cast to string") + ARRAY.nested(commonCudfTypes + DECIMAL_128 + NULL +
+    ARRAY + BINARY + STRUCT + MAP) +
+    psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to the " +
+      "desired child type(s)")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
-  val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY +
+  val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY +
       STRUCT + MAP) +
       psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
       "desired child types")
@@ -1285,7 +1286,7 @@ class CastChecks extends ExprChecks {
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
       "being cast to string") +
-      STRUCT.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT + MAP) +
+      STRUCT.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
           "desired child type(s)")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)

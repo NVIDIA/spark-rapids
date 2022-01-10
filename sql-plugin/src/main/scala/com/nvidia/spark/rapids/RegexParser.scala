@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -167,7 +167,7 @@ class RegexParser(pattern: String) {
           peek() match {
             case None =>
               throw new RegexUnsupportedException(
-                s"unexpected EOF while parsing escaped character", Some(pos))
+                s"Unclosed character class", Some(pos))
             case Some(ch) =>
               // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
               // within the character class, but could be any escaped character
@@ -203,7 +203,7 @@ class RegexParser(pattern: String) {
     }
     if (!characterClassComplete) {
       throw new RegexUnsupportedException(
-        s"unexpected EOF while parsing character class", Some(pos))
+        s"Unclosed character class", Some(pos))
     }
     characterClass
   }
@@ -440,10 +440,6 @@ class CudfRegexTranspiler(replace: Boolean) {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
-        case '^' | '$' if replace =>
-          // this is a bit extreme and it would be good to replace with finer-grained
-          // rules
-          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
         case '$' =>
           RegexSequence(ListBuffer(
             RegexRepetition(
@@ -552,9 +548,21 @@ class CudfRegexTranspiler(replace: Boolean) {
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
         }
-        if (replace && parts.length == 1 && (isRegexChar(parts.head, '^')
-            || isRegexChar(parts.head, '$'))) {
-          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
+        def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
+            case RegexSequence(parts) => parts.nonEmpty && parts.forall(isBeginOrEndLineAnchor)
+            case RegexGroup(_, term) => isBeginOrEndLineAnchor(term)
+            case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
+            case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
+            case RegexChar(ch) => ch == '^' || ch == '$'
+            case _ => false
+        }
+        if (parts.forall(isBeginOrEndLineAnchor)) {
+          throw new RegexUnsupportedException(
+            "sequences that only contain '^' or '$' are not supported")
+        }
+        if (isRegexChar(parts.last, '^')) {
+          throw new RegexUnsupportedException(
+            "sequences that end with '^' are not supported")
         }
         RegexSequence(parts.map(rewrite))
 
@@ -563,10 +571,11 @@ class CudfRegexTranspiler(replace: Boolean) {
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
           // cuDF: XXXX] b[
+          // see https://github.com/NVIDIA/spark-rapids/issues/4468
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(_), _) =>
+        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'D' =>
           // example: "\B?"
           throw new RegexUnsupportedException(nothingToRepeat)
 
@@ -773,7 +782,7 @@ class RegexUnsupportedException(message: String, index: Option[Int] = None)
   extends SQLException {
   override def getMessage: String = {
     index match {
-      case Some(i) => s"$message at index $index"
+      case Some(i) => s"$message near index $i"
       case _ => message
     }
   }

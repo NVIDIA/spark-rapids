@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from functools import reduce
-from spark_session import is_before_spark_311
-from marks import allow_non_gpu
+from spark_session import is_before_spark_311, is_before_spark_330
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
@@ -99,10 +97,15 @@ def test_orderby_array_of_structs(data_gen):
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
     lit = gen_scalar(data_gen, force_no_nulls=True)
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(
-        spark, arr_gen, data_gen).select(array_contains(col('a'), lit.cast(data_gen.data_type)),
-                                         array_contains(col('a'), col('b')),
-                                         array_contains(col('a'), col('a')[5])), no_nans_conf)
+
+    def get_input(spark):
+        return two_col_df(spark, arr_gen, data_gen)
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: get_input(spark).select(
+                                            array_contains(col('a'), lit.cast(data_gen.data_type)),
+                                            array_contains(col('a'), col('b')),
+                                            array_contains(col('a'), col('a')[5])
+                                         ), no_nans_conf)
 
 
 # Test array_contains() with a literal key that is extracted from the input array of doubles
@@ -118,14 +121,26 @@ def test_array_contains_for_nans(data_gen):
         return df.select(array_contains(col('a'), chk_val))
     assert_gpu_and_cpu_are_equal_collect(main_df)
 
+
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_get_array_item_ansi_fail(data_gen):
+    message = "org.apache.spark.SparkArrayIndexOutOfBoundsException" if not is_before_spark_330() else "java.lang.ArrayIndexOutOfBoundsException"
     assert_gpu_and_cpu_error(lambda spark: unary_op_df(
         spark, data_gen).select(col('a')[100]).collect(),
                                conf={'spark.sql.ansi.enabled':True,
                                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
-                               error_message='java.lang.ArrayIndexOutOfBoundsException')
+                               error_message=message)
+
+@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_element_at_index_ansi_fail(data_gen):
+    message = "org.apache.spark.SparkArrayIndexOutOfBoundsException" if not is_before_spark_330() else "java.lang.ArrayIndexOutOfBoundsException"
+    assert_gpu_and_cpu_error(lambda spark: unary_op_df(
+        spark, data_gen).select(element_at(col('a'), 100)).collect(),
+                             conf={'spark.sql.ansi.enabled':True,
+                                   'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                             error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if index is out of range")
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)

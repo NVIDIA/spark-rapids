@@ -74,7 +74,7 @@ reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_fil
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
+def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -90,12 +90,13 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, 
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
+
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
 def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens = [string_gen,
-        byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens + decimal_128_gens_no_neg
 
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
@@ -116,7 +117,7 @@ parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
+def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
@@ -131,13 +132,13 @@ parquet_pred_push_gens = [
         string_gen, date_gen,
         # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
         # timestamp_gen
-        TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
+        TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
 
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled_list, reader_confs):
+def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
     s0 = gen_scalar(parquet_gen, force_no_nulls=True)
@@ -162,7 +163,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1126')
-def test_ts_read_round_trip_nested(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
+def test_parquet_ts_read_round_trip_nested(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
@@ -220,11 +221,11 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
 
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, DecimalGen(precision=7, scale=3)], decimal_gens,
                                           [ArrayGen(DecimalGen(7,2), max_length=10)],
-                                          [StructGen([['child0', DecimalGen(7, 2)]])]], ids=idfn)
+                                          [StructGen([['child0', DecimalGen(7, 2)]])], decimal_128_gens_no_neg], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
+def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -236,14 +237,14 @@ def test_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_con
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                             string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,
+                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg,
                             pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
                             pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, reader_confs):
+def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -256,12 +257,12 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, r
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0/key2=20'
     with_cpu_session(
@@ -281,10 +282,11 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
+
 # In this we are reading the data, but only reading the key the data was partitioned by
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_parquet_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reader_confs):
     parquet_gens = [byte_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
@@ -303,7 +305,7 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
@@ -328,12 +330,12 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
@@ -352,12 +354,12 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
@@ -378,7 +380,7 @@ def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_con
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(first_data_path))
@@ -403,7 +405,7 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.orc.parquet.enabled'])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
+def test_parquet_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(first_data_path))
@@ -485,7 +487,7 @@ _nested_pruning_schemas = [
         ([["struct", StructGen([["c_1", StringGen()], ["case_insensitive", LongGen()], ["c_3", ShortGen()]])]],
             [["stRUct", StructGen([["CASE_INSENSITIVE", LongGen()]])]]),
         ]
-
+# TODO CHECK FOR DECIMAL??
 @pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -593,7 +595,7 @@ filters = ["_1 = 500",
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_reading_from_unaligned_pages_basic_filters(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+def test_parquet_reading_from_unaligned_pages_basic_filters(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
@@ -611,7 +613,7 @@ def test_reading_from_unaligned_pages_basic_filters(spark_tmp_path, reader_confs
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+def test_parquet_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
@@ -622,6 +624,7 @@ def test_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, en
                 "cast(id as double) as _6",
                 # DECIMAL128 IS NOT SUPPORTED YET "cast(id as decimal(20,0)) as _7",
                 "cast(id as decimal(10,0)) as _7",
+                "cast(id as decimal(30,0)) as _8",
                 "cast(cast(1618161925 + (id * 60 * 60 * 24) as timestamp) as date) as _9",
                 "cast(1618161925 + id as timestamp) as _10")\
             .coalesce(1)\
@@ -637,7 +640,7 @@ def test_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, en
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+def test_parquet_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
@@ -649,9 +652,10 @@ def test_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, r
                 "cast(id % 10 as double) as _6",
                 # DECIMAL128 IS NOT SUPPORTED YET "cast(id % 10 as decimal(20,0)) as _7",
                 "cast(id % 10 as decimal(10,0)) as _7",
-                "cast(id % 2 as boolean) as _8",
-                "cast(cast(1618161925 + ((id % 10) * 60 * 60 * 24) as timestamp) as date) as _9",
-                "cast(1618161925 + (id % 10) as timestamp) as _10")\
+                "cast(id % 10 as decimal(20,0)) as _8",
+                "cast(id % 2 as boolean) as _9",
+                "cast(cast(1618161925 + ((id % 10) * 60 * 60 * 24) as timestamp) as date) as _10",
+                "cast(1618161925 + (id % 10) as timestamp) as _11")\
             .coalesce(1)\
             .write\
             .option("parquet.page.size", "4096")
@@ -665,7 +669,7 @@ def test_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, r
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     # insert 50 null values in [400, 450) to verify that they are skipped during processing row
     # range [500, 1000) against the second page of col_2 [400, 800)
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -777,7 +777,9 @@ class GpuHashAggregateIterator(
   private def computeAggregate(
       toAggregateBatch: ColumnarBatch, helper: AggHelper): ColumnarBatch  = {
     val computeAggTime = metrics.computeAggTime
-    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
+      opTime)) { _ =>
       // a pre-processing step required before we go into the cuDF aggregate, in some cases
       // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
       withResource(helper.preProcess(toAggregateBatch)) { preProcessed =>

@@ -269,12 +269,12 @@ case class GpuFileSourceScanExec(
       case (key, _) if (key.equals("Location")) =>
         val location = relation.location
         val numPaths = location.rootPaths.length
-        val abbreviatedLoaction = if (numPaths <= 1) {
+        val abbreviatedLocation = if (numPaths <= 1) {
           location.rootPaths.mkString("[", ", ", "]")
         } else {
           "[" + location.rootPaths.head + s", ... ${numPaths - 1} entries]"
         }
-        s"$key: ${location.getClass.getSimpleName} ${redact(abbreviatedLoaction)}"
+        s"$key: ${location.getClass.getSimpleName} ${redact(abbreviatedLocation)}"
       case (key, value) => s"$key: ${redact(value)}"
     }
 
@@ -360,6 +360,14 @@ case class GpuFileSourceScanExec(
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
   ) ++ {
+    relation.fileFormat match {
+      case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
+        Map(READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME),
+          WRITE_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_WRITE_BUFFER_TIME))
+      case _ =>
+        Map.empty[String, GpuMetric]
+    }
+  } ++ {
     // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
     // it for each batch.
     if (supportsColumnar) {
@@ -497,7 +505,8 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
+      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions,
+        requiredSchema)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
       // if they are small files before sending it down to the GPU

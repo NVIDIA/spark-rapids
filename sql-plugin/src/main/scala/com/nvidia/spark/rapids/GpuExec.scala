@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,6 +68,8 @@ object GpuMetric extends Logging {
   val SPILL_AMOUNT_DISK = "spillDisk"
   val SPILL_AMOUNT_HOST = "spillHost"
   val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
+  val READ_FS_TIME = "readFsTime"
+  val WRITE_BUFFER_TIME = "writeBufferTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -95,6 +97,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_SPILL_AMOUNT_DISK = "bytes spilled to disk"
   val DESCRIPTION_SPILL_AMOUNT_HOST = "bytes spilled to host"
   val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
+  val DESCRIPTION_READ_FS_TIME = "time to read fs data"
+  val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -152,6 +156,15 @@ sealed abstract class GpuMetric extends Serializable {
   def set(v: Long): Unit
   def +=(v: Long): Unit
   def add(v: Long): Unit
+
+  def ns[T](f: => T): T = {
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      add(System.nanoTime() - start)
+    }
+  }
 }
 
 object NoopMetric extends GpuMetric {
