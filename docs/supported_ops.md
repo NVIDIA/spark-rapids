@@ -17543,6 +17543,49 @@ dates or timestamps, or for a lack of type coercion support.
 <td> </td>
 </tr>
 <tr>
+<th rowSpan="2">JSON</th>
+<th>Read</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th>Write</th>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <th rowSpan="2">ORC</th>
 <th>Read</th>
 <td>S</td>

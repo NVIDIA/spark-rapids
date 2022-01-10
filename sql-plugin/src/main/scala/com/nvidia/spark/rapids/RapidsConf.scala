@@ -901,6 +901,17 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
+    .doc("When set to false disables all json input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
+    .doc("When set to false disables json input acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1624,6 +1635,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
+
+  lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
+
+  lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

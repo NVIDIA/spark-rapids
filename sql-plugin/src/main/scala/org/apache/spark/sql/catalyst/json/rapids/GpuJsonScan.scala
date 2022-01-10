@@ -1,0 +1,231 @@
+/*
+ * Copyright (c) 2022, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.spark.sql.catalyst.json.rapids
+
+import scala.collection.JavaConverters._
+
+import ai.rapids.cudf
+import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
+import com.nvidia.spark.rapids._
+import org.apache.hadoop.conf.Configuration
+
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
+import org.apache.spark.sql.catalyst.util.PermissiveMode
+import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
+import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.{StringType, StructType}
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration;
+
+object GpuJsonScan {
+
+  def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
+    val scan = scanMeta.wrapped
+    tagSupport(
+      scan.sparkSession,
+      scan.dataSchema,
+      scan.readDataSchema,
+      scan.options.asScala.toMap,
+      scanMeta)
+  }
+
+  def tagSupport(
+      sparkSession: SparkSession,
+      dataSchema: StructType,
+      readSchema: StructType,
+      options: Map[String, String],
+      meta: RapidsMeta[_, _, _]): Unit = {
+
+    val parsedOptions = new JSONOptionsInRead(
+      options,
+      sparkSession.sessionState.conf.sessionLocalTimeZone,
+      sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+
+    if (!meta.conf.isJsonEnabled) {
+      meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_JSON} to true")
+    }
+
+    if (!meta.conf.isJsonReadEnabled) {
+      meta.willNotWorkOnGpu("JSON input has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_JSON_READ} to true")
+    }
+
+    if (parsedOptions.multiLine) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
+    }
+
+    if (parsedOptions.allowComments) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowComments")
+    }
+
+    if (parsedOptions.allowUnquotedFieldNames) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowUnquotedFieldNames")
+    }
+
+    if (parsedOptions.allowBackslashEscapingAnyCharacter) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowBackslashEscapingAnyCharacter")
+    }
+
+    if (parsedOptions.dropFieldIfAllNull) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support dropFieldIfAllNull")
+    }
+
+    if (parsedOptions.parseMode != PermissiveMode) {
+      meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
+    }
+
+    if (options.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
+      meta.willNotWorkOnGpu("GpuJsonScan dose not support allowSingleQuotes")
+    }
+
+    dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
+      val f = dataSchema(corruptFieldIndex)
+      if (f.dataType != StringType || !f.nullable) {
+        // fallback to cpu to throw exception
+        meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record which must " +
+          "be string type and nullable")
+      }
+    }
+
+    if (readSchema.length == 1 &&
+      readSchema.head.name == parsedOptions.columnNameOfCorruptRecord) {
+      // fallback to cpu to throw exception
+      meta.willNotWorkOnGpu("GpuJsonScan dose not support Corrupt Record")
+    }
+
+    // add more checks for dateFormat and timestampFormat
+
+    FileFormatChecks.tag(meta, readSchema, JsonFormatType, ReadFileOp)
+  }
+}
+
+case class GpuJsonScan(
+    sparkSession: SparkSession,
+    fileIndex: PartitioningAwareFileIndex,
+    dataSchema: StructType, // original schema passed in by the user (all the data)
+    readDataSchema: StructType, // schema for data being read (including dropped columns)
+    readPartitionSchema: StructType, // schema for the parts that come from the file path
+    options: CaseInsensitiveStringMap,
+    partitionFilters: Seq[Expression],
+    dataFilters: Seq[Expression],
+    maxReaderBatchSizeRows: Integer,
+    maxReaderBatchSizeBytes: Long)
+  extends TextBasedFileScan(sparkSession, options) with ScanWithMetrics {
+
+  private lazy val parsedOptions: JSONOptions = new JSONOptions(
+    options.asScala.toMap,
+    sparkSession.sessionState.conf.sessionLocalTimeZone,
+    sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+
+  override def withFilters(partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]): FileScan = {
+    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+  }
+
+  override def createReaderFactory(): PartitionReaderFactory = {
+    val caseSensitiveMap = options.asCaseSensitiveMap.asScala.toMap
+    // Hadoop Configurations are case sensitive.
+    val hadoopConf = sparkSession.sessionState.newHadoopConfWithOptions(caseSensitiveMap)
+    val broadcastedConf = sparkSession.sparkContext.broadcast(
+      new SerializableConfiguration(hadoopConf))
+
+    GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+      dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
+      maxReaderBatchSizeBytes, metrics)
+  }
+}
+
+case class GpuJsonPartitionReaderFactory(
+    sqlConf: SQLConf,
+    broadcastedConf: Broadcast[SerializableConfiguration],
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    partitionSchema: StructType, // TODO need to filter these out, or support pulling them in.
+                                 // These are values from the file name/path itself
+    parsedOptions: JSONOptions,
+    maxReaderBatchSizeRows: Integer,
+    maxReaderBatchSizeBytes: Long,
+    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory {
+
+  override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
+    throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
+  }
+
+  override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
+    val conf = broadcastedConf.value.value
+    val reader = new PartitionReaderWithBytesRead(new JsonPartitionReader(conf, partFile,
+      dataSchema, readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes,
+      metrics))
+    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
+  }
+}
+
+class JsonPartitionReader(
+    conf: Configuration,
+    partFile: PartitionedFile,
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    parsedOptions: JSONOptions,
+    maxRowsPerChunk: Integer,
+    maxBytesPerChunk: Long,
+    execMetrics: Map[String, GpuMetric])
+  extends GpuTextBasedPartitionReader(conf, partFile, dataSchema, readDataSchema,
+    parsedOptions.lineSeparatorInRead, maxRowsPerChunk, maxBytesPerChunk, execMetrics) {
+
+  def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions = {
+    val builder = cudf.JSONOptions.builder()
+    builder.build
+  }
+
+  /**
+   * Read the host buffer to GPU table
+   *
+   * @param dataBuffer     host buffer to be read
+   * @param dataSize       the size of host buffer
+   * @param cudfSchema     the cudf schema of the data
+   * @param readDataSchema the Spark schema describing what will be read
+   * @param hasHeader      if it has header
+   * @return table
+   */
+  override def readToTable(
+      dataBuffer: HostMemoryBuffer,
+      dataSize: Long,
+      cudfSchema: Schema,
+      readDataSchema: StructType,
+      hasHeader: Boolean): Table = {
+
+    val jsonOpts = buildJsonOptions(parsedOptions)
+    Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+  }
+
+  /**
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
+   */
+  override def getFileFormatShortName: String = "JSON"
+}

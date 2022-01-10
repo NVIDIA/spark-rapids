@@ -31,6 +31,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
+import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -48,6 +49,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
@@ -423,6 +425,9 @@ object ParquetFormatType extends FileFormatType {
 }
 object OrcFormatType extends FileFormatType {
   override def toString = "ORC"
+}
+object JsonFormatType extends FileFormatType {
+  override def toString = "JSON"
 }
 
 sealed trait FileFormatOp
@@ -836,7 +841,12 @@ object GpuOverrides extends Logging {
           // Note Map is not put into nested, now CUDF only support single level map
           TypeSig.STRUCT + TypeSig.DECIMAL_128).nested() + TypeSig.MAP,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-          TypeSig.UDT).nested())))
+          TypeSig.UDT).nested())),
+    (JsonFormatType, FileFormatChecks(
+      cudfRead = TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN + TypeSig.STRING,
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        TypeSig.UDT).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
@@ -3346,6 +3356,23 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(): Scan =
           GpuCSVScan(a.sparkSession,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf.maxReadBatchSizeRows,
+            conf.maxReadBatchSizeBytes)
+      }),
+    GpuOverrides.scan[JsonScan](
+      "Json parsing",
+      (a, conf, p, r) => new ScanMeta[JsonScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuJsonScan.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuJsonScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
             a.readDataSchema,
