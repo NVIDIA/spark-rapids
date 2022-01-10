@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
 import org.apache.spark.sql.types.DataType
 
 /** TypeSig Support for [3.0.1, 3.2.0) */
-object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
+object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
@@ -67,5 +67,5 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
 
   /** Get numeric and interval TypeSig */
   override def getNumericAndInterval(): TypeSig =
-    TypeSig.numeric + TypeSig.CALENDAR
+    TypeSig.cpuNumeric + TypeSig.CALENDAR
 }

@@ -485,76 +485,6 @@ object GpuOverrides extends Logging {
     val s = strLit.toString
     !regexList.exists(pattern => s.contains(pattern))
   }
-  /*
-    private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Expression = {
-      if (expr.find(_.isInstanceOf[GpuExpression]).isDefined) {
-        // already been converted
-        expr
-      } else {
-        val wrapped = wrapExpr(expr, conf, None)
-        wrapped.tagForGpu()
-        if (wrapped.canExprTreeBeReplaced) {
-          wrapped.convertToGpu()
-        } else {
-          expr
-        }
-      }
-    }
-
-
-    private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
-      part match {
-        case _: GpuPartitioning => part
-        case _ =>
-          val wrapped = wrapPart(part, conf, None)
-          wrapped.tagForGpu()
-          if (wrapped.canThisBeReplaced) {
-            wrapped.convertToGpu()
-          } else {
-            part
-          }
-      }
-    }
-
-   */
-
-  /**
-   * Removes unnecessary CPU shuffles that Spark can add to the plan when it does not realize
-   * a GPU partitioning satisfies a CPU distribution because CPU and GPU expressions are not
-   * semantically equal.
-   */
- /* def removeExtraneousShuffles(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    plan.transformUp {
-      case cpuShuffle: ShuffleExchangeExec =>
-        cpuShuffle.child match {
-          case _ => cpuShuffle
-        }
-    }
-  } */
-
-  /**
-   * Searches the plan for ReusedExchangeExec instances containing a GPU shuffle where the
-   * output types between the two plan nodes do not match. In such a case the ReusedExchangeExec
-   * will be updated to match the GPU shuffle output types.
-   */
-  /*def fixupReusedExchangeExecs(plan: SparkPlan): SparkPlan = {
-    def outputTypesMatch(a: Seq[Attribute], b: Seq[Attribute]): Boolean =
-      a.corresponds(b)((x, y) => x.dataType == y.dataType)
-    plan.transformUp {
-      case sqse: ShuffleQueryStageExec =>
-        sqse.plan match {
-          case ReusedExchangeExec(output, gsee: GpuShuffleExchangeExecBase) if (
-              !outputTypesMatch(output, gsee.output)) =>
-            val newOutput = sqse.plan.output.zip(gsee.output).map { case (c, g) =>
-              assert(c.isInstanceOf[AttributeReference] && g.isInstanceOf[AttributeReference],
-                s"Expected AttributeReference but found $c and $g")
-              AttributeReference(c.name, g.dataType, c.nullable, c.metadata)(c.exprId, c.qualifier)
-            }
-            AQEUtils.newReuseInstance(sqse, newOutput)
-          case _ => sqse
-        }
-    }
-  } */
 
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
@@ -705,19 +635,6 @@ object GpuOverrides extends Logging {
     new ExprRule[INPUT](doWrap, desc, Some(pluginChecks), tag)
   }
 
-  /*
-  def scan[INPUT <: Scan](
-      desc: String,
-      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
-          => ScanMeta[INPUT])
-      (implicit tag: ClassTag[INPUT]): ScanRule[INPUT] = {
-    assert(desc != null)
-    assert(doWrap != null)
-    new ScanRule[INPUT](doWrap, desc, tag)
-  }
-
-   */
-
   def part[INPUT <: Partitioning](
       desc: String,
       checks: PartChecks,
@@ -778,13 +695,13 @@ object GpuOverrides extends Logging {
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes,
       cudfWrite = TypeSig.none,
-      sparkSig = TypeSig.atomics)),
+      sparkSig = TypeSig.cpuAtomics)),
     (ParquetFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.ARRAY +
-          TypeSig.MAP).nested(),
-      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT +
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+        TypeSig.ARRAY + TypeSig.MAP).nested(),
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP).nested(),
-      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_128 +
@@ -792,7 +709,7 @@ object GpuOverrides extends Logging {
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
           // Note Map is not put into nested, now CUDF only support single level map
           TypeSig.STRUCT + TypeSig.DECIMAL_128).nested() + TypeSig.MAP,
-      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
 
@@ -809,7 +726,7 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         Seq(ParamCheck("input",
           TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
-          TypeSig.numeric))),
+          TypeSig.cpuNumeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
@@ -837,9 +754,9 @@ object GpuOverrides extends Logging {
       }),
     expr[Abs](
       "Absolute value",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
-        TypeSig.numeric),
+       ExprChecks.unaryProjectAndAstInputMatchesOutput(
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
+          TypeSig.cpuNumeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
       }),
     expr[RegExpReplace](
@@ -1065,7 +982,7 @@ object GpuOverrides extends Logging {
       "Negate a numeric value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         // val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1520,30 +1437,24 @@ object GpuOverrides extends Logging {
       }),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.numeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric)),
+      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
       }),
     expr[Add](
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        ("rhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = false
 
         override def tagSelfForAst(): Unit = {
-          /*
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkInAst("AST Addition does not support ANSI mode.")
-          }
-
-           */
         }
 
       }),
@@ -1551,21 +1462,15 @@ object GpuOverrides extends Logging {
       "Subtraction",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        ("rhs", TypeSig.gpuNumeric,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = false
 
         override def tagSelfForAst(): Unit = {
-          /*
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkInAst("AST Subtraction does not support ANSI mode.")
-          }
-
-           */
         }
 
       }),
@@ -1573,20 +1478,14 @@ object GpuOverrides extends Logging {
       "Multiplication",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128 + TypeSig.psNote(TypeEnum.DECIMAL,
+        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
           "Because of Spark's inner workings the full range of decimal precision " +
               "(even for 128-bit values) is not supported."),
-        TypeSig.numeric,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric)),
+        TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          /*
-          if (false && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
-          }
-
-           */
         }
 
       }),
@@ -1747,9 +1646,9 @@ object GpuOverrides extends Logging {
     expr[Remainder](
       "Remainder or modulo",
       ExprChecks.binaryProject(
-        TypeSig.integral + TypeSig.fp, TypeSig.numeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric)),
+        TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
       }),
     expr[AggregateExpression](
@@ -1871,7 +1770,7 @@ object GpuOverrides extends Logging {
       ExprChecks.fullAgg(
         TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric))),
+        Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.cpuNumeric))),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
@@ -1910,11 +1809,11 @@ object GpuOverrides extends Logging {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
+       TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
-            TypeSig.numeric),
+            TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -1929,11 +1828,11 @@ object GpuOverrides extends Logging {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
-            TypeSig.numeric),
+            TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2038,14 +1937,6 @@ object GpuOverrides extends Logging {
             TypeSig.STRING),
           ParamCheck("limit", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new GpuStringSplitMeta(in, conf, p, r)),
-    expr[SubstringIndex](
-      "substring_index operator",
-      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
-        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
-          ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
-      (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[GetStructField](
       "Gets the named field of the struct",
       ExprChecks.unaryProject(
@@ -2188,6 +2079,14 @@ object GpuOverrides extends Logging {
           ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
       }),
+    expr[SubstringIndex](
+      "substring_index operator",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
+              .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
+          ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+      (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
       "StringRepeat operator that repeats the given strings with numbers of times " +
         "given by repeatTimes",
@@ -2293,7 +2192,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
       "the implementation is not 100% compatible. " +
         "See the compatibility guide for more information."),
-     expr[RegExpExtract](
+    expr[RegExpExtract](
       "RegExpExtract",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
@@ -2359,34 +2258,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
         override val supportOuter: Boolean = true
       }),
-   expr[CollectList](
-      // spark 2.x doesn't have logical link so can't do TypeImperitive Agg checks
-      "Collect a list of non-unique elements, only supported in rolling window in current.",
-      // GpuCollectList is not yet supported under GroupBy and Reduction context.
-      ExprChecks.aggNotGroupByOrReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT),
-        TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT).nested(),
-          TypeSig.all))),
-      (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
-      }),
-    expr[CollectSet](
-      //- spark 2.x doesn't have logical link so can't do TypeImperitive Agg checks
-      "Collect a set of unique elements, only supported in rolling window in current.",
-      // GpuCollectSet is not yet supported under GroupBy and Reduction context.
-      ExprChecks.aggNotGroupByOrReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT),
-        TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT).nested(),
-          TypeSig.all))),
-      (c, conf, p, r) => new ExprMeta[CollectSet](c, conf, p, r) {
-      }),
     expr[StddevPop](
       "Aggregation computing population standard deviation",
       ExprChecks.groupByOnly(
@@ -2421,14 +2292,14 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         // note that output can be single number or array depending on whether percentiles param
         // is a single number or an array
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
-            TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.DECIMAL_128),
-        TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
-          TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+       TypeSig.gpuNumeric +
+            TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
+          TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
         Seq(
           ParamCheck("input",
-            TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
-            TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+            TypeSig.gpuNumeric,
+            TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
           ParamCheck("percentage",
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
@@ -2484,7 +2355,19 @@ object GpuOverrides extends Logging {
       desc = "Create a map",
       CreateMapCheck,
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
-      })
+      }),
+    expr[Sequence](
+      desc = "Sequence",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.integral), TypeSig.ARRAY.nested(TypeSig.integral +
+          TypeSig.TIMESTAMP + TypeSig.DATE),
+        Seq(ParamCheck("start", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+          TypeSig.DATE),
+          ParamCheck("stop", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+            TypeSig.DATE)),
+        Some(RepeatingParamCheck("step", TypeSig.integral, TypeSig.integral + TypeSig.CALENDAR))),
+      (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
@@ -2601,14 +2484,6 @@ object GpuOverrides extends Logging {
             }
           }
         }),
-     exec[SortMergeJoinExec](
-        "Sort merge join, replacing with shuffled hash join",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-     exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
      exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         JoinTypeChecks.equiJoinExecChecks,
@@ -2683,6 +2558,18 @@ object GpuOverrides extends Logging {
       (globalLimitExec, conf, p, r) =>
         new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
         }),
+    exec[CollectLimitExec](
+      "Reduce to single partition and apply limit",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (collectLimitExec, conf, p, r) =>
+        new SparkPlanMeta[CollectLimitExec](collectLimitExec, conf, p, r) {
+          override val childParts: scala.Seq[PartMeta[_]] =
+            Seq(GpuOverrides.wrapPart(collectLimitExec.outputPartitioning, conf, Some(this)))})
+        .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
+            "of rows in a batch it could help by limiting the number of rows transferred from " +
+            "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
@@ -2717,6 +2604,10 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.STRUCT),
         TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
+     exec[BroadcastHashJoinExec](
+        "Implementation of join using broadcast data",
+        JoinTypeChecks.equiJoinExecChecks,
+        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force. Full outer joins and joins where the " +
           "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
@@ -2765,6 +2656,10 @@ object GpuOverrides extends Logging {
       ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.ARRAY + 
           TypeSig.STRUCT +TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+     exec[SortMergeJoinExec](
+        "Sort merge join, replacing with shuffled hash join",
+        JoinTypeChecks.equiJoinExecChecks,
+        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(
@@ -2788,18 +2683,6 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
       (sample, conf, p, r) => new SparkPlanMeta[SampleExec](sample, conf, p, r) {}
     ),
-    exec[CollectLimitExec](
-      "Reduce to single partition and apply limit",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-        TypeSig.all),
-      (collectLimitExec, conf, p, r) =>
-        new SparkPlanMeta[CollectLimitExec](collectLimitExec, conf, p, r) {
-          override val childParts: scala.Seq[PartMeta[_]] =
-            Seq(GpuOverrides.wrapPart(collectLimitExec.outputPartitioning, conf, Some(this)))})
-        .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
-            "of rows in a batch it could help by limiting the number of rows transferred from " +
-            "GPU to CPU"),
     // ShimLoader.getSparkShims.aqeShuffleReaderExec,
     // ShimLoader.getSparkShims.neverReplaceShowCurrentNamespaceCommand,
     neverReplaceExec[ExecutedCommandExec]("Table metadata operation")
@@ -2826,77 +2709,10 @@ object GpuOverrides extends Logging {
     wrap
   }
 
-  /*
-  private def doConvertPlan(wrap: SparkPlanMeta[SparkPlan], conf: RapidsConf,
-      optimizations: Seq[Optimization]): SparkPlan = {
-    // val convertedPlan = wrap.convertIfNeeded()
-    // val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
-    // GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
-    // sparkPlan
-    wrap.wrapped
-  }
-  */
-
   private def getOptimizations(wrap: SparkPlanMeta[SparkPlan],
       conf: RapidsConf): Seq[Optimization] = {
-        /*
-    if (conf.optimizerEnabled) {
-      // we need to run these rules both before and after CBO because the cost
-      // is impacted by forcing operators onto CPU due to other rules that we have
-      wrap.runAfterTagRules()
-      val optimizer = try {
-        ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
-      } catch {
-        case e: Exception =>
-          throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
-      }
-      optimizer.optimize(conf, wrap)
-    } else {
-      Seq.empty
-    }
-    */
    Seq.empty
   }
-
-  /*
-  private def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    plan.transformUp {
-      case operator: SparkPlan =>
-        ensureOrdering(operator, conf)
-    }
-  }
-
-  // copied from Spark EnsureRequirements but only does the ordering checks and
-  // check to convert any SortExec added to GpuSortExec
-  private def ensureOrdering(operator: SparkPlan, conf: RapidsConf): SparkPlan = {
-    val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
-    var children: Seq[SparkPlan] = operator.children
-    assert(requiredChildOrderings.length == children.length)
-
-    // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
-    children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
-      // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
-        child
-      } else {
-        val sort = SortExec(requiredOrdering, global = false, child = child)
-        // just specifically check Sort to see if we can change Sort to GPUSort
-        val sortMeta = new GpuSortMeta(sort, conf, None, new SortDataFromReplacementRule)
-        sortMeta.initReasons()
-        sortMeta.tagPlanForGpu()
-        /*
-        if (sortMeta.canThisBeReplaced) {
-          sortMeta.convertToGpu()
-        } else {
-          sort
-        }
-        */
-       sort
-      }
-    }
-    operator.withNewChildren(children)
-  }
-  */
 
   private final class SortDataFromReplacementRule extends DataFromReplacementRule {
     override val operationName: String = "Exec"
@@ -2964,97 +2780,6 @@ object GpuOverrides extends Logging {
     planAfter
   }
 }
-
-/*
-trait ExplainPlanBase {
-    def explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL"): String
-}
-
-class ExplainPlanImpl extends ExplainPlanBase {
-  override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
-    GpuOverrides.explainPotentialGpuPlan(df, explain)
-  }
-}
-*/
-
-// work around any GpuOverride failures
-/*
-object GpuOverrideUtil extends Logging {
-  def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
-    // 2.x doesn't have a clone() method in TreeNode
-    val planOriginal = plan
-    val failOnError = TEST_CONF.get(plan.conf) || !SUPPRESS_PLANNING_FAILURE.get(plan.conf)
-    try {
-      fn(plan)
-    } catch {
-      case NonFatal(t) if !failOnError =>
-        logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
-        planOriginal
-      case fatal: Throwable =>
-        logError("Encountered an exception applying GPU overrides " + fatal, fatal)
-        throw fatal
-    }
-  }
-}
-*/
-
-/** Tag the initial plan when AQE is enabled */
-/*
-case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
-    // Note that we disregard the GPU plan returned here and instead rely on side effects of
-    // tagging the underlying SparkPlan.
-    GpuOverrides().apply(plan)
-    // return the original plan which is now modified as a side-effect of invoking GpuOverrides
-    plan
-  }(sparkPlan)
-}
-*/
-
-/*
-case class GpuOverrides() extends Rule[SparkPlan] with Logging {
-
-  // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
-  // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
-    val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled) {
-      GpuOverrides.logDuration(conf.shouldExplain,
-        t => f"Plan conversion to the GPU took $t%.2f ms") {
-        applyOverrides(plan, conf)
-      }
-    } else {
-      plan
-    }
-  }(sparkPlan)
-
-  private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
-    val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
-    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
-      if (conf.shouldExplain) {
-        logWarning("Can't replace any part of this plan due to: " +
-            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
-      }
-      plan
-    } else {
-      val optimizations = GpuOverrides.getOptimizations(wrap, conf)
-      wrap.runAfterTagRules()
-      if (conf.shouldExplain) {
-        wrap.tagForExplain()
-        val explain = wrap.explain(conf.shouldExplainAll)
-        if (explain.nonEmpty) {
-          logWarning(s"\n$explain")
-          if (conf.optimizerShouldExplainAll && optimizations.nonEmpty) {
-            logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")
-          }
-        }
-      }
-      GpuOverrides.doConvertPlan(wrap, conf, optimizations)
-    }
-  }
-}
-*/
 
 object CudfTDigest {
   val dataType: DataType = StructType(Array(

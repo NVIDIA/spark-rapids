@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,12 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 
+import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** TypeSigUtil for different spark versions */
-trait TypeSigUtil {
+/** Trait of TypeSigUtil for different spark versions */
+trait TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
@@ -164,8 +165,7 @@ object TypeEnum extends Enumeration {
  */
 final class TypeSig private(
     private val initialTypes: TypeEnum.ValueSet,
-    // TODO - needs upmerged
-    private val maxAllowedDecimalPrecision: Int = GpuOverrides.DECIMAL128_MAX_PRECISION,
+    private val maxAllowedDecimalPrecision: Int = GpuOverrides.DECIMAL64_MAX_PRECISION,
     private val childTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val litOnlyTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val notes: Map[TypeEnum.Value, String] = Map.empty) {
@@ -620,12 +620,12 @@ object TypeSig {
   /**
    * All numeric types fp + integral + DECIMAL_64
    */
-  val gpuNumeric: TypeSig = integral + fp + DECIMAL_64
+  val gpuNumeric: TypeSig = integral + fp + DECIMAL_128
 
   /**
    * All numeric types fp + integral + DECIMAL_128
    */
-  val numeric: TypeSig = integral + fp + DECIMAL_128
+  val cpuNumeric: TypeSig = integral + fp + DECIMAL_128
 
   /**
    * All values that correspond to Spark's AtomicType but supported by GPU
@@ -635,7 +635,7 @@ object TypeSig {
   /**
    * All values that correspond to Spark's AtomicType
    */
-  val atomics: TypeSig = numeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
+  val cpuAtomics: TypeSig = cpuNumeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
 
   /**
    * numeric + CALENDAR but only for GPU
@@ -682,7 +682,7 @@ object TypeSig {
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
   /** All types that can appear in AST expressions */
-  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP
+  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP + DATE
 
   /** All AST types that work for comparisons */
   val comparisonAstTypes: TypeSig = astTypes - fp
@@ -1239,41 +1239,42 @@ class CastChecks extends ExprChecks {
   val sparkNullSig: TypeSig = all
 
   val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128
-  val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
-    BINARY + DECIMAL_128
-  val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+    BINARY
+  val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
   val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
       s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
-  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128)
+  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING)
       .withPsNote(TypeEnum.STRING, fpToStringPsNote)
-  val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkDateSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkDateSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
-    BINARY + DECIMAL_128
-  val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
+    BINARY
+  val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128 + STRING
-  val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  val decimalChecks: TypeSig = gpuNumeric + STRING
+  val sparkDecimalSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = STRING + ARRAY.nested(commonCudfTypes + DECIMAL_128 + NULL +
-      ARRAY + BINARY + STRUCT + MAP) +
-      psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
-          "the desired child type")
+  val arrayChecks: TypeSig = psNote(TypeEnum.STRING, "the array's child type must also support " +
+    "being cast to string") + ARRAY.nested(commonCudfTypes + DECIMAL_128 + NULL +
+    ARRAY + BINARY + STRUCT + MAP) +
+    psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to the " +
+      "desired child type(s)")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
@@ -1569,30 +1570,6 @@ object ExprChecks {
   }
 
   /**
-   * An aggregation check where group by and window operations are supported by the plugin, but
-   * Spark also supports reduction on these.
-   */
-  def aggNotReduction(
-      outputCheck: TypeSig,
-      sparkOutputSig: TypeSig,
-      paramCheck: Seq[ParamCheck] = Seq.empty,
-      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
-    val noneParamCheck = paramCheck.map { pc =>
-      ParamCheck(pc.name, TypeSig.none, pc.spark)
-    }
-    val noneRepeatCheck = repeatingParamCheck.map { pc =>
-      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
-    }
-    ExprChecksImpl(Map(
-      (ReductionAggExprContext,
-          ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
-      (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
-      (WindowAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
-  }
-
-  /**
    * Window only operations. Spark does not support these operations as anything but a window
    * operation.
    */
@@ -1630,30 +1607,28 @@ object ExprChecks {
         ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck))))
   }
 
-  // Spark 2.x can't tell TypeImperitive so different here
   /**
-   * An aggregation check where window operations are supported by the plugin, but Spark
-   * also supports group by and reduction on these.
-   * This is now really for 'collect_list' which is only supported by windowing.
+   * An aggregation check where group by and window operations are supported by the plugin, but
+   * Spark also supports reduction on these.
    */
-  def aggNotGroupByOrReduction(
+  def aggNotReduction(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
-    val notWindowParamCheck = paramCheck.map { pc =>
+    val noneParamCheck = paramCheck.map { pc =>
       ParamCheck(pc.name, TypeSig.none, pc.spark)
     }
-    val notWindowRepeat = repeatingParamCheck.map { pc =>
+    val noneRepeatCheck = repeatingParamCheck.map { pc =>
       RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
     }
     ExprChecksImpl(Map(
-      (GroupByAggExprContext,
-        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
       (ReductionAggExprContext,
-        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
+          ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
+      (GroupByAggExprContext,
+          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-        ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
   }
 }
 
@@ -1712,6 +1687,15 @@ object SupportedOpsDocs {
     println("</tr>")
   }
 
+  def getSparkVersion: String = {
+    // hack for databricks, try to find something more reliable?
+    if (SPARK_BUILD_USER.equals("Databricks")) {
+      SPARK_VERSION + "-databricks"
+    } else {
+      SPARK_VERSION
+    }
+  }
+
   def help(): Unit = {
     val headerEveryNLines = 15
     // scalastyle:off line.size.limit
@@ -1726,7 +1710,7 @@ object SupportedOpsDocs {
     println("restrictions on what types are supported for processing. This tries")
     println("to document what operations are supported and what data types each operation supports.")
     println("Because Apache Spark is under active development too and this document was generated")
-    println(s"against version TODO - spark version of Spark. Most of this should still")
+    println(s"against version ${getSparkVersion} of Spark. Most of this should still")
     println("apply to other versions of Spark, but there may be slight changes.")
     println()
     println("# General limitations")

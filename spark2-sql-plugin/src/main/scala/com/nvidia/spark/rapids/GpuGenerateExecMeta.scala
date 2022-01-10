@@ -36,18 +36,6 @@ class GpuGenerateExecSparkPlanMeta(
       willNotWorkOnGpu(s"outer is not currently supported with ${gen.generator.nodeName}")
     }
   }
-
-  /*
-  override def convertToGpu(): GpuExec = {
-    GpuGenerateExec(
-      childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
-      gen.requiredChildOutput,
-      gen.outer,
-      gen.generatorOutput,
-      childPlans.head.convertIfNeeded())
-  }
-  */
-
 }
 
 abstract class GeneratorExprMeta[INPUT <: Generator](
