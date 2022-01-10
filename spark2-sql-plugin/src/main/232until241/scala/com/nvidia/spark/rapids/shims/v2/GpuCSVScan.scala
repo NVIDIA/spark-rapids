@@ -18,11 +18,10 @@ package com.nvidia.spark.rapids.shims.v2
 
 import java.nio.charset.StandardCharsets
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.csv.CSVOptions
 import org.apache.spark.sql.types._
 
@@ -238,7 +237,7 @@ object GpuCSVScan {
     }
     // TODO parsedOptions.emptyValueInRead
 
-    FileFormatChecks.tag(meta, readSchema, GpuOverrides.CsvFormatType, ReadFileOp)
+    FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
 }
 

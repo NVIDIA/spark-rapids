@@ -18,31 +18,12 @@ package com.nvidia.spark.rapids.shims.v2
 
 import java.nio.charset.StandardCharsets
 
-import scala.collection.JavaConverters._
-import scala.math.max
-
-import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
-import org.apache.hadoop.io.compress.CompressionCodecFactory
 
-import org.apache.spark.TaskContext
-import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
-import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.csv.CSVOptions
-import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration
 
 object GpuCSVScan {
   private val supportedDateFormats = Set(
