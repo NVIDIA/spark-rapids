@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
@@ -34,6 +35,7 @@ class GpuBroadcastHashJoinMeta(
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val buildSide: GpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
@@ -41,19 +43,20 @@ class GpuBroadcastHashJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
+      join.condition)
     val Seq(leftChild, rightChild) = childPlans
-    val buildSide = join.buildSide match {
+    val buildSideMeta = join.buildSide match {
       case BuildLeft => leftChild
       case BuildRight => rightChild
     }
 
-    if (!canBuildSideBeReplaced(buildSide)) {
+    if (!canBuildSideBeReplaced(buildSideMeta)) {
       willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
     }
 
     if (!canThisBeReplaced) {
-      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+      buildSideMeta.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
     }
   }
 

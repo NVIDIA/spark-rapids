@@ -29,11 +29,11 @@ object ShimOverrides {
     GpuOverrides.expr[Concat](
       "List/String concatenate",
       ExprChecks.projectOnly((TypeSig.STRING + TypeSig.ARRAY).nested(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
         (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.STRING + TypeSig.ARRAY).nested(
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ExprMeta[Concat](a, conf, p, r) {
       }),

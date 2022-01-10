@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2._
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object JoinTypeChecks {
   def tagForGpu(joinType: JoinType, meta: RapidsMeta[_, _]): Unit = {
@@ -61,7 +61,7 @@ object JoinTypeChecks {
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
-    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP).nested()
+    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.MAP).nested()
 
   val equiJoinExecChecks: ExecChecks = ExecChecks(
     joinRideAlongTypes,
@@ -93,9 +93,22 @@ object JoinTypeChecks {
 
 object GpuHashJoin {
 
+  /** Determine if this type of join supports using the right side of the join as the build side. */
+  def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
+    case _ => false
+  }
+
+  /** Determine if this type of join supports using the left side of the join as the build side. */
+  def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | RightOuter | FullOuter => true
+    case _ => false
+  }
+
   def tagJoin(
       meta: RapidsMeta[_, _],
       joinType: JoinType,
+      buildSide: GpuBuildSide,
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
@@ -121,7 +134,13 @@ object GpuHashJoin {
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
+    buildSide match {
+      case GpuBuildLeft if !canBuildLeft(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support left-side build")
+      case GpuBuildRight if !canBuildRight(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support right-side build")
+      case _ =>
+    }
   }
-
 }
 

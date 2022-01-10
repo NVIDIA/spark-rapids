@@ -36,5 +36,7 @@ public interface RapidsUDF {
    *             and should not be closed within this method.
    * @return columnar output from the user-defined function
    */
+  // Spark 2.x -just keep the interface, we probably could remove all those check
+  // but leave for printing the will not work info
   // ColumnVector evaluateColumnar(ColumnVector... args);
 }

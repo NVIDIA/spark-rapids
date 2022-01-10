@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
@@ -35,6 +36,13 @@ class GpuSortMergeJoinMeta(
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val condition: Option[BaseExprMeta[_]] = join.condition.map(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val buildSide: GpuBuildSide = if (GpuHashJoin.canBuildRight(join.joinType)) {
+    GpuBuildRight
+  } else if (GpuHashJoin.canBuildLeft(join.joinType)) {
+    GpuBuildLeft
+  } else {
+    throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
+  }
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
@@ -43,7 +51,7 @@ class GpuSortMergeJoinMeta(
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys, join.condition)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
