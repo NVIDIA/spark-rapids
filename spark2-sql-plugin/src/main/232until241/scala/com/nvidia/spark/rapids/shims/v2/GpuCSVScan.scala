@@ -102,7 +102,8 @@ object GpuCSVScan {
     }
 
     // Spark 2.3 didn't have the enforce Schema option, added https://issues.apache.org/jira/browse/SPARK-23786
-    // for now just remove the check. Should we perhaps warn instead?
+    // for now just remove the check. The 2.4+ code defaults it to try so assume it will
+    // be true for explain output.
     /*
     if (!parsedOptions.enforceSchema) {
       meta.willNotWorkOnGpu("GpuCSVScan always enforces schemas")
