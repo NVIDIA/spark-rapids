@@ -23,7 +23,7 @@ from pyspark.sql.types import *
 @pytest.mark.parametrize('fileFormat', ['parquet', 'orc'])
 def test_write_hive_bucketed_table_fallback(spark_tmp_path, spark_tmp_table_factory, fileFormat):
     """
-    parquet with Hive hash, not supportted yet
+    fallback because GPU does not support Hive hash partition
     """
     table = spark_tmp_table_factory.get()
 
