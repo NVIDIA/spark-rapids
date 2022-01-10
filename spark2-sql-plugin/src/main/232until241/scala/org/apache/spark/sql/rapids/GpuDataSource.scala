@@ -21,20 +21,9 @@ import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
-import org.apache.commons.lang3.reflect.ConstructorUtils
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
-
-import org.apache.spark.SparkException
-import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
@@ -44,9 +33,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
-import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
-import org.apache.spark.sql.util.SchemaUtils
-import org.apache.spark.util.{ThreadUtils, Utils}
+import org.apache.spark.util.Utils
 
 object GpuDataSource extends Logging {
 
