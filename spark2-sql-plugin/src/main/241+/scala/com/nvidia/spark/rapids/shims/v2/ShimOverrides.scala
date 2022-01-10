@@ -197,7 +197,19 @@ object ShimOverrides {
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ReplicateRowsExprMeta[ReplicateRows](a, conf, p, r) {
-     })
+     }),
+    GpuOverrides.expr[Sequence](
+      desc = "Sequence",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.integral), TypeSig.ARRAY.nested(TypeSig.integral +
+          TypeSig.TIMESTAMP + TypeSig.DATE),
+        Seq(ParamCheck("start", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+          TypeSig.DATE),
+          ParamCheck("stop", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
+            TypeSig.DATE)),
+        Some(RepeatingParamCheck("step", TypeSig.integral, TypeSig.integral + TypeSig.CALENDAR))),
+      (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(

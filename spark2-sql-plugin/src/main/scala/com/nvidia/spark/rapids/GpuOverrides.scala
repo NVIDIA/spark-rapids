@@ -2355,19 +2355,7 @@ object GpuOverrides extends Logging {
       desc = "Create a map",
       CreateMapCheck,
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
-      }),
-    expr[Sequence](
-      desc = "Sequence",
-      ExprChecks.projectOnly(
-        TypeSig.ARRAY.nested(TypeSig.integral), TypeSig.ARRAY.nested(TypeSig.integral +
-          TypeSig.TIMESTAMP + TypeSig.DATE),
-        Seq(ParamCheck("start", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
-          TypeSig.DATE),
-          ParamCheck("stop", TypeSig.integral, TypeSig.integral + TypeSig.TIMESTAMP +
-            TypeSig.DATE)),
-        Some(RepeatingParamCheck("step", TypeSig.integral, TypeSig.integral + TypeSig.CALENDAR))),
-      (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
-    )
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
