@@ -69,18 +69,86 @@
             <timezone>-6</timezone>
         </developer>
     </developers>
-
     <modules>
-        <module>dist</module>
-        <module>integration_tests</module>
-        <module>shims</module>
-        <module>shuffle-plugin</module>
-        <module>sql-plugin</module>
-        <module>tests</module>
-        <module>udf-compiler</module>
-        <module>udf-examples</module>
     </modules>
+
     <profiles>
+        <profile>
+            <id>release232</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>232</value>
+                </property>
+            </activation>
+            <properties>
+                <scala.binary.version>2.11</scala.binary.version>
+                <scala.version>2.11.8</scala.version>
+                <spark.version>${spark232.version}</spark.version>
+                <spark.test.version>${spark232.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-20+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/232until241/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>spark2-sql-plugin</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release248</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>248</value>
+                </property>
+            </activation>
+            <properties>
+                <scala.binary.version>2.11</scala.binary.version>
+                <scala.version>2.11.12</scala.version>
+                <spark.version>${spark248.version}</spark.version>
+                <spark.test.version>${spark248.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-20+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/241+/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>spark2-sql-plugin</module>
+            </modules>
+        </profile>
         <profile>
             <id>release301</id>
             <activation>
@@ -121,6 +189,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -166,6 +242,14 @@
                 <spark.version.classifier>spark302</spark.version.classifier>
             </properties>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>aggregator</module>
                 <module>tools</module>
                 <module>api_validation</module>
@@ -210,6 +294,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -254,6 +346,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -302,6 +402,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -359,6 +467,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -416,6 +532,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -462,6 +586,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
@@ -511,6 +643,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
@@ -557,6 +697,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -602,6 +750,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -647,6 +803,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -691,6 +855,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -745,6 +917,14 @@
                 </repository>
             </repositories>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -826,6 +1006,8 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
+        <spark232.version>2.3.2</spark232.version>
+        <spark248.version>2.4.8</spark248.version>
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2</spark302.version>
