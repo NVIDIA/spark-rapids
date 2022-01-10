@@ -148,6 +148,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   ignore("known issue - octal digit") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4288
     val pattern = "a\\141|.$" // using hex works fine e.g. "a\\x61|.$"
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("] b["))
   }
@@ -220,7 +221,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  test("compare CPU and GPU: hex") {
+  ignore("compare CPU and GPU: hex") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4486
     val patterns = Seq(raw"\x61")
     val inputs = Seq("a", "b")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
