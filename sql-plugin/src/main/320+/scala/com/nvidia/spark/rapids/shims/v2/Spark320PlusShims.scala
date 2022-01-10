@@ -76,7 +76,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
-    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
+    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
       TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
@@ -200,14 +200,14 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         // nullChecks are the same
 
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
-        override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
-        override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
           .withPsNote(TypeEnum.STRING, fpToStringPsNote)
-        override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
@@ -224,24 +224,24 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
         // binaryChecks are the same
         override val decimalChecks: TypeSig = gpuNumeric + STRING
-        override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
+        override val sparkDecimalSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         // calendarChecks are the same
 
         override val arrayChecks: TypeSig =
-          ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
+          ARRAY.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT) +
             psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
               "the desired child type")
         override val sparkArraySig: TypeSig = ARRAY.nested(all)
 
         override val mapChecks: TypeSig =
-          MAP.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT + MAP) +
+          MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT + MAP) +
             psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
               "desired child types")
         override val sparkMapSig: TypeSig = MAP.nested(all)
 
         override val structChecks: TypeSig =
-          STRUCT.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
+          STRUCT.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT) +
             psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
               "desired child type(s)")
         override val sparkStructSig: TypeSig = STRUCT.nested(all)
@@ -254,12 +254,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         // NullType is not technically allowed by Spark, but in practice in 3.2.0
         // it can show up
         Seq(ParamCheck("input",
-          TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL + TypeSig.NULL,
+          TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.NULL,
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -294,8 +294,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
-        TypeSig.numeric),
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
+        TypeSig.cpuNumeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
 
@@ -322,17 +322,17 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(
           ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all)
         )
@@ -345,17 +345,17 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(
           ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all)
         )
@@ -369,10 +369,10 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "Gets the field at `ordinal` in the Array",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
+          TypeSig.DECIMAL_128 + TypeSig.MAP).nested(),
         TypeSig.all,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r) {
@@ -393,9 +393,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(), TypeSig.all,
+          TypeSig.DECIMAL_128 + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP) +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP) +
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP, "If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
@@ -418,10 +418,10 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProject(
                 (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
+                  TypeSig.DECIMAL_128 + TypeSig.MAP).nested(),
                 TypeSig.all,
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
                   TypeSig.ARRAY.nested(TypeSig.all)),
                 ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
@@ -437,9 +437,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "Holds a static value from the query",
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.CALENDAR
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
           + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.DAYTIME)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
@@ -485,11 +485,11 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
           TypeSig.all),
           ParamCheck("windowSpec",
@@ -525,7 +525,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
@@ -638,7 +638,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128_FULL).nested(),
+            TypeSig.DECIMAL_128).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
           override val childScans: scala.Seq[ScanMeta[_]] =
