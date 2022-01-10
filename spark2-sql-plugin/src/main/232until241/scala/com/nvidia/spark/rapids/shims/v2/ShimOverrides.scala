@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.execution._
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, FlatMapGroupsInPandasExec}
 import org.apache.spark.sql.execution.python.PythonUDF
 

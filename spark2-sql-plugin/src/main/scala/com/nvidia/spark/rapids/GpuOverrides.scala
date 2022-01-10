@@ -33,8 +33,8 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.aggregate._
 import org.apache.spark.sql.execution.ScalarSubquery
+import org.apache.spark.sql.execution.aggregate._
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
@@ -2443,7 +2443,8 @@ object GpuOverrides extends Logging {
           override def tagPlanForGpu(): Unit = {
             this.wrapped.relation.fileFormat match {
               case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(this)
-              case f if GpuReadOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(this)
+              case f if GpuReadOrcFileFormat.isSparkOrcFormat(f) =>
+                GpuReadOrcFileFormat.tagSupport(this)
               case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(this)
               case f =>
                 this.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
@@ -2608,13 +2609,15 @@ object GpuOverrides extends Logging {
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
-      // SPARK 2.x we can't check for the TypedImperativeAggregate properly so map/arrya/struct left off
+      // SPARK 2.x we can't check for the TypedImperativeAggregate properly so
+      // map/arrya/struct left off
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP)
                     .nested(TypeSig.STRING),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
-    // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the ObjectHashAggregate
+    // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
+    // ObjectHashAggregate
     exec[SortExec](
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
