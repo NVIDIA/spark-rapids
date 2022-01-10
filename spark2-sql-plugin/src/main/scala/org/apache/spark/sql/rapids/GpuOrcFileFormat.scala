@@ -17,11 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.mapred.JobConf
-import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.orc.OrcConf
 import org.apache.orc.OrcConf._
-import org.apache.orc.mapred.OrcStruct
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -52,8 +49,12 @@ object GpuOrcFileFormat extends Logging {
     }
 
     if (!meta.conf.isOrcWriteEnabled) {
-      meta.willNotWorkOnGpu("ORC output has been disabled. To enable set" +
-        s"${RapidsConf.ENABLE_ORC_WRITE} to true")
+      meta.willNotWorkOnGpu("ORC output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ORC_WRITE} to true.\n" +
+        "Please note that, the ORC file written by spark-rapids will not include statistics " +
+        "in RowIndex, which will result in Spark 3.1.1+ failed to read ORC file when the filter " +
+        "is pushed down. This is an ORC issue, " +
+        "please refer to https://issues.apache.org/jira/browse/ORC-1075")
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)

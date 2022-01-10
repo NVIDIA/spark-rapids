@@ -17,15 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuOverrides, RapidsConf, RapidsMeta}
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
-import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.catalyst.expressions.{GetArrayItem, GetMapValue}
 
 class GpuGetArrayItemMeta(
     expr: GetArrayItem,
@@ -51,7 +44,4 @@ class GpuGetMapValueMeta(
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _]],
   rule: DataFromReplacementRule)
-  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
-
-}
-
+  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {}

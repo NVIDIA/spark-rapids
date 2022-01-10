@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,8 @@ import java.lang.invoke.SerializedLambda
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, RapidsConf, RapidsMeta}
 
-import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF, SpecializedGetters}
+import org.apache.spark.sql.catalyst.expressions.ScalaUDF
 import org.apache.spark.sql.execution.TrampolineUtil
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, DataType}
 
 abstract class ScalaUDFMetaBase(
     expr: ScalaUDF,
