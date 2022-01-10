@@ -23,7 +23,7 @@ import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils extends Arm {
@@ -211,12 +211,9 @@ class GpuSorter(
     }
   }
 
-  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
-    projectedBatchTypes(order.child.asInstanceOf[BoundReference].ordinal) match {
-      case _: ArrayType | _: StructType | _: MapType => true
-      case _ => false
-    }
-  }
+  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists ( order =>
+    DataTypeUtils.isNestedType(order.child.dataType)
+  )
 
   /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
   private[this] lazy val hasUnsupportedNestedInRideColumns = {
