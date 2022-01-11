@@ -74,44 +74,6 @@
 
     <profiles>
         <profile>
-            <id>release232</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>232</value>
-                </property>
-            </activation>
-            <properties>
-                <scala.binary.version>2.11</scala.binary.version>
-                <scala.version>2.11.8</scala.version>
-                <spark.version>${spark232.version}</spark.version>
-                <spark.test.version>${spark232.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-20+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/232until241/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <modules>
-                <module>spark2-sql-plugin</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release248</id>
             <activation>
                 <property>
@@ -1006,7 +968,6 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark232.version>2.3.2</spark232.version>
         <spark248.version>2.4.8</spark248.version>
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>

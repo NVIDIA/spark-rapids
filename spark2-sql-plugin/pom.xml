@@ -29,7 +29,6 @@
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>22.02.0-SNAPSHOT</version>
 
-        <!--
     <properties>
         <scala.binary.version>2.11</scala.binary.version>
         <scala.version>2.11.12</scala.version>
@@ -38,7 +37,6 @@
         <spark.version.classifier>spark248</spark.version.classifier>
         <target.classifier>spark248</target.classifier>
     </properties>
--->
     <dependencies>
         <dependency>
             <groupId>com.google.flatbuffers</groupId>
