@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -903,7 +903,7 @@ case class GpuRowToColumnarExec(child: SparkPlan,
     // We are being conservative by only allowing 100M columns until we feel the need to
     // increase this number. Spark by default limits codegen to 100 fields
     // "spark.sql.codegen.maxFields".
-    if (output.length < 100000000 &&
+    if ((1 until 100000000).contains(output.length) &&
         CudfRowTransitions.areAllSupported(output)) {
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
