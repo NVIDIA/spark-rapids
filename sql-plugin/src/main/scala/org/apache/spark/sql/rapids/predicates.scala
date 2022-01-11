@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,7 +87,7 @@ abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
     case failure => failure
   }
 
-  def hasFloatingPointInputs = left.dataType == FloatType || left.dataType == DoubleType ||
+  def hasFloatingPointInputs: Boolean = left.dataType == FloatType || left.dataType == DoubleType ||
     right.dataType == FloatType || right.dataType == DoubleType
 }
 
@@ -117,8 +117,8 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
-          withResource(rhs.getBase.isNan()) { rhsNan =>
+        withResource(lhs.getBase.isNan) { lhsNan =>
+          withResource(rhs.getBase.isNan) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
               lhsNanAndRhsNan.or(result)
             }
@@ -135,7 +135,7 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(Scalar.fromBool(lhs.isNan)) { lhsNan =>
-          withResource(rhs.getBase.isNan()) { rhsNan =>
+          withResource(rhs.getBase.isNan) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
               lhsNanAndRhsNan.or(result)
             }
@@ -219,7 +219,7 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
+        withResource(lhs.getBase.isNan) { lhsNan =>
           withResource(Scalar.fromBool(rhs.isNan)) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
               lhsNanAndRhsNan.or(result)

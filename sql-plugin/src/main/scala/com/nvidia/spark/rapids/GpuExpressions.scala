@@ -282,7 +282,9 @@ object CudfBinaryExpression {
     BinaryOp.LESS -> ast.BinaryOperator.LESS,
     BinaryOp.LESS_EQUAL -> ast.BinaryOperator.LESS_EQUAL,
     BinaryOp.LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
+    BinaryOp.NULL_LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
     BinaryOp.LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
+    BinaryOp.NULL_LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
     BinaryOp.MUL -> ast.BinaryOperator.MUL,
     BinaryOp.POW -> ast.BinaryOperator.POW,
     BinaryOp.SUB -> ast.BinaryOperator.SUB)
