@@ -20,6 +20,7 @@ import java.io.File
 import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
+import com.nvidia.spark.rapids.SpillPriorities.HOST_MEMORY_BUFFER_PAGEABLE_OFFSET
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.Mockito.{never, spy, times, verify, when}
 import org.scalatest.FunSuite
@@ -79,7 +80,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           assertResult(StorageTier.HOST)(buffer.storageTier)
           assertResult(bufferSize)(buffer.size)
           assertResult(bufferId)(buffer.id)
-          assertResult(spillPriority)(buffer.getSpillPriority)
+          assertResult(spillPriority + HOST_MEMORY_BUFFER_PAGEABLE_OFFSET)(buffer.getSpillPriority)
         }
       }
     }

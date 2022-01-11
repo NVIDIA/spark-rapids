@@ -137,6 +137,7 @@ class RapidsHostMemoryStore(
           assert(buffer.getAddress >= pool.getAddress)
           assert(buffer.getAddress < pool.getAddress + pool.getLength)
           addressAllocator.free(buffer.getAddress - pool.getAddress)
+        case _ =>
       }
       buffer.close()
     }
