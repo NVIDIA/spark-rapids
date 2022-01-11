@@ -1474,8 +1474,9 @@ class ParquetPartitionReader(
     // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
     // We are not acquiring the semaphore here since this next() is getting called from
     // the `PartitionReaderIterator` which implements a standard iterator pattern, and
-    // advertises `hasNext` as false when we return false here (no downstream tasks should
-    // consume this empty batch)
+    // advertises `hasNext` as false when we return false here. No downstream tasks should
+    // try to call next after `hasNext` returns false, and any task that produces some kind of
+    // data when `hasNext` is false is responsible to get the semaphore themselves.
     batch.isDefined
   }
 
