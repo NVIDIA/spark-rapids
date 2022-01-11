@@ -182,6 +182,12 @@
             <properties>
                 <included_buildvers>${buildver}</included_buildvers>
             </properties>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>rc1-repo</id>
+                    <url>https://repository.apache.org/content/repositories/orgapachespark-1395/</url>
+                </pluginRepository>
+            </pluginRepositories>
         </profile>
         <profile>
             <id>pre-merge</id>
