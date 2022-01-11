@@ -19,16 +19,17 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, GroupByAggregation, GroupByOptions, Scalar}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuLiteral, GpuMapUtils, GpuScalar, GpuTernaryExpression, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, NullPolicy, Scalar, ScanAggregation, ScanType, Table}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.RapidsErrorUtils
+import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
@@ -407,260 +408,284 @@ class GpuSequenceMeta(
   }
 
   override def convertToGpu(): GpuExpression = {
-    if (expr.stepOpt.isDefined) {
-      val Seq(start, stop, step) = childExprs.map(_.convertToGpu())
-      GpuSequenceWithStep(start, stop, step, expr.timeZoneId)
-    } else {
-      val Seq(start, stop) = childExprs.map(_.convertToGpu())
-      GpuSequence(start, stop, expr.timeZoneId)
+    val (startExpr, stopExpr, stepOpt) = if (expr.stepOpt.isDefined) {
+        val Seq(start, stop, step) = childExprs.map(_.convertToGpu())
+        (start, stop, Some(step))
+      } else {
+        val Seq(start, stop) = childExprs.map(_.convertToGpu())
+        (start, stop, None)
+      }
+    GpuSequence(startExpr, stopExpr, stepOpt, expr.timeZoneId)
+  }
+}
+
+object GpuSequenceUtil extends Arm {
+
+  def isAllTrue(col: ColumnVector): Boolean = {
+    assert(DType.BOOL8 == col.getType)
+    if (col.getRowCount == 0) {
+      return true
+    }
+    if (col.hasNulls) {
+      return false
+    }
+    withResource(col.all()) { allTrue =>
+      // Guaranteed there is at least one row and no nulls so result must be valid
+      allTrue.getBoolean
     }
   }
-}
 
-object GpuSequenceUtil {
-
-  def numberScalar(dt: DataType, value: Int): Scalar = dt match {
-    case ByteType => Scalar.fromByte(value.toByte)
-    case ShortType => Scalar.fromShort(value.toShort)
-    case IntegerType => Scalar.fromInt(value)
-    case LongType => Scalar.fromLong(value.toLong)
-    case _ =>
-      throw new IllegalArgumentException("wrong data type: " + dt)
+  /** (Copied most of the part from GpuConditionalExpression) */
+  def gather(predicate: ColumnVector, toBeGathered: ColumnVector): ColumnVector = {
+    // convert the predicate boolean column to numeric where 1 = true
+    // and 0 (or null) = false and then use `scan` with `sum` to convert to indices.
+    //
+    // For example, if the predicate evaluates to [F, null, T, F, T] then this
+    // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
+    // will perform an exclusive sum on these values and produce [0, 0, 0, 1, 1].
+    // Combining this with the original predicate boolean array results in the two
+    // T values mapping to indices 0 and 1, respectively.
+    val boolAsInt = withResource(Scalar.fromInt(1)) { one =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        predicate.ifElse(one, zero)
+      }
+    }
+    val prefixSumExclusive = withResource(boolAsInt) { boolsAsInts =>
+      boolsAsInts.scan(ScanAggregation.sum(), ScanType.EXCLUSIVE, NullPolicy.INCLUDE)
+    }
+    val gatherMap = withResource(prefixSumExclusive) { prefixSumExclusive =>
+      // for the entries in the gather map that do not represent valid
+      // values to be gathered, we change the value to -MAX_INT which
+      // will be treated as null values in the gather algorithm
+      withResource(Scalar.fromInt(Int.MinValue)) { outOfBoundsFlag =>
+        predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
+      }
+    }
+    withResource(gatherMap) { _ =>
+      withResource(new Table(toBeGathered)) { tbl =>
+        withResource(tbl.gather(gatherMap)) { gatherTbl =>
+          gatherTbl.getColumn(0).incRefCount()
+        }
+      }
+    }
   }
-}
-
-/** GpuSequence without step */
-case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[String] = None)
-    extends GpuBinaryExpression with TimeZoneAwareExpression {
-
-  override def left: Expression = start
-
-  override def right: Expression = stop
-
-  override def dataType: DataType = ArrayType(start.dataType, containsNull = false)
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
-    copy(timeZoneId = Some(timeZoneId))
 
   /**
-   * Calculate the size and step (1 or -1) between start and stop both inclusive
-   * size = |stop - start| + 1
-   * step = 1 if stop >= start else -1
-   * @param start first values in the result sequences
-   * @param stop end values in the result sequences
-   * @return (size, step)
+   * Compute the size of each array from 'start', 'stop' and 'step'.
+   * The returned column should be closed.
    */
-  private def calculateSizeAndStep(start: BinaryOperable, stop: BinaryOperable, dt: DataType):
-      Seq[ColumnVector] = {
-    withResource(stop.sub(start)) { difference =>
-      withResource(GpuSequenceUtil.numberScalar(dt, 1)) { one =>
-        val step = withResource(GpuSequenceUtil.numberScalar(dt, -1)) { negativeOne =>
-          withResource(GpuSequenceUtil.numberScalar(dt, 0)) { zero =>
-            withResource(difference.greaterOrEqualTo(zero)) { pred =>
-              pred.ifElse(one, negativeOne)
+  def computeArraySizes(
+      start: ColumnVector,
+      stop: ColumnVector,
+      step: ColumnVector): ColumnVector = {
+    // Keep the same requirement with Spark:
+    //  (step > 0 && start <= stop) || (step < 0 && start >= stop) || (step == 0 && start == stop)
+    withResource(Scalar.fromByte(0.toByte)) { zero =>
+      withResource(new Table(start, stop)) { startStopTable =>
+        // (step > 0 && start <= stop)
+        withResource(step.greaterThan(zero)) { positiveStep =>
+          withResource(startStopTable.filter(positiveStep)) { upTbl =>
+            withResource(upTbl.getColumn(0).lessOrEqualTo(upTbl.getColumn(1))) { allUp =>
+              require(isAllTrue(allUp), "Illegal sequence boundaries: step > 0 but start > stop")
             }
           }
         }
-        val size = closeOnExcept(step) { _ =>
-          withResource(difference.abs()) { absDifference =>
-            absDifference.add(one)
+        // (step < 0 && start >= stop)
+        withResource(step.lessThan(zero)) { negativeStep =>
+          withResource(startStopTable.filter(negativeStep)) { downTbl =>
+            withResource(downTbl.getColumn(0).greaterOrEqualTo(downTbl.getColumn(1))) { allDown =>
+              require(isAllTrue(allDown),
+                "Illegal sequence boundaries: step < 0 but start < stop")
+            }
           }
         }
-        Seq(size, step)
+        // (step == 0 && start == stop)
+        withResource(step.equalTo(zero)) { zeroStep =>
+          withResource(startStopTable.filter(zeroStep)) { equalTbl =>
+            withResource(equalTbl.getColumn(0).equalTo(equalTbl.getColumn(1))) { allEqual =>
+              require(isAllTrue(allEqual),
+                "Illegal sequence boundaries:  step == 0 but start != stop")
+            }
+          }
+        }
       }
     }
-  }
-
-  override def doColumnar(start: GpuColumnVector, stop: GpuColumnVector): ColumnVector = {
-    withResource(calculateSizeAndStep(start.getBase, stop.getBase, start.dataType())) { ret =>
-      ColumnVector.sequence(start.getBase, ret(0), ret(1))
-    }
-  }
-
-  override def doColumnar(start: GpuScalar, stop: GpuColumnVector): ColumnVector = {
-    withResource(calculateSizeAndStep(start.getBase, stop.getBase, stop.dataType())) { ret =>
-      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
-        ColumnVector.sequence(startV, ret(0), ret(1))
+    // Spark's algorithm to get the length (aka size)
+    // ``` Scala
+    //   size = if (start == stop) 1L else 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
+    //   require(size <= MAX_ROUNDED_ARRAY_LENGTH,
+    //       s"Too long sequence: $len. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
+    //   size.toInt
+    // ```
+    val sizeAsLong = withResource(Scalar.fromLong(1L)) { one =>
+      val diff = withResource(stop.castTo(DType.INT64)) { stopAsLong =>
+        withResource(start.castTo(DType.INT64)) { startAsLong =>
+          stopAsLong.sub(startAsLong)
+        }
+      }
+      // actualSize = 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
+      val actualSize = withResource(diff) { _ =>
+        withResource(step.castTo(DType.INT64)) { stepAsLong =>
+          withResource(diff.div(stepAsLong)) { quotient =>
+            quotient.add(one, DType.INT64)
+          }
+        }
+      }
+      withResource(actualSize) { _ =>
+        withResource(start.equalTo(stop)) { equals =>
+          equals.ifElse(one, actualSize)
+        }
       }
     }
-  }
-
-  override def doColumnar(start: GpuColumnVector, stop: GpuScalar): ColumnVector = {
-    withResource(calculateSizeAndStep(start.getBase, stop.getBase, start.dataType())) { ret =>
-      ColumnVector.sequence(start.getBase, ret(0), ret(1))
+    // check size
+    closeOnExcept(sizeAsLong) { _ =>
+      withResource(Scalar.fromInt(MAX_ROUNDED_ARRAY_LENGTH)) { maxLen =>
+        withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
+          require(isAllTrue(allValid),
+            s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
+        }
+      }
+    }
+    withResource(sizeAsLong) { _ =>
+      sizeAsLong.castTo(DType.INT32)
     }
   }
 
-  override def doColumnar(numRows: Int, start: GpuScalar, stop: GpuScalar): ColumnVector = {
-    val startV = GpuColumnVector.from(ColumnVector.fromScalar(start.getBase, numRows),
-      start.dataType)
-    doColumnar(startV, stop)
+  /**
+   * Filter out the nulls for 'start', 'stop', and 'step'.
+   * They should have the same number of rows.
+   *
+   * @return 3 corresponding columns without nulls, and a bool column that
+   *         row[i] is true if all the values of the 3 input columns at 'i' are valid,
+   *         Otherwise, row[i] is false. All the columns need to be closed by users.
+   */
+  def filterOutNullsIfNeeded(
+      start: ColumnVector,
+      stop: ColumnVector,
+      stepOpt: Option[ColumnVector]):
+      (ColumnVector, ColumnVector, Option[ColumnVector], Option[ColumnVector]) = {
+    // If has nulls, filter out the nulls
+    val hasNull = start.hasNulls || stop.hasNulls || stepOpt.exists(_.hasNulls)
+    if (hasNull) {
+      // Translate to booleans (false for null, true for others) for start, stop and step,
+      // and merge them by 'and'. For example
+      //  <start>  <stop>  <step>                                  <nonNullMask>
+      //    1       null    7             true   false  true        false
+      //    2       4       null     =>   true   true   false  =>   false
+      //    null    5       8             false  true   true        false
+      //    3       6       9             true   true   true        true
+      val startStopMask = withResource(start.isNotNull) { startMask =>
+        withResource(stop.isNotNull) { stopMask =>
+          startMask.and(stopMask)
+        }
+      }
+      val nonNullMask = withResource(startStopMask) { _ =>
+        withResource(stepOpt.map(_.isNotNull)) { stepMaskOpt =>
+          stepMaskOpt.map(_.and(startStopMask)).getOrElse(startStopMask.incRefCount())
+        }
+      }
+      // Now it is ready to filter out the nulls
+      closeOnExcept(nonNullMask) { _ =>
+        val inputTable = stepOpt.map(new Table(start, stop, _)).getOrElse(new Table(start, stop))
+        withResource(inputTable) { _ =>
+          withResource(inputTable.filter(nonNullMask)) { tbl =>
+            ( tbl.getColumn(0).incRefCount(),
+              tbl.getColumn(1).incRefCount(),
+              stepOpt.map(_ => tbl.getColumn(2).incRefCount()),
+              Some(nonNullMask)
+            )
+          }
+        }
+      }
+    } else {
+      (start.incRefCount(), stop.incRefCount(), stepOpt.map(_.incRefCount()), None)
+    }
   }
 }
 
-/** GpuSequence with step */
-case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expression,
-    timeZoneId: Option[String] = None) extends GpuTernaryExpression with TimeZoneAwareExpression {
+case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expression],
+    timeZoneId: Option[String] = None) extends TimeZoneAwareExpression with GpuExpression
+    with ShimExpression {
+
+  import GpuSequenceUtil._
+
+  override def dataType: ArrayType = ArrayType(start.dataType, containsNull = false)
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Some(timeZoneId))
 
-  override def first: Expression = start
+  override def children: Seq[Expression] = Seq(start, stop) ++ stepOpt
 
-  override def second: Expression = stop
+  override def nullable: Boolean = children.exists(_.nullable)
 
-  override def third: Expression = step
+  override def foldable: Boolean = children.forall(_.foldable)
 
-  override def dataType: DataType = ArrayType(start.dataType, containsNull = false)
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    // 1 Compute the array size for all the rows
+    val (startCol, sizeCol, stepCol, nonNullPredOpt) =
+      withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>
+        withResource(columnarEvalToColumn(stop, batch)) { stopGpuCol =>
+          withResource(stepOpt.map(columnarEvalToColumn(_, batch))) { stepColOpt =>
+            // Filter out the nulls before any computation, since cudf 'sequences' does
+            // not allow nulls.(Pls refer to https://github.com/rapidsai/cudf/issues/10012)
+            // Then no need to do computation for the null rows.
+            val (starts, stops, stepsOption, nonNullOption) = filterOutNullsIfNeeded(
+                startGpuCol.getBase, stopGpuCol.getBase, stepColOpt.map(_.getBase))
 
-  private def calculateSize(
-      start: BinaryOperable,
-      stop: BinaryOperable,
-      step: BinaryOperable,
-      rows: Int,
-      dt: DataType): ColumnVector = {
-    // First, calculate sizeWithNegative=floor((stop-start)/step)+1.
-    //     if step = 0, the div operation in cudf will get MIN_VALUE, which is ok for this case,
-    //     since when size < 0, cudf will not generate sequence
-    // Second, calculate size = if(sizeWithNegative < 0) 0 else sizeWithNegative
-    // Third, if (start == stop && step == 0), let size = 1.
-    withResource(GpuSequenceUtil.numberScalar(dt, 1)) { one =>
-      withResource(GpuSequenceUtil.numberScalar(dt, 0)) { zero =>
-
-        val (sizeWithNegative, diffHasZero) = withResource(stop.sub(start)) { difference =>
-          // sizeWithNegative=floor((stop-start)/step)+1
-          val sizeWithNegative = withResource(difference.floorDiv(step)) { quotient =>
-            quotient.add(one)
-          }
-          val tmpDiffHasZero = closeOnExcept(sizeWithNegative) { _ =>
-            difference.equalTo(zero)
-          }
-          (sizeWithNegative, tmpDiffHasZero)
-        }
-
-        val tmpSize = closeOnExcept(diffHasZero) { _ =>
-          // tmpSize = if(sizeWithNegative < 0) 0 else sizeWithNegative
-          withResource(sizeWithNegative) { _ =>
-            withResource(sizeWithNegative.greaterOrEqualTo(zero)) { pred =>
-              pred.ifElse(sizeWithNegative, zero)
-            }
-          }
-        }
-
-        // when start==stop && step==0, size will be 0.
-        // but we should change size to 1
-        withResource(tmpSize) { tmpSize =>
-          withResource(diffHasZero) { diffHasZero =>
-            step match {
-              case stepScalar: Scalar =>
-                withResource(ColumnVector.fromScalar(stepScalar, rows)) { stepV =>
-                  withResource(stepV.equalTo(zero)) { stepHasZero =>
-                    withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
-                      predWithZero.ifElse(one, tmpSize)
-                    }
+            // Get the array size of each valid row, along with the steps
+            withResource(stops) { _ =>
+              closeOnExcept(starts) { _ =>
+                closeOnExcept(nonNullOption) { _ =>
+                  closeOnExcept(stepsOption.getOrElse(defaultSteps(starts, stops))) { steps =>
+                    val sizes = computeArraySizes(starts, stops, steps)
+                    (starts, sizes, steps, nonNullOption)
                   }
                 }
-              case _ =>
-                withResource(step.equalTo(zero)) { stepHasZero =>
-                  withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
-                    predWithZero.ifElse(one, tmpSize)
-                  }
-                }
+              }
             }
           }
         }
       }
-    }
-  }
 
-  override def doColumnar(
-      start: GpuColumnVector,
-      stop: GpuColumnVector,
-      step: GpuColumnVector): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
-        start.dataType())) { size =>
-      ColumnVector.sequence(start.getBase, size, step.getBase)
+    // 2 Generate the sequence
+    val castedStepCol = withResource(stepCol) { _ =>
+      // cudf 'sequence' requires 'step' has the same type with 'start'.
+      // And the step type may differ due to the default steps.
+      stepCol.castTo(startCol.getType)
     }
-  }
-
-  override def doColumnar(
-      start: GpuScalar,
-      stop: GpuColumnVector,
-      step: GpuColumnVector): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt,
-        start.dataType)) { size =>
-      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
-        ColumnVector.sequence(startV, size, step.getBase)
+    withResource(Seq(startCol, sizeCol, castedStepCol)) { _ =>
+      withResource(ColumnVector.sequence(startCol, sizeCol, castedStepCol)) { ret =>
+        val finalRet = withResource(nonNullPredOpt) { _ =>
+          // if has nulls, need to restore the valid values to the original positions.
+          nonNullPredOpt.map(gather(_, ret)).getOrElse(ret.incRefCount)
+        }
+        GpuColumnVector.from(finalRet, dataType)
       }
     }
   }
 
-  override def doColumnar(
-      start: GpuScalar,
-      stop: GpuScalar,
-      step: GpuColumnVector): ColumnVector = {
-    withResource(ColumnVector.fromScalar(start.getBase, step.getRowCount.toInt)) { startV =>
-      withResource(calculateSize(startV, stop.getBase, step.getBase, step.getRowCount.toInt,
-          start.dataType)) { size =>
-        ColumnVector.sequence(startV, size, step.getBase)
-      }
-    }
-  }
-
-  override def doColumnar(
-      start: GpuScalar,
-      stop: GpuColumnVector,
-      step: GpuScalar): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt,
-        start.dataType)) { size =>
-      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
-        withResource(ColumnVector.fromScalar(step.getBase, stop.getRowCount.toInt)) { stepV =>
-          ColumnVector.sequence(startV, size, stepV)
+  @transient
+  private lazy val defaultSteps: (ColumnView, ColumnView) => ColumnVector =
+      dataType.elementType match {
+    case _: IntegralType =>
+      // Default step:
+      //   start > stop, step == -1
+      //   start <= stop, step == 1
+      (starts, stops) => {
+        // It is ok to always use byte, since it will be casted to the same type before
+        // going into cudf sequence. Besides byte saves memory, and does not cause any
+        // type promotion during computation.
+        withResource(Scalar.fromByte((-1).toByte)) { minusOne =>
+          withResource(Scalar.fromByte(1.toByte)) { one =>
+            withResource(starts.greaterThan(stops)) { decrease =>
+              decrease.ifElse(minusOne, one)
+            }
+          }
         }
       }
-    }
+    // Timestamp and Date will come soon
+    // case TimestampType =>
+    // case DateType =>
   }
 
-  override def doColumnar(
-      start: GpuColumnVector,
-      stop: GpuScalar,
-      step: GpuColumnVector): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
-        start.dataType())) { size =>
-      ColumnVector.sequence(start.getBase, size, step.getBase)
-    }
-  }
-
-  override def doColumnar(
-      start: GpuColumnVector,
-      stop: GpuScalar,
-      step: GpuScalar): ColumnVector = {
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
-        start.dataType())) { size =>
-      withResource(ColumnVector.fromScalar(step.getBase, start.getRowCount.toInt)) { stepV =>
-        ColumnVector.sequence(start.getBase, size, stepV)
-      }
-    }
-  }
-
-  override def doColumnar(
-      start: GpuColumnVector,
-      stop: GpuColumnVector,
-      step: GpuScalar): ColumnVector =
-    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
-        start.dataType())) { size =>
-      withResource(ColumnVector.fromScalar(step.getBase, start.getRowCount.toInt)) { stepV =>
-        ColumnVector.sequence(start.getBase, size, stepV)
-      }
-    }
-
-  override def doColumnar(
-      numRows: Int,
-      start: GpuScalar,
-      stop: GpuScalar,
-      step: GpuScalar): ColumnVector = {
-    val startV = GpuColumnVector.from(ColumnVector.fromScalar(start.getBase, numRows),
-      start.dataType)
-    doColumnar(startV, stop, step)
-  }
 }
