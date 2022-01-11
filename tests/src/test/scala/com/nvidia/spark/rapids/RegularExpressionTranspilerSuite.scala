@@ -523,7 +523,7 @@ class FuzzRegExp(chars: String) {
     } else {
       // hex and octal digits are not included yet, because they are
       // not currently supported on the GPU
-      rr.nextInt(6) match {
+      rr.nextInt(7) match {
         case 0 => randomChar
         case 1 => randomRepetition(depth)
         case 2 => randomEscaped
