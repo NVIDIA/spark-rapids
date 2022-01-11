@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids
 
 import java.util.regex.{Matcher, Pattern}
 
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
 
 import ai.rapids.cudf.{ColumnVector, CudfException}
@@ -346,18 +346,56 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       .map(_ => r.nextString())
 
     // generate patterns that are valid on both CPU and GPU
-    val patterns = ListBuffer[String]()
-    while (patterns.length < 5000) {
+    val patterns = HashSet[String]()
+    while (patterns.size < 5000) {
       val pattern = r.nextString()
-      if (Try(Pattern.compile(pattern)).isSuccess && Try(transpile(pattern, replace)).isSuccess) {
-        patterns += pattern
+      if (!patterns.contains(pattern)) {
+        if (Try(Pattern.compile(pattern)).isSuccess && Try(transpile(pattern, replace)).isSuccess) {
+          patterns += pattern
+        }
       }
     }
 
     if (replace) {
-      assertCpuGpuMatchesRegexpReplace(patterns, data)
+      assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
     } else {
-      assertCpuGpuMatchesRegexpFind(patterns, data)
+      assertCpuGpuMatchesRegexpFind(patterns.toSeq, data)
+    }
+  }
+
+  ignore("AST fuzz test - regexp_find") {
+    doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), replace = false)
+  }
+
+  ignore("AST fuzz test - regexp_replace") {
+    doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), replace = true)
+  }
+
+  private def doAstFuzzTest(validChars: Option[String], replace: Boolean) {
+
+    val r = new EnhancedRandom(new Random(seed = 0L),
+      FuzzerOptions(validChars, maxStringLen = 12))
+
+    val fuzzer = new FuzzRegExp(REGEXP_LIMITED_CHARS_FIND)
+
+    val data = Range(0, 1000)
+      .map(_ => r.nextString())
+
+    // generate patterns that are valid on both CPU and GPU
+    val patterns = HashSet[String]()
+    while (patterns.size < 500) {
+      val pattern = fuzzer.generate(0).toRegexString
+      if (!patterns.contains(pattern)) {
+        if (Try(Pattern.compile(pattern)).isSuccess && Try(transpile(pattern, replace)).isSuccess) {
+          patterns += pattern
+        }
+      }
+    }
+
+    if (replace) {
+      assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
+    } else {
+      assertCpuGpuMatchesRegexpFind(patterns.toSeq, data)
     }
   }
 
@@ -472,4 +510,90 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def parse(pattern: String): RegexAST = new RegexParser(pattern).parse()
 
+}
+
+class FuzzRegExp(chars: String) {
+  private val rr = new Random(0)
+  val r = new EnhancedRandom(rr, FuzzerOptions())
+  val escaped = Seq('d', 'D', 's', 'S', 'w', 'W')
+  val maxDepth = 5
+  def generate(depth: Int): RegexAST = {
+    if (depth == maxDepth) {
+      randomChar
+    } else {
+      // hex and octal digits are not included yet, because they are
+      // not currently supported on the GPU
+      rr.nextInt(6) match {
+        case 0 => randomChar
+        case 1 => randomRepetition(depth)
+        case 2 => randomEscaped
+        case 3 => randomCharacterClass
+        case 4 => randomChoice(depth)
+        case 5 => randomGroup(depth)
+        case _ => randomSequence(depth)
+      }
+    }
+  }
+
+  private def randomCharacterClassComponent = {
+    // hex and octal digits are not included yet, because they are
+    // not currently supported on the GPU
+    rr.nextInt(3) match {
+      case 0 => randomChar
+      case 1 => randomCharRange
+      case _ => randomEscaped
+    }
+  }
+
+  private def randomCharRange: RegexCharacterClassComponent = {
+    //TODO randomize
+    RegexCharacterRange('a', 'z')
+  }
+
+  private def randomSequence(depth: Int) = {
+    val b = new ListBuffer[RegexAST]()
+    b.appendAll(Range(0, 3).map(_ => generate(depth + 1)))
+    RegexSequence(b)
+  }
+
+  private def randomCharacterClass = {
+    val characters = new ListBuffer[RegexCharacterClassComponent]()
+    characters.appendAll(Range(0, 3).map(_ => randomCharacterClassComponent))
+    RegexCharacterClass(negated = rr.nextBoolean(), characters = characters)
+  }
+
+  private def randomChar: RegexCharacterClassComponent = {
+    RegexChar(chars(rr.nextInt(chars.length)))
+  }
+
+  private def randomEscaped: RegexCharacterClassComponent = {
+    RegexEscaped(escaped(rr.nextInt(escaped.length)))
+  }
+
+  private def randomChoice(depth: Int) = {
+    RegexChoice(generate(depth + 1), generate(depth + 1))
+  }
+
+  private def randomGroup(depth: Int) = {
+    RegexGroup(capture = rr.nextBoolean(), generate(depth + 1))
+  }
+
+  private def randomRepetition(depth: Int) = {
+    RegexRepetition(generate(depth + 1), randomQuantifier)
+  }
+
+  private def randomQuantifier = {
+    rr.nextInt(6) match {
+      case 0 => SimpleQuantifier('+')
+      case 1 => SimpleQuantifier('*')
+      case 2 => SimpleQuantifier('?')
+      case 3 => QuantifierFixedLength(rr.nextInt(3))
+      case 4 => QuantifierVariableLength(rr.nextInt(3), None)
+      case _ =>
+        // this can intentionally generate invalid quantifiers where the maxLength
+        // is less than the minLength, such as "{2,1}" which should be handled as a
+        // literal string match on "{2,1}".
+        QuantifierVariableLength(rr.nextInt(3), Some(rr.nextInt(3)))
+    }
+  }
 }
