@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import java.util.{Date, UUID}
+
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
@@ -25,6 +26,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
+
 import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
@@ -126,15 +128,11 @@ object GpuFileFormatWriter extends Logging {
 
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
-    val writerBucketSpec = bucketSpec.map { spec =>
+    val writerBucketSpec: Option[GpuWriterBucketSpec] = bucketSpec.map { spec =>
       // TODO: Cannot support this until we:
       // support Hive hash partitioning on the GPU
       throw new UnsupportedOperationException("GPU hash partitioning for bucketed data is not "
-        + "compatible with the CPU version")
-
-      // add this to let the compiler infer
-      // the type of writerBucketSpec as `Option[GpuWriterBucketSpec]`
-      GpuWriterBucketSpec(null, null)
+          + "compatible with the CPU version")
     }
 
     val sortColumns = bucketSpec.toSeq.flatMap {
