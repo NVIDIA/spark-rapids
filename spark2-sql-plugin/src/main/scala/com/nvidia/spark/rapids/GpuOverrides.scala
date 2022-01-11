@@ -425,6 +425,7 @@ object WriteFileOp extends FileFormatOp {
 
 object GpuOverrides extends Logging {
   // Spark 2.x - don't pull in cudf so hardcode here
+  val DECIMAL32_MAX_PRECISION = 9
   val DECIMAL64_MAX_PRECISION = 18
   val DECIMAL128_MAX_PRECISION = 38
 
@@ -843,6 +844,122 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
         TypeSig.DECIMAL_128),
       (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
+      }),
+    expr[CheckOverflow](
+      "CheckOverflow after arithmetic operations between DecimalType data",
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
+        TypeSig.DECIMAL_128),
+      (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
+        private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
+          expr.wrapped match {
+            case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
+              val dt = lit.dataType.asInstanceOf[DecimalType]
+              // Lets figure out if we can make the Literal value smaller
+              val (newType, value) = lit.value match {
+                case null =>
+                  (DecimalType(0, 0), null)
+                case dec: Decimal =>
+                  val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
+                  val p = stripped.precision
+                  val s = stripped.scale
+                  // allowNegativeScaleOfDecimalEnabled is not in 2.x assume its default false
+                  val t = if (s < 0 && !false) {
+                    // need to adjust to avoid errors about negative scale
+                    DecimalType(p - s, 0)
+                  } else {
+                    DecimalType(p, s)
+                  }
+                  (t, stripped)
+                case other =>
+                  throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
+              }
+              expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
+            // We avoid unapply for Cast because it changes between versions of Spark
+            case PromotePrecision(c: Cast) if c.dataType.isInstanceOf[DecimalType] =>
+              val to = c.dataType.asInstanceOf[DecimalType]
+              val fromType = DecimalUtil.optionallyAsDecimalType(c.child.dataType)
+              fromType match {
+                case Some(from) =>
+                  val minScale = math.min(from.scale, to.scale)
+                  val fromWhole = from.precision - from.scale
+                  val toWhole = to.precision - to.scale
+                  val minWhole = if (to.scale < from.scale) {
+                    // If the scale is getting smaller in the worst case we need an
+                    // extra whole part to handle rounding up.
+                    math.min(fromWhole + 1, toWhole)
+                  } else {
+                    math.min(fromWhole, toWhole)
+                  }
+                  val newToType = DecimalType(minWhole + minScale, minScale)
+                  if (newToType == from) {
+                    // We can remove the cast totally
+                    val castExpr = expr.childExprs.head
+                    castExpr.childExprs.head
+                  } else if (newToType == to) {
+                    // The cast is already ideal
+                    expr
+                  } else {
+                    val castExpr = expr.childExprs.head.asInstanceOf[CastExprMeta[_]]
+                    castExpr.withToTypeOverride(newToType)
+                  }
+                case _ =>
+                  expr
+              }
+            case _ => expr
+          }
+        private[this] lazy val binExpr = childExprs.head
+        private[this] lazy val lhs = extractOrigParam(binExpr.childExprs.head)
+        private[this] lazy val rhs = extractOrigParam(binExpr.childExprs(1))
+        private[this] lazy val lhsDecimalType =
+          DecimalUtil.asDecimalType(lhs.wrapped.asInstanceOf[Expression].dataType)
+        private[this] lazy val rhsDecimalType =
+          DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
+
+        override def tagExprForGpu(): Unit = {
+          a.child match {
+            // Division and Multiplication of Decimal types is a little odd. Spark will cast the
+            // inputs to a common wider value where the scale is the max of the two input scales,
+            // and the precision is max of the two input non-scale portions + the new scale. Then it
+            // will do the divide or multiply as a BigDecimal value but lie about the return type.
+            // Finally here in CheckOverflow it will reset the scale and check the precision so that
+            // Spark knows it fits in the final desired result.
+            // Here we try to strip out the extra casts, etc to get to as close to the original
+            // query as possible. This lets us then calculate what CUDF needs to get the correct
+            // answer, which in some cases is a lot smaller.
+            case _: Divide =>
+              val intermediatePrecision =
+                GpuDecimalDivide.nonRoundedIntermediateArgPrecision(lhsDecimalType,
+                  rhsDecimalType, a.dataType)
+
+              if (intermediatePrecision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
+                if (conf.needDecimalGuarantees) {
+                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
+                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
+                      s"for this divide is too large to be supported on the GPU")
+                } else {
+                  logWarning("Decimal overflow guarantees disabled for " +
+                      s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
+                      s"intermediate precision of $intermediatePrecision")
+                }
+              }
+            case _: Multiply =>
+              val intermediatePrecision =
+                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
+                  rhsDecimalType, a.dataType)
+              if (intermediatePrecision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
+                if (conf.needDecimalGuarantees) {
+                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
+                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
+                      s"for this multiply is too large to be supported on the GPU")
+                } else {
+                  logWarning("Decimal overflow guarantees disabled for " +
+                      s"${lhs.dataType} * ${rhs.dataType} produces ${a.dataType} with an " +
+                      s"intermediate precision of $intermediatePrecision")
+                }
+              }
+            case _ => // NOOP
+          }
+        }
       }),
     expr[ToDegrees](
       "Converts radians to degrees",
