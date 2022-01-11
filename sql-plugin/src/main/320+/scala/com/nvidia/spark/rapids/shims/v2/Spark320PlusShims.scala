@@ -1035,8 +1035,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     adaptivePlan.initialPlan
   }
 
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
-
   override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec,
       goal: CoalesceSizeGoal): SparkPlan = {
     a.copy(supportsColumnar = true)

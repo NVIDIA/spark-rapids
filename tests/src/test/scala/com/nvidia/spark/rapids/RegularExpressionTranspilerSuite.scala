@@ -146,6 +146,17 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       assertUnsupported(pattern, replace = false,
         "cuDF does not support octal digits consistently with Spark"))
   }
+  test("string anchors - find") {
+    val patterns = Seq("\\Atest", "test\\z", "test\\Z")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
+      "\ntest", "test\n", "\ntest\n"))
+  }
+
+  test("string anchors - replace") {
+    val patterns = Seq("\\Atest")
+    assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
+      "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
+  }
 
   test("end of line anchor with strings ending in valid newline") {
     val pattern = "2$"
@@ -219,6 +230,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         .replaceAll("\\$", Matcher.quoteReplacement("[\r]?[\n]?$")))
   }
 
+  test("transpile \\z") {
+    doTranspileTest("\\z", "$")
+  }
+
+  test("transpile \\Z") {
+    doTranspileTest("\\Z", "(?:[\r\n]?$)")
+  }
+
   test("compare CPU and GPU: character range including unescaped + and -") {
     val patterns = Seq("a[-]+", "a[a-b-]+", "a[-a-b]", "a[-+]", "a[+-]")
     val inputs = Seq("a+", "a-", "a", "a-+", "a[a-b-]")
@@ -237,6 +256,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
+
+  // we currently only support \\z and \\Z in find mode
+  // see https://github.com/NVIDIA/spark-rapids/issues/4425
+  private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON + "zZ"
+
+  private val REGEXP_LIMITED_CHARS_REPLACE = REGEXP_LIMITED_CHARS_COMMON
+
   test("compare CPU and GPU: find digits") {
     val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?",
       "\\D", "\\D+", "\\D*", "\\D?")
@@ -252,13 +279,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
-  private val REGEXP_LIMITED_CHARS = "|()[]{},.^$*+?abc123x\\ \tBsdwSDW"
-
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
     // CR and LF has been excluded due to known issues
-    doFuzzTest(Some(REGEXP_LIMITED_CHARS), replace = false)
+    doFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), replace = false)
   }
 
   test("compare CPU and GPU: regexp replace simple regular expressions") {
@@ -296,7 +321,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
     // LF has been excluded due to known issues
-    doFuzzTest(Some(REGEXP_LIMITED_CHARS), replace = true)
+    doFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), replace = true)
   }
 
   test("compare CPU and GPU: regexp find fuzz test printable ASCII chars plus CR and TAB") {
@@ -348,7 +373,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuContains(cudfPattern, input)
       } catch {
         case e: CudfException =>
-          fail(s"cuDF failed to compile pattern: $cudfPattern", e)
+          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -371,7 +396,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuReplace(cudfPattern, input)
       } catch {
         case e: CudfException =>
-          fail(s"cuDF failed to compile pattern: $cudfPattern", e)
+          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -435,7 +460,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def doTranspileTest(pattern: String, expected: String) {
     val transpiled: String = transpile(pattern, replace = false)
-    assert(transpiled === expected)
+    assert(toReadableString(transpiled) === toReadableString(expected))
   }
 
   private def transpile(pattern: String, replace: Boolean): String = {
