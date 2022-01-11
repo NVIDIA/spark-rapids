@@ -317,7 +317,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.WindowSpecDefinition"></a>spark.rapids.sql.expression.WindowSpecDefinition| |Specification of a window function, indicating the partitioning-expression, the row ordering, and the width of the window|true|None|
 <a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|`year`|Returns the year from a date or timestamp|true|None|
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression| |Aggregate expression|true|None|
-<a name="sql.expression.ApproximatePercentile"></a>spark.rapids.sql.expression.ApproximatePercentile|`percentile_approx`, `approx_percentile`|Approximate percentile|true|None|
+<a name="sql.expression.ApproximatePercentile"></a>spark.rapids.sql.expression.ApproximatePercentile|`percentile_approx`, `approx_percentile`|Approximate percentile|false|This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark. To enable it, set spark.rapids.sql.incompatibleOps.enabled|
 <a name="sql.expression.Average"></a>spark.rapids.sql.expression.Average|`avg`, `mean`|Average aggregate operator|true|None|
 <a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, not supported in reduction|true|None|
 <a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction|true|None|

@@ -3249,11 +3249,6 @@ object GpuOverrides extends Logging {
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
 
         override def tagAggForGpu(): Unit = {
-          if (!conf.isIncompatEnabled) {
-            willNotWorkOnGpu("The GPU implementation of approx_percentile is not bit-for-bit " +
-              s"compatible with Apache Spark. To enable it, set ${RapidsConf.INCOMPATIBLE_OPS}")
-          }
-
           // check if the percentile expression can be supported on GPU
           childExprs(1).wrapped match {
             case lit: Literal => lit.value match {
@@ -3286,7 +3281,8 @@ object GpuOverrides extends Logging {
           val aggBuffer = c.aggBufferAttributes.head
           aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
-      }),
+      }).incompat("the GPU implementation of approx_percentile is not bit-for-bit " +
+          s"compatible with Apache Spark. To enable it, set ${RapidsConf.INCOMPATIBLE_OPS}"),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
