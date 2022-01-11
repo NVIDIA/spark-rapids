@@ -57,7 +57,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = spy(new RapidsBufferCatalog)
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, 0, catalog)) { hostStore =>
         assertResult(0)(hostStore.currentSize)
         assertResult(hostStoreMaxSize)(hostStore.numBytesFree)
         devStore.setSpillStore(hostStore)
@@ -91,7 +91,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, 0, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
         withResource(buildContiguousTable()) { ct =>
           withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedBuffer =>
@@ -120,7 +120,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog, devStore)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, 0, catalog, devStore)) { hostStore =>
         devStore.setSpillStore(hostStore)
         withResource(buildContiguousTable()) { ct =>
           withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
@@ -149,7 +149,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       val mockStore = mock[RapidsBufferStore]
       when(mockStore.tier) thenReturn(StorageTier.DISK)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog, devStore)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, 0, catalog, devStore)) { hostStore =>
         devStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         withResource(buildContiguousTable(1024 * 1024)) { bigTable =>

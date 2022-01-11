@@ -29,6 +29,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  */
 class RapidsHostMemoryStore(
     maxSize: Long,
+    pinnedSize: Long,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
     deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
     extends RapidsBufferStore(StorageTier.HOST, catalog) {
@@ -36,10 +37,17 @@ class RapidsHostMemoryStore(
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
   private[this] var haveLoggedMaxExceeded = false
 
-  // Returns an allocated host buffer and whether the allocation is from the internal pool
-  private def allocateHostBuffer(size: Long): (HostMemoryBuffer, Boolean) = {
+  private object AllocationMode extends Enumeration {
+    type AllocationMode = Value
+    val Pinned, Pooled, Direct = Value
+  }
+  import AllocationMode._
+
+  // Returns an allocated host buffer and its allocation mode
+  private def allocateHostBuffer(size: Long): (HostMemoryBuffer, AllocationMode) = {
     // spill to keep within the targeted size
-    val amountSpilled = synchronousSpill(math.max(maxSize - size, 0))
+    val targetSize = math.max(maxSize + pinnedSize - size, 0)
+    val amountSpilled = synchronousSpill(targetSize)
     if (amountSpilled != 0) {
       logInfo(s"Spilled $amountSpilled bytes from the host memory store")
       TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
@@ -47,18 +55,19 @@ class RapidsHostMemoryStore(
 
     var buffer: HostMemoryBuffer = null
     while (buffer == null) {
-      buffer = PinnedMemoryPool.tryAllocate(size)
-      if (buffer != null) {
-        return (buffer, false)
-      }
-
-      if (size > maxSize) {
+      if (size > maxSize && size > pinnedSize) {
         if (!haveLoggedMaxExceeded) {
-          logWarning(s"Exceeding host spill max of $maxSize bytes to accommodate a buffer of " +
-              s"$size bytes. Consider increasing host spill store size.")
+          logWarning(s"Exceeding host spill max of $maxSize bytes and pinned memory pool size of " +
+              s"$pinnedSize bytes to accommodate a buffer of $size bytes. Consider increasing " +
+              s"host spill store size or pinned memory pool size.")
           haveLoggedMaxExceeded = true
         }
-        return (HostMemoryBuffer.allocate(size), false)
+        return (HostMemoryBuffer.allocate(size), Direct)
+      }
+
+      buffer = PinnedMemoryPool.tryAllocate(size)
+      if (buffer != null) {
+        return (buffer, Pinned)
       }
 
       val allocation = addressAllocator.allocate(size)
@@ -69,13 +78,13 @@ class RapidsHostMemoryStore(
         synchronousSpill(targetSize)
       }
     }
-    (buffer, true)
+    (buffer, Pooled)
   }
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     withResource(otherBuffer) { _ =>
-      val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
+      val (hostBuffer, allocationMode) = allocateHostBuffer(other.size)
       try {
         otherBuffer match {
           case devBuffer: DeviceMemoryBuffer => hostBuffer.copyFromDeviceBuffer(devBuffer, stream)
@@ -86,13 +95,18 @@ class RapidsHostMemoryStore(
           hostBuffer.close()
           throw e
       }
+      val spillPriority = other.getSpillPriority - (allocationMode match {
+        case Pinned => 200
+        case Pooled => 100
+        case Direct => 0
+      })
       new RapidsHostMemoryBuffer(
         other.id,
         other.size,
         other.meta,
-        other.getSpillPriority,
+        spillPriority,
         hostBuffer,
-        isPinned,
+        allocationMode,
         other.spillCallback,
         deviceStorage)
     }
@@ -111,7 +125,7 @@ class RapidsHostMemoryStore(
       meta: TableMeta,
       spillPriority: Long,
       buffer: HostMemoryBuffer,
-      isInternalPoolAllocated: Boolean,
+      allocationMode: AllocationMode,
       spillCallback: SpillCallback,
       deviceStorage: RapidsDeviceMemoryStore)
       extends RapidsBufferBase(
@@ -124,7 +138,7 @@ class RapidsHostMemoryStore(
     }
 
     override protected def releaseResources(): Unit = {
-      if (isInternalPoolAllocated) {
+      if (allocationMode == Pooled) {
         assert(buffer.getAddress >= pool.getAddress)
         assert(buffer.getAddress < pool.getAddress + pool.getLength)
         addressAllocator.free(buffer.getAddress - pool.getAddress)

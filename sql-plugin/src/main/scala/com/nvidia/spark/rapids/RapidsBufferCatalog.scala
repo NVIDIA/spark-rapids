@@ -184,7 +184,8 @@ object RapidsBufferCatalog extends Logging with Arm {
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
       deviceStorage.setSpillStore(gdsStorage)
     } else {
-      hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
+      hostStorage = new RapidsHostMemoryStore(
+        rapidsConf.hostSpillStorageSize, rapidsConf.pinnedPoolSize)
       diskStorage = new RapidsDiskStore(diskBlockManager)
       deviceStorage.setSpillStore(hostStorage)
       hostStorage.setSpillStore(diskStorage)
