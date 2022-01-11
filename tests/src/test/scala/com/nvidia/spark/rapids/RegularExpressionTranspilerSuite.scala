@@ -146,6 +146,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       assertUnsupported(pattern, replace = false,
         "cuDF does not support octal digits consistently with Spark"))
   }
+  
   test("string anchors - find") {
     val patterns = Seq("\\Atest", "test\\z", "test\\Z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
