@@ -902,15 +902,15 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
-    .doc("When set to false disables all json input and output acceleration. " +
+    .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
-    .doc("When set to false disables json input acceleration")
+    .doc("When set to true enables json input acceleration")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +

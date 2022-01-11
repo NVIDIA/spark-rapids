@@ -64,41 +64,48 @@ object GpuJsonScan {
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
 
     if (!meta.conf.isJsonEnabled) {
-      meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set" +
+      meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_JSON} to true")
     }
 
     if (!meta.conf.isJsonReadEnabled) {
-      meta.willNotWorkOnGpu("JSON input has been disabled. To enable set" +
-        s"${RapidsConf.ENABLE_JSON_READ} to true")
+      meta.willNotWorkOnGpu("JSON input has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_JSON_READ} to true. Please note that, currently json reader does " +
+        s"not support column prune, so user must specify the full schema or just let spark to " +
+        s"infer the schema")
     }
 
     if (parsedOptions.multiLine) {
       meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
     }
 
+    // {"name": /* hello */ "Reynold Xin"} is not supported by CUDF
     if (parsedOptions.allowComments) {
       meta.willNotWorkOnGpu("GpuJsonScan does not support allowComments")
     }
 
+    // {name: 'Reynold Xin'} is not supported by CUDF
     if (parsedOptions.allowUnquotedFieldNames) {
       meta.willNotWorkOnGpu("GpuJsonScan does not support allowUnquotedFieldNames")
     }
 
+    // {'name': 'Reynold Xin'} is not supported by CUDF
+    if (options.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
+      meta.willNotWorkOnGpu("GpuJsonScan dose not support allowSingleQuotes")
+    }
+
+    // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
     if (parsedOptions.allowBackslashEscapingAnyCharacter) {
       meta.willNotWorkOnGpu("GpuJsonScan does not support allowBackslashEscapingAnyCharacter")
     }
 
+    // {"a":null, "b":1, "c":3.0}, Spark will drop column `a` if dropFieldIfAllNull is enabled.
     if (parsedOptions.dropFieldIfAllNull) {
       meta.willNotWorkOnGpu("GpuJsonScan does not support dropFieldIfAllNull")
     }
 
     if (parsedOptions.parseMode != PermissiveMode) {
       meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
-    }
-
-    if (options.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
-      meta.willNotWorkOnGpu("GpuJsonScan dose not support allowSingleQuotes")
     }
 
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>

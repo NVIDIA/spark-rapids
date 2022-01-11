@@ -21,6 +21,10 @@ from src.main.python.marks import approximate_float
 from src.main.python.spark_session import with_cpu_session
 
 json_supported_gens = [
+    # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
+    # This would require multiLine reads to work correctly, so we avoid these chars
+    StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
+    StringGen('[aAbB ]{0,10}'),
     byte_gen, short_gen, int_gen, long_gen, boolean_gen,
     # FloatGen(no_nans=True), # Test will fail
     DoubleGen(no_nans=True)
