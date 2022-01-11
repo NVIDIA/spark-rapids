@@ -132,29 +132,29 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
    * converted to Spark schema
    *
    * >>> df.printSchema()
-   *root
-   *|-- a: short (nullable = true)
-   *|-- b: integer (nullable = true)
-   *|-- c: long (nullable = true)
-   *|-- g: struct (nullable = true)
-   *|    |-- c1: short (nullable = true)
-   *|    |-- c2: integer (nullable = true)
-   *|    |-- c3: long (nullable = true)
-   *|-- m1: map (nullable = true)
-   *|    |-- key: short
-   *|    |-- value: short (valueContainsNull
-   *|-- m2: map (nullable = true)
-   *|    |-- key: integer
-   *|    |-- value: integer (valueContainsNu
-   *|-- m3: map (nullable = true)
-   *|    |-- key: long
-   *|    |-- value: long (valueContainsNull
-   *|-- m4: map (nullable = true)
-   *|    |-- key: long
-   *|    |-- value: struct (valueContainsNul
-   *|    |    |-- c1: short (nullable = true
-   *|    |    |-- c2: integer (nullable = tr
-   *|    |    |-- c3: long (nullable = true)
+   * root
+   *  |-- a: short (nullable = true)
+   *  |-- b: integer (nullable = true)
+   *  |-- c: long (nullable = true)
+   *  |-- g: struct (nullable = true)
+   *  |    |-- c1: short (nullable = true)
+   *  |    |-- c2: integer (nullable = true)
+   *  |    |-- c3: long (nullable = true)
+   *  |-- m1: map (nullable = true)
+   *  |    |-- key: short
+   *  |    |-- value: short (valueContainsNull = true)
+   *  |-- m2: map (nullable = true)
+   *  |    |-- key: integer
+   *  |    |-- value: integer (valueContainsNull = true)
+   *  |-- m3: map (nullable = true)
+   *  |    |-- key: long
+   *  |    |-- value: long (valueContainsNull = true)
+   *  |-- m4: map (nullable = true)
+   *  |    |-- key: long
+   *  |    |-- value: struct (valueContainsNull = true)
+   *  |    |    |-- c1: short (nullable = true)
+   *  |    |    |-- c2: integer (nullable = true)
+   *  |    |    |-- c3: long (nullable = true)
    *
    */
   testSparkResultsAreEqual("Test Parquet nested unsigned int: uint8, uint16, uint32",
