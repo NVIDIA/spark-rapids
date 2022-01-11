@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,4 +58,24 @@ object SpillPriorities {
    * Priority for multiple buffers being buffered within a call to next.
    */
   val ACTIVE_BATCHING_PRIORITY: Long = ACTIVE_ON_DECK_PRIORITY + 100
+
+  /**
+   * Priority offset for host memory buffers allocated from the pinned memory pool. They are at
+   * lower priorities, so will be spilled first, making more pinned memory available.
+   */
+  val HOST_MEMORY_BUFFER_PINNED_OFFSET: Long = 0
+
+  /**
+   * Priority offset for host memory buffers allocated from the internal pageable memory pool. They
+   * are at higher priorities than pinned memory buffers, thus making more pinned memory available;
+   * but at lower priorities than directly allocated buffers, thus freeing up the internal pageable
+   * memory pool.
+   */
+  val HOST_MEMORY_BUFFER_PAGEABLE_OFFSET: Long = 100
+
+  /**
+   * Priority offset for host memory buffers directly allocated from the OS. They are at higher
+   * priorities, thus freeing up memory pools first.
+   */
+  val HOST_MEMORY_BUFFER_DIRECT_OFFSET: Long = 200
 }

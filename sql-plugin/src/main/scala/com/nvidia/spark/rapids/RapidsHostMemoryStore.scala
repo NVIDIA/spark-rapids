@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import com.nvidia.spark.rapids.SpillPriorities.{HOST_MEMORY_BUFFER_DIRECT_OFFSET, HOST_MEMORY_BUFFER_PAGEABLE_OFFSET, HOST_MEMORY_BUFFER_PINNED_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -25,28 +26,27 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 /**
  * A buffer store using host memory.
  * @param catalog buffer catalog to use with this store
- * @param maxSize maximum size in bytes for all buffers in this store
+ * @param pageableMemoryPoolSize maximum size in bytes for the internal pageable memory pool
  */
 class RapidsHostMemoryStore(
-    maxSize: Long,
-    pinnedSize: Long,
+    pageableMemoryPoolSize: Long,
+    pinnedMemoryPoolSize: Long,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
     deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
     extends RapidsBufferStore(StorageTier.HOST, catalog) {
-  private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
-  private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
+  private[this] val pool = HostMemoryBuffer.allocate(pageableMemoryPoolSize, false)
+  private[this] val addressAllocator = new AddressSpaceAllocator(pageableMemoryPoolSize)
   private[this] var haveLoggedMaxExceeded = false
 
-  private object AllocationMode extends Enumeration {
-    type AllocationMode = Value
-    val Pinned, Pooled, Direct = Value
-  }
-  import AllocationMode._
+  private sealed abstract class AllocationMode(val spillPriorityOffset: Long)
+  private case object Pinned extends AllocationMode(HOST_MEMORY_BUFFER_PINNED_OFFSET)
+  private case object Pooled extends AllocationMode(HOST_MEMORY_BUFFER_PAGEABLE_OFFSET)
+  private case object Direct extends AllocationMode(HOST_MEMORY_BUFFER_DIRECT_OFFSET)
 
   // Returns an allocated host buffer and its allocation mode
   private def allocateHostBuffer(size: Long): (HostMemoryBuffer, AllocationMode) = {
     // spill to keep within the targeted size
-    val targetSize = math.max(maxSize + pinnedSize - size, 0)
+    val targetSize = math.max(pageableMemoryPoolSize + pinnedMemoryPoolSize - size, 0)
     val amountSpilled = synchronousSpill(targetSize)
     if (amountSpilled != 0) {
       logInfo(s"Spilled $amountSpilled bytes from the host memory store")
@@ -55,19 +55,18 @@ class RapidsHostMemoryStore(
 
     var buffer: HostMemoryBuffer = null
     while (buffer == null) {
-      if (size > maxSize && size > pinnedSize) {
-        if (!haveLoggedMaxExceeded) {
-          logWarning(s"Exceeding host spill max of $maxSize bytes and pinned memory pool size of " +
-              s"$pinnedSize bytes to accommodate a buffer of $size bytes. Consider increasing " +
-              s"host spill store size or pinned memory pool size.")
-          haveLoggedMaxExceeded = true
-        }
-        return (HostMemoryBuffer.allocate(size), Direct)
-      }
-
       buffer = PinnedMemoryPool.tryAllocate(size)
       if (buffer != null) {
         return (buffer, Pinned)
+      }
+
+      if (size > pageableMemoryPoolSize) {
+        if (!haveLoggedMaxExceeded) {
+          logWarning(s"Exceeding host spill max of $pageableMemoryPoolSize bytes to accommodate " +
+              s"a buffer of $size bytes. Consider increasing host spill store size.")
+          haveLoggedMaxExceeded = true
+        }
+        return (HostMemoryBuffer.allocate(size, false), Direct)
       }
 
       val allocation = addressAllocator.allocate(size)
@@ -95,16 +94,11 @@ class RapidsHostMemoryStore(
           hostBuffer.close()
           throw e
       }
-      val spillPriority = other.getSpillPriority - (allocationMode match {
-        case Pinned => 200
-        case Pooled => 100
-        case Direct => 0
-      })
       new RapidsHostMemoryBuffer(
         other.id,
         other.size,
         other.meta,
-        spillPriority,
+        other.getSpillPriority + allocationMode.spillPriorityOffset,
         hostBuffer,
         allocationMode,
         other.spillCallback,
@@ -112,7 +106,7 @@ class RapidsHostMemoryStore(
     }
   }
 
-  def numBytesFree: Long = maxSize - currentSize
+  def numBytesFree: Long = pageableMemoryPoolSize - currentSize
 
   override def close(): Unit = {
     super.close()
@@ -138,10 +132,11 @@ class RapidsHostMemoryStore(
     }
 
     override protected def releaseResources(): Unit = {
-      if (allocationMode == Pooled) {
-        assert(buffer.getAddress >= pool.getAddress)
-        assert(buffer.getAddress < pool.getAddress + pool.getLength)
-        addressAllocator.free(buffer.getAddress - pool.getAddress)
+      allocationMode match {
+        case Pooled =>
+          assert(buffer.getAddress >= pool.getAddress)
+          assert(buffer.getAddress < pool.getAddress + pool.getLength)
+          addressAllocator.free(buffer.getAddress - pool.getAddress)
       }
       buffer.close()
     }
