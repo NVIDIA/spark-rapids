@@ -18,7 +18,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
-
+@ignore_order
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('fileFormat', ['parquet', 'orc'])
 def test_write_hive_bucketed_table_fallback(spark_tmp_path, spark_tmp_table_factory, fileFormat):
@@ -38,7 +38,7 @@ def test_write_hive_bucketed_table_fallback(spark_tmp_path, spark_tmp_table_fact
         
         data = map(lambda i: (i % 13, str(i), i % 5), range(50))
         df = spark.createDataFrame(data, ["i", "j", "k"])
-        df.write.mode("overwrite").insertInto(table)
+        df.write.mode("append").saveAsTable(table)
     
     data_path = spark_tmp_path + '/HIVE_DATA'
 
