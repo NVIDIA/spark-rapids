@@ -59,11 +59,11 @@
             311cdh,
             312,
             320
+            321,
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             304,
             313,
-            321,
             322,
             330
         </snapshot.buildvers>

@@ -25,7 +25,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 /**
  * Shim base class that can be compiled with every supported 3.2.2+
  */
-trait Spark322PlusShims extends Spark320PlusShims with RebaseShims with Logging {
+trait Spark321PlusShims extends Spark320PlusShims with RebaseShims with Logging {
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,

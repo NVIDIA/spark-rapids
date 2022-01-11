@@ -837,7 +837,7 @@
         <spark312db.version>3.1.2-databricks</spark312db.version>
         <spark313.version>3.1.3-SNAPSHOT</spark313.version>
         <spark320.version>3.2.0</spark320.version>
-        <spark321.version>3.2.1-SNAPSHOT</spark321.version>
+        <spark321.version>3.2.1</spark321.version>
         <spark322.version>3.2.2-SNAPSHOT</spark322.version>
         <spark330.version>3.3.0-SNAPSHOT</spark330.version>
         <mockito.version>3.6.0</mockito.version>
@@ -1371,9 +1371,9 @@
     <repositories>
         <repository>
             <id>snapshots-repo</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <url>https://repository.apache.org/content/repositories/orgapachespark-1395/</url>
             <releases>
-                <enabled>false</enabled>
+                <enabled>true</enabled>
             </releases>
             <snapshots>
                 <enabled>true</enabled>
