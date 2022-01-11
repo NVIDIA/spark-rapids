@@ -22,7 +22,8 @@ object DecimalUtil {
 
   def getNonNestedRapidsType(dtype: DataType): String = {
     val res = toRapidsStringOrNull(dtype)
-    res.getOrElse(throw new IllegalArgumentException(dtype + " is not supported for GPU processing yet."))
+    res.getOrElse(throw new
+      IllegalArgumentException(dtype + " is not supported for GPU processing yet."))
   }
 
  def createCudfDecimal(precision: Int, scale: Int): Option[String] = {
