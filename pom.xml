@@ -74,11 +74,11 @@
 
     <profiles>
         <profile>
-            <id>release248</id>
+            <id>release24X</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>248</value>
+                    <value>24X</value>
                 </property>
             </activation>
             <properties>
@@ -99,7 +99,6 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/241+/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>

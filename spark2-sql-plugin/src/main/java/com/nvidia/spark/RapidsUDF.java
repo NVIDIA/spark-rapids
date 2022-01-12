@@ -16,8 +16,6 @@
 
 package com.nvidia.spark;
 
-// import ai.rapids.cudf.ColumnVector;
-
 /** A RAPIDS accelerated version of a user-defined function (UDF). */
 public interface RapidsUDF {
   /**

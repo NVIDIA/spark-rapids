@@ -34,8 +34,8 @@
         <scala.version>2.11.12</scala.version>
         <spark.version>${spark248.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
-        <spark.version.classifier>spark248</spark.version.classifier>
-        <target.classifier>spark248</target.classifier>
+        <spark.version.classifier>spark24</spark.version.classifier>
+        <target.classifier>spark24</target.classifier>
     </properties>
     <dependencies>
         <dependency>
