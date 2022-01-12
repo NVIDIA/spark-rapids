@@ -131,6 +131,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support null characters in regular expressions"))
   }
 
+  test("cuDF does not support hex digits consistently with Spark") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4486
+    val patterns = Seq(raw"\xA9", raw"\x00A9", raw"\x10FFFF")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, replace = false,
+        "cuDF does not support hex digits consistently with Spark"))
+  }
+
+  test("cuDF does not support octal digits consistently with Spark") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4288
+    val patterns = Seq(raw"\07", raw"\077", raw"\0377")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, replace = false,
+        "cuDF does not support octal digits consistently with Spark"))
+  }
+  
   test("string anchors - find") {
     val patterns = Seq("\\Atest", "test\\z", "test\\Z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
@@ -157,11 +173,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // see https://github.com/rapidsai/cudf/issues/9619
     val pattern = "1."
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
-  }
-
-  ignore("known issue - octal digit") {
-    val pattern = "a\\141|.$" // using hex works fine e.g. "a\\x61|.$"
-    assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("] b["))
   }
 
   test("character class with ranges") {
@@ -237,12 +248,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("compare CPU and GPU: character range including escaped + and -") {
     val patterns = Seq(raw"a[\-\+]", raw"a[\+\-]", raw"a[a-b\-]")
     val inputs = Seq("a+", "a-", "a", "a-+", "a[a-b-]")
-    assertCpuGpuMatchesRegexpFind(patterns, inputs)
-  }
-
-  test("compare CPU and GPU: hex") {
-    val patterns = Seq(raw"\x61")
-    val inputs = Seq("a", "b")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 

@@ -456,13 +456,14 @@ class CudfRegexTranspiler(replace: Boolean) {
       }
 
       case RegexOctalChar(_) =>
-        // cuDF produced different results compared to Spark in some cases
-        // example: "a\141|.$"
+        // see https://github.com/NVIDIA/spark-rapids/issues/4288
         throw new RegexUnsupportedException(
           s"cuDF does not support octal digits consistently with Spark")
 
       case RegexHexDigit(_) =>
-        regex
+        // see https://github.com/NVIDIA/spark-rapids/issues/4486
+        throw new RegexUnsupportedException(
+          s"cuDF does not support hex digits consistently with Spark")
 
       case RegexEscaped(ch) => ch match {
         case 'b' | 'B' =>
