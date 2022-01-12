@@ -184,7 +184,7 @@ class GpuStringSplitMeta(
   import GpuOverrides._
 
   override def tagExprForGpu(): Unit = {
-    // 2.x uses expr.patther not expr.regex
+    // 2.x uses expr.pattern not expr.regex
     val regexp = extractLit(expr.pattern)
     if (regexp.isEmpty) {
       willNotWorkOnGpu("only literal regexp values are supported")
