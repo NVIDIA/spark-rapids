@@ -475,6 +475,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
   with a choice (`^|a`).
 - String anchors `\z` and `\Z` are not supported by `regexp_replace`
+- Hex and octal digits
 
 In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
 
@@ -786,7 +787,7 @@ The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.sql.expression.ApproximatePercentile=true`.
+`spark.rapids.sql.incompatibleOps.enabled=true`.
 
 There is also a known issue ([issue #4060](https://github.com/NVIDIA/spark-rapids/issues/4060)) where
 incorrect results are produced intermittently.
