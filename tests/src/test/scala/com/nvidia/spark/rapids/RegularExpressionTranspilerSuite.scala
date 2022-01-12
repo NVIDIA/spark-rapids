@@ -426,7 +426,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     for (javaPattern <- javaPatterns) {
       val cpu = cpuReplace(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler(replace = true).transpile(javaPattern)
-      println(javaPattern + " -> " + cudfPattern)
       val gpu = try {
         gpuReplace(cudfPattern, input)
       } catch {
