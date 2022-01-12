@@ -42,8 +42,7 @@ class AcceleratedColumnarToRowIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
-    streamTime: GpuMetric,
-    isFixedWidthOptimized: Boolean) extends Iterator[InternalRow] with Arm with Serializable {
+    streamTime: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -112,10 +111,10 @@ class AcceleratedColumnarToRowIterator(
           // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means at
           // most 184 double/long values. Spark by default limits codegen to 100 fields
           // "spark.sql.codegen.maxFields". So, we are going to be cautious and start with that
-          // until we have tested it more. We branching over the output.length to know which kernel
-          // to call. If output.length < 100 we call the fixed-width optimized version, otherwise
-          // the generic one
-          withResource(if (isFixedWidthOptimized) {
+          // until we have tested it more. We branching over the size of the output to know which
+          // kernel to call. If schema.length < 100 we call the fixed-width optimized version,
+          // otherwise the generic one
+          withResource(if (schema.length < 100) {
             table.convertToRowsFixedWidthOptimized()
           } else {
             table.convertToRows()
@@ -362,7 +361,7 @@ object GpuColumnarToRowExecParent {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new AcceleratedColumnarToRowIterator(output, batches, numInputBatches, numOutputRows,
-          opTime, streamTime, output.length < 100).map(toUnsafe)
+          opTime, streamTime).map(toUnsafe)
       }
     } else {
       (batches: Iterator[ColumnarBatch]) => {

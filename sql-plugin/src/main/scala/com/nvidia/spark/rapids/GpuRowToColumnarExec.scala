@@ -685,8 +685,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
       opTime: GpuMetric,
       numInputRows: GpuMetric,
       numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric,
-      isOptimizedForFixedWidth: Boolean): UnsafeRowToColumnarBatchIterator = {
+      numOutputBatches: GpuMetric): UnsafeRowToColumnarBatchIterator = {
     val ctx = new CodegenContext
 
     ctx.addReferenceObj("iter", input, classOf[Iterator[UnsafeRow]].getName)
@@ -698,8 +697,6 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
     ctx.addReferenceObj("numInputRows", numInputRows, classOf[GpuMetric].getName)
     ctx.addReferenceObj("numOutputRows", numOutputRows, classOf[GpuMetric].getName)
     ctx.addReferenceObj("numOutputBatches", numOutputBatches, classOf[GpuMetric].getName)
-    ctx.addReferenceObj("isOptimizedForFixedWidth",
-      isOptimizedForFixedWidth, classOf[Boolean].getName)
 
     val rowBaseObj = ctx.freshName("rowBaseObj")
     val rowBaseOffset = ctx.freshName("rowBaseOffset")
@@ -769,8 +766,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |      (com.nvidia.spark.rapids.GpuMetric)references[5],
          |      (com.nvidia.spark.rapids.GpuMetric)references[6],
          |      (com.nvidia.spark.rapids.GpuMetric)references[7],
-         |      (com.nvidia.spark.rapids.GpuMetric)references[8],
-         |      (java.lang.Boolean)references[9]);
+         |      (com.nvidia.spark.rapids.GpuMetric)references[8]);
          |      ${ctx.initMutableStates()}
          |  }
          |
@@ -909,7 +905,7 @@ case class GpuRowToColumnarExec(child: SparkPlan,
       rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
         rowIter.asInstanceOf[Iterator[UnsafeRow]],
         localOutput.toArray, localGoal, semaphoreWaitTime, streamTime, opTime,
-        numInputRows, numOutputRows, numOutputBatches, output.length < 100))
+        numInputRows, numOutputRows, numOutputBatches))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
