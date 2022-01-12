@@ -81,8 +81,8 @@ object RapidsPluginUtils extends Logging {
         s"support set `${RapidsConf.SQL_ENABLED}` to false.")
     } else if (conf.isSqlExplainOnlyEnabled) {
       logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
-        s"set `${RapidsConf.SQL_ENABLED}` to false or to change the mode " +
-        s"set `${RapidsConf.SQL_MODE}` to executeOnGPU.")
+        s"set `${RapidsConf.SQL_ENABLED}` to false. To change the mode " +
+        s"restart the application and change `${RapidsConf.SQL_MODE}`.")
     } else {
       logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to true.")
