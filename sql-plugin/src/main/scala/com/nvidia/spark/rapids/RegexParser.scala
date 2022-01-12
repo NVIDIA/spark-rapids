@@ -622,6 +622,9 @@ class CudfRegexTranspiler(replace: Boolean) {
               case Some(RegexChar(ch)) if ch == '$' || ch == '^' =>
                 // example: "^|a"
                 throw new RegexUnsupportedException(nothingToRepeat)
+              case Some(RegexEscaped(ch)) if ch == '$' || ch == '^' =>
+                // example: "^|a"
+                throw new RegexUnsupportedException(nothingToRepeat)
               case Some(RegexRepetition(_, _)) =>
                 // example: "a*|a"
                 throw new RegexUnsupportedException(nothingToRepeat)
@@ -635,6 +638,9 @@ class CudfRegexTranspiler(replace: Boolean) {
                 // example: "|b"
                 throw new RegexUnsupportedException(nothingToRepeat)
               case Some(RegexChar(ch)) if ch == '$' || ch == '^' =>
+                // example: "a|$"
+                throw new RegexUnsupportedException(nothingToRepeat)
+              case Some(RegexEscaped(ch)) if ch == '$' || ch == '^' =>
                 // example: "a|$"
                 throw new RegexUnsupportedException(nothingToRepeat)
               case _ =>

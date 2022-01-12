@@ -525,9 +525,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
  * - POSIX character classes
  * - Java Character classes
  * - Classes for Unicode scripts, blocks, categories and binary properties
- * - Greedy quantifiers
- * - Reluctant quantifiers
- * - Possessive quantifiers
  * - Back references
  * - Quotation
  * - Special constructs (named-capturing and non-capturing)
@@ -536,9 +533,10 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   val maxDepth = 5
   private val rr = new Random(0)
   val r = new EnhancedRandom(rr, FuzzerOptions())
+
   val chars = if (skipKnownIssues) {
-    //TODO link to GitHub issues
-    suggestedChars.filterNot(ch => "{}|\\()".contains(ch))
+    // skip '\\' and '-' due to https://github.com/NVIDIA/spark-rapids/issues/4505
+    suggestedChars.filterNot(ch => "\\-".contains(ch))
   } else {
     suggestedChars
   }
@@ -556,16 +554,15 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
         () => choice(depth),
         () => group(depth),
         () => sequence(depth))
-      // we skip repetition due to https://github.com/NVIDIA/spark-rapids/issues/4487
       val generators = if (skipKnownIssues) {
         baseGenerators
       } else {
         baseGenerators ++ Seq(
-          () => repetition(depth),
+          () => escapedChar,
           () => lineTerminator,
-          () => boundaryMatch,
-          () => predefinedCharacterClass,
-          () => escapedChar)
+          () => repetition(depth), // https://github.com/NVIDIA/spark-rapids/issues/4487
+          () => boundaryMatch, // not implemented yet
+          () => predefinedCharacterClass) // not implemented yet
       }
       generators(rr.nextInt(generators.length))()
     }
@@ -584,8 +581,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       baseGenerators ++ Seq(
         () => escapedChar,
         () => lineTerminator,
-        () => boundaryMatch,
-        () => predefinedCharacterClass)
+        () => boundaryMatch, // not implemented yet
+        () => predefinedCharacterClass) // not implemented yet
     }
     generators(rr.nextInt(generators.length))()
   }
@@ -593,7 +590,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   private def characterClassComponent = {
     val generators: Seq[() => RegexCharacterClassComponent] = if (skipKnownIssues) {
       //TODO link to GitHub issues
-      Seq(() => char,
+      Seq(
+        () => char,
         () => charRange)
     } else {
       Seq(() => escapedChar,
@@ -606,16 +604,24 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def charRange: RegexCharacterClassComponent = {
-    // TODO included escaped chars
-    val generators = Seq[() => RegexCharacterClassComponent](
+    // TODO included specific tests for escaped chars
+    // once https://github.com/NVIDIA/spark-rapids/issues/4505 is
+    // implemented
+    val baseGenerators = Seq[() => RegexCharacterClassComponent](
       () => RegexCharacterRange('a', 'z'),
       () => RegexCharacterRange('A', 'Z'),
       () => RegexCharacterRange('z', 'a'),
       () => RegexCharacterRange('Z', 'A'),
       () => RegexCharacterRange('0', '9'),
-      () => RegexCharacterRange('9', '0'),
-      () => RegexCharacterRange(char.ch, char.ch) ,
+      () => RegexCharacterRange('9', '0')
     )
+    val generators = if (skipKnownIssues) {
+      baseGenerators
+    } else {
+      // we do not support escaped characters in character ranges yet
+      // see https://github.com/NVIDIA/spark-rapids/issues/4505
+      baseGenerators ++ Seq(() => RegexCharacterRange(char.ch, char.ch))
+    }
     generators(rr.nextInt(generators.length))()
   }
 
@@ -698,7 +704,20 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def repetition(depth: Int) = {
-    RegexRepetition(generate(depth + 1), quantifier)
+    val generators = Seq(
+      () =>
+        // greedy quantifier
+        RegexRepetition(generate(depth + 1), quantifier),
+      () =>
+        // reluctant quantifier
+        RegexRepetition(RegexRepetition(generate(depth + 1), quantifier),
+          SimpleQuantifier('?')),
+      () =>
+        // possessive quantifier
+        RegexRepetition(RegexRepetition(generate(depth + 1), quantifier),
+          SimpleQuantifier('+'))
+    )
+    generators(rr.nextInt(generators.length))()
   }
 
   private def quantifier: RegexQuantifier = {
