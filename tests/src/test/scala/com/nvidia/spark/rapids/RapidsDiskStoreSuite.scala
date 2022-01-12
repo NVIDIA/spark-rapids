@@ -20,6 +20,7 @@ import java.io.File
 import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer, Table}
+import com.nvidia.spark.rapids.SpillPriorities.HOST_MEMORY_BUFFER_PAGEABLE_OFFSET
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.{spy, times, verify}
 import org.scalatest.mockito.MockitoSugar
@@ -66,7 +67,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
             assertResult(StorageTier.DISK)(buffer.storageTier)
             assertResult(bufferSize)(buffer.size)
             assertResult(bufferId)(buffer.id)
-            assertResult(spillPriority)(buffer.getSpillPriority)
+            assertResult(spillPriority + HOST_MEMORY_BUFFER_PAGEABLE_OFFSET)(
+              buffer.getSpillPriority)
           }
         }
       }
