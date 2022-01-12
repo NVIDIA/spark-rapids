@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from src.main.python.marks import approximate_float
+from src.main.python.marks import approximate_float, allow_non_gpu
 
 from src.main.python.spark_session import with_cpu_session
 
@@ -39,6 +39,23 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.json.read.enabled': 'true'}
 
 @approximate_float
+@pytest.mark.parametrize('data_gen', [
+    StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
+    StringGen('[aAbB ]{0,10}'),
+    byte_gen, short_gen, int_gen, long_gen, boolean_gen,], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu('FileSourceScanExec')
+def test_json_infer_schema_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.json(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.json(data_path),
+            conf=updated_conf)
+
+@approximate_float
 @pytest.mark.parametrize('data_gen', json_supported_gens, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 def test_json_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
@@ -50,4 +67,25 @@ def test_json_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
             lambda spark : gen_df(spark, gen).write.json(data_path))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(schema).json(data_path),
+            conf=updated_conf)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_json_input_meta(spark_tmp_path, v1_enabled_list):
+    gen = StructGen([('a', long_gen), ('b', long_gen), ('c', long_gen)], nullable=False)
+    first_data_path = spark_tmp_path + '/JSON_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.json(first_data_path))
+    second_data_path = spark_tmp_path + '/JSON_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.json(second_data_path))
+    data_path = spark_tmp_path + '/JSON_DATA'
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(gen.data_type)
+                    .json(data_path)
+                    .filter(f.col('b') > 0)
+                    .selectExpr('b',
+                        'input_file_name()',
+                        'input_file_block_start()',
+                        'input_file_block_length()'),
             conf=updated_conf)

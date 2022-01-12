@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
+import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
@@ -239,4 +240,37 @@ class JsonPartitionReader(
    * @return the file format short name
    */
   override def getFileFormatShortName: String = "JSON"
+
+  /**
+   * Handle the table decoded by GPU
+   *
+   * @param readDataSchema the Spark schema describing what will be read
+   * @param table          the table decoded by GPU
+   * @return the new optional Table
+   */
+  override def handleResult(readDataSchema: StructType, table: Table): Option[Table] = {
+    val tableCols = table.getNumberOfColumns
+    if (readDataSchema.length == tableCols) {
+      return Some(table)
+    }
+
+    // JSON will read all columns in dataSchema due to https://github.com/rapidsai/cudf/issues/9990,
+    // but actually only the columns in readDataSchema are needed, we need to do the "column" prune,
+    // Once the FEA is shipped in CUDF, we should remove this hack.
+
+    val prunedCols = readDataSchema.fieldNames.map { name =>
+      val optionIndex = dataSchema.getFieldIndex(name)
+      closeOnExcept(table) { _ =>
+        if (optionIndex.isEmpty || optionIndex.get >= tableCols) {
+          throw new QueryExecutionException(s"Something wrong for $name columns in readDataSchema")
+        }
+      }
+      optionIndex.get
+    }
+
+    withResource(table) { _ =>
+      val prunedColumnVectors = prunedCols.map(i => table.getColumn(i))
+      Some(new Table(prunedColumnVectors: _*))
+    }
+  }
 }
