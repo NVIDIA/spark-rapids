@@ -426,6 +426,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     for (javaPattern <- javaPatterns) {
       val cpu = cpuReplace(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler(replace = true).transpile(javaPattern)
+      println(javaPattern + " -> " + cudfPattern)
       val gpu = try {
         gpuReplace(cudfPattern, input)
       } catch {
@@ -579,8 +580,17 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def randomCharRange: RegexCharacterClassComponent = {
-    //TODO randomize
-    RegexCharacterRange('a', 'z')
+    // TODO included escaped chars
+    val generators = Seq[() => RegexCharacterClassComponent](
+      () => RegexCharacterRange('a', 'z'),
+      () => RegexCharacterRange('A', 'Z'),
+      () => RegexCharacterRange('z', 'a'),
+      () => RegexCharacterRange('Z', 'A'),
+      () => RegexCharacterRange('0', '9'),
+      () => RegexCharacterRange('9', '0'),
+      () => RegexCharacterRange(randomChar.ch, randomChar.ch) ,
+    )
+    generators(rr.nextInt(generators.length))()
   }
 
   private def randomSequence(depth: Int) = {
@@ -595,20 +605,20 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
     RegexCharacterClass(negated = rr.nextBoolean(), characters = characters)
   }
 
-  private def randomChar: RegexCharacterClassComponent = {
+  private def randomChar: RegexChar = {
     RegexChar(chars(rr.nextInt(chars.length)))
   }
 
-  private def randomEscaped: RegexCharacterClassComponent = {
+  private def randomEscaped: RegexEscaped = {
     RegexEscaped(escapedChars(rr.nextInt(escapedChars.length)))
   }
 
-  private def randomHexDigit: RegexCharacterClassComponent = {
+  private def randomHexDigit: RegexHexDigit = {
     //TODO randomize and cover all formats
     RegexHexDigit("61")
   }
 
-  private def randomOctalDigit: RegexCharacterClassComponent = {
+  private def randomOctalDigit: RegexOctalChar = {
     //TODO randomize and cover all formats
     RegexOctalChar("0101")
   }
@@ -625,18 +635,20 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
     RegexRepetition(generate(depth + 1), randomQuantifier)
   }
 
-  private def randomQuantifier = {
-    rr.nextInt(6) match {
-      case 0 => SimpleQuantifier('+')
-      case 1 => SimpleQuantifier('*')
-      case 2 => SimpleQuantifier('?')
-      case 3 => QuantifierFixedLength(rr.nextInt(3))
-      case 4 => QuantifierVariableLength(rr.nextInt(3), None)
-      case _ =>
+  private def randomQuantifier: RegexQuantifier = {
+    val generators = Seq[() => RegexQuantifier](
+      () => SimpleQuantifier('+'),
+      () => SimpleQuantifier('*'),
+      () => SimpleQuantifier('?'),
+      () => QuantifierFixedLength(rr.nextInt(3)),
+      () => QuantifierVariableLength(rr.nextInt(3), None),
+      () => {
         // this intentionally generates some invalid quantifiers where the maxLength
         // is less than the minLength, such as "{2,1}" which should be handled as a
         // literal string match on "{2,1}" rather than as a valid quantifier.
         QuantifierVariableLength(rr.nextInt(3), Some(rr.nextInt(3)))
-    }
+      }
+    )
+    generators(rr.nextInt(generators.length))()
   }
 }
