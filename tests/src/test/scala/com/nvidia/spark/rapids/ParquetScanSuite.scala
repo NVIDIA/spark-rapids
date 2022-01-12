@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,8 +88,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
       StructField("c1_int", IntegerType))))) { frame => frame }
 
   /**
-   * Column schema of unsigned-int.parquet is:
-   * TODO: array nest type is blocked by issue: https://github.com/rapidsai/cudf/issues/9240
+   * Schema of nested-unsigned.parquet is:
    *
    * message root {
    *   required int32 a (UINT_8);
@@ -130,9 +129,36 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
    *   }
    * }
    *
+   * converted to Spark schema
+   *
+   * >>> df.printSchema()
+   * root
+   *  |-- a: short (nullable = true)
+   *  |-- b: integer (nullable = true)
+   *  |-- c: long (nullable = true)
+   *  |-- g: struct (nullable = true)
+   *  |    |-- c1: short (nullable = true)
+   *  |    |-- c2: integer (nullable = true)
+   *  |    |-- c3: long (nullable = true)
+   *  |-- m1: map (nullable = true)
+   *  |    |-- key: short
+   *  |    |-- value: short (valueContainsNull = true)
+   *  |-- m2: map (nullable = true)
+   *  |    |-- key: integer
+   *  |    |-- value: integer (valueContainsNull = true)
+   *  |-- m3: map (nullable = true)
+   *  |    |-- key: long
+   *  |    |-- value: long (valueContainsNull = true)
+   *  |-- m4: map (nullable = true)
+   *  |    |-- key: long
+   *  |    |-- value: struct (valueContainsNull = true)
+   *  |    |    |-- c1: short (nullable = true)
+   *  |    |    |-- c2: integer (nullable = true)
+   *  |    |    |-- c3: long (nullable = true)
+   *
    */
-  testSparkResultsAreEqual("Test Parquet unsigned int: uint8, uint16, uint32",
-    frameFromParquet("unsigned-int.parquet"),
+  testSparkResultsAreEqual("Test Parquet nested unsigned int: uint8, uint16, uint32",
+    frameFromParquet("nested-unsigned.parquet"),
     // CPU version throws an exception when Spark < 3.2, so skip when Spark < 3.2.
     // The exception is like "Parquet type not supported: INT32 (UINT_8)"
     assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {

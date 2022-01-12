@@ -55,4 +55,6 @@ class Spark320Shims extends Spark320PlusShims with Spark30Xuntil33XShims with Re
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
+
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 }

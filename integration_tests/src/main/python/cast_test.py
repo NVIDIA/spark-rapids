@@ -16,9 +16,10 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330, with_gpu_session
+from spark_session import is_before_spark_320, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
+from spark_init_internal import spark_version
 
 def test_cast_empty_string_to_int():
     assert_gpu_and_cpu_are_equal_collect(
@@ -300,8 +301,12 @@ def test_cast_struct_with_unsupported_element_to_string_fallback(data_gen, legac
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy, 
          "spark.sql.legacy.allowNegativeScaleOfDecimal": 'true'}
     )
-    
-@pytest.mark.skipif(not is_before_spark_311() and is_before_spark_330(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
+
+# The bug SPARK-37451 only affects the following versions
+def is_neg_dec_scale_bug_version():
+    return ("3.1.1" <= spark_version() < "3.1.3") or ("3.2.0" <= spark_version() < "3.2.1")
+
+@pytest.mark.skipif(is_neg_dec_scale_bug_version(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(

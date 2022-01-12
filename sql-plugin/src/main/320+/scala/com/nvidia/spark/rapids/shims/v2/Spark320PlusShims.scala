@@ -581,7 +581,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
-              wrapped.tableIdentifier)(conf)
+              wrapped.tableIdentifier,
+              wrapped.disableBucketedScan)(conf)
           }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
@@ -1034,8 +1035,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.initialPlan
   }
-
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 
   override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec,
       goal: CoalesceSizeGoal): SparkPlan = {
