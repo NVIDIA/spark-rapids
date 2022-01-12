@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,7 +101,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   def sqlFallbackTest(sql: String) {
 
     val conf = new SparkConf()
-      .set("spark.rapids.sql.expression.ApproximatePercentile", "true")
+      .set("spark.rapids.sql.incompatibleOps.enabled", "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ShuffleExchangeExec,ObjectHashAggregateExec,HashPartitioning," +
         "AggregateExpression,ApproximatePercentile,Literal,Alias")
@@ -134,7 +134,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     }
 
     val conf = new SparkConf()
-      .set("spark.rapids.sql.expression.ApproximatePercentile", "true")
+      .set("spark.rapids.sql.incompatibleOps.enabled", "true")
 
     val approxPercentilesGpu = withGpuSparkSession(spark =>
       calcPercentiles(spark, func, percentileArg, delta, approx = true)
