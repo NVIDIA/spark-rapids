@@ -363,11 +363,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
-  ignore("AST fuzz test - regexp_find") {
+  test("AST fuzz test - regexp_find") {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), replace = false)
   }
 
-  ignore("AST fuzz test - regexp_replace") {
+  test("AST fuzz test - regexp_replace") {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), replace = true)
   }
 
@@ -383,7 +383,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
     // generate patterns that are valid on both CPU and GPU
     val patterns = HashSet[String]()
-    while (patterns.size < 500) {
+    while (patterns.size < 5000) {
       val pattern = fuzzer.generate(0).toRegexString
       if (!patterns.contains(pattern)) {
         if (Try(Pattern.compile(pattern)).isSuccess && Try(transpile(pattern, replace)).isSuccess) {
@@ -512,37 +512,70 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
 }
 
-class FuzzRegExp(chars: String) {
+class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   private val rr = new Random(0)
   val r = new EnhancedRandom(rr, FuzzerOptions())
-  val escaped = Seq('d', 'D', 's', 'S', 'w', 'W')
+  val chars = if (skipKnownIssues) {
+    //TODO link to GitHub issues
+    suggestedChars.filterNot(ch => "{}|\\()".contains(ch))
+  } else {
+    suggestedChars
+  }
+  val escapedChars = if (skipKnownIssues) {
+    //TODO link to GitHub issues
+    Seq()
+  } else {
+    Seq('d', 'D', 's', 'S', 'w', 'W')
+  }
   val maxDepth = 5
   def generate(depth: Int): RegexAST = {
     if (depth == maxDepth) {
-      randomChar
-    } else {
-      // hex and octal digits are not included yet, because they are
-      // not currently supported on the GPU
-      rr.nextInt(7) match {
-        case 0 => randomChar
-        case 1 => randomRepetition(depth)
-        case 2 => randomEscaped
-        case 3 => randomCharacterClass
-        case 4 => randomChoice(depth)
-        case 5 => randomGroup(depth)
-        case _ => randomSequence(depth)
+      // when we reach maximum depth we generate a non-nested type
+      val generators: Seq[() => RegexAST] = if (skipKnownIssues) {
+        //TODO link to GitHub issues
+        Seq(() => randomChar)
+      } else {
+        Seq(() => randomChar,
+          () => randomEscaped,
+          () => randomHexDigit,
+          () => randomOctalDigit)
       }
+      generators(rr.nextInt(generators.length))()
+    } else {
+      val generators: Seq[() => RegexAST] = if (skipKnownIssues) {
+        //TODO link to GitHub issues
+        Seq(() => randomChar,
+          () => randomChoice(depth),
+          () => randomGroup(depth),
+          () => randomSequence(depth))
+      } else {
+        Seq(() => randomChar,
+          () => randomEscaped,
+          () => randomHexDigit,
+          () => randomOctalDigit,
+          () => randomCharacterClass,
+          () => randomRepetition(depth),
+          () => randomChoice(depth),
+          () => randomGroup(depth),
+          () => randomSequence(depth))
+      }
+      generators(rr.nextInt(generators.length))()
     }
   }
 
   private def randomCharacterClassComponent = {
-    // hex and octal digits are not included yet, because they are
-    // not currently supported on the GPU
-    rr.nextInt(3) match {
-      case 0 => randomChar
-      case 1 => randomCharRange
-      case _ => randomEscaped
+    val generators: Seq[() => RegexCharacterClassComponent] = if (skipKnownIssues) {
+      //TODO link to GitHub issues
+      Seq(() => randomChar,
+        () => randomCharRange)
+    } else {
+      Seq(() => randomEscaped,
+        () => randomChar,
+        () => randomHexDigit,
+        () => randomOctalDigit,
+        () => randomCharRange)
     }
+    generators(rr.nextInt(generators.length))()
   }
 
   private def randomCharRange: RegexCharacterClassComponent = {
@@ -567,7 +600,17 @@ class FuzzRegExp(chars: String) {
   }
 
   private def randomEscaped: RegexCharacterClassComponent = {
-    RegexEscaped(escaped(rr.nextInt(escaped.length)))
+    RegexEscaped(escapedChars(rr.nextInt(escapedChars.length)))
+  }
+
+  private def randomHexDigit: RegexCharacterClassComponent = {
+    //TODO randomize and cover all formats
+    RegexHexDigit("61")
+  }
+
+  private def randomOctalDigit: RegexCharacterClassComponent = {
+    //TODO randomize and cover all formats
+    RegexOctalChar("0101")
   }
 
   private def randomChoice(depth: Int) = {
@@ -590,9 +633,9 @@ class FuzzRegExp(chars: String) {
       case 3 => QuantifierFixedLength(rr.nextInt(3))
       case 4 => QuantifierVariableLength(rr.nextInt(3), None)
       case _ =>
-        // this can intentionally generate invalid quantifiers where the maxLength
+        // this intentionally generates some invalid quantifiers where the maxLength
         // is less than the minLength, such as "{2,1}" which should be handled as a
-        // literal string match on "{2,1}".
+        // literal string match on "{2,1}" rather than as a valid quantifier.
         QuantifierVariableLength(rr.nextInt(3), Some(rr.nextInt(3)))
     }
   }
