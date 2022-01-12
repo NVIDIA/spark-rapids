@@ -512,7 +512,28 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
 }
 
+/**
+ * Generates random regular expression patterns.
+ *
+ * See https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html
+ *
+ * TODO still:
+ *
+ * - unicode escaped hex \\uhhhh
+ * - newlines and special control characters  \t \n \r \f \a \e \cx
+ * - nested character classes
+ * - POSIX character classes
+ * - Java Character classes
+ * - Classes for Unicode scripts, blocks, categories and binary properties
+ * - Greedy quantifiers
+ * - Reluctant quantifiers
+ * - Possessive quantifiers
+ * - Back references
+ * - Quotation
+ * - Special constructs (named-capturing and non-capturing)
+ */
 class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
+  val maxDepth = 5
   private val rr = new Random(0)
   val r = new EnhancedRandom(rr, FuzzerOptions())
   val chars = if (skipKnownIssues) {
@@ -521,64 +542,70 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   } else {
     suggestedChars
   }
-  val escapedChars = if (skipKnownIssues) {
-    //TODO link to GitHub issues
-    Seq()
-  } else {
-    Seq('d', 'D', 's', 'S', 'w', 'W')
-  }
-  val maxDepth = 5
+
   def generate(depth: Int): RegexAST = {
     if (depth == maxDepth) {
       // when we reach maximum depth we generate a non-nested type
-      val generators: Seq[() => RegexAST] = if (skipKnownIssues) {
-        //TODO link to GitHub issues
-        Seq(() => randomChar)
-      } else {
-        Seq(() => randomChar,
-          () => randomEscaped,
-          () => randomHexDigit,
-          () => randomOctalDigit)
-      }
-      generators(rr.nextInt(generators.length))()
+      nonNestedTerm
     } else {
-      val generators: Seq[() => RegexAST] = if (skipKnownIssues) {
-        //TODO link to GitHub issues
-        Seq(() => randomChar,
-          () => randomChoice(depth),
-          () => randomGroup(depth),
-          () => randomSequence(depth))
+      val baseGenerators: Seq[() => RegexAST] = Seq(
+        () => char,
+        () => hexDigit,
+        () => octalDigit,
+        () => characterClass,
+        () => choice(depth),
+        () => group(depth),
+        () => sequence(depth))
+      // we skip repetition due to https://github.com/NVIDIA/spark-rapids/issues/4487
+      val generators = if (skipKnownIssues) {
+        baseGenerators
       } else {
-        Seq(() => randomChar,
-          () => randomEscaped,
-          () => randomHexDigit,
-          () => randomOctalDigit,
-          () => randomCharacterClass,
-          () => randomRepetition(depth),
-          () => randomChoice(depth),
-          () => randomGroup(depth),
-          () => randomSequence(depth))
+        baseGenerators ++ Seq(
+          () => repetition(depth),
+          () => lineTerminator,
+          () => boundaryMatch,
+          () => predefinedCharacterClass,
+          () => escapedChar)
       }
       generators(rr.nextInt(generators.length))()
     }
   }
 
-  private def randomCharacterClassComponent = {
-    val generators: Seq[() => RegexCharacterClassComponent] = if (skipKnownIssues) {
-      //TODO link to GitHub issues
-      Seq(() => randomChar,
-        () => randomCharRange)
+  private def nonNestedTerm: RegexAST = {
+    val baseGenerators: Seq[() => RegexAST] = Seq(
+      () => char,
+      () => hexDigit,
+      () => octalDigit,
+      () => charRange)
+    //TODO link to GitHub issues
+    val generators: Seq[() => RegexAST] = if (skipKnownIssues) {
+      baseGenerators
     } else {
-      Seq(() => randomEscaped,
-        () => randomChar,
-        () => randomHexDigit,
-        () => randomOctalDigit,
-        () => randomCharRange)
+      baseGenerators ++ Seq(
+        () => escapedChar,
+        () => lineTerminator,
+        () => boundaryMatch,
+        () => predefinedCharacterClass)
     }
     generators(rr.nextInt(generators.length))()
   }
 
-  private def randomCharRange: RegexCharacterClassComponent = {
+  private def characterClassComponent = {
+    val generators: Seq[() => RegexCharacterClassComponent] = if (skipKnownIssues) {
+      //TODO link to GitHub issues
+      Seq(() => char,
+        () => charRange)
+    } else {
+      Seq(() => escapedChar,
+        () => char,
+        () => hexDigit,
+        () => octalDigit,
+        () => charRange)
+    }
+    generators(rr.nextInt(generators.length))()
+  }
+
+  private def charRange: RegexCharacterClassComponent = {
     // TODO included escaped chars
     val generators = Seq[() => RegexCharacterClassComponent](
       () => RegexCharacterRange('a', 'z'),
@@ -587,54 +614,94 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       () => RegexCharacterRange('Z', 'A'),
       () => RegexCharacterRange('0', '9'),
       () => RegexCharacterRange('9', '0'),
-      () => RegexCharacterRange(randomChar.ch, randomChar.ch) ,
+      () => RegexCharacterRange(char.ch, char.ch) ,
     )
     generators(rr.nextInt(generators.length))()
   }
 
-  private def randomSequence(depth: Int) = {
+  private def sequence(depth: Int) = {
     val b = new ListBuffer[RegexAST]()
     b.appendAll(Range(0, 3).map(_ => generate(depth + 1)))
     RegexSequence(b)
   }
 
-  private def randomCharacterClass = {
+  private def characterClass = {
     val characters = new ListBuffer[RegexCharacterClassComponent]()
-    characters.appendAll(Range(0, 3).map(_ => randomCharacterClassComponent))
+    characters.appendAll(Range(0, 3).map(_ => characterClassComponent))
     RegexCharacterClass(negated = rr.nextBoolean(), characters = characters)
   }
 
-  private def randomChar: RegexChar = {
+  private def char: RegexChar = {
     RegexChar(chars(rr.nextInt(chars.length)))
   }
 
-  private def randomEscaped: RegexEscaped = {
-    RegexEscaped(escapedChars(rr.nextInt(escapedChars.length)))
+  /** Any escaped character */
+  private def escapedChar: RegexEscaped = {
+    RegexEscaped(char.ch)
   }
 
-  private def randomHexDigit: RegexHexDigit = {
+  private def lineTerminator: RegexAST = {
+    val generators = Seq[() => RegexAST](
+      () => RegexChar('\r'),
+      () => RegexChar('\n'),
+      () => RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))),
+      () => RegexChar('\u0085'),
+      () => RegexChar('\u2028'),
+      () => RegexChar('\u2029')
+    )
+    generators(rr.nextInt(generators.length))()
+  }
+
+  private def boundaryMatch: RegexAST = {
+    val generators = Seq[() => RegexAST](
+      () => RegexChar('^'),
+      () => RegexChar('$'),
+      () => RegexEscaped('b'),
+      () => RegexEscaped('B'),
+      () => RegexEscaped('A'),
+      () => RegexEscaped('G'),
+      () => RegexEscaped('Z'),
+      () => RegexEscaped('z'),
+    )
+    generators(rr.nextInt(generators.length))()
+  }
+
+  private def predefinedCharacterClass: RegexAST = {
+    val generators = Seq[() => RegexAST](
+      () => RegexChar('.'),
+      () => RegexEscaped('d'),
+      () => RegexEscaped('D'),
+      () => RegexEscaped('s'),
+      () => RegexEscaped('S'),
+      () => RegexEscaped('w'),
+      () => RegexEscaped('W'),
+    )
+    generators(rr.nextInt(generators.length))()
+  }
+
+  private def hexDigit: RegexHexDigit = {
     //TODO randomize and cover all formats
     RegexHexDigit("61")
   }
 
-  private def randomOctalDigit: RegexOctalChar = {
+  private def octalDigit: RegexOctalChar = {
     //TODO randomize and cover all formats
     RegexOctalChar("0101")
   }
 
-  private def randomChoice(depth: Int) = {
+  private def choice(depth: Int) = {
     RegexChoice(generate(depth + 1), generate(depth + 1))
   }
 
-  private def randomGroup(depth: Int) = {
+  private def group(depth: Int) = {
     RegexGroup(capture = rr.nextBoolean(), generate(depth + 1))
   }
 
-  private def randomRepetition(depth: Int) = {
-    RegexRepetition(generate(depth + 1), randomQuantifier)
+  private def repetition(depth: Int) = {
+    RegexRepetition(generate(depth + 1), quantifier)
   }
 
-  private def randomQuantifier: RegexQuantifier = {
+  private def quantifier: RegexQuantifier = {
     val generators = Seq[() => RegexQuantifier](
       () => SimpleQuantifier('+'),
       () => SimpleQuantifier('*'),
