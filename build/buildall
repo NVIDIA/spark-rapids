@@ -146,6 +146,7 @@ case $DIST_PROFILE in
       311cdh
       312
       320
+      321
     )
     ;;
 
