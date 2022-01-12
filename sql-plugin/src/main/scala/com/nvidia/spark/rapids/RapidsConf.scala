@@ -505,16 +505,18 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val SQL_EXPLAIN_ONLY_ENABLED = conf("spark.rapids.sql.explainOnly.enabled")
-    .doc("Enable (true) or disable (false) explain only mode for the plugin. This allows " +
-         "running queries on the CPU and the plugin will evaluate the queries as " +
-         "if it was going to run on the GPU. The the explanations of what would have run on " +
-         "the GPU and why are output in log messages. When enabled, the default explain output " +
-         "is ALL, but this can be overridden by setting spark.rapids.sql.explain. If " +
-         "spark.rapids.sql.enabled is also true, this settings takes precedence and only the " +
-         "explain will occur.")
-    .booleanConf
-    .createWithDefault(false)
+  val SQL_MODE = conf("spark.rapids.sql.mode")
+    .doc("Set the mode for the plugin. The supported modes are explainOnly and executeOnGPU." +
+         "The default mode is executeOnGPU, which means the sql plugin will convert the Spark operations " +
+         "and execute them on the GPU when possible. The explainOnly mode allows running queries on " +
+         "the CPU and the plugin will evaluate the queries as if it was going to run on the GPU. The " +
+         "explanations of what would have run on the GPU and why are output in log messages. " +
+         "When using explainOnly mode, the default explain output is ALL, this can be " +
+         "changed by setting spark.rapids.sql.explain. Seeing that config for more details.")
+    .stringConf
+    .transform(_.toLowerCase(java.util.Locale.ROOT))
+    .checkValues(Set("explainonly", "executeongpu"))
+    .createWithDefault("executeongpu")
 
   val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
     .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
@@ -1453,9 +1455,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
-  lazy val isSqlEnabled: Boolean = get(SQL_ENABLED) && !get(SQL_EXPLAIN_ONLY_ENABLED)
+  lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
-  lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_EXPLAIN_ONLY_ENABLED)
+  lazy val isSqlExecuteOnGPU: Boolean = isSqlEnabled && get(SQL_MODE).equals("executeongpu")
+
+  lazy val isSqlExplainOnlyEnabled: Boolean = isSqlEnabled && get(SQL_MODE).equals("explainonly")
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 

@@ -79,13 +79,13 @@ if there are any unsupported features. Basically it will log the output which is
 the driver logs with `spark.rapids.sql.explain=all`.
 
 1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
-   Spark classpath and enable the configs `spark.rapids.sql.explainOnly.enabled=true` and
+   Spark classpath and enable the configs `spark.rapids.sql.mode=explainOnly` and
    `spark.plugins=com.nvidia.spark.SQLPlugin`.
 
    For example:
 
    ```bash
-   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.explainOnly.enabled=true --conf spark.plugins=com.nvidia.spark.SQLPlugin
+   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.mode=explainOnly --conf spark.plugins=com.nvidia.spark.SQLPlugin
    ```
 2.  Enable optional RAPIDS Accelerator related parameters based on your setup.
 

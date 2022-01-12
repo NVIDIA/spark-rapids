@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -127,7 +127,7 @@ object GpuDeviceManager extends Logging {
 
   def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
       conf: RapidsConf): Unit = {
-    if (!conf.isSqlExplainOnlyEnabled) {
+    if (conf.isSqlExecuteOnGPU) {
       // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
       // uses that GPU. We only need to initialize RMM once per Executor because we are relying on
       // only 1 GPU per executor.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,15 +76,16 @@ object RapidsPluginUtils extends Logging {
   }
 
   def logPluginMode(conf: RapidsConf): Unit = {
-    if (conf.isSqlEnabled) {
+    if (conf.isSqlExecuteOnGPU) {
       logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
-        s"support set `${RapidsConf.SQL_ENABLED}` to false")
+        s"support set `${RapidsConf.SQL_ENABLED}` to false.")
     } else if (conf.isSqlExplainOnlyEnabled) {
       logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
-        s"set `${RapidsConf.SQL_EXPLAIN_ONLY_ENABLED}` to false")
+        s"set `${RapidsConf.SQL_ENABLED}` to false or to change the mode " +
+        s"set `${RapidsConf.SQL_MODE}` to executeOnGPU.")
     } else {
       logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
-        s"support set `${RapidsConf.SQL_ENABLED}` to true")
+        s"support set `${RapidsConf.SQL_ENABLED}` to true.")
     }
   }
 

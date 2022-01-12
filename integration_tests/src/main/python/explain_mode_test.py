@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ from asserts import assert_gpu_fallback_collect
 from data_gen import *
 from marks import ignore_order
 
-# copied from sort_test and added explainOnly.enabled
-_explain_mode_conf = {'spark.rapids.sql.explainOnly.enabled': 'True',
+# copied from sort_test and added explainOnly mode
+_explain_mode_conf = {'spark.rapids.sql.mode': 'explainOnly',
                       'spark.sql.join.preferSortMergeJoin': 'True',
                       'spark.sql.shuffle.partitions': '2',
                       'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
