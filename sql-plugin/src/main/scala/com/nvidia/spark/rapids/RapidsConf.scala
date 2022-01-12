@@ -398,8 +398,7 @@ object RapidsConf {
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), as " +
-      "\"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS).")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -779,9 +778,11 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration")
+    .doc("When set to true enables orc output acceleration. We default it to false is because " +
+      "there is an ORC bug that ORC Java library fails to read ORC file without statistics in " +
+      "RowIndex. For more details, please refer to https://issues.apache.org/jira/browse/ORC-1075")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {

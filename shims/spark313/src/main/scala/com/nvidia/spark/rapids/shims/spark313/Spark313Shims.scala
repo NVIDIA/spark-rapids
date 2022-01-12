@@ -45,4 +45,5 @@ class Spark313Shims extends Spark31XShims with Spark30Xuntil33XShims {
 
   override def hasCastFloatTimestampUpcast: Boolean = true
 
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 }
