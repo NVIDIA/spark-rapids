@@ -152,7 +152,8 @@ case class GpuJsonScan(
     sparkSession.sessionState.conf.sessionLocalTimeZone,
     sparkSession.sessionState.conf.columnNameOfCorruptRecord)
 
-  override def withFilters(partitionFilters: Seq[Expression],
+  // overrides nothing in 330
+  def withFilters(partitionFilters: Seq[Expression],
       dataFilters: Seq[Expression]): FileScan = {
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
   }
