@@ -91,7 +91,7 @@ object GpuJsonScan {
 
     // {'name': 'Reynold Xin'} is not supported by CUDF
     if (options.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
-      meta.willNotWorkOnGpu("GpuJsonScan dose not support allowSingleQuotes")
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowSingleQuotes")
     }
 
     // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
@@ -108,6 +108,10 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
     }
 
+    if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
+      meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
+    }
+
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
       val f = dataSchema(corruptFieldIndex)
       if (f.dataType != StringType || !f.nullable) {
@@ -120,7 +124,7 @@ object GpuJsonScan {
     if (readSchema.length == 1 &&
       readSchema.head.name == parsedOptions.columnNameOfCorruptRecord) {
       // fallback to cpu to throw exception
-      meta.willNotWorkOnGpu("GpuJsonScan dose not support Corrupt Record")
+      meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record")
     }
 
     // add more checks for dateFormat and timestampFormat
