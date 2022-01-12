@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartitio
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.types.StructType
 
-trait Spark33XShims extends Spark322PlusShims {
+trait Spark33XShims extends Spark321PlusShims {
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
   override def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
