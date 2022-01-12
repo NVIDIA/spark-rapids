@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,9 +76,9 @@ final class CastExprMeta[INPUT <: CastBase](
               s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
               s"equivalent decimal strings are sufficient for your application.")
         }
-        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+        if (dt.precision > DType.DECIMAL128_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
-              s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
+              s"precision > ${DType.DECIMAL128_MAX_PRECISION} is not supported yet")
         }
       case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
@@ -95,7 +95,7 @@ final class CastExprMeta[INPUT <: CastBase](
             "converting floating point data types to strings and this can produce results that " +
             "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
             s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-      case (_: StringType, dt: DecimalType) if dt.precision + 1 > Decimal.MAX_LONG_DIGITS =>
+      case (_: StringType, dt: DecimalType) if dt.precision + 1 > DecimalType.MAX_PRECISION =>
         willNotWorkOnGpu(s"Because of rounding requirements we cannot support $dt on the GPU")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
@@ -115,6 +115,11 @@ final class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
+      case (_: StringType, dt:DecimalType) =>
+        if (dt.scale < 0 && !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported) {
+          willNotWorkOnGpu("RAPIDS doesn't support casting string to decimal for " +
+              "negative scale decimal in this version of Spark because of SPARK-37451")
+        }
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
@@ -124,6 +129,9 @@ final class CastExprMeta[INPUT <: CastBase](
           case (fromChild, toChild) =>
             recursiveTagExprForGpuCheck(fromChild.dataType, toChild.dataType, depth + 1)
         }
+      case (ArrayType(elementType, _), StringType) =>
+        recursiveTagExprForGpuCheck(elementType, StringType, depth + 1)
+
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         recursiveTagExprForGpuCheck(nestedFrom, nestedTo, depth + 1)
 
@@ -657,11 +665,11 @@ object GpuCast extends Arm {
    *
    * when `legacyCastToString = false`, step 2, 5 are skipped
    */
-  private  def castArrayToString(input:                    ColumnView,
-                                 elementType:                DataType,
-                                 ansiMode:                    Boolean,
-                                 legacyCastToString:          Boolean,
-                                 stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+  private def castArrayToString(input: ColumnView,
+      elementType: DataType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     val (leftStr, rightStr) =  ("[", "]")
     val emptyStr = ""
@@ -676,11 +684,9 @@ object GpuCast extends Arm {
 
       /* -------------------------------- helper functions -----------------------*/
 
-      /**
-       * cast all not-null elements in a child column to string type <p>
+      /*
+       * Cast all not-null elements in a child column to string type
        * add `' '` to all elements when `legacyCastToString = true`
-       * @param child child column of an array column
-       * @return a string type child column
        */
       def castChildToStr(child: ColumnView): ColumnView = {
         withResource(
@@ -702,9 +708,8 @@ object GpuCast extends Arm {
         }
       }
 
-      /**
+      /*
        * If the first char of a string is ' ', remove it (only for legacyCastToString = true)
-       * @param strVec a string type column vector
        */
       def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
         if (legacyCastToString){
@@ -717,9 +722,8 @@ object GpuCast extends Arm {
         else {strVec.incRefCount}
       }
 
-      /**
+      /*
        * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-       * @param strVec a string vector
        */
       def addBrackets(strVec: ColumnVector): ColumnVector = {
         withResource(
@@ -912,8 +916,7 @@ object GpuCast extends Arm {
     //    needed. This step is required so we can round up if needed in the final step
     // 4. Now cast newDt to dt (Decimal to Decimal)
     def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
-      if (dt.precision + 1 > Decimal.MAX_LONG_DIGITS) {
-        //We don't support Decimal 128
+      if (dt.precision + 1 > DecimalType.MAX_PRECISION) {
         throw new IllegalArgumentException("One or more values exceed the maximum supported " +
             "Decimal precision while conversion")
       }
@@ -1345,24 +1348,30 @@ object GpuCast extends Arm {
     }
   }
 
+  def fixDecimalBounds(input: ColumnView,
+      outOfBounds: ColumnView,
+      ansiMode: Boolean): ColumnVector = {
+    if (ansiMode) {
+      withResource(outOfBounds.any()) { isAny =>
+        if (isAny.isValid && isAny.getBoolean) {
+          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+        }
+      }
+      input.copyToColumnVector()
+    } else {
+      withResource(Scalar.fromNull(input.getType)) { nullVal =>
+        outOfBounds.ifElse(nullVal, input)
+      }
+    }
+  }
+
   def checkNFixDecimalBounds(
       input: ColumnView,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
-      if (ansiMode) {
-        withResource(outOfBounds.any()) { isAny =>
-          if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-          }
-        }
-        input.copyToColumnVector()
-      } else {
-        withResource(Scalar.fromNull(input.getType)) { nullVal =>
-          outOfBounds.ifElse(nullVal, input)
-        }
-      }
+      fixDecimalBounds(input, outOfBounds, ansiMode)
     }
   }
 
@@ -1444,6 +1453,23 @@ case class GpuCast(
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   import GpuCast._
+
+  // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
+  override def hasSideEffects: Boolean = {
+    (child.dataType, dataType) match {
+      case (StringType, _) if ansiMode => true
+      case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
+      case (_: DecimalType, LongType) if ansiMode => true
+      case (LongType | _: DecimalType, IntegerType) if ansiMode => true
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode => true
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode => true
+      case (FloatType | DoubleType, ByteType) if ansiMode => true
+      case (FloatType | DoubleType, ShortType) if ansiMode => true
+      case (FloatType | DoubleType, IntegerType) if ansiMode => true
+      case (FloatType | DoubleType, LongType) if ansiMode => true
+      case _ => false
+    }
+  }
 
   override def toString: String = if (ansiMode) {
     s"ansi_cast($child as ${dataType.simpleString})"

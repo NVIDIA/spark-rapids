@@ -53,6 +53,7 @@ ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -Dforc
 ART_VER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.version -DforceStdout`
 
 FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
+POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/com.nvidia/$ART_ID/pom.xml"
 
 echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
@@ -83,27 +84,8 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 # Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER -DpomFile=./dist/pom.xml
-
-###### Deploy integration tests jar(s) ######
-TESTS_ART_ID=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.artifactId -DforceStdout`
-TESTS_ART_VER=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.version -DforceStdout`
-TESTS_DOC_JARS="-Dsources=deployjars/$TESTS_ART_ID-$TESTS_ART_VER-sources.jar -Djavadoc=deployjars/$TESTS_ART_ID-$TESTS_ART_VER-javadoc.jar"
-# Copy the final aggregation jar as the default integration-tests jar
-TESTS_FPATH="deployjars/$TESTS_ART_ID-$TESTS_ART_VER"
-cp $TESTS_FPATH-spark${FINAL_AGG_VERSION_TOBUILD}.jar $TESTS_FPATH.jar
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-        $TESTS_DOC_JARS \
-        -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
-
-# Deploy integration tests jars with classifier 'spark301/spark302/...'
-VERSIONS_LIST=${VERSIONS_BUILT//','/' '}
-for VER in ${VERSIONS_LIST}; do
-    TESTS_FPATH="deployjars/$TESTS_ART_ID-$TESTS_ART_VER-spark$VER"
-    $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-            $TESTS_DOC_JARS \
-            -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml -Dclassifier=spark$VER
-done
+            -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER \
+            -DpomFile="$POM_FPATH"
 
 ###### Deploy profiling tool jar(s) ######
 TOOL_PL=${TOOL_PL:-"tools"}

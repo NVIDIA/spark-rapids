@@ -23,7 +23,9 @@ TMP_CLASS=${TEMP_CLASS_LOC:-"./target/jacoco_classes/"}
 HTML_LOC=${HTML_LOCATION:="./target/jacoco-report/"}
 XML_LOC=${XML_LOCATION:="${HTML_LOC}"}
 DIST_JAR=${RAPIDS_DIST_JAR:-$(ls ./dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)}
-SOURCE_DIRS=${SOURCE_DIRS:-"./sql-plugin/src/main/scala/:./sql-plugin/src/main/java/:./shuffle-plugin/src/main/scala/"}
+SPK_VER=${JACOCO_SPARK_VER:-"301"}
+UDF_JAR=${RAPIDS_UDF_JAR:-$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-SNAPSHOT-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)}
+SOURCE_DIRS=${SOURCE_DIRS:-"./sql-plugin/src/main/scala/:./sql-plugin/src/main/java/:./shuffle-plugin/src/main/scala/:./udf-compiler/src/main/scala/"}
 
 SOURCE_WITH_ARGS="--sourcefiles "$(echo $SOURCE_DIRS | sed -e 's/:/ --sourcefiles /g')
 
@@ -31,8 +33,11 @@ SOURCE_WITH_ARGS="--sourcefiles "$(echo $SOURCE_DIRS | sed -e 's/:/ --sourcefile
 rm -rf "$TMP_CLASS"
 mkdir -p "$TMP_CLASS"
 pushd "$TMP_CLASS"
-jar xf "$DIST_JAR"
-rm -rf com/nvidia/shaded/ org/openucx/
+jar xf "$DIST_JAR" com org rapids spark3xx-common "spark${SPK_VER}/"
+# extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
+# because the class files in udf jar will be modified in aggregator's shade phase
+jar xf "$UDF_JAR" com/nvidia/spark/udf
+rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
 popd
 
 if [ ! -f "$JDEST" ]; then

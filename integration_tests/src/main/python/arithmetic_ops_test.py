@@ -430,6 +430,31 @@ def test_decimal_round(data_gen):
                 'round(a, 10)'),
                conf=allow_negative_scale_of_decimal_conf)
 
+@incompat
+@approximate_float
+def test_non_decimal_round_overflow():
+    gen = StructGen([('byte_c', byte_gen), ('short_c', short_gen),
+                     ('int_c', int_gen), ('long_c', long_gen),
+                     ('float_c', float_gen), ('double_c', double_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'round(byte_c, -2)', 'round(byte_c, -3)',
+            'round(short_c, -4)', 'round(short_c, -5)',
+            'round(int_c, -9)', 'round(int_c, -10)',
+            'round(long_c, -19)', 'round(long_c, -20)',
+            'round(float_c, -38)', 'round(float_c, -39)',
+            'round(float_c, 38)', 'round(float_c, 39)',
+            'round(double_c, -308)', 'round(double_c, -309)',
+            'round(double_c, 308)', 'round(double_c, 309)',
+            'bround(byte_c, -2)', 'bround(byte_c, -3)',
+            'bround(short_c, -4)', 'bround(short_c, -5)',
+            'bround(int_c, -9)', 'bround(int_c, -10)',
+            'bround(long_c, -19)', 'bround(long_c, -20)',
+            'bround(float_c, -38)', 'bround(float_c, -39)',
+            'bround(float_c, 38)', 'bround(float_c, 39)',
+            'bround(double_c, -308)', 'bround(double_c, -309)',
+            'bround(double_c, 308)', 'bround(double_c, 309)'))
+
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cbrt(data_gen):

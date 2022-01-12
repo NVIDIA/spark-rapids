@@ -184,7 +184,7 @@ the driver logs with `spark.rapids.sql.explain=all`.
    this version:
    
    ```
-   !NOT_FOUND <RowDataSourceScanExec> cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.RowDataSourceScanExec could be found
+   ! <RowDataSourceScanExec> cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.RowDataSourceScanExec
    ```
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
@@ -212,7 +212,7 @@ analysis.
 For example, the log lines starting with `!` is the so-called not-supported messages:
 ```
 !Exec <GenerateExec> cannot run on GPU because not all expressions can be replaced
-  !NOT_FOUND <ReplicateRows> replicaterows(sum#99L, gender#76) cannot run on GPU because no GPU enabled version of expression class 
+  ! <ReplicateRows> replicaterows(sum#99L, gender#76) cannot run on GPU because GPU does not currently support the operator ReplicateRows
 ```
 The indentation indicates the parent and child relationship for those expressions.
 If not all of the children expressions can run on GPU, the parent can not run on GPU either.

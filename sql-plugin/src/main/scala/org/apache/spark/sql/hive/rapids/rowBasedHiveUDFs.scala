@@ -18,17 +18,17 @@ package org.apache.spark.sql.hive.rapids
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.GpuRowBasedUserDefinedFunction
+import com.nvidia.spark.rapids.{GpuExpression, GpuLiteral, GpuRowBasedUserDefinedFunction, GpuScalar}
 import org.apache.hadoop.hive.ql.exec.{FunctionRegistry, UDF}
 import org.apache.hadoop.hive.ql.udf.{UDFType => HiveUDFType}
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF.DeferredObject
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFUtils.ConversionHelper
-import org.apache.hadoop.hive.serde2.objectinspector.{ConstantObjectInspector, ObjectInspectorFactory}
+import org.apache.hadoop.hive.serde2.objectinspector.{ConstantObjectInspector, ObjectInspector, ObjectInspectorFactory}
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory.ObjectInspectorOptions
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, SpecializedGetters}
+import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecializedGetters}
 import org.apache.spark.sql.hive.{DeferredObjectAdapter, HiveInspectors}
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
 import org.apache.spark.sql.types.DataType
@@ -55,6 +55,41 @@ trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveIns
 
   override def prettyName: String = name
 
+  /** Create an object inspector from a GPU expression. */
+  protected def gpuToInspector(expr: Expression): ObjectInspector = expr match {
+    case GpuLiteral(value, dataType) =>
+      // Convert GpuLiterals to CPU Literals as possible as we can for primitive types, to
+      // leverage the Spark `toInspector(Expression)` method as much as possible.
+      // Because the `toInspector(Expression)` method will take care of the CPU Literal
+      // especially, converting it to a ConstantObjectInspector when it is primitive type. A
+      // `ConstantObjectInspector` can accelerate the row data reading by caching the actual
+      // value and skipping the null check which becomes unnecessary.
+      value match {
+        case scalar: ai.rapids.cudf.Scalar =>
+          if (scalar.getType.isNestedType) {
+            // Nested type, so create an inspector from the data type.
+            toInspector(dataType)
+          } else {
+            try {
+              toInspector(Literal.create(GpuScalar.extract(scalar), dataType))
+            } catch {
+              // Unsupported type for extraction, so use the data type way instead.
+              case _: UnsupportedOperationException => toInspector(dataType)
+            }
+          }
+        case _ => toInspector(Literal.create(value, dataType))
+      }
+    case ge: GpuExpression if ge.foldable =>
+      // Create an inspector from the data type instead, to avoid evaluation on the driver side,
+      // which will be triggered inside the `toInspector(Expression)` method for a foldable
+      // expression. Because GPU expressions should not be evaluated on the driver side.
+      toInspector(ge.dataType)
+    case _ =>
+      // For other expressions, it is safe to call `toInspector(Expression)`, which will call into
+      // `toInspector(DataType)` directly for now.
+      toInspector(expr)
+  }
+
   @transient
   protected lazy val childRowAccessors: Array[SpecializedGetters => Any] =
     children.zipWithIndex.map { case (child, i) =>
@@ -63,7 +98,7 @@ trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveIns
     }.toArray
 
   @transient
-  protected lazy val argumentInspectors = children.map(toInspector)
+  protected lazy val argumentInspectors = children.map(gpuToInspector)
 }
 
 /** Row-based version of Spark's `HiveSimpleUDF` running in a GPU operation */
@@ -77,7 +112,7 @@ case class GpuRowBasedHiveSimpleUDF(
   override lazy val function: UDF = funcWrapper.createFunction[UDF]()
 
   @transient
-  private lazy val wrappers = children.map(x => wrapperFor(toInspector(x), x.dataType)).toArray
+  private lazy val wrappers = children.map(x => wrapperFor(gpuToInspector(x), x.dataType)).toArray
 
   @transient
   private lazy val cached: Array[AnyRef] = new Array[AnyRef](children.length)

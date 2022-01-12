@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
+import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -124,11 +124,9 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
         withResource(numElementsCV.min) { minScalar =>
           val minNumElements = minScalar.getInt
           if (failOnError &&
-            (ordinal < 0 || minNumElements < ordinal + 1) &&
-            numElementsCV.getRowCount != numElementsCV.getNullCount) {
-            throw new ArrayIndexOutOfBoundsException(
-              s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
-                s"$minNumElements")
+              (ordinal < 0 || minNumElements < ordinal + 1) &&
+              numElementsCV.getRowCount != numElementsCV.getNullCount) {
+            RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinal, minNumElements)
           } else if (!failOnError && ordinal < 0) {
             GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
           } else {
@@ -223,8 +221,37 @@ case class GpuArrayContains(left: Expression, right: Expression)
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
-    lhs.getBase.listContains(rhs.getBase)
+  /**
+   * Helper function to account for `libcudf`'s `listContains()` semantics.
+   * 
+   * If a list row contains at least one null element, and is found not to contain 
+   * the search key, `libcudf` returns false instead of null.  SparkSQL expects to 
+   * return null in those cases.
+   * 
+   * This method determines the result's validity mask by ORing the output of 
+   * `listContains()` with the NOT of `listContainsNulls()`.
+   * A result row is thus valid if either the search key is found in the list, 
+   * or if the list does not contain any null elements.
+   */
+  private def orNotContainsNull(containsResult: ColumnVector, 
+                                inputListsColumn:ColumnVector): ColumnVector = {
+    val notContainsNull = withResource(inputListsColumn.listContainsNulls) {
+      _.not
+    }
+    val containsKeyOrNotContainsNull = withResource(notContainsNull) {
+      containsResult.or(_)
+    }
+    withResource(containsKeyOrNotContainsNull) {
+      containsResult.copyWithBooleanColumnAsValidity(_)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val inputListsColumn = lhs.getBase
+    withResource(inputListsColumn.listContains(rhs.getBase)) {
+      orNotContainsNull(_, inputListsColumn)
+    }
+  }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
@@ -232,8 +259,12 @@ case class GpuArrayContains(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    lhs.getBase.listContainsColumn(rhs.getBase)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val inputListsColumn = lhs.getBase
+    withResource(inputListsColumn.listContainsColumn(rhs.getBase)) { 
+      orNotContainsNull(_, inputListsColumn)
+    }
+  }
 
   override def prettyName: String = "array_contains"
 }

@@ -26,6 +26,8 @@ from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
 
+pytestmark = pytest.mark.nightly_resource_consuming_test
+
 _approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
@@ -265,38 +267,81 @@ _grpkey_short_big_decimals = [
     ('b', decimal_gen_20_2),
     ('c', decimal_gen_20_2)]
 
+# NOTE on older versions of Spark decimal 38 causes the CPU to crash
+#  instead of detect overflows, we have versions of this for both
+#  36 and 38 so we can get some coverage for old versions and full
+# coverage for newer versions
+_grpkey_short_very_big_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', decimal_gen_36_5),
+    ('c', decimal_gen_36_5)]
+
+_grpkey_short_very_big_neg_scale_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', decimal_gen_36_neg5),
+    ('c', decimal_gen_36_neg5)]
+
+_grpkey_short_full_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', decimal_gen_38_0),
+    ('c', decimal_gen_38_0)]
+
+_grpkey_short_full_neg_scale_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', decimal_gen_38_neg10),
+    ('c', decimal_gen_38_neg10)]
+
+
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
 _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
-    _grpkey_small_decimals, _grpkey_short_mid_decimals, _grpkey_short_big_decimals]
+    _grpkey_small_decimals, _grpkey_short_mid_decimals, 
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_very_big_neg_scale_decimals]
 
 
-#TODO when we can support sum on larger types https://github.com/NVIDIA/spark-rapids/issues/3944
-# we should move to a larger type and use a smaller count so we can avoid the long CPU run
-# then we should look at splitting the reduction up so we do half on the CPU and half on the GPU
-# So we can test compatabiliy too (but without spending even longer computing)
-def test_hash_reduction_decimal_overflow_sum():
+_init_list_full_decimal = [_grpkey_short_full_decimals, 
+    _grpkey_short_full_neg_scale_decimals]
+
+#Any smaller precision takes way too long to process on the CPU
+@nightly_gpu_mem_consuming_case
+@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31, 30], ids=idfn)
+def test_hash_reduction_decimal_overflow_sum(precision):
+    constant = '9' * precision
+    count = pow(10, 38 - precision)
     assert_gpu_and_cpu_are_equal_collect(
-        # Spark adds +10 to precision so we need 10-billion entries before overflow is even possible.
-        # we use 10-billion and 2 to make sure we hit the overflow.
-        lambda spark: spark.range(0, 10000000002, 1, 48)\
-                .selectExpr("CAST('9999999999' as Decimal(10, 0)) as a")\
+        lambda spark: spark.range(count)\
+                .selectExpr("CAST('{}' as Decimal({}, 0)) as a".format(constant, precision))\
                 .selectExpr("SUM(a)"),
-                # set the batch size small because we can have limited GPU memory and the first select
-                # doubles the size of the batch
-                conf = {'spark.rapids.sql.batchSizeBytes': '64m'})
+        # This is set to 128m because of a number of other bugs that compound to having us
+        # run out of memory in some setups. These should not happen in production, because
+        # we really are just doing a really bad job at multiplying to get this result so
+        # some optimizations are conspiring against us.
+        conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
     )
+
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_reduction_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).agg(f.sum('b'))
     )
+
+# Make sure that we can do computation in the group by columns
+@ignore_order
+def test_computation_in_grpby_columns():
+    conf = {'spark.rapids.sql.batchSizeBytes' : '1000'}
+    data_gen = [
+            ('a', RepeatSeqGen(StringGen('a{1,20}'), length=50)),
+            ('b', short_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).groupby(f.substring(f.col('a'), 2, 10)).agg(f.sum('b')),
+        conf = conf)
 
 @shuffle_test
 @approximate_float
@@ -307,15 +352,37 @@ def test_hash_reduction_sum_count_action(data_gen):
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
-        conf=conf
-    )
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+
+@pytest.mark.skipif(is_before_spark_311(), reason="SUM overflows for CPU were fixed in Spark 3.1.1")
+@shuffle_test
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_full_decimal, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_grpby_sum_full_decimal(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
 
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_36_neg5], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_reduction_sum(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+
+@pytest.mark.skipif(is_before_spark_311(), reason="SUM overflows for CPU were fixed in Spark 3.1.1")
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [decimal_gen_38_0, decimal_gen_38_10, decimal_gen_38_neg10], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_reduction_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
         conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
@@ -349,6 +416,34 @@ def test_hash_avg_nulls_partial_only(data_gen):
         conf=_no_nans_float_conf_partial
     )
 
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+def test_intersectAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)),
+        conf=allow_negative_scale_of_decimal_conf)
+
+# Grouping by a 128-bit decimal value is not currently supported, so HashAggregateExec runs on
+# CPU followed by expression replicateRows which supports decimal128.
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_short_big_decimals], ids=idfn)
+def test_intersectAll_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
+
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+def test_exceptAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @ignore_order(local=True)
@@ -955,28 +1050,22 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
-def test_first_last_reductions_extra_types(data_gen):
+def test_first_last_reductions_decimal_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            # Coalesce and sort are to make sure that first and last, which are non-deterministic
-            # become deterministic
-            lambda spark : unary_op_df(spark, data_gen)\
-                    .coalesce(1).selectExpr(
-                'first(a)',
-                'last(a)'),
-            conf = allow_negative_scale_of_decimal_conf)
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
-# TODO: https://github.com/NVIDIA/spark-rapids/issues/3221
-@allow_non_gpu('HashAggregateExec', 'SortAggregateExec',
-               'ShuffleExchangeExec', 'HashPartitioning',
-               'AggregateExpression', 'Alias', 'First', 'Last')
 @pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
-def test_first_last_reductions_nested_types_fallback(data_gen):
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: unary_op_df(spark, data_gen, num_slices=1)\
-                    .selectExpr('first(a)', 'last(a)', 'first(a, True)', 'last(a, True)'),
-            exist_classes='First,Last',
-            non_exist_classes='GpuFirst,GpuLast',
-            conf=allow_negative_scale_of_decimal_conf)
+def test_first_last_reductions_nested_types(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
@@ -1238,7 +1327,6 @@ def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
                                      ('v', ByteGen())], length=100),
         0.5, conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
@@ -1247,7 +1335,6 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
@@ -1256,7 +1343,6 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
@@ -1299,7 +1385,6 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
 
     assert_gpu_fallback_collect(lambda spark: approx_percentile_query(spark), 'ApproximatePercentile', conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32():
     compare_percentile_approx(
@@ -1307,7 +1392,6 @@ def test_hash_groupby_approx_percentile_decimal32():
                                      ('v', DecimalGen(6, 2))]),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32_single():
     compare_percentile_approx(
