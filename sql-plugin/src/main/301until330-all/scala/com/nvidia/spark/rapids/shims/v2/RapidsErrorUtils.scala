@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark330
+package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
+import ai.rapids.cudf.ColumnVector
 
-class Spark330Shims extends Spark33XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+object RapidsErrorUtils {
+  def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
+    throw new ArrayIndexOutOfBoundsException(s"index $index is beyond the max index allowed " +
+        s"${numElements - 1}")
+  }
 }

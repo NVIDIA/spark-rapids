@@ -65,5 +65,5 @@ object TypeSigUtil extends TypeSigUtilBase {
 
   /** Get numeric and interval TypeSig */
   override def getNumericAndInterval(): TypeSig =
-    TypeSig.numeric + TypeSig.CALENDAR
+    TypeSig.cpuNumeric + TypeSig.CALENDAR
 }
