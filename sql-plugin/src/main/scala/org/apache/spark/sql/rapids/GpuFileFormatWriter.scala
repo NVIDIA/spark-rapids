@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,19 +128,13 @@ object GpuFileFormatWriter extends Logging {
 
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
-    val bucketIdExpression = bucketSpec.map { _ =>
-      // Use `HashPartitioning.partitionIdExpression` as our bucket id expression, so that we can
-      // guarantee the data distribution is same between shuffle and bucketed data source, which
-      // enables us to only shuffle one side when join a bucketed table and a normal one.
-      //HashPartitioning(bucketColumns, spec.numBuckets).partitionIdExpression
-      //
-      // TODO: Cannot support this until we either:
-      // Guarantee join and bucketing are both on the GPU and disable GPU-writing if join not on GPU
-      //   OR
-      // Guarantee GPU hash partitioning is 100% compatible with CPU hashing
+    val writerBucketSpec: Option[GpuWriterBucketSpec] = bucketSpec.map { spec =>
+      // TODO: Cannot support this until we:
+      // support Hive hash partitioning on the GPU
       throw new UnsupportedOperationException("GPU hash partitioning for bucketed data is not "
           + "compatible with the CPU version")
     }
+
     val sortColumns = bucketSpec.toSeq.flatMap {
       spec => spec.sortColumnNames.map(c => dataColumns.find(_.name == c).get)
     }
@@ -161,7 +155,7 @@ object GpuFileFormatWriter extends Logging {
       allColumns = outputSpec.outputColumns,
       dataColumns = dataColumns,
       partitionColumns = partitionColumns,
-      bucketIdExpression = bucketIdExpression,
+      bucketSpec = writerBucketSpec,
       path = outputSpec.outputPath,
       customPartitionLocations = outputSpec.customPartitionLocations,
       maxRecordsPerFile = caseInsensitiveOptions.get("maxRecordsPerFile").map(_.toLong)
@@ -172,7 +166,8 @@ object GpuFileFormatWriter extends Logging {
     )
 
     // We should first sort by partition columns, then bucket id, and finally sorting columns.
-    val requiredOrdering = partitionColumns ++ bucketIdExpression ++ sortColumns
+    val requiredOrdering =
+      partitionColumns ++ writerBucketSpec.map(_.bucketIdExpression) ++ sortColumns
     // the sort order doesn't matter
     val actualOrdering = empty2NullPlan.outputOrdering.map(_.child)
     val orderingMatched = if (requiredOrdering.length > actualOrdering.length) {
@@ -298,7 +293,7 @@ object GpuFileFormatWriter extends Logging {
       if (sparkPartitionId != 0 && !iterator.hasNext) {
         // In case of empty job, leave first partition to save meta for file format like parquet.
         new GpuEmptyDirectoryDataWriter(description, taskAttemptContext, committer)
-      } else if (description.partitionColumns.isEmpty && description.bucketIdExpression.isEmpty) {
+      } else if (description.partitionColumns.isEmpty && description.bucketSpec.isEmpty) {
         new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer)
       } else {
         new GpuDynamicPartitionDataWriter(description, taskAttemptContext, committer)

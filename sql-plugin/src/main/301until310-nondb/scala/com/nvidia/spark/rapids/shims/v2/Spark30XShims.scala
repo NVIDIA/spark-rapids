@@ -370,8 +370,6 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
     adaptivePlan.initialPlan
   }
 
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
-
   // this is to help with an optimization in Spark 3.1, so we disable it by default in Spark 3.0.x
   override def isEmptyRelation(relation: Any): Boolean = false
   override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = None

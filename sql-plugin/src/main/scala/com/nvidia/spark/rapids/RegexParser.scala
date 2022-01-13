@@ -265,8 +265,8 @@ class RegexParser(pattern: String) {
         throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
         ch match {
-          case 'A' | 'Z' =>
-            // BOL / EOL anchors
+          case 'A' | 'Z' | 'z' =>
+            // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
           case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
@@ -456,13 +456,14 @@ class CudfRegexTranspiler(replace: Boolean) {
       }
 
       case RegexOctalChar(_) =>
-        // cuDF produced different results compared to Spark in some cases
-        // example: "a\141|.$"
+        // see https://github.com/NVIDIA/spark-rapids/issues/4288
         throw new RegexUnsupportedException(
           s"cuDF does not support octal digits consistently with Spark")
 
       case RegexHexDigit(_) =>
-        regex
+        // see https://github.com/NVIDIA/spark-rapids/issues/4486
+        throw new RegexUnsupportedException(
+          s"cuDF does not support hex digits consistently with Spark")
 
       case RegexEscaped(ch) => ch match {
         case 'b' | 'B' =>
@@ -470,6 +471,25 @@ class CudfRegexTranspiler(replace: Boolean) {
           // this needs further analysis to determine why words boundaries behave
           // differently between Java and cuDF
           throw new RegexUnsupportedException("word boundaries are not supported")
+        case 'z' =>
+          if (replace) {
+            throw new RegexUnsupportedException("string anchor \\z not supported in replace mode")
+          }
+          // cuDF does not support "\z" but supports "$", which is equivalent
+          RegexChar('$')
+        case 'Z' =>
+          if (replace) {
+            throw new RegexUnsupportedException("string anchor \\Z not supported in replace mode")
+          }
+          // We transpile "\\Z" to "(?:[\r\n]?$)" because of the different meanings of "\\Z"
+          // between Java and cuDF:
+          // Java: The end of the input but for the final terminator, if any
+          // cuDF: Matches at the end of the string
+          RegexGroup(capture = false, RegexSequence(
+            ListBuffer(RegexRepetition(
+              RegexCharacterClass(negated = false,
+                ListBuffer(RegexChar('\r'), RegexChar('\n'))), SimpleQuantifier('?')),
+            RegexChar('$'))))
         case _ =>
           regex
       }
