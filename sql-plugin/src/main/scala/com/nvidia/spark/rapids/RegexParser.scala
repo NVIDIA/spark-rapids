@@ -471,16 +471,17 @@ class CudfRegexTranspiler(replace: Boolean) {
           throw new RegexUnsupportedException("whitespace classes are not supported")
         case 'z' =>
           if (replace) {
+            // see https://github.com/NVIDIA/spark-rapids/issues/4425
             throw new RegexUnsupportedException(
               "string anchor \\z is not supported in replace mode")
           }
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>
-          // TODO link to issue when filed
+          // see https://github.com/NVIDIA/spark-rapids/issues/4532
           throw new RegexUnsupportedException("string anchor \\Z is not supported")
         case '$' =>
-          // TODO link to issue when filed
+          // see https://github.com/NVIDIA/spark-rapids/issues/4533
           throw new RegexUnsupportedException("line anchor $ is not supported")
         case _ =>
           regex
