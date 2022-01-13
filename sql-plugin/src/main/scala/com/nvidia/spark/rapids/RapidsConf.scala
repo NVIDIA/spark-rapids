@@ -506,7 +506,7 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SQL_MODE = conf("spark.rapids.sql.mode")
-    .doc("Set the mode for the plugin. The supported modes are explainOnly and executeOnGPU." +
+    .doc("Set the mode for the plugin. The supported modes are explainOnly and executeOnGPU. " +
          "This config can not be changed at runtime, you must restart the application for it " +
          "to take affect. The default mode is executeOnGPU, which means the sql plugin will " +
          "convert the Spark operations and execute them on the GPU when possible. The " +
