@@ -58,20 +58,23 @@ existing logs and do not need a GPU cluster to run the tools.
 
 This allows running queries on the CPU and the plugin will evaluate the queries as if it was
 going to run on the GPU and tell you what would and wouldn't have been run on the GPU.
-There are two ways to run this, one is running with the plugin set to explain only mode and
-the other is to modify your existing Spark application code to call a function directly.
+There are two ways to run this, one is running with the plugin set to explain only mode, this
+is only supported in Spark 3.X and the other is to modify your existing Spark application
+code to call a function directly.
 
 Please note that if using adaptive execution in Spark the explain output may not be perfect
 as the plan could have changed along the way in a way that we wouldn't see by looking at just
-the CPU plan.
+the CPU plan. The same applies if you are using an older version of Spark. Spark planning
+may be slightly different if you go up to a newer version of Spark.
 
-### Requirements
+### Using the Configuration Flag for Explain Only Mode
+
+#### Requirements
 
 - A Spark 3.x CPU cluster
 - The `rapids-4-spark` and `cudf` [jars](../download.md)
-- Ability to modify the existing Spark application code if using the function call directly
 
-### Using the Configuration Flag for Explain Only Mode
+#### Usage
 
 Starting with version 22.02 of the RAPIDS Accelerator, the plugin can be run in explain only mode.
 This mode allows you to run on a CPU cluster and can help us understand the potential GPU plan and
@@ -124,18 +127,40 @@ pretty accurate.
 
 ### How to use the Function Call
 
-Starting with version 21.12 of the RAPIDS Accelerator, a new function named
-`explainPotentialGpuPlan` is added which can help us understand the potential GPU plan and if there
-are any unsupported features on a CPU cluster.  Basically it can return output which is the same as
-the driver logs with `spark.rapids.sql.explain=all`.
+#### Requirements with Spark 3.X
 
-1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
+- A Spark 3.x CPU cluster
+- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- Ability to modify the existing Spark application code if using the function call directly
+- RAPIDS Accelerator for Apache Spark version 21.12 or newer
+
+#### Requirements with Spark 2.X
+
+- A Spark 2.4.x CPU cluster
+- The `rapids-4-spark-sql-meta` [jar](../download.md)
+- Ability to modify the existing Spark application code if using the function call directly
+- RAPIDS Accelerator for Apache Spark version 22.02 or newer
+
+
+#### Usage
+
+A function named `explainPotentialGpuPlan` is available which can help us understand the potential
+GPU plan and if there are any unsupported features on a CPU cluster. Basically it can return output
+which is the same as the driver logs with `spark.rapids.sql.explain=all`.
+
+1. In `spark-shell`, the necessary jars into --jars option or put them in the
    Spark classpath.
 
-   For example:
+   For example, on Spark 3.X:
 
    ```bash
    spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar
+   ```
+
+   For example, on Spark 2.4.X:
+
+   ```bash
+   spark-shell --jars /PathTo/rapids-4-spark-sql-meta-<version and classifier>.jar
    ```
 
 2. Test if the class can be successfully loaded or not.
