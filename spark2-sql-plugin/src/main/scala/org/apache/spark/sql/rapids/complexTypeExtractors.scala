@@ -44,4 +44,5 @@ class GpuGetMapValueMeta(
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _]],
   rule: DataFromReplacementRule)
-  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {}
+  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
+}

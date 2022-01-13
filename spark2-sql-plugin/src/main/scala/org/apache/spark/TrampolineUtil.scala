@@ -24,12 +24,10 @@ import org.apache.spark.util.Utils
 object TrampolineUtil {
 
   // package has to be different to access 2.x HashedRelationBroadcastMode
-  def isSupportedRelation(mode: BroadcastMode): Boolean = {
-    mode match {
-      case _ : HashedRelationBroadcastMode => true
-      case IdentityBroadcastMode => true
-      case _ => false
-    }
+  def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
+    case _ : HashedRelationBroadcastMode => true
+    case IdentityBroadcastMode => true
+    case _ => false
   }
 
   /**

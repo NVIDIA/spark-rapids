@@ -69,13 +69,64 @@ sed -n  '/class GpuStringSplitMeta/,/override def convertToGpu/{/override def co
 diff GpuStringSplitMeta_new.out GpuStringSplitMeta_old.out > GpuStringSplitMeta.newdiff
 diff -c spark2diffs/GpuStringSplitMeta.diff  GpuStringSplitMeta.newdiff
 
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuOrcFileFormat.scala
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuDataSource.scala
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala
-spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala
+sed -n  '/object GpuOrcFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuOrcFileFormat.scala > GpuOrcFileFormat_new.out
+sed -n  '/object GpuOrcFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuOrcFileFormat.scala  > GpuOrcFileFormat_old.out
+diff  GpuOrcFileFormat_new.out GpuOrcFileFormat_old.out > GpuOrcFileFormat.newdiff
+diff -c spark2diffs/GpuOrcFileFormat.diff GpuOrcFileFormat.newdiff
+
+
+sed -n  '/class GpuSequenceMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala > GpuSequenceMeta_new.out
+sed -n  '/class GpuSequenceMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala > GpuSequenceMeta_old.out
+diff GpuSequenceMeta_new.out GpuSequenceMeta_old.out > GpuSequenceMeta.newdiff
+diff -c spark2diffs/GpuSequenceMeta.diff  GpuSequenceMeta.newdiff
+
+sed -n  '/object GpuDataSource/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuDataSource.scala > GpuDataSource_new.out
+sed -n  '/object GpuDataSource/,/val GLOB_PATHS_KEY/{/val GLOB_PATHS_KEY/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuDataSource.scala > GpuDataSource_old.out
+diff  GpuDataSource_new.out GpuDataSource_old.out > GpuDataSource.newdiff
+diff -c spark2diffs/GpuDataSource.diff GpuDataSource.newdiff
+
+sed -n  '/class GpuGetArrayItemMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala  > GpuGetArrayItemMeta_new.out
+sed -n  '/class GpuGetArrayItemMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala > GpuGetArrayItemMeta_old.out
+diff GpuGetArrayItemMeta_new.out GpuGetArrayItemMeta_old.out > GpuGetArrayItemMeta.newdiff
+diff -c spark2diffs/GpuGetArrayItemMeta.diff  GpuGetArrayItemMeta.newdiff
+
+sed -n  '/class GpuGetMapValueMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala  > GpuGetMapValueMeta_new.out
+sed -n  '/class GpuGetMapValueMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala > GpuGetMapValueMeta_old.out
+diff GpuGetMapValueMeta_new.out GpuGetMapValueMeta_old.out > GpuGetMapValueMeta.newdiff
+diff -c spark2diffs/GpuGetMapValueMeta.diff  GpuGetMapValueMeta.newdiff
+
+sed -n  '/abstract class ScalaUDFMetaBase/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala> ScalaUDFMetaBase_new.out
+sed -n  '/abstract class ScalaUDFMetaBase/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > ScalaUDFMetaBase_old.out
+diff ScalaUDFMetaBase_new.out ScalaUDFMetaBase_old.out > ScalaUDFMetaBase.newdiff
+diff -c spark2diffs/ScalaUDFMetaBase.diff  ScalaUDFMetaBase.newdiff
+
+sed -n  '/object GpuScalaUDF/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala > GpuScalaUDF_new.out
+sed -n  '/object GpuScalaUDF/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > GpuScalaUDF_old.out
+diff  -c GpuScalaUDF_new.out GpuScalaUDF_old.out > GpuScalaUDF.newdiff
+
+
+sed -n  '/object GpuDecimalMultiply/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > GpuDecimalMultiply_new.out
+sed -n  '/object GpuDecimalMultiply/,/def checkForOverflow/{/def checkForOverflow/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > GpuDecimalMultiply_old.out
+diff  GpuDecimalMultiply_new.out GpuDecimalMultiply_old.out > GpuDecimalMultiply.newdiff
+diff -c spark2diffs/GpuDecimalMultiply.diff GpuDecimalMultiply.newdiff
+
+sed -n  '/object GpuDecimalDivide/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > GpuDecimalDivide_new.out
+sed -n  '/object GpuDecimalDivide/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > GpuDecimalDivide_old.out
+diff  GpuDecimalDivide_new.out GpuDecimalDivide_old.out > GpuDecimalDivide.newdiff
+diff -c spark2diffs/GpuDecimalDivide.diff GpuDecimalDivide.newdiff
+
+sed -n  '/def isSupportedRelation/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala > isSupportedRelation_new.out
+sed -n  '/def isSupportedRelation/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > isSupportedRelation_old.out
+diff  -c isSupportedRelation_new.out isSupportedRelation_old.out 
+
+sed -n  '/def dataTypeExistsRecursively/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala > dataTypeExistsRecursively_new.out
+sed -n  '/def dataTypeExistsRecursively/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > dataTypeExistsRecursively_old.out
+diff  -c dataTypeExistsRecursively_new.out dataTypeExistsRecursively_old.out 
+
+sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala > getSimpleName_new.out
+sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > getSimpleName_old.out
+diff  -c getSimpleName_new.out getSimpleName_old.out 
+
 
 spark2-sql-plugin/src/main/scala/com
 spark2-sql-plugin/src/main/scala/com/nvidia
