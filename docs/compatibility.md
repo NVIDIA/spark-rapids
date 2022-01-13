@@ -437,11 +437,12 @@ case.
 ## JSON
 
 The JSON format read is a very experimental feature which is expected to have some issues, so we disable 
-it by default. If you would like to test it, you can enable `spark.rapids.sql.format.json.enabled` and 
+it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
 `spark.rapids.sql.format.json.read.enabled`.
 
-Currently, the JSON reader doesn't support the column prune when reading JSON files, which is the blocker 
-issue. User must specify the full schema or just let Spark infer the schema from the JSON file. eg,
+Currently, the GPU accelerated JSON reader doesn't support column pruning, which will likely make 
+this difficult to use or even test. The user must specify the full schema or just let Spark infer 
+the schema from the JSON file. eg,
 
 We have a `people.json` file with below content
 
@@ -472,6 +473,10 @@ While the below code will not work in the current version,
 val schema = StructType(Seq(StructField("name", StringType)))
 val df = spark.read.schema(schema).json("people.json")
 ```
+
+### JSON supporting types
+
+The nested types(array, map and struct), date and timestamp are not supported yet in current version.
 
 ### JSON Floating Point
 
@@ -882,3 +887,4 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
+
