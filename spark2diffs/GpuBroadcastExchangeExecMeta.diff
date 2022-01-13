@@ -1,0 +1,12 @@
+4c4
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+13c13
+<     def isSupported(rm: RapidsMeta[_, _]): Boolean = rm.wrapped match {
+---
+>     def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
+25c25
+< }
+---
+> 
