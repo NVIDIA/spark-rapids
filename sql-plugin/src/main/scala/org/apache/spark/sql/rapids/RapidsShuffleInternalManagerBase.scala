@@ -254,6 +254,9 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
       fallThroughReasons += "Spark authentication is enabled"
     }
+    if (rapidsConf.isSqlExplainOnlyEnabled) {
+      fallThroughReasons += "Plugin is in explain only mode"
+    }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
           s"because: ${fallThroughReasons.mkString(", ")}")

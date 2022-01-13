@@ -54,15 +54,75 @@ Since the two tools are only analyzing Spark event logs they do not have the det
 captured from a running Spark job.  However it is very convenient because you can run the tools on
 existing logs and do not need a GPU cluster to run the tools.
 
-## 2. Function `explainPotentialGpuPlan` 
+## 2. Get the Explain Output
+
+This allows running queries on the CPU and the plugin will evaluate the queries as if it was
+going to run on the GPU and tell you what would and wouldn't have been run on the GPU.
+There are two ways to run this, one is running with the plugin set to explain only mode and
+the other is to modify your existing Spark application code to call a function directly.
+
+Please note that if using adaptive execution in Spark the explain output may not be perfect
+as the plan could have changed along the way in a way that we wouldn't see by looking at just
+the CPU plan.
 
 ### Requirements
 
 - A Spark 3.x CPU cluster
 - The `rapids-4-spark` and `cudf` [jars](../download.md)
-- Ability to modify the existing Spark application code
+- Ability to modify the existing Spark application code if using the function call directly
 
-### How to use
+### Using the Configuration Flag for Explain Only Mode
+
+Starting with version 22.02 of the RAPIDS Accelerator, the plugin can be run in explain only mode.
+This mode allows you to run on a CPU cluster and can help us understand the potential GPU plan and
+if there are any unsupported features. Basically it will log the output which is the same as
+the driver logs with `spark.rapids.sql.explain=all`.
+
+1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
+   Spark classpath and enable the configs `spark.rapids.sql.mode=explainOnly` and
+   `spark.plugins=com.nvidia.spark.SQLPlugin`.
+
+   For example:
+
+   ```bash
+   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.mode=explainOnly --conf spark.plugins=com.nvidia.spark.SQLPlugin
+   ```
+2.  Enable optional RAPIDS Accelerator related parameters based on your setup.
+
+   Enabling optional parameters may allow more operations to run on the GPU but please understand
+   the meaning and risk of above parameters before enabling it. Please refer to [configs
+   doc](../configs.md) for details of RAPIDS Accelerator parameters.
+
+   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
+   UDFs, you can set the following parameters:
+
+  ```scala
+   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
+   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
+   spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
+   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
+   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
+   spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
+   ```
+
+3. Run your query and check the driver logs for the explain output.
+
+   Below are sample driver log messages starting with `!` which indicate the unsupported features in
+   this version:
+
+   ```
+   !NOT_FOUND <RowDataSourceScanExec> cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.RowDataSourceScanExec could be found
+   ```
+
+This log can show you which operators (on what data type) can not run on GPU and the reason.
+If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
+you should first understand the risk and applicability of that parameter based on [configs
+doc](../configs.md) and then enable that parameter and try the tool again.
+
+Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is
+pretty accurate.
+
+### How to use the Function Call
 
 Starting with version 21.12 of the RAPIDS Accelerator, a new function named
 `explainPotentialGpuPlan` is added which can help us understand the potential GPU plan and if there
