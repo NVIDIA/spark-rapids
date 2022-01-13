@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -76,7 +76,7 @@ export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
 
 ## limit parallelism to avoid OOM kill
-export TEST_PARALLEL=1
+export TEST_PARALLEL=4
 if [ -d "$LOCAL_JAR_PATH" ]; then
     if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
         ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo
