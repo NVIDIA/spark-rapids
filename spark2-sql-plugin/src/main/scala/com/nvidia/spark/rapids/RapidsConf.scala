@@ -398,8 +398,7 @@ object RapidsConf {
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), as " +
-      "\"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS).")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -1401,7 +1400,7 @@ object RapidsConf {
     }
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
-      printToggleHeader("Scans\n")
+      printToggleHeader("Partitioning\n")
     }
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
   }
