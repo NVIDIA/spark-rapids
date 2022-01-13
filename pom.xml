@@ -87,25 +87,6 @@
                 <spark.version>${spark248.version}</spark.version>
                 <spark.test.version>${spark248.version}</spark.test.version>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-20+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>spark2-sql-plugin</module>
             </modules>
@@ -1382,7 +1363,7 @@
                         <exclude>rmm_log.txt</exclude>
                         <exclude>dependency-reduced-pom*.xml</exclude>
                         <exclude>**/.*/**</exclude>
-                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
+                        <exclude>**/src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>**/*.csv</exclude>
                         <exclude>dist/*.txt</exclude>
                         <exclude>**/META-INF/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>

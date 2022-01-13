@@ -74,6 +74,9 @@ function distWithReducedPom {
         $mvnExtaFlags
 }
 
+# build the Spark 2.x explain jar
+mvn -B $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dbuildver=24X clean install -DskipTests
+
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
