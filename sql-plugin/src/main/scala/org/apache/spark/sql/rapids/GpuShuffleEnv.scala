@@ -122,7 +122,7 @@ object GpuShuffleEnv extends Logging {
     (isConfiguredInEnv || isRapidsManager) &&
       !isExternalShuffleEnabled &&
       !isSparkAuthenticateEnabled &&
-      !conf.isSqlExplainOnlyEnabled
+      conf.isSqlExecuteOnGPU
   }
 
   def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {

@@ -127,6 +127,7 @@ object GpuDeviceManager extends Logging {
 
   def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
       conf: RapidsConf): Unit = {
+    // as long in execute mode initialize everything because we could enable it after startup
     if (conf.isSqlExecuteOnGPU) {
       // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
       // uses that GPU. We only need to initialize RMM once per Executor because we are relying on

@@ -1459,9 +1459,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
-  lazy val isSqlExecuteOnGPU: Boolean = isSqlEnabled && get(SQL_MODE).equals("executeongpu")
+  lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
 
-  lazy val isSqlExplainOnlyEnabled: Boolean = isSqlEnabled && get(SQL_MODE).equals("explainonly")
+  lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_MODE).equals("explainonly")
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 

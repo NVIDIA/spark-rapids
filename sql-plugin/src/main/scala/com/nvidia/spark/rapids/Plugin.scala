@@ -76,10 +76,10 @@ object RapidsPluginUtils extends Logging {
   }
 
   def logPluginMode(conf: RapidsConf): Unit = {
-    if (conf.isSqlExecuteOnGPU) {
+    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to false.")
-    } else if (conf.isSqlExplainOnlyEnabled) {
+    } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
         s"set `${RapidsConf.SQL_ENABLED}` to false. To change the mode, " +
         s"restart the application and change `${RapidsConf.SQL_MODE}`.")

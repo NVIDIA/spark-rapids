@@ -328,7 +328,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     val structSchema = schemaWithUnambiguousNames.toStructType
-    if (rapidsConf.isSqlExecuteOnGPU && isSchemaSupportedByCudf(schema)) {
+    if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
+        isSchemaSupportedByCudf(schema)) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
           val s: StructType = structSchema
@@ -553,7 +554,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
-    if (rapidsConf.isSqlExecuteOnGPU &&
+    if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
       val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
         selectedSchemaWithNames, newSelectedAttributes)
@@ -1454,7 +1455,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     val rapidsConf = new RapidsConf(conf)
     val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
-    if (rapidsConf.isSqlExecuteOnGPU && isSchemaSupportedByCudf(schema)) {
+    if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
+        isSchemaSupportedByCudf(schema)) {
       val structSchema = schemaWithUnambiguousNames.toStructType
       val converters = new GpuRowToColumnConverter(structSchema)
       val columnarBatchRdd = input.mapPartitions(iter => {
