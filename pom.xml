@@ -69,9 +69,6 @@
             <timezone>-6</timezone>
         </developer>
     </developers>
-    <modules>
-    </modules>
-
     <profiles>
         <profile>
             <id>release24X</id>
