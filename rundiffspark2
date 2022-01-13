@@ -9,41 +9,65 @@ fi
 sed -n  '/class GpuBroadcastNestedLoopJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinMeta.scala > GpuBroadcastNestedLoopJoinMeta_new.out
 sed -n  '/class GpuBroadcastNestedLoopJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala > GpuBroadcastNestedLoopJoinMeta_old.out
 diff GpuBroadcastNestedLoopJoinMeta_new.out GpuBroadcastNestedLoopJoinMeta_old.out >  GpuBroadcastNestedLoopJoinMeta.newdiff
-diff spark2diffs/GpuBroadcastNestedLoopJoinMeta.diff  GpuBroadcastNestedLoopJoinMeta.newdiff
-
+diff -c spark2diffs/GpuBroadcastNestedLoopJoinMeta.diff  GpuBroadcastNestedLoopJoinMeta.newdiff
 
 sed -n  '/object JoinTypeChecks/,/def extractTopLevelAttributes/{/def extractTopLevelAttributes/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuHashJoin.scala > GpuHashJoin_new.out
 sed -n  '/object JoinTypeChecks/,/def extractTopLevelAttributes/{/def extractTopLevelAttributes/!p}' ./sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuHashJoin.scala > GpuHashJoin_old.out
 diff GpuHashJoin_new.out GpuHashJoin_old.out > GpuHashJoin.newdiff
-diff spark2diffs/GpuHashJoin.diff GpuHashJoin.newdiff
+diff -c spark2diffs/GpuHashJoin.diff GpuHashJoin.newdiff
 
 sed -n  '/class GpuShuffleMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuShuffleMeta.scala > GpuShuffleMeta_new.out
 sed -n  '/class GpuShuffleMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuShuffleExchangeExecBase.scala > GpuShuffleMeta_old.out
 diff GpuShuffleMeta_new.out GpuShuffleMeta_old.out > GpuShuffleMeta.newdiff
-diff spark2diffs/GpuShuffleMeta.diff GpuShuffleMeta.newdiff
+diff -c spark2diffs/GpuShuffleMeta.diff GpuShuffleMeta.newdiff
 
 sed -n  '/class GpuBroadcastMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastExchangeExecMeta.scala > GpuBroadcastExchangeExecMeta_new.out
 sed -n  '/class GpuBroadcastMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastExchangeExec.scala > GpuBroadcastExchangeExecMeta_old.out
 diff GpuBroadcastExchangeExecMeta_new.out GpuBroadcastExchangeExecMeta_old.out > GpuBroadcastExchangeExecMeta.newdiff
-diff spark2diffs/GpuBroadcastExchangeExecMeta.diff GpuBroadcastExchangeExecMeta.newdiff
+diff -c spark2diffs/GpuBroadcastExchangeExecMeta.diff GpuBroadcastExchangeExecMeta.newdiff
 
 
 sed -n  '/abstract class UnixTimeExprMeta/,/sealed trait TimeParserPolicy/{/sealed trait TimeParserPolicy/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressionsMeta.scala > UnixTimeExprMeta_new.out
 sed -n  '/abstract class UnixTimeExprMeta/,/sealed trait TimeParserPolicy/{/sealed trait TimeParserPolicy/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > UnixTimeExprMeta_old.out
 diff UnixTimeExprMeta_new.out UnixTimeExprMeta_old.out > UnixTimeExprMeta.newdiff
-diff spark2diffs/UnixTimeExprMeta.diff UnixTimeExprMeta.newdiff
+diff -c spark2diffs/UnixTimeExprMeta.diff UnixTimeExprMeta.newdiff
 
 sed -n  '/object GpuToTimestamp/,/abstract class UnixTimeExprMeta/{/abstract class UnixTimeExprMeta/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressionsMeta.scala > GpuToTimestamp_new.out
 sed -n  '/object GpuToTimestamp/,/val REMOVE_WHITESPACE_FROM_MONTH_DAY/{/val REMOVE_WHITESPACE_FROM_MONTH_DAY/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > GpuToTimestamp_old.out
 diff GpuToTimestamp_new.out GpuToTimestamp_old.out > GpuToTimestamp.newdiff
-diff spark2diffs/GpuToTimestamp.diff GpuToTimestamp.newdiff
+diff -c spark2diffs/GpuToTimestamp.diff GpuToTimestamp.newdiff
 
 sed -n  '/case class ParseFormatMeta/,/case class RegexReplace/p' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressionsMeta.scala > datemisc_new.out
 sed -n  '/case class ParseFormatMeta/,/case class RegexReplace/p' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > datemisc_old.out
-diff datemisc_new.out datemisc_old.out
+diff -c datemisc_new.out datemisc_old.out
 
-spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala
+sed -n  '/class GpuRLikeMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > GpuRLikeMeta_new.out
+sed -n  '/class GpuRLikeMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > GpuRLikeMeta_old.out
+diff GpuRLikeMeta_new.out GpuRLikeMeta_old.out > GpuRLikeMeta.newdiff
+diff -c spark2diffs/GpuRLikeMeta.diff  GpuRLikeMeta.newdiff
 
+sed -n  '/class GpuRegExpExtractMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > GpuRegExpExtractMeta_new.out
+sed -n  '/class GpuRegExpExtractMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > GpuRegExpExtractMeta_old.out
+diff GpuRegExpExtractMeta_new.out GpuRegExpExtractMeta_old.out > GpuRegExpExtractMeta.newdiff
+diff -c spark2diffs/GpuRegExpExtractMeta.diff  GpuRegExpExtractMeta.newdiff
+
+sed -n  '/class SubstringIndexMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > SubstringIndexMeta_new.out
+sed -n  '/class SubstringIndexMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > SubstringIndexMeta_old.out
+diff SubstringIndexMeta_new.out SubstringIndexMeta_old.out > SubstringIndexMeta.newdiff
+diff -c spark2diffs/SubstringIndexMeta.diff  SubstringIndexMeta.newdiff
+
+sed -n  '/object CudfRegexp/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > CudfRegexp_new.out
+sed -n  '/object CudfRegexp/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > CudfRegexp_old.out
+diff -c CudfRegexp_new.out CudfRegexp_old.out > CudfRegexp.newdiff
+
+sed -n  '/object GpuSubstringIndex/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > GpuSubstringIndex_new.out
+sed -n  '/object GpuSubstringIndex/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > GpuSubstringIndex_old.out
+diff -c GpuSubstringIndex_new.out GpuSubstringIndex_old.out > GpuSubstringIndex.newdiff
+
+sed -n  '/class GpuStringSplitMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > GpuStringSplitMeta_new.out
+sed -n  '/class GpuStringSplitMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > GpuStringSplitMeta_old.out
+diff GpuStringSplitMeta_new.out GpuStringSplitMeta_old.out > GpuStringSplitMeta.newdiff
+diff -c spark2diffs/GpuStringSplitMeta.diff  GpuStringSplitMeta.newdiff
 
 spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuOrcFileFormat.scala
 spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala
