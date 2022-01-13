@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
-import com.nvidia.spark.rapids.SpillPriorities.{HOST_MEMORY_BUFFER_DIRECT_OFFSET, HOST_MEMORY_BUFFER_PAGEABLE_OFFSET, HOST_MEMORY_BUFFER_PINNED_OFFSET}
+import com.nvidia.spark.rapids.SpillPriorities.{getHostMemoryBufferSpillPriority, HOST_MEMORY_BUFFER_DIRECT_OFFSET, HOST_MEMORY_BUFFER_PAGEABLE_OFFSET, HOST_MEMORY_BUFFER_PINNED_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -98,7 +98,8 @@ class RapidsHostMemoryStore(
         other.id,
         other.size,
         other.meta,
-        other.getSpillPriority + allocationMode.spillPriorityOffset,
+        getHostMemoryBufferSpillPriority(
+          other.getSpillPriority, allocationMode.spillPriorityOffset),
         hostBuffer,
         allocationMode,
         other.spillCallback,
