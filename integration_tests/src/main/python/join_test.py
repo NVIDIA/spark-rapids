@@ -224,7 +224,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
@@ -252,7 +252,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
