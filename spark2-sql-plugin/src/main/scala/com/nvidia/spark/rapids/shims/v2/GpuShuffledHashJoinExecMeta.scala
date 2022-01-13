@@ -44,5 +44,4 @@ class GpuShuffledHashJoinMeta(
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       join.condition)
   }
-
 }

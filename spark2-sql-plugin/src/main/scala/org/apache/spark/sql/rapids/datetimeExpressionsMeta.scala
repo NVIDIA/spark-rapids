@@ -148,4 +148,3 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
     }
   }
 }
-

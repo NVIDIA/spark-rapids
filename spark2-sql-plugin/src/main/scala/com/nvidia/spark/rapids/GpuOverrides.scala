@@ -3123,4 +3123,3 @@ object GpuUserDefinedFunction {
       TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
 }
-

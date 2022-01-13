@@ -143,4 +143,3 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def getOrderSpecs: Seq[SortOrder] = windowExec.orderSpec
   override def getResultColumnsOnly: Boolean = resultColumnsOnly
 }
-

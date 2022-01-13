@@ -129,4 +129,3 @@ object GpuParquetFileFormat {
     }
   }
 }
-

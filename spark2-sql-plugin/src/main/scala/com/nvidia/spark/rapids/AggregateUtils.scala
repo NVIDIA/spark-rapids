@@ -52,6 +52,4 @@ object AggregateUtils {
       }
     }
   }
-
 }
-

@@ -61,7 +61,6 @@ abstract class GpuWindowInPandasExecMetaBase(
   }
 }
 
-
 class GpuAggregateInPandasExecMeta(
     aggPandas: AggregateInPandasExec,
     conf: RapidsConf,
@@ -84,4 +83,3 @@ class GpuAggregateInPandasExecMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = groupingNamedExprs ++ udfs ++ resultNamedExprs
 }
-

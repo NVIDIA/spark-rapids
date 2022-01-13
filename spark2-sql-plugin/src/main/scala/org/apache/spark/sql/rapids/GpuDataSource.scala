@@ -177,5 +177,4 @@ object GpuDataSource extends Logging {
         }
     }
   }
-
 }

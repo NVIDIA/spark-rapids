@@ -175,4 +175,3 @@ object GpuDecimalDivide {
       math.min(outputType.scale + 1, GpuOverrides.DECIMAL128_MAX_PRECISION))
   }
 }
-

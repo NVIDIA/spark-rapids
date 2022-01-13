@@ -102,5 +102,4 @@ object InputFileBlockRule {
         plan.childPlans.foreach(p => recursivelyResolve(p, newKey, resultOps))
     }
   }
-
 }

@@ -127,6 +127,7 @@ object GpuParquetScanBase {
     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
     // for us.
 
+    // Spark 2.x doesn't support the rebase mode
     /*
     sqlConf.get(ShimLoader.getSparkShims.int96ParquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
@@ -160,4 +161,3 @@ object GpuParquetScanBase {
     */
   }
 }
-

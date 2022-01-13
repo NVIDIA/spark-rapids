@@ -148,17 +148,6 @@ abstract class GpuWindowExpressionMetaBase(
           s"Found ${other.prettyName}")
     }
   }
-
-  /**
-   * Convert what this wraps to a GPU enabled version.
-   */
-    /*
-  override def convertToGpu(): GpuExpression = {
-    val Seq(left, right) = childExprs.map(_.convertToGpu())
-    GpuWindowExpression(left, right.asInstanceOf[GpuWindowSpecDefinition])
-  }
-
-     */
 }
 
 abstract class GpuSpecifiedWindowFrameMetaBase(
@@ -280,14 +269,6 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
       }
     }
   }
-
-  /*
-  override def convertToGpu(): GpuExpression = {
-    val Seq(left, right) = childExprs.map(_.convertToGpu())
-    GpuSpecifiedWindowFrame(windowFrame.frameType, left, right)
-  }
-
-   */
 }
 
 

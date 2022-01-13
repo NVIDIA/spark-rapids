@@ -104,7 +104,6 @@ object DateUtils {
     )
   }
 
-
   def specialDatesMicros: Map[String, Long] = {
     val today = currentDate()
     val now = instantToMicros(Instant.now())

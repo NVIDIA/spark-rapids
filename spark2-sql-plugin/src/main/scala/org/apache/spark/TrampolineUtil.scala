@@ -44,5 +44,4 @@ object TrampolineUtil {
   def getSimpleName(cls: Class[_]): String = {
     Utils.getSimpleName(cls)
   }
- 
 }

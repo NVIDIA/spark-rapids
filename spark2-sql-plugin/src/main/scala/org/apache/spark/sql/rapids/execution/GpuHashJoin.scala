@@ -143,4 +143,3 @@ object GpuHashJoin {
     case _ => false
   }
 }
-

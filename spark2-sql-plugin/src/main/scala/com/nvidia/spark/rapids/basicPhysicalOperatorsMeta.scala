@@ -25,26 +25,4 @@ class GpuProjectExecMeta(
     p: Option[RapidsMeta[_, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
     with Logging {
-      /*
-  override def convertToGpu(): GpuExec = {
-    // Force list to avoid recursive Java serialization of lazy list Seq implementation
-    val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
-    val gpuChild = childPlans.head.convertIfNeeded()
-    if (conf.isProjectAstEnabled) {
-      if (childExprs.forall(_.canThisBeAst)) {
-        return GpuProjectAstExec(gpuExprs, gpuChild)
-      }
-      // explain AST because this is optional and it is sometimes hard to debug
-      if (conf.shouldExplain) {
-        val explain = childExprs.map(_.explainAst(conf.shouldExplainAll))
-            .filter(_.nonEmpty)
-        if (explain.nonEmpty) {
-          logWarning(s"AST PROJECT\n$explain")
-        }
-      }
-    }
-    GpuProjectExec(gpuExprs, gpuChild)
-  }
-  */
 }
-

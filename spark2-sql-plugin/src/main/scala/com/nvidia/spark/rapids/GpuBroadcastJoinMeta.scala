@@ -32,5 +32,4 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
       case _ => buildSide.canThisBeReplaced
     }
   }
-
 }

@@ -37,5 +37,4 @@ class GpuExpandExecMeta(
     expand.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = gpuProjections.flatten ++ outputs
-
 }

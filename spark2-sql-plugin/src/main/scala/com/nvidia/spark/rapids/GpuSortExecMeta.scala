@@ -40,15 +40,4 @@ class GpuSortMeta(
   // depended on the next non-transparent plan. So, we need to trace back.
   override val availableRuntimeDataTransition: Boolean =
     childPlans.head.availableRuntimeDataTransition
-
-    /*
-  override def convertToGpu(): GpuExec = {
-    GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
-      sort.global,
-      childPlans.head.convertIfNeeded(),
-      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort
-    )(sort.sortOrder)
-  }
-  */
 }
-

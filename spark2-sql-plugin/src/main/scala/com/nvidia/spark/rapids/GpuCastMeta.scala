@@ -140,4 +140,3 @@ final class CastExprMeta[INPUT <: Cast](
     s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
   }
 }
-

@@ -46,4 +46,3 @@ abstract class GeneratorExprMeta[INPUT <: Generator](
   /* whether supporting outer generate or not */
   val supportOuter: Boolean = false
 }
-
