@@ -113,10 +113,8 @@ object GpuHashJoin extends Arm {
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
-      case LeftSemi | LeftAnti =>
-        unSupportNonEqualCondition()
       case FullOuter =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
         // FullOuter join cannot support with struct keys as two issues below
@@ -475,17 +473,26 @@ class ConditionalHashJoinIterator(
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
           val maps = joinType match {
-            case _: InnerLike => Table.mixedInnerJoinGatherMaps(
-              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
-            case LeftOuter => Table.mixedLeftJoinGatherMaps(
-              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case _: InnerLike =>
+              Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality)
+            case LeftOuter =>
+              Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality)
             case RightOuter =>
               // Reverse the output of the join, because we expect the right gather map to
               // always be on the right
               Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
                 compiledCondition, nullEquality).reverse
-            case FullOuter => Table.mixedFullJoinGatherMaps(
-              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case FullOuter =>
+              Table.mixedFullJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality)
+            case LeftSemi =>
+              Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality))
+            case LeftAnti =>
+              Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality))
             case _ =>
               throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
                   s" supported")
