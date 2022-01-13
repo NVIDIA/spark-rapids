@@ -1697,21 +1697,17 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
         conf=local_conf)
 
 #
-# For max value of (2147483647,-930759675) and (2147483647,None), GPU returns (2147483647,None), but CPU returns (2147483647,-930759675)
-# This should be a bug of CUDF, is checking with CUDF team: https://github.com/rapidsai/cudf/issues/8974#issuecomment-1006400752
-# Just add nullable = False to make cases passing.
-# TODO if above bug fixed, should remove nullable = False
+# test min max on single level structure
 #
-gens_for_max_min_test = [ByteGen(nullable = False), ShortGen(nullable = False),
-    IntegerGen(nullable = False), LongGen(nullable = False), FloatGen(nullable = False, no_nans = True),
-    DoubleGen(nullable = False, no_nans = True), StringGen(nullable = False), BooleanGen(nullable = False),
-    DateGen(nullable = False), TimestampGen(nullable = False),
-    DecimalGen(precision=12, scale=2, nullable = False),
-    DecimalGen(precision=36, scale=5, nullable = False),
+gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(no_nans = True), DoubleGen(no_nans = True),
+    string_gen, boolean_gen,
+    date_gen, timestamp_gen,
+    DecimalGen(precision=12, scale=2),
+    DecimalGen(precision=36, scale=5),
     null_gen]
-
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen',  gens_for_max_min_test, ids=idfn)
+@pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
 def test_min_max_for_single_level_struct(data_gen):
     df_gen = [
         ('a', StructGen([
