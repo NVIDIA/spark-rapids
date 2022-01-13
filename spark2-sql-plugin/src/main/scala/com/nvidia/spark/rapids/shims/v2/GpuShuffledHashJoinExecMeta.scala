@@ -26,7 +26,7 @@ class GpuShuffledHashJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
-  extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
+    extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =

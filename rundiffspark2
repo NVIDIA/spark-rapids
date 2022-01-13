@@ -26,7 +26,6 @@ sed -n  '/class GpuBroadcastMeta/,/override def convertToGpu/{/override def conv
 diff GpuBroadcastExchangeExecMeta_new.out GpuBroadcastExchangeExecMeta_old.out > GpuBroadcastExchangeExecMeta.newdiff
 diff -c spark2diffs/GpuBroadcastExchangeExecMeta.diff GpuBroadcastExchangeExecMeta.newdiff
 
-
 sed -n  '/abstract class UnixTimeExprMeta/,/sealed trait TimeParserPolicy/{/sealed trait TimeParserPolicy/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressionsMeta.scala > UnixTimeExprMeta_new.out
 sed -n  '/abstract class UnixTimeExprMeta/,/sealed trait TimeParserPolicy/{/sealed trait TimeParserPolicy/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > UnixTimeExprMeta_old.out
 diff UnixTimeExprMeta_new.out UnixTimeExprMeta_old.out > UnixTimeExprMeta.newdiff
@@ -74,7 +73,6 @@ sed -n  '/object GpuOrcFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/a
 diff  GpuOrcFileFormat_new.out GpuOrcFileFormat_old.out > GpuOrcFileFormat.newdiff
 diff -c spark2diffs/GpuOrcFileFormat.diff GpuOrcFileFormat.newdiff
 
-
 sed -n  '/class GpuSequenceMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala > GpuSequenceMeta_new.out
 sed -n  '/class GpuSequenceMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala > GpuSequenceMeta_old.out
 diff GpuSequenceMeta_new.out GpuSequenceMeta_old.out > GpuSequenceMeta.newdiff
@@ -104,7 +102,6 @@ sed -n  '/object GpuScalaUDF/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org
 sed -n  '/object GpuScalaUDF/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > GpuScalaUDF_old.out
 diff  -c GpuScalaUDF_new.out GpuScalaUDF_old.out > GpuScalaUDF.newdiff
 
-
 sed -n  '/object GpuDecimalMultiply/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > GpuDecimalMultiply_new.out
 sed -n  '/object GpuDecimalMultiply/,/def checkForOverflow/{/def checkForOverflow/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > GpuDecimalMultiply_old.out
 diff  GpuDecimalMultiply_new.out GpuDecimalMultiply_old.out > GpuDecimalMultiply.newdiff
@@ -127,28 +124,80 @@ sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/
 sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > getSimpleName_old.out
 diff  -c getSimpleName_new.out getSimpleName_old.out 
 
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexParser.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexParser.scala > RegexParser.newdiff
+diff -c spark2diffs/RegexParser.diff RegexParser.newdiff
 
-spark2-sql-plugin/src/main/scala/com
-spark2-sql-plugin/src/main/scala/com/nvidia
-spark2-sql-plugin/src/main/scala/com/nvidia/spark
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexParser.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala > TypeChecks.newdiff
+diff -c spark2diffs/TypeChecks.diff  TypeChecks.newdiff
+
+diff spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala > DataTypeUtils.newdiff
+diff -c spark2diffs/DataTypeUtils.diff DataTypeUtils.newdiff
+
+#TODO
 spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/literalsMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregateMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExecMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ExplainPlan.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperatorsMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExecMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/InputFileBlockRule.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/gpuPandasMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/GpuShuffledHashJoinExecMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala
+## TODO
+
+sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > GpuOrcScanBase_new.out
+sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}' ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > GpuOrcScanBase_old.out
+diff  GpuOrcScanBase_new.out GpuOrcScanBase_old.out > GpuOrcScanBase.newdiff
+diff -c spark2diffs/GpuOrcScanBase.diff GpuOrcScanBase.newdiff
+
+sed -n  '/class LiteralExprMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/literalsMeta.scala > LiteralExprMeta_new.out
+sed -n  '/class LiteralExprMeta/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/literals.scala > LiteralExprMeta_old.out
+diff  LiteralExprMeta_new.out LiteralExprMeta_old.out > LiteralExprMeta.newdiff
+diff -c spark2diffs/LiteralExprMeta.diff LiteralExprMeta.newdiff
+
+# 2.x doesn't have a base aggregate class so this is much different, check the revision for now
+CUR_COMMIT=`git log -1 sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala | grep commit | cut -d ' ' -f 2`
+echo $CUR_COMMIT
+if [ "$CUR_COMMIT" != "b17c685788c0a62763aa8101709e241877f02025" ]; then
+    echo "sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala has different commit - check manually"
+fi
+
+sed -n  '/class GpuGenerateExecSparkPlanMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExecMeta.scala > GpuGenerateExecSparkPlanMeta_new.out
+sed -n  '/class GpuGenerateExecSparkPlanMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExec.scala > GpuGenerateExecSparkPlanMeta_old.out
+diff GpuGenerateExecSparkPlanMeta_new.out GpuGenerateExecSparkPlanMeta_old.out > GpuGenerateExecSparkPlanMeta.newdiff
+diff -c spark2diffs/GpuGenerateExecSparkPlanMeta.diff  GpuGenerateExecSparkPlanMeta.newdiff
+
+sed -n  '/abstract class GeneratorExprMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExecMeta.scala > GeneratorExprMeta_new.out
+sed -n  '/abstract class GeneratorExprMeta/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExec.scala > GeneratorExprMeta_old.out
+diff GeneratorExprMeta_new.out GeneratorExprMeta_old.out > GeneratorExprMeta.newdiff
+diff -c spark2diffs/GeneratorExprMeta.diff  GeneratorExprMeta.newdiff
+
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ExplainPlan.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/ExplainPlan.scala > ExplainPlan.newdiff
+diff spark2diffs/ExplainPlan.diff ExplainPlan.newdiff
+
+sed -n  '/class GpuProjectExecMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperatorsMeta.scala > GpuProjectExecMeta_new.out
+sed -n  '/class GpuProjectExecMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperators.scala > GpuProjectExecMeta_old.out
+diff GpuProjectExecMeta_new.out GpuProjectExecMeta_old.out > GpuProjectExecMeta.newdiff
+diff -c spark2diffs/GpuProjectExecMeta.diff  GpuProjectExecMeta.newdiff
+
+sed -n  '/class GpuSortMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExecMeta.scala > GpuSortMeta_new.out
+sed -n  '/class GpuSortMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExec.scala > GpuSortMeta_old.out
+diff GpuSortMeta_new.out GpuSortMeta_old.out > GpuSortMeta.newdiff
+diff -c spark2diffs/GpuSortMeta.diff  GpuSortMeta.newdiff
+
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/InputFileBlockRule.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/InputFileBlockRule.scala > InputFileBlockRule.newdiff
+diff -c spark2diffs/InputFileBlockRule.diff InputFileBlockRule.newdiff
+
+sed -n  '/abstract class GpuWindowInPandasExecMetaBase/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/gpuPandasMeta.scala > GpuWindowInPandasExecMetaBase_new.out
+sed -n  '/abstract class GpuWindowInPandasExecMetaBase/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/python/GpuWindowInPandasExecBase.scala > GpuWindowInPandasExecMetaBase_old.out
+diff GpuWindowInPandasExecMetaBase_new.out GpuWindowInPandasExecMetaBase_old.out > GpuWindowInPandasExecMetaBase.newdiff
+diff -c spark2diffs/GpuWindowInPandasExecMetaBase.diff  GpuWindowInPandasExecMetaBase.newdiff
+
+sed -n  '/class GpuAggregateInPandasExecMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/gpuPandasMeta.scala > GpuAggregateInPandasExecMeta_new.out
+sed -n  '/class GpuAggregateInPandasExecMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/python/GpuAggregateInPandasExec.scala > GpuAggregateInPandasExecMeta_old.out
+diff GpuAggregateInPandasExecMeta_new.out GpuAggregateInPandasExecMeta_old.out > GpuAggregateInPandasExecMeta.newdiff
+diff -c spark2diffs/GpuAggregateInPandasExecMeta.diff  GpuAggregateInPandasExecMeta.newdiff
+
+sed -n  '/class GpuShuffledHashJoinMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/GpuShuffledHashJoinExecMeta.scala > GpuShuffledHashJoinMeta_new.out
+sed -n  '/class GpuShuffledHashJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuShuffledHashJoinExec.scala > GpuShuffledHashJoinMeta_old.out
+diff GpuShuffledHashJoinMeta_new.out GpuShuffledHashJoinMeta_old.out > GpuShuffledHashJoinMeta.newdiff
+diff -c spark2diffs/GpuShuffledHashJoinMeta.diff  GpuShuffledHashJoinMeta.newdiff
+
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala ./sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala > TreeNode.newdiff
+diff -c spark2diffs/TreeNode.diff TreeNode.newdiff
+
 spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/GpuSortMergeJoinMeta.scala
 spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/GpuJoinUtils.scala
 spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/TypeSigUtil.scala
