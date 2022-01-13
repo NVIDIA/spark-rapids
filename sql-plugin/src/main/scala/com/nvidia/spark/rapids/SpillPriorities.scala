@@ -63,7 +63,7 @@ object SpillPriorities {
    * Priority offset for host memory buffers allocated from the pinned memory pool. They are at
    * lower priorities, so will be spilled first, making more pinned memory available.
    */
-  val HOST_MEMORY_BUFFER_PINNED_OFFSET: Long = 0
+  val HOST_MEMORY_BUFFER_PINNED_OFFSET: Long = -100
 
   /**
    * Priority offset for host memory buffers allocated from the internal pageable memory pool. They
@@ -71,11 +71,11 @@ object SpillPriorities {
    * but at lower priorities than directly allocated buffers, thus freeing up the internal pageable
    * memory pool.
    */
-  val HOST_MEMORY_BUFFER_PAGEABLE_OFFSET: Long = 100
+  val HOST_MEMORY_BUFFER_PAGEABLE_OFFSET: Long = 0
 
   /**
    * Priority offset for host memory buffers directly allocated from the OS. They are at higher
    * priorities, thus freeing up memory pools first.
    */
-  val HOST_MEMORY_BUFFER_DIRECT_OFFSET: Long = 200
+  val HOST_MEMORY_BUFFER_DIRECT_OFFSET: Long = 100
 }

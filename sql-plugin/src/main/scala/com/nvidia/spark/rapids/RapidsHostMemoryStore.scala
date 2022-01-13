@@ -25,12 +25,13 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
  * A buffer store using host memory.
- * @param catalog buffer catalog to use with this store
+ * @param maxSize maximum size in bytes for all buffers in this store
  * @param pageableMemoryPoolSize maximum size in bytes for the internal pageable memory pool
+ * @param catalog buffer catalog to use with this store
  */
 class RapidsHostMemoryStore(
+    maxSize: Long,
     pageableMemoryPoolSize: Long,
-    pinnedMemoryPoolSize: Long,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
     deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
     extends RapidsBufferStore(StorageTier.HOST, catalog) {
@@ -46,8 +47,7 @@ class RapidsHostMemoryStore(
   // Returns an allocated host buffer and its allocation mode
   private def allocateHostBuffer(size: Long): (HostMemoryBuffer, AllocationMode) = {
     // spill to keep within the targeted size
-    val targetSize = math.max(pageableMemoryPoolSize + pinnedMemoryPoolSize - size, 0)
-    val amountSpilled = synchronousSpill(targetSize)
+    val amountSpilled = synchronousSpill(math.max(maxSize - size, 0))
     if (amountSpilled != 0) {
       logInfo(s"Spilled $amountSpilled bytes from the host memory store")
       TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
@@ -63,7 +63,7 @@ class RapidsHostMemoryStore(
       if (size > pageableMemoryPoolSize) {
         if (!haveLoggedMaxExceeded) {
           logWarning(s"Exceeding host spill max of $pageableMemoryPoolSize bytes to accommodate " +
-              s"a buffer of $size bytes. Consider increasing host spill store size.")
+              s"a buffer of $size bytes. Consider increasing pageable memory store size.")
           haveLoggedMaxExceeded = true
         }
         return (HostMemoryBuffer.allocate(size, false), Direct)
@@ -106,7 +106,7 @@ class RapidsHostMemoryStore(
     }
   }
 
-  def numBytesFree: Long = pageableMemoryPoolSize - currentSize
+  def numBytesFree: Long = maxSize - currentSize
 
   override def close(): Unit = {
     super.close()
