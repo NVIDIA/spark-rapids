@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,19 +73,9 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
     }
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        if (DecimalType.is32BitDecimalType(dt)) {
-          withResource(Scalar.fromDecimal(-scale, 0)) { scalar =>
-            scalar.sub(input.getBase)
-          }
-        } else if (DecimalType.is64BitDecimalType(dt)) {
-          withResource(Scalar.fromDecimal(-scale, 0L)) { scalar =>
-            scalar.sub(input.getBase)
-          }
-        } else { // Decimal-128
-          withResource(Scalar.fromDecimal(-scale, BigInteger.ZERO)) { scalar =>
-            scalar.sub(input.getBase)
-          }
+        val zeroLit = Decimal(0L, dt.precision, dt.scale)
+        withResource(GpuScalar.from(zeroLit, dt)) { scalar =>
+          scalar.sub(input.getBase)
         }
       case _ =>
         withResource(Scalar.fromByte(0.toByte)) { scalar =>
