@@ -87,6 +87,10 @@ then
     PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks9.jar
     PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks9.jar
     PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks9.jar
+    ORC_CORE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.12.jar
+    ORC_SHIM_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.12.jar
+    ORC_MAPREDUCE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.12.jar
+    PROTOBUF_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 else
     PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks6.jar
     PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks6.jar
@@ -360,6 +364,55 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$HADOOPMAPRED \
    -DgroupId=org.apache.hadoop \
    -DartifactId=hadoop-mapreduce-client \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORC_CORE_JAR \
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-core \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORC_SHIM_JAR \
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-shims \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORC_MAPREDUCE_JAR \
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-mapreduce \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$HIVESTORAGE \
+   -DgroupId=org.apache.hive \
+   -DartifactId=hive-storage-api \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$PROTOBUF_JAR \
+   -DgroupId=com.google.protobuf \
+   -DartifactId=protobuf-java \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+GUAVA_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.google.guava--guava--com.google.guava__guava__15.0.jar
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$GUAVA_JAR \
+   -DgroupId=com.google.guava \
+   -DartifactId=guava \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 

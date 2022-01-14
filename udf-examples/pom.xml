@@ -142,6 +142,12 @@
                 <version>${spark.version}</version>
                 <scope>provided</scope>
            </dependency>
+		     <dependency>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-storage-api</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
         </dependencies>
     </profile>
     <profile>
