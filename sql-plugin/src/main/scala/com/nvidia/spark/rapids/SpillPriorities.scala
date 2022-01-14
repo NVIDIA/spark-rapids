@@ -80,19 +80,19 @@ object SpillPriorities {
   val HOST_MEMORY_BUFFER_DIRECT_OFFSET: Long = 100
 
   /**
-   * Calculate the host memory buffer spill priority based on an offset, clamping it to avoid
-   * wraparound.
+   * Calculate a new priority based on an offset, clamping it to avoid wraparound.
    *
-   * @param originalSpillPriority the original spill priority
-   * @param offset the desired offset
-   * @return the offset spill priority, with clamping if needed
+   * @param originalPriority the original priority
+   * @param offset           the desired offset
+   * @return the resulting priority, with clamping if needed
    */
-  def getHostMemoryBufferSpillPriority(originalSpillPriority: Long, offset: Long): Long = {
-    if (offset < 0 && originalSpillPriority < Long.MinValue - offset ||
-        offset > 0 && originalSpillPriority > Long.MaxValue - offset) {
-      originalSpillPriority
+  def applyPriorityOffset(originalPriority: Long, offset: Long): Long = {
+    if (offset < 0 && originalPriority < Long.MinValue - offset) {
+      Long.MinValue
+    } else if (offset > 0 && originalPriority > Long.MaxValue - offset) {
+      Long.MaxValue
     } else {
-      originalSpillPriority + offset
+      originalPriority + offset
     }
   }
 }
