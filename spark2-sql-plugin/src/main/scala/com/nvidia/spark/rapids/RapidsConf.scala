@@ -304,6 +304,12 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
+  val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
+    .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
+      "Use 0 to disable the pool.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.GiB.toBytes(1))
+
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -355,10 +361,11 @@ object RapidsConf {
       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
-    .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
-        "before spilling to local disk")
+    .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
+        "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
+        "memory pools.")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
+    .createWithDefault(-1)
 
   val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
     .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
@@ -506,15 +513,15 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SQL_MODE = conf("spark.rapids.sql.mode")
-    .doc("Set the mode for the plugin. The supported modes are explainOnly and executeOnGPU. " +
-         "This config can not be changed at runtime, you must restart the application for it " +
-         "to take affect. The default mode is executeOnGPU, which means the sql plugin will " +
-         "convert the Spark operations and execute them on the GPU when possible. The " +
-         "explainOnly mode allows running queries on the CPU and the plugin will evaluate " +
-         "the queries as if it was going to run on the GPU. The explanations of what would " +
-         "have run on the GPU and why are output in log messages. When using explainOnly " +
-         "mode, the default explain output is ALL, this can be changed by setting " +
-         "spark.rapids.sql.explain. Seeing that config for more details.")
+    .doc("Set the mode for the Rapids Accelerator. The supported modes are explainOnly and " +
+         "executeOnGPU. This config can not be changed at runtime, you must restart the " +
+         "application for it to take affect. The default mode is executeOnGPU, which means " +
+         "the RAPIDS Accelerator plugin convert the Spark operations and execute them on the " +
+         "GPU when possible. The explainOnly mode allows running queries on the CPU and the " +
+         "RAPIDS Accelerator will evaluate the queries as if it was going to run on the GPU. " +
+         "The explanations of what would have run on the GPU and why are output in log " +
+         "messages. When using explainOnly mode, the default explain output is ALL, this can " +
+         "be changed by setting spark.rapids.sql.explain. See that config for more details.")
     .stringConf
     .transform(_.toLowerCase(java.util.Locale.ROOT))
     .checkValues(Set("explainonly", "executeongpu"))
@@ -1472,6 +1479,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
+
+  lazy val pageablePoolSize: Long = get(PAGEABLE_POOL_SIZE)
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
