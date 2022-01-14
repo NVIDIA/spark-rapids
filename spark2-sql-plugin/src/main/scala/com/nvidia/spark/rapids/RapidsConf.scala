@@ -308,7 +308,7 @@ object RapidsConf {
     .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.GiB.toBytes(1))
+    .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
 
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
