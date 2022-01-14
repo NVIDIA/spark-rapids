@@ -843,7 +843,7 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
-      cudfRead = TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN + TypeSig.STRING,
+      cudfRead = TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.DATE,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))

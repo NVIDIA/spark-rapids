@@ -17552,7 +17552,7 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td>S</td>
 <td><b>NS</b></td>

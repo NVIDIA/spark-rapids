@@ -89,3 +89,23 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_block_start()',
                         'input_file_block_length()'),
             conf=updated_conf)
+
+json_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
+        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
+@pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
+    gen = StructGen([('a', DateGen())], nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write\
+                    .option('dateFormat', date_format)\
+                    .json(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read\
+                    .schema(schema)\
+                    .option('dateFormat', date_format)\
+                    .json(data_path),
+            conf=updated_conf)

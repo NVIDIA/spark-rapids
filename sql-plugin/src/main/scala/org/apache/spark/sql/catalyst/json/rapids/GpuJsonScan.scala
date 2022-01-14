@@ -35,12 +35,27 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{StringType, StructType}
+import org.apache.spark.sql.types.{DateType, StringType, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration;
 
 object GpuJsonScan {
+
+  private val supportedDateFormats = Set(
+    "yyyy-MM-dd",
+    "yyyy/MM/dd",
+    "yyyy-MM",
+    "yyyy/MM",
+    "MM-yyyy",
+    "MM/yyyy",
+    "MM-dd-yyyy",
+    "MM/dd/yyyy"
+    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
+    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
+    // and would need to coordinate with the timestamp format too, because both cannot
+    // coexist
+  )
 
   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
     val scan = scanMeta.wrapped
@@ -113,6 +128,14 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
     }
 
+    if (readSchema.map(_.dataType).contains(DateType)) {
+      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
+        if (!supportedDateFormats.contains(dateFormat)) {
+          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
+        }
+      }
+    }
+
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
       val f = dataSchema(corruptFieldIndex)
       if (f.dataType != StringType || !f.nullable) {
@@ -128,7 +151,7 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record")
     }
 
-    // add more checks for dateFormat and timestampFormat
+    // add more checks for timestampFormat
 
     FileFormatChecks.tag(meta, readSchema, JsonFormatType, ReadFileOp)
   }
