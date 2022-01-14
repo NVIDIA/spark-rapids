@@ -90,8 +90,9 @@ the driver logs with `spark.rapids.sql.explain=all`.
 2.  Enable optional RAPIDS Accelerator related parameters based on your setup.
 
    Enabling optional parameters may allow more operations to run on the GPU but please understand
-   the meaning and risk of above parameters before enabling it. Please refer to [configs
-   doc](../configs.md) for details of RAPIDS Accelerator parameters.
+   the meaning and risk of above parameters before enabling it. Please refer to the
+   [configuration documentation](../configs.md) for details of RAPIDS Accelerator
+   parameters.
 
    For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
    UDFs, you can set the following parameters:
