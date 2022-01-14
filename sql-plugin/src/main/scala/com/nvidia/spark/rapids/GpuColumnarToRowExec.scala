@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,7 +108,17 @@ class AcceleratedColumnarToRowIterator(
     if (cb.numRows() > 0) {
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
         withResource(rearrangeRows(cb)) { table =>
-          withResource(table.convertToRows()) { rowsCvList =>
+          // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means at
+          // most 184 double/long values. Spark by default limits codegen to 100 fields
+          // "spark.sql.codegen.maxFields". So, we are going to be cautious and start with that
+          // until we have tested it more. We branching over the size of the output to know which
+          // kernel to call. If schema.length < 100 we call the fixed-width optimized version,
+          // otherwise the generic one
+          withResource(if (schema.length < 100) {
+            table.convertToRowsFixedWidthOptimized()
+          } else {
+            table.convertToRows()
+          }) { rowsCvList =>
             rowsCvList.foreach { rowsCv =>
               pendingCvs += rowsCv.copyToHost()
             }
@@ -342,15 +352,16 @@ object GpuColumnarToRowExecParent {
     if (CudfRowTransitions.areAllSupported(output) &&
         // For a small number of columns it is still best to do it the original way
         output.length > 4 &&
-        // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
-        // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
-        // So, we are going to be cautious and start with that until we have tested it more.
-        output.length < 100) {
+        // We can support upto 2^31 bytes per row. That is ~250M columns of 64-bit fixed-width data.
+        // This number includes the 1-bit validity per column, but doesn't include padding.
+        // We are being conservative by only allowing 100M columns until we feel the need to
+        // increase this number
+        output.length <= 100000000) {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
-        new AcceleratedColumnarToRowIterator(output,
-          batches, numInputBatches, numOutputRows, opTime, streamTime).map(toUnsafe)
+        new AcceleratedColumnarToRowIterator(output, batches, numInputBatches, numOutputRows,
+          opTime, streamTime).map(toUnsafe)
       }
     } else {
       (batches: Iterator[ColumnarBatch]) => {
