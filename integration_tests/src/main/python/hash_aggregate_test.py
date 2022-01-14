@@ -536,7 +536,7 @@ def test_hash_pivot_reduction_nan_fallback(data_gen):
 @pytest.mark.xfail(reason="Disabling below test temporarily until we have a fix for this issue "
                           "https://github.com/NVIDIA/spark-rapids/issues/4514")
 @approximate_float
-ignore_order(local=True)
+@ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
