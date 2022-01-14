@@ -514,7 +514,7 @@ object RapidsConf {
          "RAPIDS Accelerator will evaluate the queries as if it was going to run on the GPU. " +
          "The explanations of what would have run on the GPU and why are output in log " +
          "messages. When using explainOnly mode, the default explain output is ALL, this can " +
-         "be changed by setting spark.rapids.sql.explain. Seeing that config for more details.")
+         "be changed by setting spark.rapids.sql.explain. See that config for more details.")
     .stringConf
     .transform(_.toLowerCase(java.util.Locale.ROOT))
     .checkValues(Set("explainonly", "executeongpu"))
