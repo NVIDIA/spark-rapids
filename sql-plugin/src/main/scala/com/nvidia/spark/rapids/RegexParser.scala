@@ -441,6 +441,7 @@ class CudfRegexTranspiler(replace: Boolean) {
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
         case '$' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4533
           throw new RegexUnsupportedException("line anchor $ is not supported")
         case _ =>
           regex
@@ -480,9 +481,6 @@ class CudfRegexTranspiler(replace: Boolean) {
         case 'Z' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4532
           throw new RegexUnsupportedException("string anchor \\Z is not supported")
-        case '$' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4533
-          throw new RegexUnsupportedException("line anchor $ is not supported")
         case _ =>
           regex
       }

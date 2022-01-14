@@ -173,6 +173,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("match literal $ - find") {
+    assertCpuGpuMatchesRegexpFind(
+      Seq("\\$", "\\$[0-9]"),
+      Seq("", "$", "$9.99"))
+  }
+
+  test("match literal $ - replace") {
+    assertCpuGpuMatchesRegexpReplace(
+      Seq("\\$", "\\$[0-9]"),
+      Seq("", "$", "$9.99"))
+  }
+
   test("dot matches CR on GPU but not on CPU") {
     // see https://github.com/rapidsai/cudf/issues/9619
     val pattern = "1."
