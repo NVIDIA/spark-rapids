@@ -533,6 +533,8 @@ def test_hash_pivot_reduction_nan_fallback(data_gen):
         "PivotFirst",
         conf=_nans_float_conf)
 
+@pytest.mark.xfail(reason="Disabling below test temporarily until we have a fix for this issue "
+                          "https://github.com/NVIDIA/spark-rapids/issues/4514")
 @approximate_float
 @ignore_order(local=True)
 @incompat
