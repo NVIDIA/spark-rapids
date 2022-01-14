@@ -83,3 +83,26 @@ class GpuAggregateInPandasExecMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = groupingNamedExprs ++ udfs ++ resultNamedExprs
 }
+
+class GpuFlatMapGroupsInPandasExecMeta(
+    flatPandas: FlatMapGroupsInPandasExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _]],
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[FlatMapGroupsInPandasExec](flatPandas, conf, parent, rule) {
+
+  override def replaceMessage: String = "partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  private val groupingAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.groupingAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
+    flatPandas.func.asInstanceOf[PythonUDF], conf, Some(this))
+
+  private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = groupingAttrs ++ resultAttrs :+ udf
+}

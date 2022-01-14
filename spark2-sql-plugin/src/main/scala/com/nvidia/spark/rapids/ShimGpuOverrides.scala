@@ -168,22 +168,7 @@ object ShimGpuOverrides extends Logging {
         " Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled.",
       ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (flatPy, conf, p, r) => new SparkPlanMeta[FlatMapGroupsInPandasExec](flatPy, conf, p, r) {
-        override def replaceMessage: String = "partially run on GPU"
-        override def noReplacementPossibleMessage(reasons: String): String =
-          s"cannot run even partially on the GPU because $reasons"
-
-        private val groupingAttrs: Seq[BaseExprMeta[Attribute]] =
-          flatPy.groupingAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-        private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
-          flatPy.func.asInstanceOf[PythonUDF], conf, Some(this))
-
-        private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-          flatPy.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-        override val childExprs: Seq[BaseExprMeta[_]] = groupingAttrs ++ resultAttrs :+ udf
-      }),
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
     GpuOverrides.exec[WindowInPandasExec](
       "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
         " the Java process and the Python process. It also supports scheduling GPU resources" +
