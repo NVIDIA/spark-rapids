@@ -46,7 +46,20 @@ object ConcatAndConsumeAll {
    * @return a single batch with all of them concated together.
    */
   def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch],
-      schema: StructType): ColumnarBatch = {
+      schema: StructType): ColumnarBatch =
+    buildNonEmptyBatchFromTypes(
+      arrayOfBatches, GpuColumnVector.extractTypes(schema))
+
+  /**
+   * Build a single batch from the batches collected so far. If array is empty this will likely
+   * blow up.
+   * @param arrayOfBatches the batches to concat. This will be consumed and you do not need to
+   *                       close any of the batches after this is called.
+   * @param dataTypes the output types.
+   * @return a single batch with all of them concated together.
+   */
+  def buildNonEmptyBatchFromTypes(arrayOfBatches: Array[ColumnarBatch],
+                                  dataTypes: Array[DataType]): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
     } else {
@@ -54,7 +67,7 @@ object ConcatAndConsumeAll {
       try {
         val combined = Table.concatenate(tables: _*)
         try {
-          GpuColumnVector.from(combined, GpuColumnVector.extractTypes(schema))
+          GpuColumnVector.from(combined, dataTypes)
         } finally {
           combined.close()
         }
