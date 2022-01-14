@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.OrcOutputStripe
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hive.common.io.DiskRangeList
 import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation}
@@ -28,6 +29,22 @@ import org.apache.orc.impl.writer.StreamOptions
 
 // 320+ ORC shims
 object OrcShims {
+
+  // the ORC Reader in non-CDH Spark is closeable
+  def withReader[T <: Reader, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
+  }
+
+  // the ORC Reader in non-CDH Spark is closeable
+  def closeReader(reader: Reader): Unit = {
+    if(reader != null) {
+      reader.close()
+    }
+  }
 
   // read data to buffer
   def readFileData(dataReader: DataReader, inputDataRanges: DiskRangeList): DiskRangeList = {

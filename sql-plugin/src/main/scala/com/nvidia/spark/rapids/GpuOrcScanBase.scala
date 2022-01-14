@@ -744,14 +744,15 @@ private object OrcTools extends Arm {
 
       val typeCount = org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size
       //noinspection ScalaDeprecation
-      RecordReaderUtils.createDefaultDataReader(
+      val reader = RecordReaderUtils.createDefaultDataReader(
         OrcShims.newDataReaderPropertiesBuilder(compressionSize, compressionKind, typeCount)
           .withFileSystem(fs)
           .withPath(filePath)
-          .withFile(file) // explicitly specify the FSDataInputStream
           .withZeroCopy(zeroCopy)
           .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
           .build())
+      reader.open() // 311cdh needs to initialize the internal FSDataInputStream file variable.
+      reader
     }
   }
 
@@ -784,8 +785,8 @@ private case class GpuOrcFileFilterHandler(
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 
     // After getting the necessary information from ORC reader, we must close the ORC reader
-    withResource(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
-      val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
+    OrcShims.withReader(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
+    val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
         readDataSchema, orcReader)
       if (resultedColPruneInfo.isEmpty) {
         // Be careful when the OrcPartitionReaderContext is null, we should change
@@ -883,7 +884,7 @@ private case class GpuOrcFileFilterHandler(
                 if (matchedOrcFields.size > 1) {
                   // Need to fail if there is ambiguity, i.e. more than one field is matched.
                   val matchedOrcFieldsString = matchedOrcFields.mkString("[", ", ", "]")
-                  reader.close()
+                  OrcShims.closeReader(reader)
                   throw new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """
                     + s"$matchedOrcFieldsString in case-insensitive mode")
                 } else {

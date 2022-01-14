@@ -25,7 +25,7 @@ import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 
 // [301, 320) ORC shims
-object OrcShims {
+trait OrcShims301until320Base {
 
   // read data to buffer
   def readFileData(dataReader: DataReader, inputDataRanges: DiskRangeList): DiskRangeList = {
