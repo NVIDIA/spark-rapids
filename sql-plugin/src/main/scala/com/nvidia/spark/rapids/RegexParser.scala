@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -265,8 +265,8 @@ class RegexParser(pattern: String) {
         throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
         ch match {
-          case 'A' | 'Z' =>
-            // BOL / EOL anchors
+          case 'A' | 'Z' | 'z' =>
+            // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
           case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
@@ -456,20 +456,46 @@ class CudfRegexTranspiler(replace: Boolean) {
       }
 
       case RegexOctalChar(_) =>
-        // cuDF produced different results compared to Spark in some cases
-        // example: "a\141|.$"
+        // see https://github.com/NVIDIA/spark-rapids/issues/4288
         throw new RegexUnsupportedException(
           s"cuDF does not support octal digits consistently with Spark")
 
       case RegexHexDigit(_) =>
-        regex
+        // see https://github.com/NVIDIA/spark-rapids/issues/4486
+        throw new RegexUnsupportedException(
+          s"cuDF does not support hex digits consistently with Spark")
 
       case RegexEscaped(ch) => ch match {
+        case 'D' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-digit class \\D is not supported")
+        case 'W' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-word class \\W is not supported")
         case 'b' | 'B' =>
           // example: "a\Bb"
           // this needs further analysis to determine why words boundaries behave
           // differently between Java and cuDF
           throw new RegexUnsupportedException("word boundaries are not supported")
+        case 'z' =>
+          if (replace) {
+            throw new RegexUnsupportedException("string anchor \\z not supported in replace mode")
+          }
+          // cuDF does not support "\z" but supports "$", which is equivalent
+          RegexChar('$')
+        case 'Z' =>
+          if (replace) {
+            throw new RegexUnsupportedException("string anchor \\Z not supported in replace mode")
+          }
+          // We transpile "\\Z" to "(?:[\r\n]?$)" because of the different meanings of "\\Z"
+          // between Java and cuDF:
+          // Java: The end of the input but for the final terminator, if any
+          // cuDF: Matches at the end of the string
+          RegexGroup(capture = false, RegexSequence(
+            ListBuffer(RegexRepetition(
+              RegexCharacterClass(negated = false,
+                ListBuffer(RegexChar('\r'), RegexChar('\n'))), SimpleQuantifier('?')),
+            RegexChar('$'))))
         case _ =>
           regex
       }
@@ -571,10 +597,11 @@ class CudfRegexTranspiler(replace: Boolean) {
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
           // cuDF: XXXX] b[
+          // see https://github.com/NVIDIA/spark-rapids/issues/4468
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(_), _) =>
+        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'D' =>
           // example: "\B?"
           throw new RegexUnsupportedException(nothingToRepeat)
 

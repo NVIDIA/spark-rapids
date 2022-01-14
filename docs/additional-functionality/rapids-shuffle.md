@@ -290,15 +290,10 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.0.1         | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
     | 3.0.2         | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
     | 3.0.3         | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
-    | 3.0.4         | com.nvidia.spark.rapids.spark304.RapidsShuffleManager    |
     | 3.1.1         | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
     | 3.1.1 CDH     | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
     | 3.1.2         | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
-    | 3.1.3         | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
     | 3.2.0         | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
-    | 3.2.1         | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
-    | 3.2.2         | com.nvidia.spark.rapids.spark322.RapidsShuffleManager    |
-    | 3.3.0         | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
     | Databricks 7.3| com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
     | Databricks 9.1| com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
 

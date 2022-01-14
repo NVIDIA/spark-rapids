@@ -42,4 +42,5 @@ class Spark312dbShims extends Spark31XdbShims with Spark30Xuntil33XShims {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 }
