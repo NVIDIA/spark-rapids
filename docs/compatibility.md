@@ -470,6 +470,8 @@ Here are some examples of regular expression patterns that are not supported on 
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Word and non-word boundaries, `\b` and `\B`
+- Non-digit character class `\D`
+- Non-word character class `\W`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 

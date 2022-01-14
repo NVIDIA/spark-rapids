@@ -466,6 +466,12 @@ class CudfRegexTranspiler(replace: Boolean) {
           s"cuDF does not support hex digits consistently with Spark")
 
       case RegexEscaped(ch) => ch match {
+        case 'D' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-digit class \\D is not supported")
+        case 'W' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-word class \\W is not supported")
         case 'b' | 'B' =>
           // example: "a\Bb"
           // this needs further analysis to determine why words boundaries behave
