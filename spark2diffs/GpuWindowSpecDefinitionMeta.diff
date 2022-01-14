@@ -1,0 +1,21 @@
+4c4
+<     parent: Option[RapidsMeta[_,_]],
+---
+>     parent: Option[RapidsMeta[_,_,_]],
+9c9
+<     windowSpec.partitionSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+---
+>     windowSpec.partitionSpec.map(wrapExpr(_, conf, Some(this)))
+11c11
+<     windowSpec.orderSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+---
+>     windowSpec.orderSpec.map(wrapExpr(_, conf, Some(this)))
+13c13
+<     GpuOverrides.wrapExpr(windowSpec.frameSpecification, conf, Some(this))
+---
+>     wrapExpr(windowSpec.frameSpecification, conf, Some(this))
+21a22,25
+> 
+>   /**
+>    * Convert what this wraps to a GPU enabled version.
+>    */

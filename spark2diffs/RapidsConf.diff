@@ -1,0 +1,29 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+355c355
+<       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
+---
+>       .createWithDefault(ByteUnit.MiB.toBytes(640))
+361c361
+<     .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
+---
+>     .createWithDefault(ByteUnit.GiB.toBytes(1))
+386c386
+<     .createWithDefault(ByteUnit.MiB.toBytes(8).toLong)
+---
+>     .createWithDefault(ByteUnit.MiB.toBytes(8))
+1362c1362
+<         |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
+---
+>         |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
+1417a1418,1421
+>       printToggleHeader("Scans\n")
+>     }
+>     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+>     if (asTable) {
+1424c1428
+<     // com.nvidia.spark.rapids.python.PythonConfEntries.init()
+---
+>     com.nvidia.spark.rapids.python.PythonConfEntries.init()
