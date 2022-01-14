@@ -56,11 +56,10 @@ existing logs and do not need a GPU cluster to run the tools.
 
 ## 2. Get the Explain Output
 
-This allows running queries on the CPU and the plugin will evaluate the queries as if it was
+This allows running queries on the CPU and the RAPIDS Accelerator will evaluate the queries as if it was
 going to run on the GPU and tell you what would and wouldn't have been run on the GPU.
-There are two ways to run this, one is running with the plugin set to explain only mode, this
-is only supported in Spark 3.X and the other is to modify your existing Spark application
-code to call a function directly.
+There are two ways to run this, one is running with the RAPIDS Accelerator set to explain only mode and
+the other is to modify your existing Spark application code to call a function directly.
 
 Please note that if using adaptive execution in Spark the explain output may not be perfect
 as the plan could have changed along the way in a way that we wouldn't see by looking at just
@@ -74,9 +73,9 @@ may be slightly different if you go up to a newer version of Spark.
 - A Spark 3.x CPU cluster
 - The `rapids-4-spark` and `cudf` [jars](../download.md)
 
-#### Usage
+### Using the Configuration Flag for Explain Only Mode
 
-Starting with version 22.02 of the RAPIDS Accelerator, the plugin can be run in explain only mode.
+Starting with version 22.02, the RAPIDS Accelerator can be run in explain only mode.
 This mode allows you to run on a CPU cluster and can help us understand the potential GPU plan and
 if there are any unsupported features. Basically it will log the output which is the same as
 the driver logs with `spark.rapids.sql.explain=all`.
@@ -93,8 +92,8 @@ the driver logs with `spark.rapids.sql.explain=all`.
 2.  Enable optional RAPIDS Accelerator related parameters based on your setup.
 
    Enabling optional parameters may allow more operations to run on the GPU but please understand
-   the meaning and risk of above parameters before enabling it. Please refer to [configs
-   doc](../configs.md) for details of RAPIDS Accelerator parameters.
+   the meaning and risk of above parameters before enabling it. Please refer to the
+   [configuration documentation](../configs.md) for details of RAPIDS Accelerator parameters.
 
    For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
    UDFs, you can set the following parameters:
@@ -114,7 +113,7 @@ the driver logs with `spark.rapids.sql.explain=all`.
    this version:
 
    ```
-   !NOT_FOUND <RowDataSourceScanExec> cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.RowDataSourceScanExec could be found
+   ! <RowDataSourceScanExec> cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.RowDataSourceScanExec
    ```
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
@@ -131,16 +130,15 @@ pretty accurate.
 
 - A Spark 3.x CPU cluster
 - The `rapids-4-spark` and `cudf` [jars](../download.md)
-- Ability to modify the existing Spark application code if using the function call directly
+- Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 21.12 or newer
 
 #### Requirements with Spark 2.X
 
 - A Spark 2.4.x CPU cluster
 - The `rapids-4-spark-sql-meta` [jar](../download.md)
-- Ability to modify the existing Spark application code if using the function call directly
+- Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 22.02 or newer
-
 
 #### Usage
 
@@ -172,8 +170,8 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 3. Enable optional RAPIDS Accelerator related parameters based on your setup.
 
    Enabling optional parameters may allow more operations to run on the GPU but please understand
-   the meaning and risk of above parameters before enabling it. Please refer to [configs
-   doc](../configs.md) for details of RAPIDS Accelerator parameters.
+   the meaning and risk of above parameters before enabling it. Please refer to the
+   [configuration documentation](../configs.md) for details of RAPIDS Accelerator parameters.
    
    For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
    UDFs, you can set the following parameters:
