@@ -806,8 +806,6 @@
         <cudf.version>22.02.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.15</scala.version>
-        <orc.version>1.5.10</orc.version>
-        <orc.classifier/>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
@@ -898,88 +896,6 @@
               <artifactId>spark-sql_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
               <scope>provided</scope>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.orc</groupId>
-              <artifactId>orc-core</artifactId>
-              <version>${orc.version}</version>
-              <classifier>${orc.classifier}</classifier>
-              <exclusions>
-                <exclusion>
-                  <groupId>javax.xml.bind</groupId>
-                  <artifactId>jaxb-api</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.hadoop</groupId>
-                  <artifactId>hadoop-common</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.hadoop</groupId>
-                  <artifactId>hadoop-hdfs</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.hive</groupId>
-                  <artifactId>hive-storage-api</artifactId>
-                </exclusion>
-              </exclusions>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.orc</groupId>
-              <artifactId>orc-mapreduce</artifactId>
-              <version>${orc.version}</version>
-              <classifier>${orc.classifier}</classifier>
-              <exclusions>
-                <exclusion>
-                  <groupId>org.apache.hadoop</groupId>
-                  <artifactId>hadoop-common</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.hadoop</groupId>
-                  <artifactId>hadoop-mapreduce-client-core</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.orc</groupId>
-                  <artifactId>orc-core</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.hive</groupId>
-                  <artifactId>hive-storage-api</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>com.esotericsoftware</groupId>
-                  <artifactId>kryo-shaded</artifactId>
-                </exclusion>
-              </exclusions>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.orc</groupId>
-              <artifactId>orc-shims</artifactId>
-              <version>${orc.version}</version>
-              <exclusions>
-                <exclusion>
-                  <groupId>org.apache.hadoop</groupId>
-                  <artifactId>hadoop-common</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>org.apache.hadoop</groupId>
-                  <artifactId>hadoop-hdfs</artifactId>
-                </exclusion>
-              </exclusions>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.hive</groupId>
-              <artifactId>hive-storage-api</artifactId>
-              <version>${hive.storage.api.version}</version>
-            </dependency>
-            <dependency>
-              <groupId>com.google.protobuf</groupId>
-              <artifactId>protobuf-java</artifactId>
-              <version>${protobuf.java.version}</version>
-            </dependency>
-            <dependency>
-              <groupId>com.google.flatbuffers</groupId>
-              <artifactId>flatbuffers-java</artifactId>
-              <version>${flatbuffers.java.version}</version>
             </dependency>
             <dependency>
               <groupId>org.rogach</groupId>

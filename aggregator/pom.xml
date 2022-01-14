@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2021, NVIDIA CORPORATION.
+  Copyright (c) 2021-2022, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -93,53 +93,8 @@
                     </transformers>
                     <relocations>
                         <relocation>
-                            <pattern>org.apache.orc.</pattern>
-                            <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>org.apache.hadoop.hive.</pattern>
-                            <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
-                            <excludes>
-                                <!--
-                                    Class exclusions for Hive UDFs, to avoid the ClassNotFoundException,
-                                    For example:
-                                        E Caused by: java.lang.ClassNotFoundException: com.nvidia.shaded.spark.hadoop.hive.serde2.objectinspector.ObjectInspector
-                                        E     at java.net.URLClassLoader.findClass(URLClassLoader.java:382)
-                                -->
-                                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.exec.FunctionRegistry</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.exec.UDFMethodResolver</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.udf.UDFType</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF$DeferredObject</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDFUtils$ConversionHelper</exclude>
-                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector</exclude>
-                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory</exclude>
-                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory$ObjectInspectorOptions</exclude>
-                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.StructField</exclude>
-                                <exclude>org.apache.hadoop.hive.serde2.typeinfo.TypeInfo</exclude>
-                            </excludes>
-                        </relocation>
-                        <relocation>
-                            <pattern>org.apache.hive.</pattern>
-                            <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>io.airlift.compress.</pattern>
-                            <shadedPattern>${rapids.shade.package}.io.airlift.compress.</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>org.apache.commons.codec.</pattern>
-                            <shadedPattern>${rapids.shade.package}.org.apache.commons.codec.</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>org.apache.commons.lang.</pattern>
-                            <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>com.google</pattern>
-                            <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
+                            <pattern>com.google.flatbuffers</pattern>
+                            <shadedPattern>${rapids.shade.package}.com.google.flatbuffers</shadedPattern>
                         </relocation>
                     </relocations>
                     <filters>

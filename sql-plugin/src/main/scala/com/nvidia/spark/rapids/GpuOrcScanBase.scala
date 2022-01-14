@@ -36,6 +36,7 @@ import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
+import com.nvidia.spark.rapids.shims.v2.OrcShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -319,13 +320,13 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
 
     withResource(OrcTools.buildDataReader(ctx)) { dataReader =>
       val start = System.nanoTime()
-      val bufferChunks = dataReader.readFileData(inputDataRanges, 0, false)
+      val bufferChunks = OrcShims.readFileData(dataReader, inputDataRanges)
       val mid = System.nanoTime()
       var current = bufferChunks
       while (current != null) {
         out.write(current.getData)
         if (dataReader.isTrackingDiskRanges && current.isInstanceOf[BufferChunk]) {
-          dataReader.releaseBuffer(current.asInstanceOf[BufferChunk].getChunk)
+          dataReader.releaseBuffer(current.getData)
         }
         current = current.next
       }
@@ -740,17 +741,17 @@ private object OrcTools extends Arm {
       }
       val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
       val file = filePath.getFileSystem(conf).open(filePath)
+
+      val typeCount = org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size
       //noinspection ScalaDeprecation
-      RecordReaderUtils.createDefaultDataReader(DataReaderProperties.builder()
-        .withBufferSize(compressionSize)
-        .withCompression(compressionKind)
-        .withFileSystem(fs)
-        .withPath(filePath)
-        .withFile(file) // explicitly specify the FSDataInputStream
-        .withTypeCount(org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size)
-        .withZeroCopy(zeroCopy)
-        .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-        .build())
+      RecordReaderUtils.createDefaultDataReader(
+        OrcShims.newDataReaderPropertiesBuilder(compressionSize, compressionKind, typeCount)
+          .withFileSystem(fs)
+          .withPath(filePath)
+          .withFile(file) // explicitly specify the FSDataInputStream
+          .withZeroCopy(zeroCopy)
+          .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
+          .build())
     }
   }
 
@@ -1088,29 +1089,10 @@ private case class GpuOrcFileFilterHandler(
       val fileIncluded = calcOrcFileIncluded(evolution)
       val (columnMapping, idMapping) = columnRemap(fileIncluded, evolution.getFileSchema,
         updatedReadSchema, isCaseSensitive)
-      val result = new ArrayBuffer[OrcOutputStripe](stripes.length)
-      stripes.foreach { stripe =>
-        val stripeFooter = dataReader.readStripeFooter(stripe)
-        val needStripe = if (sargApp != null) {
-          // An ORC schema is a single struct type describing the schema fields
-          val orcFileSchema = evolution.getFileType(0)
-          val orcIndex = dataReader.readRowIndex(stripe, orcFileSchema, stripeFooter,
-            ignoreNonUtf8BloomFilter, fileIncluded, null, sargColumns,
-            writerVersion, null, null)
-          val rowGroups = sargApp.pickRowGroups(stripe, orcIndex.getRowGroupIndex,
-            orcIndex.getBloomFilterKinds, stripeFooter.getColumnsList, orcIndex.getBloomFilterIndex,
-            true)
-          rowGroups != SargApplier.READ_NO_RGS
-        } else {
-          true
-        }
-
-        if (needStripe) {
-          result.append(buildOutputStripe(stripe, stripeFooter, columnMapping, idMapping))
-        }
-      }
-
-      result
+      OrcShims.filterStripes(stripes, conf, orcReader, dataReader,
+        buildOutputStripe, evolution,
+        sargApp, sargColumns, ignoreNonUtf8BloomFilter,
+        writerVersion, fileIncluded, columnMapping, idMapping)
     }
 
     /**
@@ -1552,8 +1534,8 @@ trait OrcCodecWritingHelper extends Arm {
           // note that this buffer is just for writing meta-data
           OrcConf.BUFFER_SIZE.getDefaultValue.asInstanceOf[Int]
         }
-        withResource(new OutStream(getClass.getSimpleName, orcBufferSize, codec,
-            outReceiver)) { codecStream =>
+        withResource(OrcShims.newOrcOutStream(
+          getClass.getSimpleName, orcBufferSize, codec, outReceiver)) { codecStream =>
           val protoWriter = CodedOutputStream.newInstance(codecStream)
           block(outChannel, protoWriter, codecStream)
         }
