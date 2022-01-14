@@ -237,4 +237,3 @@ object GpuCSVScan {
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
 }
-

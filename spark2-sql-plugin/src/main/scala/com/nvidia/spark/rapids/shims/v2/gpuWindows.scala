@@ -74,11 +74,11 @@ abstract class GpuWindowExpressionMetaBase(
                 // need to be sure that the lower/upper are acceptable
                 if (lower > 0) {
                   willNotWorkOnGpu(s"lower-bounds ahead of current row is not supported. " +
-                    s"Found $lower")
+                      s"Found $lower")
                 }
                 if (upper < 0) {
                   willNotWorkOnGpu(s"upper-bounds behind the current row is not supported. " +
-                    s"Found $upper")
+                      s"Found $upper")
                 }
             }
           case RangeFrame =>
@@ -145,7 +145,7 @@ abstract class GpuWindowExpressionMetaBase(
         }
       case other =>
         willNotWorkOnGpu(s"only SpecifiedWindowFrame is a supported window-frame specification. " +
-          s"Found ${other.prettyName}")
+            s"Found ${other.prettyName}")
     }
   }
 }
@@ -241,9 +241,9 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
             willNotWorkOnGpu(s"Literal Lower-bound of ROWS window-frame must be of INT type. " +
               s"Found ${literal.dataType}")
           }
-        // We don't support a lower bound > 0 except for lead/lag where it is required
-        // That check is done in GpuWindowExpressionMeta where it knows what type of operation
-        // is being done
+          // We don't support a lower bound > 0 except for lead/lag where it is required
+          // That check is done in GpuWindowExpressionMeta where it knows what type of operation
+          // is being done
         case UnboundedPreceding =>
         case CurrentRow =>
         case _ =>
@@ -258,9 +258,9 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
             willNotWorkOnGpu(s"Literal Upper-bound of ROWS window-frame must be of INT type. " +
               s"Found ${literal.dataType}")
           }
-        // We don't support a upper bound < 0 except for lead/lag where it is required
-        // That check is done in GpuWindowExpressionMeta where it knows what type of operation
-        // is being done
+          // We don't support a upper bound < 0 except for lead/lag where it is required
+          // That check is done in GpuWindowExpressionMeta where it knows what type of operation
+          // is being done
         case UnboundedFollowing =>
         case CurrentRow =>
         case _ => willNotWorkOnGpu(s"Upper-bound of ROWS window-frame must be an INT literal," +
@@ -270,7 +270,6 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
     }
   }
 }
-
 
 class GpuSpecifiedWindowFrameMeta(
     windowFrame: SpecifiedWindowFrame,

@@ -28,7 +28,6 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtilBase {
    *
    * @param check        the Supported Types
    * @param dataType     the data type to be checked
-   * @param allowDecimal whether decimal support is enabled or not
    * @return true if it is allowed else false.
    */
   override def isSupported(
@@ -48,7 +47,6 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtilBase {
    *
    * @param check              the Supported Types
    * @param dataType           the data type to be checked
-   * @param allowDecimal       whether decimal support is enabled or not
    * @param notSupportedReason the reason for not supporting
    * @return the reason
    */

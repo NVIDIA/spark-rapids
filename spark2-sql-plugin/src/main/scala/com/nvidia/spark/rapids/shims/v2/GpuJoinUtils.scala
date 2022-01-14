@@ -34,7 +34,7 @@ object GpuJoinUtils {
     buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
-      case unknownBuildSide => throw new Exception(s"unknown buildSide Type: $unknownBuildSide")
+      case _ => throw new Exception(s"unknown build side type $buildSide")
     }
   }
 }

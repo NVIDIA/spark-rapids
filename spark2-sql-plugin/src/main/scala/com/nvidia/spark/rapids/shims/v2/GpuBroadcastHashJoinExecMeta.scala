@@ -46,9 +46,9 @@ class GpuBroadcastHashJoinMeta(
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       join.condition)
     val Seq(leftChild, rightChild) = childPlans
-    val buildSideMeta = join.buildSide match {
-      case BuildLeft => leftChild
-      case BuildRight => rightChild
+    val buildSideMeta = buildSide match {
+      case GpuBuildLeft => leftChild
+      case GpuBuildRight => rightChild
     }
 
     if (!canBuildSideBeReplaced(buildSideMeta)) {
@@ -59,6 +59,4 @@ class GpuBroadcastHashJoinMeta(
       buildSideMeta.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
     }
   }
-
 }
-
