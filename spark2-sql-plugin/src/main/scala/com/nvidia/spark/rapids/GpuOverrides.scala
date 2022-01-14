@@ -52,21 +52,6 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
-object GpuFloorCeil {
-  def unboundedOutputPrecision(dt: DecimalType): Int = {
-    if (dt.scale == 0) {
-      dt.precision
-    } else {
-      dt.precision - dt.scale + 1
-    }
-  }
-}
-
-sealed trait TimeParserPolicy extends Serializable
-object LegacyTimeParserPolicy extends TimeParserPolicy
-object ExceptionTimeParserPolicy extends TimeParserPolicy
-object CorrectedTimeParserPolicy extends TimeParserPolicy
-
 /**
  * Base class for all ReplacementRules
  * @param doWrap wraps a part of the plan in a [[RapidsMeta]] for further processing.
@@ -622,7 +607,7 @@ object GpuOverrides extends Logging {
     }
   }
 
-  val nanAggPsNote = "Input must not contain NaNs and" +
+  private val nanAggPsNote = "Input must not contain NaNs and" +
       s" ${RapidsConf.HAS_NANS} must be false."
 
   def expr[INPUT <: Expression](
@@ -971,7 +956,7 @@ object GpuOverrides extends Logging {
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[ToRadians](a, conf, p, r) {
       }),
-   expr[WindowExpression](
+    expr[WindowExpression](
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
@@ -1119,7 +1104,7 @@ object GpuOverrides extends Logging {
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
-        TypeSig.gpuNumeric + TypeSig.DECIMAL_128,
+        TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
       }),
@@ -2261,12 +2246,12 @@ object GpuOverrides extends Logging {
     expr[CreateArray](
       "Returns an array with the given elements",
       ExprChecks.projectOnly(
-        TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.DECIMAL_128 +
+        TypeSig.ARRAY.nested(TypeSig.gpuNumeric +
           TypeSig.NULL + TypeSig.STRING + TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
           TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
-          TypeSig.gpuNumeric + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRING +
+           TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
               TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
               TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
                 TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
@@ -2284,7 +2269,7 @@ object GpuOverrides extends Logging {
         }
 
       }),
-   expr[LambdaFunction](
+    expr[LambdaFunction](
       "Holds a higher order SQL function",
       ExprChecks.projectOnly(
         (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.ARRAY +
@@ -2308,7 +2293,7 @@ object GpuOverrides extends Logging {
         TypeSig.all),
       (in, conf, p, r) => new ExprMeta[NamedLambdaVariable](in, conf, p, r) {
       }),
-    GpuOverrides.expr[ArrayTransform](
+    expr[ArrayTransform](
       "Transform elements in an array using the transform function. This is similar to a `map` " +
           "in functional programming",
       ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes +
@@ -2405,7 +2390,7 @@ object GpuOverrides extends Logging {
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[EndsWith](a, conf, p, r) {
       }),
-        expr[Concat](
+    expr[Concat](
       "List/String concatenate",
       ExprChecks.projectOnly((TypeSig.STRING + TypeSig.ARRAY).nested(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
@@ -2580,7 +2565,7 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         // note that output can be single number or array depending on whether percentiles param
         // is a single number or an array
-       TypeSig.gpuNumeric +
+        TypeSig.gpuNumeric +
             TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
         TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
           TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
@@ -2871,10 +2856,10 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.STRUCT),
         TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
-     exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        JoinTypeChecks.equiJoinExecChecks,
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
+    exec[BroadcastHashJoinExec](
+      "Implementation of join using broadcast data",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force. Full outer joins and joins where the " +
           "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
@@ -2912,8 +2897,12 @@ object GpuOverrides extends Logging {
       // SPARK 2.x we can't check for the TypedImperativeAggregate properly so
       // map/arrya/struct left off
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP)
-                    .nested(TypeSig.STRING),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            TypeSig.MAP + TypeSig.BINARY)
+            .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
+            .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
     // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
@@ -2922,7 +2911,7 @@ object GpuOverrides extends Logging {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.ARRAY + 
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
           TypeSig.STRUCT +TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
      exec[SortMergeJoinExec](
@@ -3104,17 +3093,6 @@ object GpuOverrides extends Logging {
     }
     planAfter
   }
-}
-
-object CudfTDigest {
-  val dataType: DataType = StructType(Array(
-    StructField("centroids", ArrayType(StructType(Array(
-      StructField("mean", DataTypes.DoubleType, nullable = false),
-      StructField("weight", DataTypes.DoubleType, nullable = false)
-    )), containsNull = false)),
-    StructField("min", DataTypes.DoubleType, nullable = false),
-    StructField("max", DataTypes.DoubleType, nullable = false)
-  ))
 }
 
 object GpuUserDefinedFunction {
