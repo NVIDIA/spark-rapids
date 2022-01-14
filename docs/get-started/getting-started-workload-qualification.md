@@ -112,7 +112,7 @@ the driver logs with `spark.rapids.sql.explain=all`.
    this version:
 
    ```
-   !NOT_FOUND <RowDataSourceScanExec> cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.RowDataSourceScanExec could be found
+   ! <RowDataSourceScanExec> cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.RowDataSourceScanExec
    ```
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
