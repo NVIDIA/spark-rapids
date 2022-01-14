@@ -1,3 +1,24 @@
+#!/bin/bash
+#
+# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Generally speaking this assumes the convertToGpu is the last function in the meta classes, if someone adds something after it we may not catch it
+
+set -e
+
 # just using interface, and we don't really expect them to use it on 2.x so just skip diffing
 #spark2-sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java
 
@@ -283,37 +304,67 @@ diff -c spark2diffs/GpuReadCSVFileFormat.diff GpuReadCSVFileFormat.newdiff
 diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsConf.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsConf.scala > RapidsConf.newdiff
 diff -c spark2diffs/RapidsConf.diff RapidsConf.newdiff
 
-sed -n  '/object GpuReadParquetFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > GpuReadParquetFileFormat_new.out
-sed -n  '/object GpuReadParquetFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadParquetFileFormat.scala > GpuReadParquetFileFormat_old.out
-diff  GpuReadParquetFileFormat_new.out GpuReadParquetFileFormat_old.out > GpuReadParquetFileFormat.newdiff
+sed -n '/object GpuReadParquetFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > GpuReadParquetFileFormat_new.out
+sed -n '/object GpuReadParquetFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadParquetFileFormat.scala > GpuReadParquetFileFormat_old.out
+diff GpuReadParquetFileFormat_new.out GpuReadParquetFileFormat_old.out > GpuReadParquetFileFormat.newdiff
 diff -c spark2diffs/GpuReadParquetFileFormat.diff GpuReadParquetFileFormat.newdiff
 
-sed -n  '/object GpuParquetScanBase/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > GpuParquetScanBase_new.out
-sed -n  '/object GpuParquetScanBase/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > GpuParquetScanBase_old.out
-diff  GpuParquetScanBase_new.out GpuParquetScanBase_old.out > GpuParquetScanBase.newdiff
+sed -n '/object GpuParquetScanBase/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > GpuParquetScanBase_new.out
+sed -n '/object GpuParquetScanBase/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > GpuParquetScanBase_old.out
+diff GpuParquetScanBase_new.out GpuParquetScanBase_old.out > GpuParquetScanBase.newdiff
 diff -c spark2diffs/GpuParquetScanBase.diff GpuParquetScanBase.newdiff
 
 diff spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBroadcastJoinMeta.scala sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBroadcastJoinMeta.scala > GpuBroadcastJoinMeta.newdiff
 diff -c spark2diffs/GpuBroadcastJoinMeta.diff GpuBroadcastJoinMeta.newdiff
 
-sed -n  '/object AggregateUtils/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/AggregateUtils.scala > AggregateUtils_new.out
-sed -n  '/object AggregateUtils/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala > AggregateUtils_old.out
-diff  AggregateUtils_new.out AggregateUtils_old.out > AggregateUtils.newdiff
+sed -n '/object AggregateUtils/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/AggregateUtils.scala > AggregateUtils_new.out
+sed -n '/object AggregateUtils/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala > AggregateUtils_old.out
+diff AggregateUtils_new.out AggregateUtils_old.out > AggregateUtils.newdiff
 diff -c spark2diffs/AggregateUtils.diff AggregateUtils.newdiff
 
-sed -n  '/final class CastExprMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCastMeta.scala > CastExprMeta_new.out
-sed -n  '/final class CastExprMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCast.scala > CastExprMeta_old.out
+sed -n '/final class CastExprMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCastMeta.scala > CastExprMeta_new.out
+sed -n '/final class CastExprMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCast.scala > CastExprMeta_old.out
 diff CastExprMeta_new.out CastExprMeta_old.out > CastExprMeta.newdiff
 diff -c spark2diffs/CastExprMeta.diff CastExprMeta.newdiff
 
-sed -n  '/object GpuReadOrcFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadOrcFileFormat.scala > GpuReadOrcFileFormat_new.out
-sed -n  '/object GpuReadOrcFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadOrcFileFormat.scala > GpuReadOrcFileFormat_old.out
-diff  GpuReadOrcFileFormat_new.out GpuReadOrcFileFormat_old.out > GpuReadOrcFileFormat.newdiff
+sed -n '/object GpuReadOrcFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadOrcFileFormat.scala > GpuReadOrcFileFormat_new.out
+sed -n '/object GpuReadOrcFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadOrcFileFormat.scala > GpuReadOrcFileFormat_old.out
+diff GpuReadOrcFileFormat_new.out GpuReadOrcFileFormat_old.out > GpuReadOrcFileFormat.newdiff
 diff -c spark2diffs/GpuReadOrcFileFormat.diff GpuReadOrcFileFormat.newdiff
 
+sed -n '/object GpuParquetFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetFileFormat.scala > GpuParquetFileFormat_new.out
+sed -n '/object GpuParquetFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetFileFormat.scala > GpuParquetFileFormat_old.out
+diff GpuParquetFileFormat_new.out GpuParquetFileFormat_old.out > GpuParquetFileFormat.newdiff
+diff -c spark2diffs/GpuParquetFileFormat.diff GpuParquetFileFormat.newdiff
 
+sed -n '/def asDecimalType/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > asDecimalType_new.out
+sed -n '/def asDecimalType/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > asDecimalType_old.out
+diff -c asDecimalType_new.out asDecimalType_old.out
 
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetFileFormat.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala
-odcastHashJoinExecMeta.scalapark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReplicateRowsMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DateUtils.scala
+sed -n '/def optionallyAsDecimalType/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > optionallyAsDecimalType_new.out
+sed -n '/def optionallyAsDecimalType/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > optionallyAsDecimalType_old.out
+diff -c optionallyAsDecimalType_new.out optionallyAsDecimalType_old.out
+
+sed -n '/def getPrecisionForIntegralType/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > getPrecisionForIntegralType_new.out
+sed -n '/def getPrecisionForIntegralType/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > getPrecisionForIntegralType_old.out
+diff getPrecisionForIntegralType_new.out getPrecisionForIntegralType_old.out > getPrecisionForIntegralType.newdiff
+diff -c spark2diffs/getPrecisionForIntegralType.diff getPrecisionForIntegralType.newdiff
+
+# not sure this diff works very well due to java vs scala and quite a bit different but should find any changes in those functions
+sed -n '/def toRapidsStringOrNull/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > toRapidsStringOrNull_new.out
+sed -n '/private static DType/,/^  }/{/^  }/!p}' sql-plugin/src/main/java/com/nvidia/spark/rapids/GpuColumnVector.java > toRapidsStringOrNull_old.out
+diff toRapidsStringOrNull_new.out toRapidsStringOrNull_old.out > toRapidsStringOrNull.newdiff
+diff -c spark2diffs/toRapidsStringOrNull.diff toRapidsStringOrNull.newdiff
+
+sed -n '/def createCudfDecimal/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > createCudfDecimal_new.out
+sed -n '/def createCudfDecimal/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > createCudfDecimal_old.out
+diff createCudfDecimal_new.out createCudfDecimal_old.out > createCudfDecimal.newdiff
+diff -c spark2diffs/createCudfDecimal.diff createCudfDecimal.newdiff
+
+sed -n  '/abstract class ReplicateRowsExprMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReplicateRowsMeta.scala > ReplicateRowsExprMeta_new.out
+sed -n  '/abstract class ReplicateRowsExprMeta/,/override final def convertToGpu/{/override final def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExec.scala > ReplicateRowsExprMeta_old.out
+diff ReplicateRowsExprMeta_new.out ReplicateRowsExprMeta_old.out > ReplicateRowsExprMeta.newdiff
+diff -c spark2diffs/ReplicateRowsExprMeta.diff ReplicateRowsExprMeta.newdiff
+
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DateUtils.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/DateUtils.scala > DateUtils.newdiff
+diff -c spark2diffs/DateUtils.diff DateUtils.newdiff
