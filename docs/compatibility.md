@@ -468,7 +468,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$`
 - String anchor `\Z`
-- String anchors `\z` is not supported by `regexp_replace`
+- String anchor `\z` is not supported by `regexp_replace`
 - Non-digit character class `\D`
 - Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
