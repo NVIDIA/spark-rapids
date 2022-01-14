@@ -56,9 +56,9 @@ existing logs and do not need a GPU cluster to run the tools.
 
 ## 2. Get the Explain Output
 
-This allows running queries on the CPU and the plugin will evaluate the queries as if it was
+This allows running queries on the CPU and the RAPIDS Accelerator will evaluate the queries as if it was
 going to run on the GPU and tell you what would and wouldn't have been run on the GPU.
-There are two ways to run this, one is running with the plugin set to explain only mode and
+There are two ways to run this, one is running with the RAPIDS Accelerator set to explain only mode and
 the other is to modify your existing Spark application code to call a function directly.
 
 Please note that if using adaptive execution in Spark the explain output may not be perfect
@@ -73,7 +73,7 @@ the CPU plan.
 
 ### Using the Configuration Flag for Explain Only Mode
 
-Starting with version 22.02 of the RAPIDS Accelerator, the plugin can be run in explain only mode.
+Starting with version 22.02, the RAPIDS Accelerator can be run in explain only mode.
 This mode allows you to run on a CPU cluster and can help us understand the potential GPU plan and
 if there are any unsupported features. Basically it will log the output which is the same as
 the driver logs with `spark.rapids.sql.explain=all`.

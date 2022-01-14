@@ -506,15 +506,15 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SQL_MODE = conf("spark.rapids.sql.mode")
-    .doc("Set the mode for the plugin. The supported modes are explainOnly and executeOnGPU. " +
-         "This config can not be changed at runtime, you must restart the application for it " +
-         "to take affect. The default mode is executeOnGPU, which means the sql plugin will " +
-         "convert the Spark operations and execute them on the GPU when possible. The " +
-         "explainOnly mode allows running queries on the CPU and the plugin will evaluate " +
-         "the queries as if it was going to run on the GPU. The explanations of what would " +
-         "have run on the GPU and why are output in log messages. When using explainOnly " +
-         "mode, the default explain output is ALL, this can be changed by setting " +
-         "spark.rapids.sql.explain. Seeing that config for more details.")
+    .doc("Set the mode for the Rapids Accelerator. The supported modes are explainOnly and " +
+         "executeOnGPU. This config can not be changed at runtime, you must restart the " +
+         "application for it to take affect. The default mode is executeOnGPU, which means " +
+         "the Rapids Accelerator plugin convert the Spark operations and execute them on the " +
+         "GPU when possible. The explainOnly mode allows running queries on the CPU and the " +
+         "Rapids Accelerator will evaluate the queries as if it was going to run on the GPU. " +
+         "The explanations of what would have run on the GPU and why are output in log " +
+         "messages. When using explainOnly mode, the default explain output is ALL, this can " +
+         "be changed by setting spark.rapids.sql.explain. Seeing that config for more details.")
     .stringConf
     .transform(_.toLowerCase(java.util.Locale.ROOT))
     .checkValues(Set("explainonly", "executeongpu"))
