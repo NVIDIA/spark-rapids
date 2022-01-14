@@ -266,16 +266,29 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private val REGEXP_LIMITED_CHARS_REPLACE = REGEXP_LIMITED_CHARS_COMMON
 
   test("compare CPU and GPU: find digits") {
-    val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?",
-      "\\D", "\\D+", "\\D*", "\\D?")
+    val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("fall back to CPU for \\D") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4475
+    for (replace <- Seq(true, false)) {
+      assertUnsupported("\\D", replace, "non-digit class \\D is not supported")
+    }
+  }
+
+  test("fall back to CPU for \\W") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4475
+    for (replace <- Seq(true, false)) {
+      assertUnsupported("\\W", replace, "non-word class \\W is not supported")
+    }
   }
 
   test("compare CPU and GPU: replace digits") {
     // note that we do not test with quantifiers `?` or `*` due
     // to https://github.com/NVIDIA/spark-rapids/issues/4468
-    val patterns = Seq("\\d", "\\d+", "\\D", "\\D+")
+    val patterns = Seq("\\d", "\\d+")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
