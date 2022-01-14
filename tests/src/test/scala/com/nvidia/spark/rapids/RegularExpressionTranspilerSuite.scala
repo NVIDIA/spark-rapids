@@ -200,12 +200,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("transpile complex regex 2") {
     val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?"
+      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?\\z"
 
-    // input and output should be identical except for `.` being replaced with `[^\r\n]`
+    // input and output should be identical except for `.` being replaced with `[^\r\n]` and
+    // `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
-        .replaceAll("\\.", "[^\r\n]"))
+        .replaceAll("\\.", "[^\r\n]")
+        .replaceAll("\\\\z", "\\$"))
   }
 
   test("transpile \\z") {
