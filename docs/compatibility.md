@@ -476,7 +476,7 @@ val df = spark.read.schema(schema).json("people.json")
 
 ### JSON supporting types
 
-The nested types(array, map and struct) and timestamp are not supported yet in current version.
+The nested types(array, map and struct) are not supported yet in current version.
 
 ### JSON Floating Point
 

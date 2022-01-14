@@ -109,3 +109,33 @@ def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_li
                     .option('dateFormat', date_format)\
                     .json(data_path),
             conf=updated_conf)
+
+json_supported_ts_parts = ['', # Just the date
+        "'T'HH:mm:ss.SSSXXX",
+        "'T'HH:mm:ss[.SSS][XXX]",
+        "'T'HH:mm:ss.SSS",
+        "'T'HH:mm:ss[.SSS]",
+        "'T'HH:mm:ss",
+        "'T'HH:mm[:ss]",
+        "'T'HH:mm"]
+
+@pytest.mark.parametrize('ts_part', json_supported_ts_parts)
+@pytest.mark.parametrize('date_format', json_supported_date_formats)
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
+    full_format = date_format + ts_part
+    data_gen = TimestampGen()
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    schema = gen.data_type
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write\
+                    .option('timestampFormat', full_format)\
+                    .json(data_path))
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read\
+                    .schema(schema)\
+                    .option('timestampFormat', full_format)\
+                    .json(data_path),
+            conf=updated_conf)

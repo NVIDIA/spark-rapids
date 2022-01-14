@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, StringType, StructType}
+import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration;
@@ -55,6 +55,16 @@ object GpuJsonScan {
     // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
     // and would need to coordinate with the timestamp format too, because both cannot
     // coexist
+  )
+
+  private val supportedTsPortionFormats = Set(
+    "HH:mm:ss.SSSXXX",
+    "HH:mm:ss[.SSS][XXX]",
+    "HH:mm",
+    "HH:mm:ss",
+    "HH:mm[:ss]",
+    "HH:mm:ss.SSS",
+    "HH:mm:ss[.SSS]"
   )
 
   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
@@ -136,6 +146,24 @@ object GpuJsonScan {
       }
     }
 
+    if (readSchema.map(_.dataType).contains(TimestampType)) {
+      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
+        meta.willNotWorkOnGpu("Only UTC zone id is supported")
+      }
+      ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+        val parts = tsFormat.split("'T'", 2)
+        if (parts.isEmpty) {
+          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+        }
+        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
+          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+        }
+        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
+          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+        }
+      }
+    }
+
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
       val f = dataSchema(corruptFieldIndex)
       if (f.dataType != StringType || !f.nullable) {
@@ -150,8 +178,6 @@ object GpuJsonScan {
       // fallback to cpu to throw exception
       meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record")
     }
-
-    // add more checks for timestampFormat
 
     FileFormatChecks.tag(meta, readSchema, JsonFormatType, ReadFileOp)
   }
