@@ -16,11 +16,14 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.Optional
+
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, NullPolicy, Scalar, ScanAggregation, ScanType, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimExpression}
@@ -421,95 +424,65 @@ class GpuSequenceMeta(
 
 object GpuSequenceUtil extends Arm {
 
-  def isAllTrue(col: ColumnVector): Boolean = {
-    assert(DType.BOOL8 == col.getType)
-    if (col.getRowCount == 0) {
-      return true
-    }
-    if (col.hasNulls) {
-      return false
-    }
-    withResource(col.all()) { allTrue =>
-      // Guaranteed there is at least one row and no nulls so result must be valid
-      allTrue.getBoolean
-    }
-  }
-
-  /** (Copied most of the part from GpuConditionalExpression) */
-  def gather(predicate: ColumnVector, toBeGathered: ColumnVector): ColumnVector = {
-    // convert the predicate boolean column to numeric where 1 = true
-    // and 0 (or null) = false and then use `scan` with `sum` to convert to indices.
-    //
-    // For example, if the predicate evaluates to [F, null, T, F, T] then this
-    // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
-    // will perform an exclusive sum on these values and produce [0, 0, 0, 1, 1].
-    // Combining this with the original predicate boolean array results in the two
-    // T values mapping to indices 0 and 1, respectively.
-    val boolAsInt = withResource(Scalar.fromInt(1)) { one =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        predicate.ifElse(one, zero)
-      }
-    }
-    val prefixSumExclusive = withResource(boolAsInt) { boolsAsInts =>
-      boolsAsInts.scan(ScanAggregation.sum(), ScanType.EXCLUSIVE, NullPolicy.INCLUDE)
-    }
-    val gatherMap = withResource(prefixSumExclusive) { prefixSumExclusive =>
-      // for the entries in the gather map that do not represent valid
-      // values to be gathered, we change the value to -MAX_INT which
-      // will be treated as null values in the gather algorithm
-      withResource(Scalar.fromInt(Int.MinValue)) { outOfBoundsFlag =>
-        predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
-      }
-    }
-    withResource(gatherMap) { _ =>
-      withResource(new Table(toBeGathered)) { tbl =>
-        withResource(tbl.gather(gatherMap)) { gatherTbl =>
-          gatherTbl.getColumn(0).incRefCount()
-        }
-      }
-    }
-  }
-
   /**
-   * Compute the size of each array from 'start', 'stop' and 'step'.
+   * Compute the size of each sequence according to 'start', 'stop' and 'step'.
+   * A row (Row[start, stop, step]) contains at least one null element will produce
+   * a null in the output.
+   *
    * The returned column should be closed.
    */
-  def computeArraySizes(
+  def computeSequenceSizes(
       start: ColumnVector,
       stop: ColumnVector,
       step: ColumnVector): ColumnVector = {
     // Keep the same requirement with Spark:
-    //  (step > 0 && start <= stop) || (step < 0 && start >= stop) || (step == 0 && start == stop)
+    // (step > 0 && start <= stop) || (step < 0 && start >= stop) || (step == 0 && start == stop)
     withResource(Scalar.fromByte(0.toByte)) { zero =>
+      // The check should ignore each row (Row(start, stop, step)) that contains at least
+      // one null element according to Spark's code. Thanks to the cudf binary ops, who ignore
+      // nulls already, skipping nulls can be done without any additional process.
+      //
+      // Because the filtered table (e.g. upTbl) in each rule check excludes the rows that the
+      // step is null. Next a null row will be produced when comparing start or stop when any
+      // of them is null, and the nulls are skipped in the final assertion 'isAllValidTrue'.
       withResource(new Table(start, stop)) { startStopTable =>
         // (step > 0 && start <= stop)
-        withResource(step.greaterThan(zero)) { positiveStep =>
-          withResource(startStopTable.filter(positiveStep)) { upTbl =>
-            withResource(upTbl.getColumn(0).lessOrEqualTo(upTbl.getColumn(1))) { allUp =>
-              require(isAllTrue(allUp), "Illegal sequence boundaries: step > 0 but start > stop")
-            }
-          }
+        val upTbl = withResource(step.greaterThan(zero)) { positiveStep =>
+          startStopTable.filter(positiveStep)
         }
+        val allUp = withResource(upTbl) { _ =>
+          upTbl.getColumn(0).lessOrEqualTo(upTbl.getColumn(1))
+        }
+        withResource(allUp) { _ =>
+          require(isAllValidTrue(allUp), "Illegal sequence boundaries: step > 0 but start > stop")
+        }
+
         // (step < 0 && start >= stop)
-        withResource(step.lessThan(zero)) { negativeStep =>
-          withResource(startStopTable.filter(negativeStep)) { downTbl =>
-            withResource(downTbl.getColumn(0).greaterOrEqualTo(downTbl.getColumn(1))) { allDown =>
-              require(isAllTrue(allDown),
-                "Illegal sequence boundaries: step < 0 but start < stop")
-            }
-          }
+        val downTbl = withResource(step.lessThan(zero)) { negativeStep =>
+          startStopTable.filter(negativeStep)
         }
+        val allDown = withResource(downTbl) { _ =>
+          downTbl.getColumn(0).greaterOrEqualTo(downTbl.getColumn(1))
+        }
+        withResource(allDown) { _ =>
+          require(isAllValidTrue(allDown),
+              "Illegal sequence boundaries: step < 0 but start < stop")
+        }
+
         // (step == 0 && start == stop)
-        withResource(step.equalTo(zero)) { zeroStep =>
-          withResource(startStopTable.filter(zeroStep)) { equalTbl =>
-            withResource(equalTbl.getColumn(0).equalTo(equalTbl.getColumn(1))) { allEqual =>
-              require(isAllTrue(allEqual),
-                "Illegal sequence boundaries:  step == 0 but start != stop")
-            }
-          }
+        val equalTbl = withResource(step.equalTo(zero)) { zeroStep =>
+          startStopTable.filter(zeroStep)
+        }
+        val allEq = withResource(equalTbl) { _ =>
+          equalTbl.getColumn(0).equalTo(equalTbl.getColumn(1))
+        }
+        withResource(allEq) { _ =>
+          require(isAllValidTrue(allEq),
+              "Illegal sequence boundaries: step == 0 but start != stop")
         }
       }
-    }
+    } // end of zero
+
     // Spark's algorithm to get the length (aka size)
     // ``` Scala
     //   size = if (start == stop) 1L else 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
@@ -523,26 +496,36 @@ object GpuSequenceUtil extends Arm {
           stopAsLong.sub(startAsLong)
         }
       }
-      // actualSize = 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
-      val actualSize = withResource(diff) { _ =>
+      val quotient = withResource(diff) { _ =>
         withResource(step.castTo(DType.INT64)) { stepAsLong =>
-          withResource(diff.div(stepAsLong)) { quotient =>
-            quotient.add(one, DType.INT64)
-          }
+          diff.div(stepAsLong)
         }
       }
+      // actualSize = 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
+      val actualSize = withResource(quotient) { quotient =>
+        quotient.add(one, DType.INT64)
+      }
       withResource(actualSize) { _ =>
-        withResource(start.equalTo(stop)) { equals =>
-          equals.ifElse(one, actualSize)
+        val mergedEquals = withResource(start.equalTo(stop)) { equals =>
+          if (step.hasNulls) {
+            // Also set the row to null where step is null.
+            equals.mergeAndSetValidity(BinaryOp.BITWISE_AND, equals, step)
+          } else {
+            equals.incRefCount()
+          }
+        }
+        withResource(mergedEquals) { _ =>
+          mergedEquals.ifElse(one, actualSize)
         }
       }
     }
+
     // check size
     closeOnExcept(sizeAsLong) { _ =>
       withResource(Scalar.fromInt(MAX_ROUNDED_ARRAY_LENGTH)) { maxLen =>
         withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
-          require(isAllTrue(allValid),
-            s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
+          require(isAllValidTrue(allValid),
+              s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
         }
       }
     }
@@ -551,56 +534,6 @@ object GpuSequenceUtil extends Arm {
     }
   }
 
-  /**
-   * Filter out the nulls for 'start', 'stop', and 'step'.
-   * They should have the same number of rows.
-   *
-   * @return 3 corresponding columns without nulls, and a bool column that
-   *         row[i] is true if all the values of the 3 input columns at 'i' are valid,
-   *         Otherwise, row[i] is false. All the columns need to be closed by users.
-   */
-  def filterOutNullsIfNeeded(
-      start: ColumnVector,
-      stop: ColumnVector,
-      stepOpt: Option[ColumnVector]):
-      (ColumnVector, ColumnVector, Option[ColumnVector], Option[ColumnVector]) = {
-    // If has nulls, filter out the nulls
-    val hasNull = start.hasNulls || stop.hasNulls || stepOpt.exists(_.hasNulls)
-    if (hasNull) {
-      // Translate to booleans (false for null, true for others) for start, stop and step,
-      // and merge them by 'and'. For example
-      //  <start>  <stop>  <step>                                  <nonNullMask>
-      //    1       null    7             true   false  true        false
-      //    2       4       null     =>   true   true   false  =>   false
-      //    null    5       8             false  true   true        false
-      //    3       6       9             true   true   true        true
-      val startStopMask = withResource(start.isNotNull) { startMask =>
-        withResource(stop.isNotNull) { stopMask =>
-          startMask.and(stopMask)
-        }
-      }
-      val nonNullMask = withResource(startStopMask) { _ =>
-        withResource(stepOpt.map(_.isNotNull)) { stepMaskOpt =>
-          stepMaskOpt.map(_.and(startStopMask)).getOrElse(startStopMask.incRefCount())
-        }
-      }
-      // Now it is ready to filter out the nulls
-      closeOnExcept(nonNullMask) { _ =>
-        val inputTable = stepOpt.map(new Table(start, stop, _)).getOrElse(new Table(start, stop))
-        withResource(inputTable) { _ =>
-          withResource(inputTable.filter(nonNullMask)) { tbl =>
-            ( tbl.getColumn(0).incRefCount(),
-              tbl.getColumn(1).incRefCount(),
-              stepOpt.map(_ => tbl.getColumn(2).incRefCount()),
-              Some(nonNullMask)
-            )
-          }
-        }
-      }
-    } else {
-      (start.incRefCount(), stop.incRefCount(), stepOpt.map(_.incRefCount()), None)
-    }
-  }
 }
 
 case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expression],
@@ -621,45 +554,32 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
   override def foldable: Boolean = children.forall(_.foldable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    // 1 Compute the array size for all the rows
-    val (startCol, sizeCol, stepCol, nonNullPredOpt) =
-      withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>
-        withResource(columnarEvalToColumn(stop, batch)) { stopGpuCol =>
-          withResource(stepOpt.map(columnarEvalToColumn(_, batch))) { stepColOpt =>
-            // Filter out the nulls before any computation, since cudf 'sequences' does
-            // not allow nulls.(Pls refer to https://github.com/rapidsai/cudf/issues/10012)
-            // Then no need to do computation for the null rows.
-            val (starts, stops, stepsOption, nonNullOption) = filterOutNullsIfNeeded(
-                startGpuCol.getBase, stopGpuCol.getBase, stepColOpt.map(_.getBase))
+    withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>
+      withResource(stepOpt.map(columnarEvalToColumn(_, batch))) { stepGpuColOpt =>
+        val startCol = startGpuCol.getBase
 
-            // Get the array size of each valid row, along with the steps
-            withResource(stops) { _ =>
-              closeOnExcept(starts) { _ =>
-                closeOnExcept(nonNullOption) { _ =>
-                  closeOnExcept(stepsOption.getOrElse(defaultSteps(starts, stops))) { steps =>
-                    val sizes = computeArraySizes(starts, stops, steps)
-                    (starts, sizes, steps, nonNullOption)
-                  }
-                }
-              }
-            }
+        // 1 Compute the sequence size for each row.
+        val (sizeCol, stepCol) = withResource(columnarEvalToColumn(stop, batch)) { stopGpuCol =>
+          val stopCol = stopGpuCol.getBase
+          val steps = stepGpuColOpt.map(_.getBase.incRefCount())
+              .getOrElse(defaultSteps(startCol, stopCol))
+          closeOnExcept(steps) { _ =>
+            (computeSequenceSizes(startCol, stopCol, steps), steps)
           }
         }
-      }
 
-    // 2 Generate the sequence
-    val castedStepCol = withResource(stepCol) { _ =>
-      // cudf 'sequence' requires 'step' has the same type with 'start'.
-      // And the step type may differ due to the default steps.
-      stepCol.castTo(startCol.getType)
-    }
-    withResource(Seq(startCol, sizeCol, castedStepCol)) { _ =>
-      withResource(ColumnVector.sequence(startCol, sizeCol, castedStepCol)) { ret =>
-        val finalRet = withResource(nonNullPredOpt) { _ =>
-          // if has nulls, need to restore the valid values to the original positions.
-          nonNullPredOpt.map(gather(_, ret)).getOrElse(ret.incRefCount)
+        // 2 Generate the sequence
+        //
+        // cudf 'sequence' requires 'step' has the same type with 'start'.
+        // And the step type may differ due to the default steps.
+        val castedStepCol = withResource(stepCol) { _ =>
+          closeOnExcept(sizeCol) { _ =>
+            stepCol.castTo(startCol.getType)
+          }
         }
-        GpuColumnVector.from(finalRet, dataType)
+        withResource(Seq(sizeCol, castedStepCol)) { _ =>
+          GpuColumnVector.from(genSequence(startCol, sizeCol, castedStepCol), dataType)
+        }
       }
     }
   }
@@ -688,4 +608,40 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
     // case DateType =>
   }
 
+  private def genSequence(
+      start: ColumnView,
+      size: ColumnView,
+      step: ColumnView): ColumnVector = {
+    // size is calculated from start, stop and step, so its validity mask is equal to
+    // the merged validity of the three columns, and can be used as the final output
+    // validity mask directly.
+    // Then checking nulls only in size column is enough.
+    if(size.getNullCount > 0) {
+      // Nulls are not acceptable in cudf 'list::sequences'. (Pls refer to
+      //     https://github.com/rapidsai/cudf/issues/10012),
+      //
+      // So replace the nulls with 0 for size, and create temp views for start and
+      // stop with forcing null count to be 0.
+      val sizeNoNull = withResource(Scalar.fromInt(0)) { zero =>
+        size.replaceNulls(zero)
+      }
+      val ret = withResource(sizeNoNull) { _ =>
+        val startNoNull = new ColumnView(start.getType, start.getRowCount, Optional.of(0L),
+          start.getData, null)
+        withResource(startNoNull) { _ =>
+          val stepNoNull = new ColumnView(step.getType, step.getRowCount, Optional.of(0L),
+            step.getData, null)
+          withResource(stepNoNull) { _ =>
+            ColumnVector.sequence(startNoNull, sizeNoNull, stepNoNull)
+          }
+        }
+      }
+      withResource(ret) { _ =>
+        // Restore the null rows by setting the validity mask.
+        ret.mergeAndSetValidity(BinaryOp.BITWISE_AND, size)
+      }
+    } else {
+      ColumnVector.sequence(start, size, step)
+    }
+  }
 }

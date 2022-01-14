@@ -236,7 +236,7 @@ sequence_too_long_length_gens = [
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
 def test_sequence_too_long_sequence(stop_gen):
     assert_gpu_and_cpu_error(
-        # To avoid OOM, reudce the row number to 2, it is enough to verify this case.
+        # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
         lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
             "sequence(0, a)").collect(),
         conf = {}, error_message = "Too long sequence")
