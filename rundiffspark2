@@ -192,6 +192,10 @@ sed -n  '/class GpuProjectExecMeta/,/override def convertToGpu/{/override def co
 diff GpuProjectExecMeta_new.out GpuProjectExecMeta_old.out > GpuProjectExecMeta.newdiff
 diff -c spark2diffs/GpuProjectExecMeta.diff  GpuProjectExecMeta.newdiff
 
+sed -n  '/class GpuSampleExecMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperatorsMeta.scala > GpuSampleExecMeta_new.out
+sed -n  '/class GpuSampleExecMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperators.scala > GpuSampleExecMeta_old.out
+diff -c GpuSampleExecMeta_new.out GpuSampleExecMeta_old.out 
+
 sed -n  '/class GpuSortMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExecMeta.scala > GpuSortMeta_new.out
 sed -n  '/class GpuSortMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExec.scala > GpuSortMeta_old.out
 diff GpuSortMeta_new.out GpuSortMeta_old.out > GpuSortMeta.newdiff
@@ -368,3 +372,28 @@ diff -c spark2diffs/ReplicateRowsExprMeta.diff ReplicateRowsExprMeta.newdiff
 
 diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DateUtils.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/DateUtils.scala > DateUtils.newdiff
 diff -c spark2diffs/DateUtils.diff DateUtils.newdiff
+
+sed -n '/object CudfTDigest/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuApproximatePercentile.scala > CudfTDigest_new.out
+sed -n '/object CudfTDigest/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuApproximatePercentile.scala > CudfTDigest_old.out
+diff CudfTDigest_new.out CudfTDigest_old.out > CudfTDigest.newdiff
+diff -c spark2diffs/CudfTDigest.diff CudfTDigest.newdiff
+
+sed -n  '/sealed trait TimeParserPolicy/p' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > TimeParserPolicy_new.out
+sed -n  '/sealed trait TimeParserPolicy/p' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > TimeParserPolicy_old.out
+diff -c TimeParserPolicy_new.out TimeParserPolicy_old.out
+
+sed -n  '/object LegacyTimeParserPolicy/p' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > LegacyTimeParserPolicy_new.out
+sed -n  '/object LegacyTimeParserPolicy/p' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > LegacyTimeParserPolicy_old.out
+diff -c LegacyTimeParserPolicy_new.out LegacyTimeParserPolicy_old.out
+
+sed -n  '/object ExceptionTimeParserPolicy/p' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > ExceptionTimeParserPolicy_new.out
+sed -n  '/object ExceptionTimeParserPolicy/p' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > ExceptionTimeParserPolicy_old.out
+diff -c ExceptionTimeParserPolicy_new.out ExceptionTimeParserPolicy_old.out
+
+sed -n  '/object CorrectedTimeParserPolicy/p' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > CorrectedTimeParserPolicy_new.out
+sed -n  '/object CorrectedTimeParserPolicy/p' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > CorrectedTimeParserPolicy_old.out
+diff -c CorrectedTimeParserPolicy_new.out CorrectedTimeParserPolicy_old.out
+
+sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/mathExpressions.scala > GpuFloorCeil_new.out
+sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/mathExpressions.scala > GpuFloorCeil_old.out
+diff -c GpuFloorCeil_new.out GpuFloorCeil_old.out

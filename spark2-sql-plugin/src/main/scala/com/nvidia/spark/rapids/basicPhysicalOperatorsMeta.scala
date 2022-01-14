@@ -17,12 +17,20 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.execution.ProjectExec
+import org.apache.spark.sql.execution.{ProjectExec, SampleExec}
 
 class GpuProjectExecMeta(
     proj: ProjectExec,
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
+    with Logging {
+}
+
+class GpuSampleExecMeta(
+    sample: SampleExec,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _]],
+    r: DataFromReplacementRule) extends SparkPlanMeta[SampleExec](sample, conf, p, r)
     with Logging {
 }
