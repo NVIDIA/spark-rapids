@@ -533,20 +533,20 @@ def test_hash_pivot_reduction_nan_fallback(data_gen):
         "PivotFirst",
         conf=_nans_float_conf)
 
-# https://github.com/NVIDIA/spark-rapids/issues/4514
-# Disabling below test temporarily until we have a fix. Disabling fixes the CI pipeline failures.
-#@approximate_float
-#ignore_order(local=True)
-#@incompat
-#@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
-#@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
-#def test_hash_reduction_pivot_without_nans(data_gen, conf):
-#    assert_gpu_and_cpu_are_equal_collect(
-#        lambda spark: gen_df(spark, data_gen, length=100)
-#            .groupby()
-#            .pivot('b')
-#            .agg(f.sum('c')),
-#        conf=conf)
+@pytest.mark.xfail(reason="Disabling below test temporarily until we have a fix for this issue "
+                          "https://github.com/NVIDIA/spark-rapids/issues/4514")
+@approximate_float
+ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_reduction_pivot_without_nans(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby()
+            .pivot('b')
+            .agg(f.sum('c')),
+        conf=conf)
 
 _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(BooleanGen(), length=15),
