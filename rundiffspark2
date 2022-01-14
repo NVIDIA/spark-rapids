@@ -261,7 +261,15 @@ sed -n  '/class GpuWindowSpecDefinitionMeta/,/override def convertToGpu/{/overri
 diff GpuWindowSpecDefinitionMeta_new.out GpuWindowSpecDefinitionMeta_old.out > GpuWindowSpecDefinitionMeta.newdiff
 diff -c spark2diffs/GpuWindowSpecDefinitionMeta.diff  GpuWindowSpecDefinitionMeta.newdiff
 
+sed -n  '/abstract class GpuBaseWindowExecMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuWindowMeta.scala > GpuBaseWindowExecMeta_new.out
+sed -n  '/abstract class GpuBaseWindowExecMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuWindowExec.scala > GpuBaseWindowExecMeta_old.out
+diff GpuBaseWindowExecMeta_new.out GpuBaseWindowExecMeta_old.out > GpuBaseWindowExecMeta.newdiff
+diff -c spark2diffs/GpuBaseWindowExecMeta.diff GpuBaseWindowExecMeta.newdiff
 
+sed -n  '/class GpuWindowExecMeta(/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuWindowMeta.scala > GpuWindowExecMeta_new.out
+sed -n  '/class GpuWindowExecMeta(/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuWindowExec.scala  > GpuWindowExecMeta_old.out
+diff GpuWindowExecMeta_new.out GpuWindowExecMeta_old.out > GpuWindowExecMeta.newdiff
+diff -c spark2diffs/GpuWindowExecMeta.diff  GpuWindowExecMeta.newdiff
 
 spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuWindowMeta.scala
 spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuExpandMeta.scala
