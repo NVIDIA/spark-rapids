@@ -60,7 +60,12 @@ class GpuBroadcastHashJoinMeta(
     }
 
     if (!canBuildSideBeReplaced(buildSideMeta)) {
-      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+      if (conf.isSqlExplainOnlyEnabled && wrapped.conf.adaptiveExecutionEnabled) {
+        willNotWorkOnGpu("explain only mode with AQE, we cannot determine " +
+          "if the broadcast for this join is on the GPU too")
+      } else {
+        willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+      }
     }
 
     if (!canThisBeReplaced) {
