@@ -149,7 +149,6 @@ diff -c spark2diffs/LiteralExprMeta.diff LiteralExprMeta.newdiff
 
 # 2.x doesn't have a base aggregate class so this is much different, check the revision for now
 CUR_COMMIT=`git log -1 sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala | grep commit | cut -d ' ' -f 2`
-echo $CUR_COMMIT
 if [ "$CUR_COMMIT" != "b17c685788c0a62763aa8101709e241877f02025" ]; then
     echo "sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala has different commit - check manually"
 fi
@@ -206,9 +205,6 @@ diff -c spark2diffs/GpuJoinUtils.diff GpuJoinUtils.newdiff
 
 diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/TypeSigUtil.scala ./sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/v2/TypeSigUtil.scala > TypeSigUtil.newdiff
 diff -c spark2diffs/TypeSigUtil.diff TypeSigUtil.newdiff
-
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/GpuBroadcastHashJoinExecMeta.scala
-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBroadcastHashJoinExec.scala
 
 sed -n  '/class GpuBroadcastHashJoinMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/v2/GpuBroadcastHashJoinExecMeta.scala > GpuBroadcastHashJoinMeta_new.out
 sed -n  '/class GpuBroadcastHashJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBroadcastHashJoinExec.scala > GpuBroadcastHashJoinMeta_old.out
