@@ -271,10 +271,18 @@ sed -n  '/class GpuWindowExecMeta(/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/
 diff GpuWindowExecMeta_new.out GpuWindowExecMeta_old.out > GpuWindowExecMeta.newdiff
 diff -c spark2diffs/GpuWindowExecMeta.diff  GpuWindowExecMeta.newdiff
 
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuWindowMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuExpandMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadCSVFileFormat.scala
+sed -n  '/class GpuExpandExecMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuExpandMeta.scala > GpuExpandExecMeta_new.out
+sed -n  '/class GpuExpandExecMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuExpandExec.scala > GpuExpandExecMeta_old.out
+diff GpuExpandExecMeta_new.out GpuExpandExecMeta_old.out > GpuExpandExecMeta.newdiff
+diff -c spark2diffs/GpuExpandExecMeta.diff GpuExpandExecMeta.newdiff
+
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala > RapidsMeta.newdiff
+diff -c spark2diffs/RapidsMeta.diff RapidsMeta.newdiff
+
+sed -n  '/object GpuReadCSVFileFormat/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadCSVFileFormat.scala > GpuReadCSVFileFormat_new.out
+sed -n  '/object GpuReadCSVFileFormat/,/^}/{/^}/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuReadCSVFileFormat.scala > GpuReadCSVFileFormat_old.out
+diff  GpuReadCSVFileFormat_new.out GpuReadCSVFileFormat_old.out > GpuReadCSVFileFormat.newdiff
+diff -c spark2diffs/GpuReadCSVFileFormat.diff GpuReadCSVFileFormat.newdiff 
 
 diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsConf.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsConf.scala > RapidsConf.newdiff
 diff -c spark2diffs/RapidsConf.diff RapidsConf.newdiff
