@@ -310,6 +310,8 @@ object GpuFileFormatWriter extends Logging {
         // If there is an error, abort the task
         dataWriter.abort()
         logError(s"Job $jobId aborted.")
+      }, finallyBlock = {
+        dataWriter.close()
       })
     } catch {
       case e: FetchFailedException =>
