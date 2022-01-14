@@ -15,12 +15,17 @@
 # limitations under the License.
 #
 
-# Generally speaking this assumes the convertToGpu is the last function in the meta classes, if someone adds something after it we may not catch it
+# This scripts diffs the code in spark2-sql-module with the corresponding files and functions in
+#sql-plugin to look for anything that has changed
 
-set -e
+# Generally speaking this assumes the convertToGpu is the last function in the meta classes,
+# if someone adds something after it we may not catch it.
+# This also doesn't catch if someone adds an override in a shim or someplace we don't diff.
 
 # just using interface, and we don't really expect them to use it on 2.x so just skip diffing
-#spark2-sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java
+# spark2-sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java
+
+echo "Done running Diffs of spark2 files"
 
 diff ./sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveOverrides.scala spark2-sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveOverrides.scala > GpuHiveOverrides.newdiff
 if [[ $(diff spark2diffs/GpuHiveOverrides.diff GpuHiveOverrides.newdiff) ]]; then
@@ -154,9 +159,44 @@ diff -c spark2diffs/TypeChecks.diff  TypeChecks.newdiff
 diff spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala > DataTypeUtils.newdiff
 diff -c spark2diffs/DataTypeUtils.diff DataTypeUtils.newdiff
 
-#TODO
-spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala
-## TODO
+diff ./spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala > GpuOverrides.newdiff
+diff -c spark2diffs/GpuOverrides.diff GpuOverrides.newdiff
+
+sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > cast_new.out
+sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p' sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > cast_old.out
+diff cast_new.out cast_old.out > cast.newdiff
+diff -c spark2diffs/cast.diff cast.newdiff
+
+## TODO - need to do the GpuShim overides diff for PythonExecs
+
+sed -n  '/GpuOverrides.expr\[Average\]/,/GpuOverrides.expr\[Abs/p' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > average_new.out
+sed -n  '/GpuOverrides.expr\[Average\]/,/GpuOverrides.expr\[Abs/p' sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > average_old.out
+diff average_new.out average_old.out > average.newdiff
+diff -c spark2diffs/average.diff average.newdiff
+
+sed -n  '/GpuOverrides.expr\[Abs\]/,/GpuOverrides.expr\[RegExpReplace/p' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > abs_new.out
+sed -n  '/GpuOverrides.expr\[Abs\]/,/GpuOverrides.expr\[RegExpReplace/p' sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > abs_old.out
+diff abs_new.out abs_old.out > abs.newdiff
+diff -c spark2diffs/abs.diff abs.newdiff
+
+sed -n  '/GpuOverrides.expr\[RegExpReplace\]/,/GpuOverrides.expr\[TimeSub/{/GpuOverrides.expr\[TimeSub/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > regexreplace_new.out
+sed -n  '/GpuOverrides.expr\[RegExpReplace\]/,/GpuScalaUDFMeta.exprMeta/{/GpuScalaUDFMeta.exprMeta/!p}' sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > regexreplace_old.out
+diff -c regexreplace_new.out regexreplace_old.out
+
+sed -n  '/GpuOverrides.expr\[TimeSub\]/,/GpuOverrides.expr\[ScalaUDF/{/GpuOverrides.expr\[ScalaUDF/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > TimeSub_new.out
+sed -n  '/GpuOverrides.expr\[TimeSub\]/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > TimeSub_old.out
+diff -w TimeSub_new.out TimeSub_old.out > TimeSub.newdiff
+diff -c spark2diffs/TimeSub.diff TimeSub.newdiff
+
+sed -n  '/GpuOverrides.expr\[ScalaUDF\]/,/})/{/})/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > ScalaUDF_new.out
+sed -n  '/GpuOverrides.expr\[ScalaUDF\]/,/})/{/})/!p}' sql-plugin/src/main/301until310-all/scala/com/nvidia/spark/rapids/shims/v2/GpuRowBasedScalaUDF.scala > ScalaUDF_old.out
+diff -w ScalaUDF_new.out ScalaUDF_old.out > ScalaUDF.newdiff
+diff -c spark2diffs/ScalaUDF.diff ScalaUDF.newdiff
+
+sed -n  '/GpuOverrides.exec\[FileSourceScanExec\]/,/})/{/})/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > FileSourceScanExec_new.out
+sed -n  '/GpuOverrides.exec\[FileSourceScanExec\]/,/override def convertToCpu/{/override def convertToCpu/!p}' sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > FileSourceScanExec_old.out
+diff -w FileSourceScanExec_new.out FileSourceScanExec_old.out > FileSourceScanExec.newdiff
+diff -c spark2diffs/FileSourceScanExec.diff FileSourceScanExec.newdiff
 
 sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > GpuOrcScanBase_new.out
 sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}' ./sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > GpuOrcScanBase_old.out
@@ -194,7 +234,8 @@ diff -c spark2diffs/GpuProjectExecMeta.diff  GpuProjectExecMeta.newdiff
 
 sed -n  '/class GpuSampleExecMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperatorsMeta.scala > GpuSampleExecMeta_new.out
 sed -n  '/class GpuSampleExecMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/basicPhysicalOperators.scala > GpuSampleExecMeta_old.out
-diff -c GpuSampleExecMeta_new.out GpuSampleExecMeta_old.out 
+diff GpuSampleExecMeta_new.out GpuSampleExecMeta_old.out > GpuSampleExecMeta.newdiff
+diff -c spark2diffs/GpuSampleExecMeta.diff GpuSampleExecMeta.newdiff 
 
 sed -n  '/class GpuSortMeta/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExecMeta.scala > GpuSortMeta_new.out
 sed -n  '/class GpuSortMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortExec.scala > GpuSortMeta_old.out
@@ -347,7 +388,8 @@ diff -c asDecimalType_new.out asDecimalType_old.out
 
 sed -n '/def optionallyAsDecimalType/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > optionallyAsDecimalType_new.out
 sed -n '/def optionallyAsDecimalType/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > optionallyAsDecimalType_old.out
-diff -c optionallyAsDecimalType_new.out optionallyAsDecimalType_old.out
+diff optionallyAsDecimalType_new.out optionallyAsDecimalType_old.out > optionallyAsDecimalType.newdiff
+diff -c spark2diffs/optionallyAsDecimalType.diff optionallyAsDecimalType.newdiff
 
 sed -n '/def getPrecisionForIntegralType/,/^  }/{/^  }/!p}' spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > getPrecisionForIntegralType_new.out
 sed -n '/def getPrecisionForIntegralType/,/^  }/{/^  }/!p}' sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > getPrecisionForIntegralType_old.out
@@ -397,3 +439,11 @@ diff -c CorrectedTimeParserPolicy_new.out CorrectedTimeParserPolicy_old.out
 sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/mathExpressions.scala > GpuFloorCeil_new.out
 sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/mathExpressions.scala > GpuFloorCeil_old.out
 diff -c GpuFloorCeil_new.out GpuFloorCeil_old.out
+
+sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}' spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > GpuFileSourceScanExec_new.out
+sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}' sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > GpuFileSourceScanExec_old.out
+diff GpuFileSourceScanExec_new.out GpuFileSourceScanExec_old.out > GpuFileSourceScanExec.newdiff
+diff -c spark2diffs/GpuFileSourceScanExec.diff GpuFileSourceScanExec.newdiff
+
+echo "Done running Diffs of spark2.x files"
+

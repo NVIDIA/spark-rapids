@@ -1,0 +1,21 @@
+6a7,24
+>           // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+>           // if possible. Instead regarding filters as childExprs of current Meta, we create
+>           // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+>           // FileSourceScan is independent from the replacement of the partitionFilters. It is
+>           // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+>           // are on the GPU. And vice versa.
+>           private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
+>             filter.transformDown {
+>               case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
+>                 if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
+> 
+>                 val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
+>                 subBcMeta.tagForExplain()
+>                 val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+>                 dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+>             }
+>           }
+> 
+10a29
+> 

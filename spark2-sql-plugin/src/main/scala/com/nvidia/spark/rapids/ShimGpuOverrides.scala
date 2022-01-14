@@ -47,89 +47,90 @@ import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 // Overrides that are in the shim in normal sql-plugin, moved here for easier diffing
 object ShimGpuOverrides extends Logging {
 
-  val shimExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-    GpuOverrides.expr[Cast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast, false, conf, p, r,
-        doFloatToIntCheck = false, stringToAnsiDate = false)),
-    GpuOverrides.expr[Average](
-      "Average aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        Seq(ParamCheck("input",
-          TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
-          TypeSig.cpuNumeric))),
-      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
-          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
-          // then it divides by the count with an output scale that is 4 more than the input
-          // scale. With how our divide works to match Spark, this means that we will need a
-          // precision of 5 more. So 38 - 10 - 5 = 23
-          val dataType = a.child.dataType
-          dataType match {
-            case dt: DecimalType =>
-              if (dt.precision > 23) {
-                if (conf.needDecimalGuarantees) {
-                  willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
-                    s"a precision large than 23. The current precision is ${dt.precision}")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                    s"Average(${a.child.dataType}) produces $dt with an " +
-                    s"intermediate precision of ${dt.precision + 15}")
+  val shimExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    Seq(
+      GpuOverrides.expr[Cast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast, false, conf, p, r,
+          doFloatToIntCheck = false, stringToAnsiDate = false)),
+      GpuOverrides.expr[Average](
+        "Average aggregate operator",
+        ExprChecks.fullAgg(
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          Seq(ParamCheck("input",
+            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
+            TypeSig.cpuNumeric))),
+        (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+          override def tagAggForGpu(): Unit = {
+            // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
+            // then it divides by the count with an output scale that is 4 more than the input
+            // scale. With how our divide works to match Spark, this means that we will need a
+            // precision of 5 more. So 38 - 10 - 5 = 23
+            val dataType = a.child.dataType
+            dataType match {
+              case dt: DecimalType =>
+                if (dt.precision > 23) {
+                  if (conf.needDecimalGuarantees) {
+                    willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
+                      s"a precision large than 23. The current precision is ${dt.precision}")
+                  } else {
+                    logWarning("Decimal overflow guarantees disabled for " +
+                      s"Average(${a.child.dataType}) produces $dt with an " +
+                      s"intermediate precision of ${dt.precision + 15}")
+                  }
                 }
-              }
-            case _ => // NOOP
+              case _ => // NOOP
+            }
+            GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
-          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
-        }
-
-      }),
-    GpuOverrides.expr[Abs](
-      "Absolute value",
-       ExprChecks.unaryProjectAndAstInputMatchesOutput(
+  
+        }),
+      GpuOverrides.expr[Abs](
+        "Absolute value",
+        ExprChecks.unaryProjectAndAstInputMatchesOutput(
           TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
           TypeSig.cpuNumeric),
-      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-      }),
-    GpuOverrides.expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
-      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
-        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
-      "the implementation is not 100% compatible. " +
-        "See the compatibility guide for more information."),
-    GpuOverrides.expr[TimeSub](
-      "Subtracts interval from timestamp",
-      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-        ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-          .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-      (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          timeSub.interval match {
-            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-              if (intvl.months != 0) {
-                willNotWorkOnGpu("interval months isn't supported")
-              }
-            case _ =>
+        (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        }),
+      GpuOverrides.expr[RegExpReplace](
+        "RegExpReplace support for string literal input patterns",
+        ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
+        "the implementation is not 100% compatible. " +
+          "See the compatibility guide for more information."),
+      GpuOverrides.expr[TimeSub](
+        "Subtracts interval from timestamp",
+        ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
+        (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            timeSub.interval match {
+              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+                if (intvl.months != 0) {
+                  willNotWorkOnGpu("interval months isn't supported")
+                }
+              case _ =>
+            }
+            checkTimeZoneId(timeSub.timeZoneId)
           }
-          checkTimeZoneId(timeSub.timeZoneId)
-        }
-      }),
-    GpuOverrides.expr[ScalaUDF](
-      "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
-        "to get better performance.",
-      ExprChecks.projectOnly(
-        GpuUserDefinedFunction.udfTypeSig,
-        TypeSig.all,
-        repeatingParamCheck =
-          Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-      (expr, conf, p, r) => new ScalaUDFMetaBase(expr, conf, p, r) {
-      })
+        }),
+      GpuOverrides.expr[ScalaUDF](
+        "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
+          "to get better performance.",
+        ExprChecks.projectOnly(
+          GpuUserDefinedFunction.udfTypeSig,
+          TypeSig.all,
+          repeatingParamCheck =
+            Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
+        (expr, conf, p, r) => new ScalaUDFMetaBase(expr, conf, p, r) {
+        })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
@@ -142,16 +143,7 @@ object ShimGpuOverrides extends Logging {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          override def tagPlanForGpu(): Unit = {
-            this.wrapped.relation.fileFormat match {
-              case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(this)
-              case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-                GpuReadOrcFileFormat.tagSupport(this)
-              case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(this)
-              case f =>
-                this.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
-            }
-          }
+          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
         }),
     GpuOverrides.exec[ArrowEvalPythonExec](
       "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
