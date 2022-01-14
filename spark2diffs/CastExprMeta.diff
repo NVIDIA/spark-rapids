@@ -1,0 +1,35 @@
+1c1
+< final class CastExprMeta[INPUT <: Cast](
+---
+> final class CastExprMeta[INPUT <: CastBase](
+5c5
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+21,22c21
+<   // 2.x doesn't have config set to true
+<   val legacyCastToString: Boolean = true
+---
+>   val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
+46c45
+<         if (dt.precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
+---
+>         if (dt.precision > DType.DECIMAL128_MAX_PRECISION) {
+48c47
+<               s"precision > ${GpuOverrides.DECIMAL128_MAX_PRECISION} is not supported yet")
+---
+>               s"precision > ${DType.DECIMAL128_MAX_PRECISION} is not supported yet")
+81a81
+>         YearParseUtil.tagParseStringAsDate(conf, this)
+83c83
+<         // NOOP for anything prior to 3.2.0
+---
+>         YearParseUtil.tagParseStringAsDate(conf, this)
+85,87c85
+<         // Spark 2.x  since bug  and we don't know what version of Spark 3 they will be using 
+<         // just always say it won't work and they can hopefully figure it out from warning.
+<         if (dt.scale < 0) {
+---
+>         if (dt.scale < 0 && !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported) {
+116a115
+> 
