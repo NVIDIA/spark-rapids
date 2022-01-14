@@ -28,7 +28,7 @@
 echo "Done running Diffs of spark2 files"
 
 tmp_dir=$(mktemp -d -t spark2diff-XXXXXXXXXX)
-echo $tmp_dir
+echo "Using temporary directory: $tmp_dir"
 
 diff ../sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveOverrides.scala  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveOverrides.scala > $tmp_dir/GpuHiveOverrides.newdiff
 if [[ $(diff spark2diffs/GpuHiveOverrides.diff $tmp_dir/GpuHiveOverrides.newdiff) ]]; then
