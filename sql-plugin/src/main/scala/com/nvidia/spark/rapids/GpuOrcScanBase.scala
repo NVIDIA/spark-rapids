@@ -56,10 +56,10 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
+import org.apache.spark.sql.execution.datasources.rapids.OrcFiltersWrapper
 import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FilePartitionReaderFactory}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
@@ -824,7 +824,7 @@ private case class GpuOrcFileFilterHandler(
     val readerOpts = OrcInputFormat.buildOptions(
       conf, orcReader, partFile.start, partFile.length)
     // create the search argument if we have pushed filters
-    OrcFilters.createFilter(fullSchema, pushedFilters).foreach { f =>
+    OrcFiltersWrapper.createFilter(fullSchema, pushedFilters).foreach { f =>
       readerOpts.searchArgument(f, fullSchema.fieldNames)
     }
     readerOpts
