@@ -52,7 +52,7 @@ Other forms of Spark UDFs are not supported, such as:
 
 For supported UDFs, the RAPIDS Accelerator will detect a GPU implementation
 if the UDF class implements the
-[RapidsUDF](https://github.com/NVIDIA/spark-rapids/blob/branch-22.02/sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java)
+[RapidsUDF](https://github.com/NVIDIA/spark-rapids/blob/branch-21.12/sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java)
 interface. This interface requires implementing the following method:
 
 ```java
