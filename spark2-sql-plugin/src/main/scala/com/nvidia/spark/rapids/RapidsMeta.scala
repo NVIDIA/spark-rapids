@@ -83,11 +83,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
   val childExprs: Seq[BaseExprMeta[_]]
 
   /**
-   * The wrapped scans that should be examined
-   */
-  // val childScans: Seq[ScanMeta[_]]
-
-  /**
    * The wrapped partitioning that should be examined
    */
   val childParts: Seq[PartMeta[_]]
@@ -130,14 +125,12 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
     willNotWorkOnGpu("Removed by cost-based optimizer")
     childExprs.foreach(_.recursiveCostPreventsRunningOnGpu())
     childParts.foreach(_.recursiveCostPreventsRunningOnGpu())
-    // childScans.foreach(_.recursiveCostPreventsRunningOnGpu())
   }
 
   final def recursiveSparkPlanPreventsRunningOnGpu(): Unit = {
     cannotRunOnGpuBecauseOfSparkPlan = true
     childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
     childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
-    // childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
     childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
   }
 
@@ -145,7 +138,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
     shouldBeRemoved("parent plan is removed")
     childExprs.foreach(_.recursiveSparkPlanRemoved())
     childParts.foreach(_.recursiveSparkPlanRemoved())
-    // childScans.foreach(_.recursiveSparkPlanRemoved())
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
   }
 
@@ -226,11 +218,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
   def canExprTreeBeReplaced: Boolean = childExprs.forall(_.canExprTreeBeReplaced)
 
   /**
-   * Returns true iff all of the scans can be replaced.
-   */
-  // def canScansBeReplaced: Boolean = childScans.forall(_.canThisBeReplaced)
-
-  /**
    * Returns true iff all of the partitioning can be replaced.
    */
   def canPartsBeReplaced: Boolean = childParts.forall(_.canThisBeReplaced)
@@ -261,7 +248,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
    * [[tagSelfForGpu]]
    */
   final def tagForGpu(): Unit = {
-    // childScans.foreach(_.tagForGpu())
     childParts.foreach(_.tagForGpu())
     childExprs.foreach(_.tagForGpu())
     childDataWriteCmds.foreach(_.tagForGpu())
@@ -398,7 +384,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
   }
 
   private final def printChildren(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-    // childScans.foreach(_.print(append, depth + 1, all))
     childParts.foreach(_.print(append, depth + 1, all))
     childExprs.foreach(_.print(append, depth + 1, all))
     childDataWriteCmds.foreach(_.print(append, depth + 1, all))
@@ -429,7 +414,6 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
-  // override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
@@ -471,7 +455,6 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
- // override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
@@ -505,13 +488,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     if (!canThisBeReplaced) {
       childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
-      // childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
     }
     if (shouldThisBeRemoved) {
       childExprs.foreach(_.recursiveSparkPlanRemoved())
       childParts.foreach(_.recursiveSparkPlanRemoved())
-      // childScans.foreach(_.recursiveSparkPlanRemoved())
       childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
     }
     childPlans.foreach(_.tagForExplain())
@@ -537,7 +518,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
   override val childExprs: Seq[BaseExprMeta[_]] =
     plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  // override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
@@ -574,13 +554,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         !parent.exists(_.canThisBeReplaced))) {
 
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
-
-     /* childPlans.head.wrapped
-          .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
-        wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
-      }
-
-      */
     }
   }
 
@@ -644,12 +617,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * previously stored on the spark plan to determine whether this operator can run on GPU
    */
   def checkExistingTags(): Unit = {
-    /*
-    wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
-      .foreach(_.diff(cannotBeReplacedReasons.get)
-      .foreach(willNotWorkOnGpu))
-
-     */
   }
 
   /**
@@ -673,13 +640,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       }
       childPlans.head.convertIfNeeded()
     } else {
-     /* if (canThisBeReplaced) {
-        convertToGpu()
-      } else {
-        convertToCpu()
-      }
-
-      */
       convertToCpu
     }
   }
@@ -895,7 +855,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] =
     expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  // override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 

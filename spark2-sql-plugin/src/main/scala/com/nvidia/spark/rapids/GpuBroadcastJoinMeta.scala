@@ -25,10 +25,8 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
   extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
+    // Spark 2.x - removed some checks only applicable to AQE
     buildSide.wrapped match {
-      case reused: ReusedExchangeExec =>
-        reused.child.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec")
-      case f if f.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec") => true
       case _ => buildSide.canThisBeReplaced
     }
   }

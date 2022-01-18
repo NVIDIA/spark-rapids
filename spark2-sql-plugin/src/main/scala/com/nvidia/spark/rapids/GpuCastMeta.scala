@@ -46,7 +46,7 @@ final class CastExprMeta[INPUT <: Cast](
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
-  // 2.x doesn't have config set to true
+  // 2.x doesn't have the SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING config, so set it to true
   val legacyCastToString: Boolean = true
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
@@ -110,7 +110,11 @@ final class CastExprMeta[INPUT <: Cast](
       case (_: StringType, _: DateType) =>
         // NOOP for anything prior to 3.2.0
       case (_: StringType, dt:DecimalType) =>
-        // Spark 2.x  since bug  and we don't know what version of Spark 3 they will be using 
+        // Spark 2.x: removed check for
+        // !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported
+        // this dealt with handling a bug fix that is only in newer versions of Spark
+        // (https://issues.apache.org/jira/browse/SPARK-37451)
+        // Since we don't know what version of Spark 3 they will be using
         // just always say it won't work and they can hopefully figure it out from warning.
         if (dt.scale < 0) {
           willNotWorkOnGpu("RAPIDS doesn't support casting string to decimal for " +
