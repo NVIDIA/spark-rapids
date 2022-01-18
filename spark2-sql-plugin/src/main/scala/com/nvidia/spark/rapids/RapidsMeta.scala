@@ -156,12 +156,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE](
     cannotBeReplacedReasons.get.add(because)
     // annotate the real spark plan with the reason as well so that the information is available
     // during query stage planning when AQE is on
-  /*  wrapped match {
-      case p: SparkPlan =>
-        p.setTagValue(gpuSupportedTag,
-          p.getTagValue(gpuSupportedTag).getOrElse(Set.empty) + because)
-      case _ =>
-    } */
   }
 
   final def mustBeReplaced(because: String): Unit = {
@@ -774,6 +768,7 @@ object ExpressionContext {
       case agg: SparkPlan if agg.isInstanceOf[WindowExec] =>
         WindowAggExprContext
       case agg: HashAggregateExec =>
+        // Spark 2.x doesn't have the BaseAggregateExec class
         if (agg.groupingExpressions.isEmpty) {
           ReductionAggExprContext
         } else {
