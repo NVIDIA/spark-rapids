@@ -7,7 +7,7 @@
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
 21,22c21
-<   // 2.x doesn't have config set to true
+<   // 2.x doesn't have the SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING config, so set it to true
 <   val legacyCastToString: Boolean = true
 ---
 >   val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
@@ -25,11 +25,15 @@
 <         // NOOP for anything prior to 3.2.0
 ---
 >         YearParseUtil.tagParseStringAsDate(conf, this)
-85,87c85
-<         // Spark 2.x  since bug  and we don't know what version of Spark 3 they will be using 
+85,91c85
+<         // Spark 2.x: removed check for
+<         // !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported
+<         // this dealt with handling a bug fix that is only in newer versions of Spark
+<         // (https://issues.apache.org/jira/browse/SPARK-37451)
+<         // Since we don't know what version of Spark 3 they will be using
 <         // just always say it won't work and they can hopefully figure it out from warning.
 <         if (dt.scale < 0) {
 ---
 >         if (dt.scale < 0 && !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported) {
-116a115
+120a115
 > 

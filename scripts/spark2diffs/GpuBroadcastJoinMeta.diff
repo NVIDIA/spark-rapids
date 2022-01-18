@@ -10,18 +10,16 @@
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-29,31c31,36
-<       case reused: ReusedExchangeExec =>
-<         reused.child.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec")
-<       case f if f.getClass.getCanonicalName().contains("GpuBroadcastExchangeExec") => true
----
+28d29
+<     // Spark 2.x - removed some checks only applicable to AQE
+29a31,36
 >       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
 >           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
 >           bqse.plan.asInstanceOf[ReusedExchangeExec]
 >               .child.isInstanceOf[GpuBroadcastExchangeExec]
 >       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
 >       case _: GpuBroadcastExchangeExec => true
-32a38,52
+30a38,52
 >     }
 >   }
 > 
