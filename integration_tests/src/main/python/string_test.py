@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -347,6 +347,16 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_re_replace_backrefs():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "(TEST)", "[$0]")',
+            'REGEXP_REPLACE(a, "(TEST)", "[$1]")'),
+            'RegExpReplace',
+        conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_re_replace_null():
     gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.nvidia.spark.rapids.shims.v2
+
+import java.util.regex.Pattern
 
 import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, QuaternaryExprMeta, RapidsConf, RapidsMeta, RegexUnsupportedException}
 
@@ -47,6 +49,14 @@ class GpuRegExpReplaceMeta(
 
       case _ =>
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
+    }
+
+    expr.rep match {
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
+        val backrefPattern = Pattern.compile("\\$[0-9]")
+        if (backrefPattern.matcher(s.toString).find()) {
+          willNotWorkOnGpu("regexp_replace with back-references is not supported")
+        }
     }
 
     GpuOverrides.extractLit(expr.pos).foreach { lit =>
