@@ -480,6 +480,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - Hex and octal digits
+- `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
