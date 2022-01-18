@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
-import com.nvidia.spark.rapids.shims.v2.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
+import com.nvidia.spark.rapids._
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
