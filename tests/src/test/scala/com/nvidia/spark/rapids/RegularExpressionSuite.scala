@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,8 +70,10 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'[a-z]+','D')")
   }
 
-  testSparkResultsAreEqual("String regexp_replace regex 3",
-    nullableStringsFromCsv, conf = conf) {
+  testGpuFallback("String regexp_replace regex 3",
+    "RegExpReplace",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
+      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'foo$','D')")
   }
 
@@ -90,16 +92,22 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
   }
 
-  testSparkResultsAreEqual("String regexp_extract regex 1",
-    extractStrings, conf = conf) {
+  testGpuFallback("String regexp_extract regex 1",
+    "RegExpExtract",
+    extractStrings, execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec", "Alias",
+      "RegExpExtract", "AttributeReference", "Literal"),conf = conf) {
     frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
   }
 
-  testSparkResultsAreEqual("String regexp_extract regex 2",
-    extractStrings, conf = conf) {
+  testGpuFallback("String regexp_extract regex 2",
+    "RegExpExtract",
+    extractStrings, execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec", "Alias",
+      "RegExpExtract", "AttributeReference", "Literal"),conf = conf) {
     frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
   }
 
+  // note that regexp_extract with a literal string gets replaced with the literal result of
+  // the regexp_extract call on CPU
   testSparkResultsAreEqual("String regexp_extract literal input",
     extractStrings, conf = conf) {
     frame => frame.selectExpr("regexp_extract('abc123def', '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
