@@ -240,3 +240,42 @@ def test_sequence_too_long_sequence(stop_gen):
         lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
             "sequence(0, a)").collect(),
         conf = {}, error_message = "Too long sequence")
+
+def get_sequence_cases_mixed_df(spark, length=2048):
+    # Generate the sequence data following the 3 rules mixed in a single dataset.
+    #     (step > num.zero && start <= stop) ||
+    #     (step < num.zero && start >= stop) ||
+    #     (step == num.zero && start == stop)
+    data_gen = IntegerGen(nullable=False, min_val=-10, max_val=10, special_cases=[])
+    def get_sequence_data(gen, len):
+        gen.start(random.Random(0))
+        list = []
+        for index in range(len):
+            start = gen.gen()
+            stop = gen.gen()
+            step = gen.gen()
+            # decide the direction of step
+            if start < stop:
+                step = abs(step) + 1
+            elif start == stop:
+                step = 0
+            else:
+                step = -(abs(step) + 1)
+            list.append(tuple([start, stop, step]))
+        # add special case
+        list.append(tuple([2, 2, 0]))
+        return list
+
+    mixed_schema = StructType([
+        StructField('a', data_gen.data_type),
+        StructField('b', data_gen.data_type),
+        StructField('c', data_gen.data_type)])
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize(get_sequence_data(data_gen, length)),
+        mixed_schema)
+
+# test for 3 cases mixed in a single dataset
+def test_sequence_with_step_mixed_cases():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: get_sequence_cases_mixed_df(spark)
+            .selectExpr("sequence(a, b, c)"))
