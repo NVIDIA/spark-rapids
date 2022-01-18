@@ -212,6 +212,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.GreaterThanOrEqual"></a>spark.rapids.sql.expression.GreaterThanOrEqual|`>=`|>= operator|true|None|
 <a name="sql.expression.Greatest"></a>spark.rapids.sql.expression.Greatest|`greatest`|Returns the greatest value of all parameters, skipping null values|true|None|
 <a name="sql.expression.Hour"></a>spark.rapids.sql.expression.Hour|`hour`|Returns the hour component of the string/timestamp|true|None|
+<a name="sql.expression.Hypot"></a>spark.rapids.sql.expression.Hypot|`hypot`|Pythagorean addition (Hypotenuse) of real numbers|true|None|
 <a name="sql.expression.If"></a>spark.rapids.sql.expression.If|`if`|IF expression|true|None|
 <a name="sql.expression.In"></a>spark.rapids.sql.expression.In|`in`|IN operator|true|None|
 <a name="sql.expression.InSet"></a>spark.rapids.sql.expression.InSet| |INSET operator|true|None|

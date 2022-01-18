@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -416,6 +416,30 @@ case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
     new ast.BinaryOperation(ast.BinaryOperator.DIV, ast.Literal.ofDouble(1),
       new ast.UnaryOperation(ast.UnaryOperator.TAN,
         child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)))
+  }
+}
+
+case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathExpression("HYPOT") {
+
+  override def binaryOp: BinaryOp = BinaryOp.ADD
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    // naive implementation (needs to handle overflow/underflow)
+    withResource(lhs.mul(lhs)) { lhsSquared =>
+      withResource(rhs.mul(rhs)) { rhsSquared =>
+        withResource(lhsSquared.add(rhsSquared)) { sumSquares =>
+          sumSquares.sqrt()
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    doColumnar(ColumnVector.fromScalar(lhs.getBase, rhs.getRowCount.toInt), rhs.getBase)
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    doColumnar(lhs.getBase, ColumnVector.fromScalar(rhs.getBase, lhs.getRowCount.toInt))
   }
 }
 
