@@ -147,7 +147,7 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 
 #### Usage
 
-1. In `spark-shell`, the necessary jars into --jars option or put them in the
+1. In `spark-shell`, add the necessary jars into --jars option or put them in the
    Spark classpath.
 
    For example, on Spark 3.X:
