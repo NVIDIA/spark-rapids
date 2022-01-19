@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,18 +30,18 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 case class GpuParquetScan(
-    sparkSession: SparkSession,
-    hadoopConf: Configuration,
-    fileIndex: PartitioningAwareFileIndex,
-    dataSchema: StructType,
-    readDataSchema: StructType,
-    readPartitionSchema: StructType,
-    pushedFilters: Array[Filter],
-    options: CaseInsensitiveStringMap,
-    partitionFilters: Seq[Expression],
-    dataFilters: Seq[Expression],
-    rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = true)
+  sparkSession: SparkSession,
+  hadoopConf: Configuration,
+  fileIndex: PartitioningAwareFileIndex,
+  dataSchema: StructType,
+  readDataSchema: StructType,
+  readPartitionSchema: StructType,
+  pushedFilters: Array[Filter],
+  options: CaseInsensitiveStringMap,
+  partitionFilters: Seq[Expression],
+  dataFilters: Seq[Expression],
+  rapidsConf: RapidsConf,
+  queryUsesInputFile: Boolean = true)
   extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
     readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
     queryUsesInputFile) with FileScan {
@@ -66,6 +66,7 @@ case class GpuParquetScan(
 
   // overrides nothing in 330
   def withFilters(
-      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+    partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
+
