@@ -51,7 +51,7 @@ class CompareApplications(apps: Seq[ApplicationInfo]) extends Logging {
       val sourceAppId = appIds.head
       val sourceSqlIdArr = appIdToSortedSqlIds(sourceAppId)
       if (sourceSqlIdArr.isEmpty) {
-        logWarning("empty sql id arr" )
+        appIdToSortedSqlIds.remove(sourceAppId)
       } else {
         val sourceSqlId = sourceSqlIdArr.head
 
