@@ -63,7 +63,7 @@ object JoinTypeChecks {
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
-    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP).nested()
+    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.MAP).nested()
 
   val equiJoinExecChecks: ExecChecks = ExecChecks(
     joinRideAlongTypes,

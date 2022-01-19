@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,8 +27,6 @@ import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
-
-_approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -1311,74 +1309,79 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_byte(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', ByteGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', ByteGen())], length=100),
         0.5, conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
         0.5, conf)
 
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_double(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_double_single(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
         0.05, conf)
 
+@incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
 @allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
     'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
 def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {
+    conf = {
         'spark.rapids.sql.hashAgg.replaceMode': 'partial',
         'spark.sql.adaptive.enabled': aqe_enabled
-    })
+    }
 
     def approx_percentile_query(spark):
         df = gen_df(spark, [('k', StringGen(nullable=False)),
@@ -1388,55 +1391,59 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
 
     assert_gpu_fallback_collect(lambda spark: approx_percentile_query(spark), 'ApproximatePercentile', conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
+@incompat
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(6, 2))]),
-        [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
+        [0.05, 0.25, 0.5, 0.75, 0.95])
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
+@incompat
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(6, 2))]),
-        0.05, conf = _approx_percentile_conf)
+        0.05)
 
+@incompat
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal64():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(10, 9))]),
-        [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
+        [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@incompat
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal64_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(10, 9))]),
-        0.05, conf = _approx_percentile_conf)
+        0.05)
 
+@incompat
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal128():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(19, 18))]),
-        [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
+        [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@incompat
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal128_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(19, 18))]),
-        0.05, conf = _approx_percentile_conf)
+        0.05)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
 # compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
 # of the CPU numbers
-def compare_percentile_approx(df_fun, percentiles, conf):
+def compare_percentile_approx(df_fun, percentiles, conf = {}):
 
     # create SQL statements for exact and approx percentiles
     p_exact_sql = create_percentile_sql("percentile", percentiles)
@@ -1453,10 +1460,10 @@ def compare_percentile_approx(df_fun, percentiles, conf):
         return spark.sql(p_approx_sql)
 
     # run exact percentile on CPU
-    exact = run_with_cpu(run_exact, 'COLLECT', _approx_percentile_conf)
+    exact = run_with_cpu(run_exact, 'COLLECT', conf)
 
     # run approx_percentile on CPU and GPU
-    approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', _approx_percentile_conf)
+    approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', conf)
 
     assert len(exact) == len(approx_cpu)
     assert len(exact) == len(approx_gpu)
@@ -1695,3 +1702,46 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
+
+#
+# test min max on single level structure
+#
+gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(no_nans = True), DoubleGen(no_nans = True),
+    string_gen, boolean_gen,
+    date_gen, timestamp_gen,
+    DecimalGen(precision=12, scale=2),
+    DecimalGen(precision=36, scale=5),
+    null_gen]
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
+def test_min_max_for_single_level_struct(data_gen):
+    df_gen = [
+        ('a', StructGen([
+                ('aa', data_gen),
+                ('ab', data_gen)])),
+        ('b', RepeatSeqGen(IntegerGen(), length=20))]
+
+    # test max
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen),
+        "hash_agg_table",
+        'select b, max(a) from hash_agg_table group by b',
+        _no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen),
+        "hash_agg_table",
+        'select max(a) from hash_agg_table',
+        _no_nans_float_conf)
+
+    # test min
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen, length=1024),
+        "hash_agg_table",
+        'select b, min(a) from hash_agg_table group by b',
+        _no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen, length=1024),
+        "hash_agg_table",
+        'select min(a) from hash_agg_table',
+        _no_nans_float_conf)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,8 +72,21 @@ object RapidsPluginUtils extends Logging {
     logInfo(s"cudf build: $cudfProps")
     val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
     val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
-    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
-        s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
+    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion.")
+  }
+
+  def logPluginMode(conf: RapidsConf): Unit = {
+    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
+      logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
+        s"support set `${RapidsConf.SQL_ENABLED}` to false.")
+    } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
+      logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
+        s"set `${RapidsConf.SQL_ENABLED}` to false. To change the mode, " +
+        s"restart the application and change `${RapidsConf.SQL_MODE}`.")
+    } else {
+      logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
+        s"support set `${RapidsConf.SQL_ENABLED}` to true.")
+    }
   }
 
   def fixupConfigs(conf: SparkConf): Unit = {
@@ -152,8 +165,9 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
+    RapidsPluginUtils.logPluginMode(conf)
 
-    if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+    if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
       if (conf.shuffleTransportEarlyStart) {
         rapidsShuffleHeartbeatManager =
@@ -203,7 +217,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
-        if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+        if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
           if (conf.shuffleTransportEarlyStart) {
             logInfo("Initializing shuffle manager heartbeats")

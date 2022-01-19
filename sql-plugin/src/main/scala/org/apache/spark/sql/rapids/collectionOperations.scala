@@ -23,6 +23,7 @@ import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, GroupByAggregat
 import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuLiteral, GpuMapUtils, GpuScalar, GpuTernaryExpression, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.RapidsErrorUtils
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
@@ -141,11 +142,9 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
                 if (failOnError &&
-                  minNumElements < math.abs(ordinalValue) &&
-                  lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
-                  throw new ArrayIndexOutOfBoundsException(
-                    s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
-                      s"$minNumElements")
+                    minNumElements < math.abs(ordinalValue) &&
+                    lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
+                  RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinalValue, minNumElements)
                 } else {
                   if (ordinalValue > 0) {
                     // Positive index

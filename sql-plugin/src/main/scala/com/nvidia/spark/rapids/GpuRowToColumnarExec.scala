@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -767,7 +767,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |      (com.nvidia.spark.rapids.GpuMetric)references[6],
          |      (com.nvidia.spark.rapids.GpuMetric)references[7],
          |      (com.nvidia.spark.rapids.GpuMetric)references[8]);
-         |    ${ctx.initMutableStates()}
+         |      ${ctx.initMutableStates()}
          |  }
          |
          |  // Avoid virtual function calls by copying the data in a batch at a time instead
@@ -780,8 +780,8 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |
          |    int dataOffset = 0;
          |    int currentRow = 0;
+         |    int offsetIndex = 0;
          |
-         |    offsetsBuffer.setInt(0, dataOffset);
          |    // If we are here we have at least one row to process, so don't bother checking yet
          |    boolean done = false;
          |    while (!done) {
@@ -793,6 +793,8 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |        row = (UnsafeRow)input.next();
          |      }
          |      int numBytesUsedByRow = copyInto(row, dataBaseAddress + dataOffset, endDataAddress);
+         |      offsetsBuffer.setInt(offsetIndex, dataOffset);
+         |      offsetIndex += 4;
          |      if (numBytesUsedByRow < 0) {
          |        pending = row;
          |        done = true;
@@ -892,10 +894,12 @@ case class GpuRowToColumnarExec(child: SparkPlan,
     // cache in a local to avoid serializing the plan
     val localSchema = schema
 
-    // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
-    // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
-    // So, we are going to be cautious and start with that until we have tested it more.
-    if ((1 until 100).contains(output.length) &&
+    // We can support upto 2^31 bytes per row. That is ~250M columns of 64-bit fixed-width data.
+    // This number includes the 1-bit validity per column, but doesn't include padding.
+    // We are being conservative by only allowing 100M columns until we feel the need to
+    // increase this number. Spark by default limits codegen to 100 fields
+    // "spark.sql.codegen.maxFields".
+    if ((1 until 100000000).contains(output.length) &&
         CudfRowTransitions.areAllSupported(output)) {
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
