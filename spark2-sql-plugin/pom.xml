@@ -81,6 +81,7 @@
             <includes>
               <!-- The NOTICE will be taken care of by the antrun task below -->
               <include>LICENSE</include>
+              <include>NOTICE</include>
             </includes>
           </resource>
         </resources>
@@ -89,37 +90,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
-                    <archive>
-                       <!-- transient jar, writing compressed can take several x time -->
-                        <compress>false</compress>
-                    </archive>
                     <classifier>${spark.version.classifier}</classifier>
                 </configuration>
-            </plugin>
-            <plugin>
-              <artifactId>maven-antrun-plugin</artifactId>
-              <executions>
-                <execution>
-                  <id>copy-notice</id>
-                  <goals>
-                    <goal>run</goal>
-                  </goals>
-                  <phase>process-resources</phase>
-                  <configuration>
-                    <target>
-                      <!-- copy NOTICE, this jar doesn't ship with ORC or UCX -->
-                      <copy
-                          todir="${project.build.directory}/classes/META-INF/"
-                          verbose="true">
-                        <fileset dir="${project.basedir}/..">
-                          <include name="NOTICE"/>
-                        </fileset>
-                        <mapper type="glob" from="*" to="*"/>
-                      </copy>
-                    </target>
-                  </configuration>
-                </execution>
-              </executions>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
