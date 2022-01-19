@@ -320,4 +320,4 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     of them are waiting for their second semaphore.
 
 To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
-Apache Spark Configuration Guide](../configs.md). Search 'pandas' for a quick navigation jump.
+Apache Spark Configuration Guide](https://nvidia.github.io/spark-rapids/docs/configs.html). Search 'pandas' for a quick navigation jump.
