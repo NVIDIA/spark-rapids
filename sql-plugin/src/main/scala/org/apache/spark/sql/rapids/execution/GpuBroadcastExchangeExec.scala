@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -498,7 +498,7 @@ object GpuBroadcastExchangeExecBase {
    * Create a thread factory that names threads with a prefix and also sets the threads to daemon.
    */
   private def namedThreadFactory(prefix: String): ThreadFactory = {
-    new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build
+    new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build()
   }
 
   /**
