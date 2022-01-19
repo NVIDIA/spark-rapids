@@ -77,8 +77,7 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
     MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
-parquet_write_gens_list = [
-    parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
+parquet_write_gens_list = [parquet_basic_gen, parquet_decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
