@@ -2,24 +2,24 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2020, NVIDIA CORPORATION.
-18a19
+18a19,21
 > import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
-19a21
+> import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 > import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
-23c25
+22c25
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-28d29
+27d29
 <     // Spark 2.x - removed some checks only applicable to AQE
-29a31,36
+28a31,36
 >       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
 >           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
 >           bqse.plan.asInstanceOf[ReusedExchangeExec]
 >               .child.isInstanceOf[GpuBroadcastExchangeExec]
 >       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
 >       case _: GpuBroadcastExchangeExec => true
-30a38,52
+29a38,52
 >     }
 >   }
 > 

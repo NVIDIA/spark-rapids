@@ -16,22 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
-import java.math.BigInteger
-import java.util
-import java.util.{List => JList, Objects}
-import javax.xml.bind.DatatypeConverter
-
-import scala.collection.JavaConverters._
-
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{Literal, UnsafeArrayData}
-import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils, MapData}
-import org.apache.spark.sql.execution.TrampolineUtil
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 class LiteralExprMeta(
     lit: Literal,

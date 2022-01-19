@@ -16,7 +16,6 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,

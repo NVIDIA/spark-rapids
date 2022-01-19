@@ -39,11 +39,6 @@
     </properties>
     <dependencies>
         <dependency>
-            <groupId>com.google.flatbuffers</groupId>
-            <artifactId>flatbuffers-java</artifactId>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
         </dependency>
@@ -51,42 +46,6 @@
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.orc</groupId>
-          <artifactId>orc-core</artifactId>
-          <classifier>${orc.classifier}</classifier>
-          <exclusions>
-            <exclusion>
-              <groupId>org.slf4j</groupId>
-              <artifactId>slf4j-api</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.orc</groupId>
-          <artifactId>orc-mapreduce</artifactId>
-          <classifier>${orc.classifier}</classifier>
-          <exclusions>
-            <exclusion>
-              <groupId>com.google.code.findbugs</groupId>
-              <artifactId>jsr305</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hive</groupId>
-          <artifactId>hive-storage-api</artifactId>
-          <exclusions>
-            <exclusion>
-              <groupId>org.slf4j</groupId>
-              <artifactId>slf4j-api</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>com.google.protobuf</groupId>
-          <artifactId>protobuf-java</artifactId>
         </dependency>
     </dependencies>
 
@@ -152,14 +111,14 @@
                   <phase>process-resources</phase>
                   <configuration>
                     <target>
-                      <!-- copy NOTICE-binary to NOTICE -->
+                      <!-- copy NOTICE, this jar doesn't ship with ORC or UCX -->
                       <copy
                           todir="${project.build.directory}/classes/META-INF/"
                           verbose="true">
                         <fileset dir="${project.basedir}/..">
-                          <include name="NOTICE-binary"/>
+                          <include name="NOTICE"/>
                         </fileset>
-                        <mapper type="glob" from="*-binary" to="*"/>
+                        <mapper type="glob" from="*" to="*"/>
                       </copy>
                     </target>
                   </configuration>

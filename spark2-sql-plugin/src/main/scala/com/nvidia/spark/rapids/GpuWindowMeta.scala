@@ -16,21 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.TimeUnit
-
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimUnaryExecNode}
-
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedPreceding}
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression, SortOrder, UnboundedPreceding}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
  * Base class for GPU Execs that implement window functions. This abstracts the method

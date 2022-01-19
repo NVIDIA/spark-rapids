@@ -1328,6 +1328,7 @@
                             </goals>
                             <configuration>
                                 <classifier>${spark.version.classifier}tests</classifier>
+                                <skipIfEmpty>true</skipIfEmpty>
                             </configuration>
                         </execution>
                     </executions>

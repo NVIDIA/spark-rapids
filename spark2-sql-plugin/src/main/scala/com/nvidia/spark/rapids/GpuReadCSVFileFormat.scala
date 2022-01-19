@@ -17,16 +17,8 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.shims.v2.GpuCSVScan
-import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec
-import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
-import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.util.SerializableConfiguration
 
 object GpuReadCSVFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {

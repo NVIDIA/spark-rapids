@@ -16,13 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import java.text.SimpleDateFormat
-import java.time.DateTimeException
-
-import scala.collection.mutable.ArrayBuffer
-
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */

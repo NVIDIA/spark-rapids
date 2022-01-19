@@ -16,42 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
-import java.net.URI
-import java.nio.charset.StandardCharsets
-import java.util.{Collections, Locale}
-import java.util.concurrent._
-
-import scala.annotation.tailrec
-import scala.collection.JavaConverters._
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
-import scala.language.implicitConversions
-import scala.math.max
-
-import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, Path}
-import org.apache.parquet.bytes.BytesUtils
-import org.apache.parquet.column.ColumnDescriptor
-import org.apache.parquet.filter2.predicate.FilterApi
-import org.apache.parquet.format.converter.ParquetMetadataConverter
-import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
-import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
-import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
-
-import org.apache.spark.TaskContext
-import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
-import org.apache.spark.sql.execution.{FileSourceScanExec, QueryExecutionException, TrampolineUtil}
+import org.apache.spark.sql.execution.{FileSourceScanExec, TrampolineUtil}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration
 
 object GpuReadParquetFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
