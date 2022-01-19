@@ -76,7 +76,7 @@ New functionality and performance improvements for this release include:
 * CreateMap updates and enable CreateMap by default
 * Cast from array to string
 * Add regular expression support to regexp_replace function
-* Support LeftOuter, RightOuter, FullOuter, Inner, hash semi and anti joins using libcudf's mixed join feature
+* Support for conditional joins using libcudf's mixed join feature
     
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
