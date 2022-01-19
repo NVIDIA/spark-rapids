@@ -424,17 +424,10 @@ class GpuSequenceMeta(
 
 object GpuSequenceUtil extends Arm {
 
-  /**
-   * Compute the size of each sequence according to 'start', 'stop' and 'step'.
-   * A row (Row[start, stop, step]) contains at least one null element will produce
-   * a null in the output.
-   *
-   * The returned column should be closed.
-   */
-  def computeSequenceSizes(
+  private def checkSequenceInputs(
       start: ColumnVector,
       stop: ColumnVector,
-      step: ColumnVector): ColumnVector = {
+      step: ColumnVector): Unit = {
     // Keep the same requirement with Spark:
     // (step > 0 && start <= stop) || (step < 0 && start >= stop) || (step == 0 && start == stop)
     withResource(Scalar.fromByte(0.toByte)) { zero =>
@@ -466,7 +459,7 @@ object GpuSequenceUtil extends Arm {
         }
         withResource(allDown) { _ =>
           require(isAllValidTrue(allDown),
-              "Illegal sequence boundaries: step < 0 but start < stop")
+            "Illegal sequence boundaries: step < 0 but start < stop")
         }
 
         // (step == 0 && start == stop)
@@ -478,10 +471,24 @@ object GpuSequenceUtil extends Arm {
         }
         withResource(allEq) { _ =>
           require(isAllValidTrue(allEq),
-              "Illegal sequence boundaries: step == 0 but start != stop")
+            "Illegal sequence boundaries: step == 0 but start != stop")
         }
       }
     } // end of zero
+  }
+
+  /**
+   * Compute the size of each sequence according to 'start', 'stop' and 'step'.
+   * A row (Row[start, stop, step]) contains at least one null element will produce
+   * a null in the output.
+   *
+   * The returned column should be closed.
+   */
+  def computeSequenceSizes(
+      start: ColumnVector,
+      stop: ColumnVector,
+      step: ColumnVector): ColumnVector = {
+    checkSequenceInputs(start, stop, step)
 
     // Spark's algorithm to get the length (aka size)
     // ``` Scala
@@ -520,16 +527,15 @@ object GpuSequenceUtil extends Arm {
       }
     }
 
-    // check size
-    closeOnExcept(sizeAsLong) { _ =>
+    withResource(sizeAsLong) { _ =>
+      // check max size
       withResource(Scalar.fromInt(MAX_ROUNDED_ARRAY_LENGTH)) { maxLen =>
         withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
           require(isAllValidTrue(allValid),
               s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
         }
       }
-    }
-    withResource(sizeAsLong) { _ =>
+      // cast to int and return
       sizeAsLong.castTo(DType.INT32)
     }
   }
@@ -562,7 +568,7 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
         val (sizeCol, stepCol) = withResource(columnarEvalToColumn(stop, batch)) { stopGpuCol =>
           val stopCol = stopGpuCol.getBase
           val steps = stepGpuColOpt.map(_.getBase.incRefCount())
-              .getOrElse(defaultSteps(startCol, stopCol))
+              .getOrElse(defaultStepsFunc(startCol, stopCol))
           closeOnExcept(steps) { _ =>
             (computeSequenceSizes(startCol, stopCol, steps), steps)
           }
@@ -585,7 +591,7 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
   }
 
   @transient
-  private lazy val defaultSteps: (ColumnView, ColumnView) => ColumnVector =
+  private lazy val defaultStepsFunc: (ColumnView, ColumnView) => ColumnVector =
       dataType.elementType match {
     case _: IntegralType =>
       // Default step:
