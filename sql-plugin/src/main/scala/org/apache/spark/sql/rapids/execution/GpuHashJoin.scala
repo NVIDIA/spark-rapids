@@ -63,7 +63,7 @@ object JoinTypeChecks {
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
-    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP).nested()
+    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.MAP).nested()
 
   val equiJoinExecChecks: ExecChecks = ExecChecks(
     joinRideAlongTypes,
@@ -104,12 +104,6 @@ object GpuHashJoin extends Arm {
       conditionMeta: Option[BaseExprMeta[_]]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
 
-    def unSupportNonEqualCondition(): Unit = if (conditionMeta.isDefined) {
-      meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-    }
-    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
-      meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
-    }
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
@@ -120,7 +114,9 @@ object GpuHashJoin extends Arm {
         // FullOuter join cannot support with struct keys as two issues below
         //  * https://github.com/NVIDIA/spark-rapids/issues/2126
         //  * https://github.com/rapidsai/cudf/issues/7947
-        unSupportStructKeys()
+        if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+          meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
+        }
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -184,7 +184,12 @@ object RapidsBufferCatalog extends Logging with Arm {
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
       deviceStorage.setSpillStore(gdsStorage)
     } else {
-      hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
+      val hostSpillStorageSize = if (rapidsConf.hostSpillStorageSize == -1) {
+        rapidsConf.pinnedPoolSize + rapidsConf.pageablePoolSize
+      } else {
+        rapidsConf.hostSpillStorageSize
+      }
+      hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize, rapidsConf.pageablePoolSize)
       diskStorage = new RapidsDiskStore(diskBlockManager)
       deviceStorage.setSpillStore(hostStorage)
       hostStorage.setSpillStore(diskStorage)
