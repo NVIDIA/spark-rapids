@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,14 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnView, GroupByAggregation, GroupByOptions, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuLiteral, GpuMapUtils, GpuScalar, GpuUnaryExpression}
+import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, GroupByAggregation, GroupByOptions, Scalar}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuLiteral, GpuMapUtils, GpuScalar, GpuTernaryExpression, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.RapidsErrorUtils
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -141,11 +142,9 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
                 if (failOnError &&
-                  minNumElements < math.abs(ordinalValue) &&
-                  lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
-                  throw new ArrayIndexOutOfBoundsException(
-                    s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
-                      s"$minNumElements")
+                    minNumElements < math.abs(ordinalValue) &&
+                    lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
+                  RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinalValue, minNumElements)
                 } else {
                   if (ordinalValue > 0) {
                     // Positive index
@@ -392,4 +391,276 @@ case class GpuArrayMax(child: Expression) extends GpuBaseArrayAgg with ImplicitC
   override def prettyName: String = "array_max"
 
   override protected def agg: GroupByAggregation = GroupByAggregation.max()
+}
+
+class GpuSequenceMeta(
+    expr: Sequence,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends ExprMeta[Sequence](expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    //  We have to fall back to the CPU if the timeZoneId is not UTC when
+    //  we are processing date/timestamp.
+    //  Date/Timestamp are not enabled right now so this is probably fine.
+  }
+
+  override def convertToGpu(): GpuExpression = {
+    if (expr.stepOpt.isDefined) {
+      val Seq(start, stop, step) = childExprs.map(_.convertToGpu())
+      GpuSequenceWithStep(start, stop, step, expr.timeZoneId)
+    } else {
+      val Seq(start, stop) = childExprs.map(_.convertToGpu())
+      GpuSequence(start, stop, expr.timeZoneId)
+    }
+  }
+}
+
+object GpuSequenceUtil {
+
+  def numberScalar(dt: DataType, value: Int): Scalar = dt match {
+    case ByteType => Scalar.fromByte(value.toByte)
+    case ShortType => Scalar.fromShort(value.toShort)
+    case IntegerType => Scalar.fromInt(value)
+    case LongType => Scalar.fromLong(value.toLong)
+    case _ =>
+      throw new IllegalArgumentException("wrong data type: " + dt)
+  }
+}
+
+/** GpuSequence without step */
+case class GpuSequence(start: Expression, stop: Expression, timeZoneId: Option[String] = None)
+    extends GpuBinaryExpression with TimeZoneAwareExpression {
+
+  override def left: Expression = start
+
+  override def right: Expression = stop
+
+  override def dataType: DataType = ArrayType(start.dataType, containsNull = false)
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Some(timeZoneId))
+
+  /**
+   * Calculate the size and step (1 or -1) between start and stop both inclusive
+   * size = |stop - start| + 1
+   * step = 1 if stop >= start else -1
+   * @param start first values in the result sequences
+   * @param stop end values in the result sequences
+   * @return (size, step)
+   */
+  private def calculateSizeAndStep(start: BinaryOperable, stop: BinaryOperable, dt: DataType):
+      Seq[ColumnVector] = {
+    withResource(stop.sub(start)) { difference =>
+      withResource(GpuSequenceUtil.numberScalar(dt, 1)) { one =>
+        val step = withResource(GpuSequenceUtil.numberScalar(dt, -1)) { negativeOne =>
+          withResource(GpuSequenceUtil.numberScalar(dt, 0)) { zero =>
+            withResource(difference.greaterOrEqualTo(zero)) { pred =>
+              pred.ifElse(one, negativeOne)
+            }
+          }
+        }
+        val size = closeOnExcept(step) { _ =>
+          withResource(difference.abs()) { absDifference =>
+            absDifference.add(one)
+          }
+        }
+        Seq(size, step)
+      }
+    }
+  }
+
+  override def doColumnar(start: GpuColumnVector, stop: GpuColumnVector): ColumnVector = {
+    withResource(calculateSizeAndStep(start.getBase, stop.getBase, start.dataType())) { ret =>
+      ColumnVector.sequence(start.getBase, ret(0), ret(1))
+    }
+  }
+
+  override def doColumnar(start: GpuScalar, stop: GpuColumnVector): ColumnVector = {
+    withResource(calculateSizeAndStep(start.getBase, stop.getBase, stop.dataType())) { ret =>
+      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
+        ColumnVector.sequence(startV, ret(0), ret(1))
+      }
+    }
+  }
+
+  override def doColumnar(start: GpuColumnVector, stop: GpuScalar): ColumnVector = {
+    withResource(calculateSizeAndStep(start.getBase, stop.getBase, start.dataType())) { ret =>
+      ColumnVector.sequence(start.getBase, ret(0), ret(1))
+    }
+  }
+
+  override def doColumnar(numRows: Int, start: GpuScalar, stop: GpuScalar): ColumnVector = {
+    val startV = GpuColumnVector.from(ColumnVector.fromScalar(start.getBase, numRows),
+      start.dataType)
+    doColumnar(startV, stop)
+  }
+}
+
+/** GpuSequence with step */
+case class GpuSequenceWithStep(start: Expression, stop: Expression, step: Expression,
+    timeZoneId: Option[String] = None) extends GpuTernaryExpression with TimeZoneAwareExpression {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Some(timeZoneId))
+
+  override def first: Expression = start
+
+  override def second: Expression = stop
+
+  override def third: Expression = step
+
+  override def dataType: DataType = ArrayType(start.dataType, containsNull = false)
+
+  private def calculateSize(
+      start: BinaryOperable,
+      stop: BinaryOperable,
+      step: BinaryOperable,
+      rows: Int,
+      dt: DataType): ColumnVector = {
+    // First, calculate sizeWithNegative=floor((stop-start)/step)+1.
+    //     if step = 0, the div operation in cudf will get MIN_VALUE, which is ok for this case,
+    //     since when size < 0, cudf will not generate sequence
+    // Second, calculate size = if(sizeWithNegative < 0) 0 else sizeWithNegative
+    // Third, if (start == stop && step == 0), let size = 1.
+    withResource(GpuSequenceUtil.numberScalar(dt, 1)) { one =>
+      withResource(GpuSequenceUtil.numberScalar(dt, 0)) { zero =>
+
+        val (sizeWithNegative, diffHasZero) = withResource(stop.sub(start)) { difference =>
+          // sizeWithNegative=floor((stop-start)/step)+1
+          val sizeWithNegative = withResource(difference.floorDiv(step)) { quotient =>
+            quotient.add(one)
+          }
+          val tmpDiffHasZero = closeOnExcept(sizeWithNegative) { _ =>
+            difference.equalTo(zero)
+          }
+          (sizeWithNegative, tmpDiffHasZero)
+        }
+
+        val tmpSize = closeOnExcept(diffHasZero) { _ =>
+          // tmpSize = if(sizeWithNegative < 0) 0 else sizeWithNegative
+          withResource(sizeWithNegative) { _ =>
+            withResource(sizeWithNegative.greaterOrEqualTo(zero)) { pred =>
+              pred.ifElse(sizeWithNegative, zero)
+            }
+          }
+        }
+
+        // when start==stop && step==0, size will be 0.
+        // but we should change size to 1
+        withResource(tmpSize) { tmpSize =>
+          withResource(diffHasZero) { diffHasZero =>
+            step match {
+              case stepScalar: Scalar =>
+                withResource(ColumnVector.fromScalar(stepScalar, rows)) { stepV =>
+                  withResource(stepV.equalTo(zero)) { stepHasZero =>
+                    withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
+                      predWithZero.ifElse(one, tmpSize)
+                    }
+                  }
+                }
+              case _ =>
+                withResource(step.equalTo(zero)) { stepHasZero =>
+                  withResource(diffHasZero.and(stepHasZero)) { predWithZero =>
+                    predWithZero.ifElse(one, tmpSize)
+                  }
+                }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(
+      start: GpuColumnVector,
+      stop: GpuColumnVector,
+      step: GpuColumnVector): ColumnVector = {
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
+      ColumnVector.sequence(start.getBase, size, step.getBase)
+    }
+  }
+
+  override def doColumnar(
+      start: GpuScalar,
+      stop: GpuColumnVector,
+      step: GpuColumnVector): ColumnVector = {
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt,
+        start.dataType)) { size =>
+      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
+        ColumnVector.sequence(startV, size, step.getBase)
+      }
+    }
+  }
+
+  override def doColumnar(
+      start: GpuScalar,
+      stop: GpuScalar,
+      step: GpuColumnVector): ColumnVector = {
+    withResource(ColumnVector.fromScalar(start.getBase, step.getRowCount.toInt)) { startV =>
+      withResource(calculateSize(startV, stop.getBase, step.getBase, step.getRowCount.toInt,
+          start.dataType)) { size =>
+        ColumnVector.sequence(startV, size, step.getBase)
+      }
+    }
+  }
+
+  override def doColumnar(
+      start: GpuScalar,
+      stop: GpuColumnVector,
+      step: GpuScalar): ColumnVector = {
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, stop.getRowCount.toInt,
+        start.dataType)) { size =>
+      withResource(ColumnVector.fromScalar(start.getBase, stop.getRowCount.toInt)) { startV =>
+        withResource(ColumnVector.fromScalar(step.getBase, stop.getRowCount.toInt)) { stepV =>
+          ColumnVector.sequence(startV, size, stepV)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(
+      start: GpuColumnVector,
+      stop: GpuScalar,
+      step: GpuColumnVector): ColumnVector = {
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
+      ColumnVector.sequence(start.getBase, size, step.getBase)
+    }
+  }
+
+  override def doColumnar(
+      start: GpuColumnVector,
+      stop: GpuScalar,
+      step: GpuScalar): ColumnVector = {
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
+      withResource(ColumnVector.fromScalar(step.getBase, start.getRowCount.toInt)) { stepV =>
+        ColumnVector.sequence(start.getBase, size, stepV)
+      }
+    }
+  }
+
+  override def doColumnar(
+      start: GpuColumnVector,
+      stop: GpuColumnVector,
+      step: GpuScalar): ColumnVector =
+    withResource(calculateSize(start.getBase, stop.getBase, step.getBase, start.getRowCount.toInt,
+        start.dataType())) { size =>
+      withResource(ColumnVector.fromScalar(step.getBase, start.getRowCount.toInt)) { stepV =>
+        ColumnVector.sequence(start.getBase, size, stepV)
+      }
+    }
+
+  override def doColumnar(
+      numRows: Int,
+      start: GpuScalar,
+      stop: GpuScalar,
+      step: GpuScalar): ColumnVector = {
+    val startV = GpuColumnVector.from(ColumnVector.fromScalar(start.getBase, numRows),
+      start.dataType)
+    doColumnar(startV, stop, step)
+  }
 }

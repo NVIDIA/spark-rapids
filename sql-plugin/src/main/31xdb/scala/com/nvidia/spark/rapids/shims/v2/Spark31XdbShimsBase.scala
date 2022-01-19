@@ -96,7 +96,7 @@ trait Spark31XdbShimsBase extends SparkShims {
 
   override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[CustomShuffleReaderExec](
     "A wrapper of shuffle query stage",
-    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
+    ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
@@ -128,6 +128,4 @@ trait Spark31XdbShimsBase extends SparkShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
-
-  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 }

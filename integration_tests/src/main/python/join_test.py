@@ -58,12 +58,18 @@ nested_2d_struct_gens = StructGen([['child0', basic_struct_gen]], nullable=False
 nested_3d_struct_gens = StructGen([['child0', nested_2d_struct_gens]], nullable=False)
 struct_gens = [basic_struct_gen, basic_struct_gen_with_no_null_child, nested_2d_struct_gens, nested_3d_struct_gens]
 
-double_gen = [pytest.param(DoubleGen(), marks=[incompat])]
-
 basic_nested_gens = single_level_array_gens + map_string_string_gen + [all_basic_struct_gen]
 
-# data types supported by AST expressions
-ast_gen = [boolean_gen, byte_gen, short_gen, int_gen, long_gen, timestamp_gen]
+# data types supported by AST expressions in joins
+join_ast_gen = [
+    boolean_gen, byte_gen, short_gen, int_gen, long_gen, date_gen, timestamp_gen
+]
+
+# data types not supported by AST expressions in joins
+join_no_ast_gen = [
+    pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat]),
+    string_gen, null_gen, decimal_gen_default, decimal_gen_64bit
+]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
                         'spark.sql.join.preferSortMergeJoin': 'True',
@@ -184,7 +190,7 @@ def test_sortmerge_join_ridealong(data_gen, join_type, batch_size):
 @allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
         'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
     def do_join(spark):
@@ -224,7 +230,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
@@ -252,7 +258,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
@@ -267,7 +273,7 @@ def test_cartesian_join(data_gen, batch_size):
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
@@ -323,7 +329,7 @@ def test_broadcast_nested_loop_join(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
@@ -349,7 +355,7 @@ def test_broadcast_nested_loop_join_special_case_group_by(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', ast_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type, batch_size):
@@ -366,7 +372,7 @@ def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', ast_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_left_broadcast_nested_loop_join_with_ast_condition(data_gen, batch_size):
     def do_join(spark):
@@ -441,7 +447,7 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
@@ -450,7 +456,7 @@ def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 def test_left_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
@@ -497,13 +503,72 @@ def test_broadcast_join_left_table(data_gen, join_type):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Inner', 'Cross'], ids=idfn)
+@pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'Inner', 'Cross'], ids=idfn)
 def test_broadcast_join_with_conditionals(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right),
                    (left.a == right.r_a) & (left.b >= right.r_b), join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastHashJoinExec', 'Cast', 'GreaterThan')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_join_with_condition_join_type_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        # AST does not support cast or logarithm yet
+        return left.join(broadcast(right),
+                         (left.a == right.r_a) & (left.b > right.r_b), join_type)
+    conf = allow_negative_scale_of_decimal_conf
+    assert_gpu_fallback_collect(do_join, 'BroadcastHashJoinExec', conf=conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastHashJoinExec', 'Cast', 'GreaterThan', 'Log', 'SortMergeJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_join_with_condition_ast_op_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        # AST does not support cast or logarithm yet
+        return left.join(broadcast(right),
+                         (left.a == right.r_a) & (left.b > f.log(right.r_b)), join_type)
+    conf = allow_negative_scale_of_decimal_conf
+    exec = 'SortMergeJoinExec' if join_type in ['Right', 'FullOuter'] else 'BroadcastHashJoinExec'
+    assert_gpu_fallback_collect(do_join, exec, conf=conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastHashJoinExec', 'Cast', 'GreaterThan', 'SortMergeJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', join_no_ast_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_join_with_condition_ast_type_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        # AST does not support cast or logarithm yet
+        return left.join(broadcast(right),
+                         (left.a == right.r_a) & (left.b > right.r_b), join_type)
+    conf = allow_negative_scale_of_decimal_conf
+    exec = 'SortMergeJoinExec' if join_type in ['Right', 'FullOuter'] else 'BroadcastHashJoinExec'
+    assert_gpu_fallback_collect(do_join, exec, conf=conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', join_no_ast_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'Cross'], ids=idfn)
+def test_broadcast_join_with_condition_post_filter(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(broadcast(right),
+                         (left.a == right.r_a) & (left.b > right.r_b), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -516,11 +581,60 @@ def test_sortmerge_join_with_conditionals(data_gen):
         return left.join(right, (left.a == right.r_a) & (left.b >= right.r_b), 'Inner')
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter'], ids=idfn)
+def test_sortmerge_join_with_condition_ast(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(right, (left.a == right.r_a) & (left.b >= right.r_b), join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@allow_non_gpu('GreaterThan', 'ShuffleExchangeExec', 'SortMergeJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti'], ids=idfn)
+def test_sortmerge_join_with_condition_join_type_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(right, (left.a == right.r_a) & (left.b >= right.r_b), join_type)
+    assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@allow_non_gpu('GreaterThan', 'Log', 'ShuffleExchangeExec', 'SortMergeJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter'], ids=idfn)
+def test_sortmerge_join_with_condition_ast_op_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        # AST does not support cast or logarithm yet
+        return left.join(right, (left.a == right.r_a) & (left.b > f.log(right.r_b)), join_type)
+    assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@allow_non_gpu('GreaterThan', 'ShuffleExchangeExec', 'SortMergeJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', join_no_ast_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_sortmerge_join_with_condition_ast_type_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(right, (left.a == right.r_a) & (left.b > right.r_b), join_type)
+    assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
+
 
 _mixed_df1_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), length= 10)),
                          ('b', IntegerGen()), ('c', LongGen())]
 _mixed_df2_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), length= 10)),
                          ('b', StringGen()), ('c', BooleanGen())]
+
 
 @ignore_order
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'FullOuter', 'Cross'], ids=idfn)

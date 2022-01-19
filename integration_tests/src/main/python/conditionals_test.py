@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ def test_if_else_map(data_gen):
             conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + single_array_gens_sample_with_decimal128 + decimal_128_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -128,7 +128,7 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -205,6 +205,17 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
 def test_conditional_with_side_effects_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
-                'IF(a RLIKE "^[0-9]{1,5}$", CAST(a AS INT), 0)'),
+                'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
             conf = {'spark.sql.ansi.enabled':True,
                     'spark.rapids.sql.expression.RLike': True})
+
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
+def test_conditional_with_side_effects_case_when(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'CASE \
+                WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
+                WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
+                ELSE -1 END'),
+                conf = {'spark.sql.ansi.enabled':True,
+                        'spark.rapids.sql.expression.RLike': True})

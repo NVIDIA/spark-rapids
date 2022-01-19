@@ -23,7 +23,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -32,8 +32,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 9.1 ML LTS Runtime and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -89,7 +87,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -98,8 +96,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, GCP Dataproc 2.0, and Azure Synapse
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -147,7 +143,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -156,8 +152,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -202,7 +196,7 @@ This is a patch release to address an issue with the plugin in the Databricks 8.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -211,8 +205,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -244,7 +236,7 @@ This is a patch release to address an issue with the plugin in the Databricks 7.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -253,8 +245,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -290,7 +280,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -299,9 +289,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
@@ -365,9 +353,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Download v0.5.0
@@ -413,9 +399,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Release Notes
@@ -455,9 +439,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Release Notes
@@ -509,9 +491,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Release Notes
@@ -560,9 +540,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.x, Scala 2.12, Java 8 
 	
 ### Release Notes
@@ -614,7 +592,5 @@ Software Requirements:
     CUDA & NVIDIA Drivers: 10.1.2 & v418.87+ or 10.2 & v440.33+
     
     Apache Spark 3.0
-  
-    Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
     Python 3.x, Scala 2.12, Java 8

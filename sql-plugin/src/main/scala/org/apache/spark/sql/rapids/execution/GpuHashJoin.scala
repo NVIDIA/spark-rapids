@@ -15,7 +15,8 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{DType, GroupByAggregation, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import ai.rapids.cudf.{DType, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
@@ -62,7 +63,7 @@ object JoinTypeChecks {
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
-    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP).nested()
+    (cudfSupportedKeyTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.MAP).nested()
 
   val equiJoinExecChecks: ExecChecks = ExecChecks(
     joinRideAlongTypes,
@@ -95,15 +96,15 @@ object JoinTypeChecks {
 object GpuHashJoin extends Arm {
 
   def tagJoin(
-      meta: RapidsMeta[_, _, _],
+      meta: SparkPlanMeta[_],
       joinType: JoinType,
       buildSide: GpuBuildSide,
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
-      condition: Option[Expression]): Unit = {
+      conditionMeta: Option[BaseExprMeta[_]]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
 
-    def unSupportNonEqualCondition(): Unit = if (condition.isDefined) {
+    def unSupportNonEqualCondition(): Unit = if (conditionMeta.isDefined) {
       meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
     }
     def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
@@ -112,10 +113,12 @@ object GpuHashJoin extends Arm {
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+      case RightOuter | LeftOuter =>
+        conditionMeta.foreach(meta.requireAstForGpuOn)
+      case LeftSemi | LeftAnti =>
         unSupportNonEqualCondition()
       case FullOuter =>
-        unSupportNonEqualCondition()
+        conditionMeta.foreach(meta.requireAstForGpuOn)
         // FullOuter join cannot support with struct keys as two issues below
         //  * https://github.com/NVIDIA/spark-rapids/issues/2126
         //  * https://github.com/rapidsai/cudf/issues/7947
@@ -226,22 +229,18 @@ object GpuHashJoin extends Arm {
   }
 }
 
-/**
- * An iterator that does a hash join against a stream of batches.
- */
-class HashJoinIterator(
+abstract class BaseHashJoinIterator(
     built: LazySpillableColumnarBatch,
-    val boundBuiltKeys: Seq[Expression],
-    private val stream: Iterator[LazySpillableColumnarBatch],
-    val boundStreamKeys: Seq[Expression],
-    val streamAttributes: Seq[Attribute],
-    val targetSize: Long,
-    val joinType: JoinType,
-    val buildSide: GpuBuildSide,
-    val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
-    private val spillCallback: SpillCallback,
+    boundBuiltKeys: Seq[Expression],
+    stream: Iterator[LazySpillableColumnarBatch],
+    boundStreamKeys: Seq[Expression],
+    streamAttributes: Seq[Attribute],
+    targetSize: Long,
+    joinType: JoinType,
+    buildSide: GpuBuildSide,
+    spillCallback: SpillCallback,
     opTime: GpuMetric,
-    private val joinTime: GpuMetric)
+    joinTime: GpuMetric)
     extends SplittableJoinIterator(
       s"hash $joinType gather",
       stream,
@@ -296,29 +295,20 @@ class HashJoinIterator(
     }
   }
 
-  private def joinGathererLeftRight(
+  /**
+   * Perform a hash join, returning a gatherer if there is a join result.
+   *
+   * @param leftKeys table of join keys from the left table
+   * @param leftData batch containing the full data from the left table
+   * @param rightKeys table of join keys from the right table
+   * @param rightData batch containing the full data from the right table
+   * @return join gatherer if there are join results
+   */
+  protected def joinGathererLeftRight(
       leftKeys: Table,
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
-      rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
-    withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
-      val maps = joinType match {
-        case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
-        case RightOuter =>
-          // Reverse the output of the join, because we expect the right gather map to
-          // always be on the right
-          rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
-        case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
-        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
-        case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
-        case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
-        case _ =>
-          throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
-              s" supported")
-      }
-      makeGatherer(maps, leftData, rightData, joinType)
-    }
-  }
+      rightData: LazySpillableColumnarBatch): Option[JoinGatherer]
 
   private def joinGathererLeftRight(
       leftKeys: ColumnarBatch,
@@ -389,6 +379,128 @@ class HashJoinIterator(
       val estimatedRowsPerStreamBatch = Math.min(Int.MaxValue, approximateStreamRowCount)
       Math.ceil(cb.numRows() / estimatedRowsPerStreamBatch).toInt
     case _ => 1
+  }
+}
+
+/**
+ * An iterator that does a hash join against a stream of batches.
+ */
+class HashJoinIterator(
+    built: LazySpillableColumnarBatch,
+    val boundBuiltKeys: Seq[Expression],
+    private val stream: Iterator[LazySpillableColumnarBatch],
+    val boundStreamKeys: Seq[Expression],
+    val streamAttributes: Seq[Attribute],
+    val targetSize: Long,
+    val joinType: JoinType,
+    val buildSide: GpuBuildSide,
+    val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
+    private val spillCallback: SpillCallback,
+    opTime: GpuMetric,
+    private val joinTime: GpuMetric)
+    extends BaseHashJoinIterator(
+      built,
+      boundBuiltKeys,
+      stream,
+      boundStreamKeys,
+      streamAttributes,
+      targetSize,
+      joinType,
+      buildSide,
+      spillCallback,
+      opTime = opTime,
+      joinTime = joinTime) {
+  override protected def joinGathererLeftRight(
+      leftKeys: Table,
+      leftData: LazySpillableColumnarBatch,
+      rightKeys: Table,
+      rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
+      val maps = joinType match {
+        case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+        case RightOuter =>
+          // Reverse the output of the join, because we expect the right gather map to
+          // always be on the right
+          rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
+        case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
+        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
+        case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
+        case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
+        case _ =>
+          throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
+              s" supported")
+      }
+      makeGatherer(maps, leftData, rightData, joinType)
+    }
+  }
+}
+
+/**
+ * An iterator that does a hash join against a stream of batches with an inequality condition.
+ * The compiled condition will be closed when this iterator is closed.
+ */
+class ConditionalHashJoinIterator(
+    built: LazySpillableColumnarBatch,
+    boundBuiltKeys: Seq[Expression],
+    stream: Iterator[LazySpillableColumnarBatch],
+    boundStreamKeys: Seq[Expression],
+    streamAttributes: Seq[Attribute],
+    compiledCondition: CompiledExpression,
+    targetSize: Long,
+    joinType: JoinType,
+    buildSide: GpuBuildSide,
+    compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
+    spillCallback: SpillCallback,
+    opTime: GpuMetric,
+    joinTime: GpuMetric)
+    extends BaseHashJoinIterator(
+      built,
+      boundBuiltKeys,
+      stream,
+      boundStreamKeys,
+      streamAttributes,
+      targetSize,
+      joinType,
+      buildSide,
+      spillCallback,
+      opTime = opTime,
+      joinTime = joinTime) {
+  override protected def joinGathererLeftRight(
+      leftKeys: Table,
+      leftData: LazySpillableColumnarBatch,
+      rightKeys: Table,
+      rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
+    withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
+      withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
+        withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
+          val maps = joinType match {
+            case _: InnerLike => Table.mixedInnerJoinGatherMaps(
+              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case LeftOuter => Table.mixedLeftJoinGatherMaps(
+              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case RightOuter =>
+              // Reverse the output of the join, because we expect the right gather map to
+              // always be on the right
+              Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
+                compiledCondition, nullEquality).reverse
+            case FullOuter => Table.mixedFullJoinGatherMaps(
+              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case _ =>
+              throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
+                  s" supported")
+          }
+          makeGatherer(maps, leftData, rightData, joinType)
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    if (!closed) {
+      super.close()
+      compiledCondition.close()
+    }
   }
 }
 
@@ -486,16 +598,25 @@ trait GpuHashJoin extends GpuExec {
   protected lazy val compareNullsEqual: Boolean = (joinType != FullOuter) &&
       GpuHashJoin.anyNullableStructChild(buildKeys)
 
-  protected lazy val (boundBuildKeys, boundStreamKeys, boundCondition) = {
+  protected lazy val (boundBuildKeys, boundStreamKeys) = {
     val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
     val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
-    val boundCondition =
-      condition.map(c => GpuBindReferences.bindGpuReference(c, output))
 
     buildSide match {
-      case GpuBuildLeft => (lkeys, rkeys, boundCondition)
-      case GpuBuildRight => (rkeys, lkeys, boundCondition)
+      case GpuBuildLeft => (lkeys, rkeys)
+      case GpuBuildRight => (rkeys, lkeys)
     }
+  }
+
+  protected lazy val (numFirstConditionTableColumns, boundCondition) = {
+    val (joinLeft, joinRight) = joinType match {
+      case RightOuter => (right, left)
+      case _ => (left, right)
+    }
+    val boundCondition = condition.map { c =>
+      GpuBindReferences.bindGpuReference(c, joinLeft.output ++ joinRight.output)
+    }
+    (joinLeft.output.size, boundCondition)
   }
 
   def doJoin(
@@ -533,19 +654,24 @@ trait GpuHashJoin extends GpuExec {
 
     // The HashJoinIterator takes ownership of the built keys and built data. It will close
     // them when it is done
-    val joinIterator =
+    val joinIterator = if (boundCondition.isDefined) {
+      // ConditionalHashJoinIterator will close the compiled condition
+      val compiledCondition =
+        boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
+      new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
+        boundStreamKeys, streamedPlan.output, compiledCondition,
+        realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+    } else {
       new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
         opTime, joinTime)
-    if (boundCondition.isDefined) {
-      throw new IllegalStateException("Conditional joins are not supported on the GPU")
-    } else {
-      joinIterator.map { cb =>
-        joinOutputRows += cb.numRows()
-        numOutputRows += cb.numRows()
-        numOutputBatches += 1
-        cb
-      }
+    }
+
+    joinIterator.map { cb =>
+      joinOutputRows += cb.numRows()
+      numOutputRows += cb.numRows()
+      numOutputBatches += 1
+      cb
     }
   }
 }
