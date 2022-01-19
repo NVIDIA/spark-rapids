@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -150,9 +150,11 @@ class RegexParser(pattern: String) {
         case '[' =>
           // treat as a literal character and add to the character class
           characterClass.append(ch)
-        case ']' if pos > start + 1 =>
+        case ']' if (!characterClass.negated && pos > start + 1) ||
+            (characterClass.negated && pos > start + 2) =>
           // "[]" is not a valid character class
           // "[]a]" is a valid character class containing the characters "]" and "a"
+          // "[^]a]" is a valid negated character class containing the characters "]" and "a"
           characterClassComplete = true
         case '^' if pos == start + 1 =>
           // Negates the character class, causing it to match a single character not listed in
@@ -165,13 +167,11 @@ class RegexParser(pattern: String) {
           peek() match {
             case None =>
               throw new RegexUnsupportedException(
-                s"unexpected EOF while parsing escaped character", Some(pos))
+                s"Unclosed character class", Some(pos))
             case Some(ch) =>
-              ch match {
-                case '\\' | '^' | '-' | ']' | '+' =>
-                  // escaped metacharacter within character class
-                  characterClass.appendEscaped(consumeExpected(ch))
-              }
+              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
+              // within the character class, but could be any escaped character
+              characterClass.appendEscaped(consumeExpected(ch))
           }
         case '\u0000' =>
           throw new RegexUnsupportedException(
@@ -203,7 +203,7 @@ class RegexParser(pattern: String) {
     }
     if (!characterClassComplete) {
       throw new RegexUnsupportedException(
-        s"unexpected EOF while parsing character class", Some(pos))
+        s"Unclosed character class", Some(pos))
     }
     characterClass
   }
@@ -265,8 +265,8 @@ class RegexParser(pattern: String) {
         throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
         ch match {
-          case 'A' | 'Z' =>
-            // BOL / EOL anchors
+          case 'A' | 'Z' | 'z' =>
+            // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
           case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
@@ -440,30 +440,47 @@ class CudfRegexTranspiler(replace: Boolean) {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
-        case '^' | '$' if replace =>
-          // this is a bit extreme and it would be good to replace with finer-grained
-          // rules
-          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
-
+        case '$' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4533
+          throw new RegexUnsupportedException("line anchor $ is not supported")
         case _ =>
           regex
       }
 
       case RegexOctalChar(_) =>
-        // cuDF produced different results compared to Spark in some cases
-        // example: "a\141|.$"
+        // see https://github.com/NVIDIA/spark-rapids/issues/4288
         throw new RegexUnsupportedException(
           s"cuDF does not support octal digits consistently with Spark")
 
       case RegexHexDigit(_) =>
-        regex
+        // see https://github.com/NVIDIA/spark-rapids/issues/4486
+        throw new RegexUnsupportedException(
+          s"cuDF does not support hex digits consistently with Spark")
 
       case RegexEscaped(ch) => ch match {
+        case 'D' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-digit class \\D is not supported")
+        case 'W' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-word class \\W is not supported")
         case 'b' | 'B' =>
-          // example: "a\Bb"
-          // this needs further analysis to determine why words boundaries behave
-          // differently between Java and cuDF
+          // see https://github.com/NVIDIA/spark-rapids/issues/4517
           throw new RegexUnsupportedException("word boundaries are not supported")
+        case 's' | 'S' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4528
+          throw new RegexUnsupportedException("whitespace classes are not supported")
+        case 'z' =>
+          if (replace) {
+            // see https://github.com/NVIDIA/spark-rapids/issues/4425
+            throw new RegexUnsupportedException(
+              "string anchor \\z is not supported in replace mode")
+          }
+          // cuDF does not support "\z" but supports "$", which is equivalent
+          RegexChar('$')
+        case 'Z' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4532
+          throw new RegexUnsupportedException("string anchor \\Z is not supported")
         case _ =>
           regex
       }
@@ -482,7 +499,48 @@ class CudfRegexTranspiler(replace: Boolean) {
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map(x => rewrite(x).asInstanceOf[RegexCharacterClassComponent])
-        RegexCharacterClass(negated, ListBuffer(components: _*))
+
+        if (negated) {
+          // There are differences between cuDF and Java handling of newlines
+          // for negative character matches. The expression `[^a]` will match
+          // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
+          // `(?:[\r\n]|[^a])`. We also have to take into account whether any
+          // newline characters are included in the character range.
+          //
+          // Examples:
+          //
+          // `[^a]`     => `(?:[\r\n]|[^a])`
+          // `[^a\r]`   => `(?:[\n]|[^a])`
+          // `[^a\n]`   => `(?:[\r]|[^a])`
+          // `[^a\r\n]` => `[^a]`
+          // `[^\r\n]`  => `[^\r\n]`
+
+          val linefeedCharsInPattern = components.flatMap {
+            case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
+            case RegexEscaped(ch) if ch == 'n' => Seq('\n')
+            case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+            case _ => Seq.empty
+          }
+
+          val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
+
+          val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
+
+          if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
+            // special case for `[^\r\n]` and `[^\\r\\n]`
+            RegexCharacterClass(negated = true, ListBuffer(components: _*))
+          } else if (negatedNewlines.isEmpty) {
+            RegexCharacterClass(negated = true, ListBuffer(components: _*))
+          } else {
+            RegexGroup(capture = false,
+              RegexChoice(
+                RegexCharacterClass(negated = false,
+                  characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
+                RegexCharacterClass(negated = true, ListBuffer(components: _*))))
+          }
+        } else {
+          RegexCharacterClass(negated, ListBuffer(components: _*))
+        }
 
       case RegexSequence(parts) =>
         if (parts.isEmpty) {
@@ -501,9 +559,9 @@ class CudfRegexTranspiler(replace: Boolean) {
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
         }
-        if (replace && parts.length == 1 && (isRegexChar(parts.head, '^')
-            || isRegexChar(parts.head, '$'))) {
-          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
+        if (parts.forall(isBeginOrEndLineAnchor)) {
+          throw new RegexUnsupportedException(
+            "sequences that only contain '^' or '$' are not supported")
         }
         RegexSequence(parts.map(rewrite))
 
@@ -512,10 +570,11 @@ class CudfRegexTranspiler(replace: Boolean) {
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
           // cuDF: XXXX] b[
+          // see https://github.com/NVIDIA/spark-rapids/issues/4468
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(_), _) =>
+        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'w' =>
           // example: "\B?"
           throw new RegexUnsupportedException(nothingToRepeat)
 
@@ -533,40 +592,36 @@ class CudfRegexTranspiler(replace: Boolean) {
       }
 
       case RegexChoice(l, r) =>
-        (l, r) match {
-          // check for empty left-hand side caused by ^ or $ or a repetition
-          case (RegexSequence(a), _) =>
-            a.lastOption match {
-              case None =>
-                // example: "|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexChar(ch)) if ch == '$' || ch == '^' =>
-                // example: "^|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexRepetition(_, _)) =>
-                // example: "a*|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case _ =>
-                RegexChoice(rewrite(l), rewrite(r))
-            }
-          // check for empty right-hand side caused by ^ or $
-          case (_, RegexSequence(b)) =>
-            b.headOption match {
-              case None =>
-                // example: "|b"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexChar(ch)) if ch == '$' || ch == '^' =>
-                // example: "a|$"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case _ =>
-                RegexChoice(rewrite(l), rewrite(r))
-            }
-          case (RegexRepetition(_, _), _) =>
-            // example: "a*|a"
-            throw new RegexUnsupportedException(nothingToRepeat)
-          case _ =>
-            RegexChoice(rewrite(l), rewrite(r))
+        val ll = rewrite(l)
+        val rr = rewrite(r)
+
+        // cuDF does not support repetition on one side of a choice, such as "a*|a"
+        def isRepetition(e: RegexAST): Boolean = {
+          e match {
+            case RegexRepetition(_, _) => true
+            case RegexGroup(_, term) => isRepetition(term)
+            case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
+            case _ => false
+          }
         }
+        if (isRepetition(ll) || isRepetition(rr)) {
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
+
+        // cuDF does not support terms ending with line anchors on one side
+        // of a choice, such as "^|$"
+        def endsWithLineAnchor(e: RegexAST): Boolean = {
+          e match {
+            case RegexSequence(parts) if parts.nonEmpty =>
+              isBeginOrEndLineAnchor(parts.last)
+            case _ => false
+          }
+        }
+        if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
+
+        RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
         RegexGroup(capture, rewrite(term))
@@ -574,6 +629,16 @@ class CudfRegexTranspiler(replace: Boolean) {
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
     }
+  }
+
+  private def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
+    case RegexSequence(parts) => parts.nonEmpty && parts.forall(isBeginOrEndLineAnchor)
+    case RegexGroup(_, term) => isBeginOrEndLineAnchor(term)
+    case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
+    case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
+    case RegexChar(ch) => ch == '^' || ch == '$'
+    case RegexEscaped('z') => true // \z gets translated to $
+    case _ => false
   }
 
   private def isRegexChar(expr: RegexAST, value: Char): Boolean = expr match {
@@ -722,7 +787,7 @@ class RegexUnsupportedException(message: String, index: Option[Int] = None)
   extends SQLException {
   override def getMessage: String = {
     index match {
-      case Some(i) => s"$message at index $index"
+      case Some(i) => s"$message near index $i"
       case _ => message
     }
   }

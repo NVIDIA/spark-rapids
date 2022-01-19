@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,19 +73,9 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
     }
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        if (DecimalType.is32BitDecimalType(dt)) {
-          withResource(Scalar.fromDecimal(-scale, 0)) { scalar =>
-            scalar.sub(input.getBase)
-          }
-        } else if (DecimalType.is64BitDecimalType(dt)) {
-          withResource(Scalar.fromDecimal(-scale, 0L)) { scalar =>
-            scalar.sub(input.getBase)
-          }
-        } else { // Decimal-128
-          withResource(Scalar.fromDecimal(-scale, BigInteger.ZERO)) { scalar =>
-            scalar.sub(input.getBase)
-          }
+        val zeroLit = Decimal(0L, dt.precision, dt.scale)
+        withResource(GpuScalar.from(zeroLit, dt)) { scalar =>
+          scalar.sub(input.getBase)
         }
       case _ =>
         withResource(Scalar.fromByte(0.toByte)) { scalar =>
@@ -142,19 +132,12 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
   override def dataType: DataType = left.dataType
+  // arithmetic operations can overflow and throw exceptions in ANSI mode
+  override def hasSideEffects: Boolean = SQLConf.get.ansiEnabled
 }
 
-case class GpuAdd(
-    left: Expression,
-    right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic {
-  override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
-
-  override def symbol: String = "+"
-
-  override def binaryOp: BinaryOp = BinaryOp.ADD
-
-  private[this] def basicOpOverflowCheck(
+object GpuAdd extends Arm {
+  def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
       ret: ColumnVector): Unit = {
@@ -179,7 +162,7 @@ case class GpuAdd(
     }
   }
 
-  private[this] def decimalOpOverflowCheck(
+  def didDecimalOverflow(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
       ret: ColumnVector): ColumnVector = {
@@ -189,7 +172,7 @@ case class GpuAdd(
     // the result
     val numRows = ret.getRowCount.toInt
     val zero = BigDecimal(0)
-    val overflow = withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
+    withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
       val argsSignSame = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
         lhsLz.equalTo(rhsLz)
       }
@@ -203,7 +186,14 @@ case class GpuAdd(
         }
       }
     }
-    withResource(overflow) { overflow =>
+  }
+
+  def decimalOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector,
+      failOnError: Boolean): ColumnVector = {
+    withResource(didDecimalOverflow(lhs, rhs, ret)) { overflow =>
       if (failOnError) {
         withResource(overflow.any()) { any =>
           if (any.isValid && any.getBoolean) {
@@ -212,23 +202,34 @@ case class GpuAdd(
         }
         ret.incRefCount()
       } else {
-        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+        withResource(Scalar.fromNull(ret.getType)) { nullVal =>
           overflow.ifElse(nullVal, ret)
         }
       }
     }
   }
+}
+
+case class GpuAdd(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends CudfBinaryArithmetic {
+  override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
+
+  override def symbol: String = "+"
+
+  override def binaryOp: BinaryOp = BinaryOp.ADD
 
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
     withResource(ret) { ret =>
       // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
-        basicOpOverflowCheck(lhs, rhs, ret)
+        GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
-        decimalOpOverflowCheck(lhs, rhs, ret)
+        GpuAdd.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
       } else {
         ret.incRefCount()
       }

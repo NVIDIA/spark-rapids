@@ -18,12 +18,76 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
+## Release v21.12.0
+Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
+
+	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
+
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 9.1 ML LTS Runtime and GCP Dataproc 2.0
+
+	Python 3.6+, Scala 2.12, Java 8
+
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+### Download v21.12.0
+* Download the [RAPIDS
+  Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
+* Download the [RAPIDS cuDF 21.12.2 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.12.2/cudf-21.12.2-cuda11.jar)
+
+This package is built against CUDA 11.5 and has [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 is required. Users will
+need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
+
+### Verify signature
+* Download the [RAPIDS Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
+  and [RAPIDS Accelerator for Apache Spark 21.12.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar.asc)
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature: `gpg --verify rapids-4-spark_2.12-21.12.0.jar.asc rapids-4-spark_2.12-21.12.0.jar`
+
+The output if signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+	
+### Release Notes
+New functionality and performance improvements for this release include:
+* Support decimal precision up to 38 digits (128-bits)
+* Support stddev on double in window context 
+* Support CPU row-based UDF
+* CreateArray outputs array of struct
+* collect_set outputs array of struct
+* ORC reader and writer support for decimal precision up to 38 digits (128-bits)
+* ORC writer supports array, map, and struct
+* Support SampleExec, rlike
+* regexp_replace supports more patterns such as replacing null
+* ParquetCachedBatchSerializer supports map
+* Add function explainPotentialGpuPlan to print GPU query plan in a CPU Spark cluster
+* Qualification Tool
+  * Detect RDD APIs and JDBC Scan
+* Profiling Tool
+  * Catch OOM errors and log a hint to increase java heap size
+  * Print potential problems
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
 ## Release v21.10.0
 Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -32,8 +96,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, GCP Dataproc 2.0, and Azure Synapse
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -63,13 +125,13 @@ New functionality and performance improvements for this release include:
 * Parquet writing of map
 * ORC reader supports reading map/struct columns
 * ORC reader support decimal64 
-* Spark Qualification Tool
+* Qualification Tool
   * Add conjunction and disjunction filters
   * Filtering specific configuration values
   * Filtering user name
   * Reporting nested data types
   * Reporting write data formats
-* Spark Profiling Tool
+* Profiling Tool
   * Generating structured output format
   * Improved profiling tool performance
 
@@ -81,7 +143,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -90,8 +152,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -136,7 +196,7 @@ This is a patch release to address an issue with the plugin in the Databricks 8.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -145,8 +205,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -178,7 +236,7 @@ This is a patch release to address an issue with the plugin in the Databricks 7.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -187,8 +245,6 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, and GCP Dataproc 2.0
-
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -224,7 +280,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Models: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -233,9 +289,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
@@ -299,9 +353,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Download v0.5.0
@@ -347,9 +399,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Release Notes
@@ -389,9 +439,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Release Notes
@@ -443,9 +491,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Release Notes
@@ -494,9 +540,7 @@ Software Requirements:
 	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
+		
 	Python 3.x, Scala 2.12, Java 8 
 	
 ### Release Notes
@@ -548,7 +592,5 @@ Software Requirements:
     CUDA & NVIDIA Drivers: 10.1.2 & v418.87+ or 10.2 & v440.33+
     
     Apache Spark 3.0
-  
-    Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
     Python 3.x, Scala 2.12, Java 8

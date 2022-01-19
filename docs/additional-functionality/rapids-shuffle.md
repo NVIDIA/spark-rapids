@@ -290,14 +290,10 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.0.1         | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
     | 3.0.2         | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
     | 3.0.3         | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
-    | 3.0.4         | com.nvidia.spark.rapids.spark304.RapidsShuffleManager    |
     | 3.1.1         | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
     | 3.1.1 CDH     | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
     | 3.1.2         | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
-    | 3.1.3         | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
     | 3.2.0         | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
-    | 3.2.1         | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
-    | 3.3.0         | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
     | Databricks 7.3| com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
     | Databricks 9.1| com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
 
@@ -339,6 +335,52 @@ non-standard location.
 
 With the RAPIDS Shuffle Manager configured, the setting `spark.rapids.shuffle.enabled` (default on)
 can be used to enable or disable the usage of RAPIDS Shuffle Manager during your application.
+
+#### Databricks
+
+Please make sure you follow the [Getting Started](../get-started/getting-started-databricks.md)
+guide for Databricks. The following are extra steps required to enable UCX.
+
+1) Create and enable an additional "init script" that installs UCX:
+
+```
+#!/bin/bash
+sudo apt install -y wget libnuma1 &&
+wget https://github.com/openucx/ucx/releases/download/v1.11.2/ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb &&
+sudo dpkg -i ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb &&
+rm ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb
+```
+
+Save the script in DBFS and add it to the "Init Scripts" list:
+
+![Init scripts panel showing UCX init script](../img/Databricks/initscript_ucx.png)
+
+2) Add the UCX minimum configuration for your Cluster. 
+
+Databricks 9.1:
+
+```
+spark.shuffle.service.enabled false
+spark.executorEnv.UCX_MEMTYPE_CACHE n
+spark.executorEnv.UCX_ERROR_SIGNALS ""
+spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
+```
+
+Databricks 7.3:
+
+```
+spark.shuffle.service.enabled false
+spark.executorEnv.UCX_MEMTYPE_CACHE n
+spark.executorEnv.UCX_ERROR_SIGNALS ""
+spark.shuffle.manager com.nvidia.spark.rapids.spark301db.RapidsShuffleManager
+```
+
+Example of configuration panel with the new settings:
+
+![Configurations with UCX](../img/Databricks/sparkconfig_ucx.png)
+
+Please note that at this time, we have tested with Autoscaling off. It is not clear how an autoscaled
+cluster will behave with the RAPIDS Shuffle Manager.
 
 #### UCX Environment Variables
 - `UCX_TLS`:

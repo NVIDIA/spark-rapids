@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -309,6 +309,7 @@ case class OrcPartitionReaderContext(
 
 /** Collections of some common functions for ORC */
 trait OrcCommonFunctions extends OrcCodecWritingHelper {
+  def execMetrics: Map[String, GpuMetric]
 
   /** Copy the stripe to the channel */
   protected def copyStripeData(
@@ -317,7 +318,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
       inputDataRanges: DiskRangeList): Unit = {
 
     withResource(OrcTools.buildDataReader(ctx)) { dataReader =>
+      val start = System.nanoTime()
       val bufferChunks = dataReader.readFileData(inputDataRanges, 0, false)
+      val mid = System.nanoTime()
       var current = bufferChunks
       while (current != null) {
         out.write(current.getData)
@@ -326,6 +329,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
         }
         current = current.next
       }
+      val end = System.nanoTime()
+      execMetrics.get(READ_FS_TIME).foreach(_.add(mid - start))
+      execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(end - mid))
     }
   }
 
@@ -602,10 +608,9 @@ class GpuOrcPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics : Map[String, GpuMetric],
+    override val execMetrics : Map[String, GpuMetric],
     isCaseSensitive: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
-  private[this] var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -615,15 +620,13 @@ class GpuOrcPartitionReader(
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
-    if (isFirstBatch) {
-      if (batch.isEmpty) {
-        // This is odd, but some operators return data even when there is no input so we need to
-        // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      }
-      isFirstBatch = false
-    }
 
+    // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
+    // We are not acquiring the semaphore here since this next() is getting called from
+    // the `PartitionReaderIterator` which implements a standard iterator pattern, and
+    // advertises `hasNext` as false when we return false here. No downstream tasks should
+    // try to call next after `hasNext` returns false, and any task that produces some kind of
+    // data when `hasNext` is false is responsible to get the semaphore themselves.
     batch.isDefined
   }
 
@@ -1320,7 +1323,7 @@ class MultiFileCloudOrcPartitionReader(
     debugDumpPrefix: String,
     filters: Array[Filter],
     filterHandler: GpuOrcFileFilterHandler,
-    execMetrics: Map[String, GpuMetric])
+    override val execMetrics: Map[String, GpuMetric])
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics) with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
@@ -1642,7 +1645,7 @@ class MultiFileOrcPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     isCaseSensitive: Boolean)

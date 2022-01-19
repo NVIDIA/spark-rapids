@@ -42,7 +42,6 @@ jobs:
       jbrennan333, \
       jlowe,\
       krajendrannv,\
-      kuhushukla,\
       mythrocks,\
       nartal1,\
       nvdbaranec,\
@@ -64,6 +63,7 @@ jobs:
       nvliyuan,\
       res-life,\
       HaoYang670,\
+      NVnavkumar,\
       ', format('{0},', github.actor)) && github.event.comment.body == 'build'
     steps:
       - name: Check if comment is issued by authorized person

@@ -84,7 +84,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -95,7 +95,7 @@ def test_union(data_gen):
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -106,7 +106,7 @@ def test_unionAll(data_gen):
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]])),
@@ -154,7 +154,7 @@ def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
 
 
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -267,3 +267,14 @@ def test_hash_repartition_exact(gen, num_parts):
                     .withColumn('hashed', f.hash(*part_on))\
                     .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)),
             conf = allow_negative_scale_of_decimal_conf)
+
+# Test a query that should cause Spark to leverage getShuffleRDD
+@ignore_order(local=True)
+def test_union_with_filter():
+    def doit(spark):
+        dfa = spark.range(1, 100).withColumn("id2", f.col("id"))
+        dfb = dfa.groupBy("id").agg(f.size(f.collect_set("id2")).alias("idc"))
+        dfc = dfb.filter(f.col("idc") == 1).select("id")
+        return dfc.union(dfc)
+    conf = { "spark.sql.adaptive.enabled": "true" }
+    assert_gpu_and_cpu_are_equal_collect(doit, conf)

@@ -25,3 +25,5 @@ qarun = pytest.mark.qarun
 cudf_udf = pytest.mark.cudf_udf
 rapids_udf_example_native = pytest.mark.rapids_udf_example_native
 shuffle_test = pytest.mark.shuffle_test
+nightly_gpu_mem_consuming_case = pytest.mark.nightly_gpu_mem_consuming_case
+nightly_host_mem_consuming_case = pytest.mark.nightly_host_mem_consuming_case

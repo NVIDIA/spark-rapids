@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -341,11 +341,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
-      val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
-        footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
         pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
-        isCaseSensitive, datetimeRebaseMode)
+        isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
     } else {
       None
@@ -489,7 +487,7 @@ case class GpuParquetPartitionReaderFactory(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
-  private val filterHandler = new GpuParquetFileFilterHandler(sqlConf)
+  private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -520,6 +518,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
   // Configuration
   def conf: Configuration
+  def execMetrics: Map[String, GpuMetric]
 
   // Schema to read
   def readDataSchema: StructType
@@ -589,6 +588,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       in: FSDataInputStream,
       out: OutputStream,
       copyBuffer: Array[Byte]): Unit = {
+    var readTime = 0L
+    var writeTime = 0L
     if (in.getPos != range.offset) {
       in.seek(range.offset)
     }
@@ -596,10 +597,17 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     while (bytesLeft > 0) {
       // downcast is safe because copyBuffer.length is an int
       val readLength = Math.min(bytesLeft, copyBuffer.length).toInt
+      val start = System.nanoTime()
       in.readFully(copyBuffer, 0, readLength)
+      val mid = System.nanoTime()
       out.write(copyBuffer, 0, readLength)
+      val end = System.nanoTime()
+      readTime += (mid - start)
+      writeTime += (end - mid)
       bytesLeft -= readLength
     }
+    execMetrics.get(READ_FS_TIME).foreach(_.add(readTime))
+    execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(writeTime))
   }
 
   /**
@@ -787,7 +795,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       field => {
         if (field.isPrimitive) {
           val t = field.getOriginalType
-          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) || (t == OriginalType.UINT_32)
+          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) ||
+            (t == OriginalType.UINT_32) || (t == OriginalType.UINT_64)
         } else {
           existsUnsignedType(field.asGroupType)
         }
@@ -796,7 +805,12 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
-    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType())
+    // UINT64 is casted to Decimal(20,0) by Spark to accommodate
+    // the largest possible values this type can take. Other Unsigned data types are converted to
+    // basic types like LongType, this is analogous to that except we spill over to large
+    // decimal/ints.
+    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()) ||
+      cv.getType.equals(DType.UINT64)
   }
 
   def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {
@@ -987,7 +1001,7 @@ class MultiFileParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
@@ -1100,7 +1114,6 @@ class MultiFileParquetPartitionReader(
       isSchemaCaseSensitive)
     val parseOpts = ParquetOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-      .enableStrictDecimalType(true)
       .includeColumn(includeColumns: _*).build()
 
     // About to start using the GPU
@@ -1186,7 +1199,7 @@ class MultiFileCloudParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     maxNumFileProcessed: Int,
@@ -1374,7 +1387,6 @@ class MultiFileCloudParquetPartitionReader(
         isSchemaCaseSensitive)
       val parseOpts = ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-        .enableStrictDecimalType(true)
         .includeColumn(includeColumns: _*).build()
 
       // about to start using the GPU
@@ -1439,14 +1451,13 @@ class ParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
+    override val execMetrics: Map[String, GpuMetric],
     isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
-  private var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -1459,14 +1470,13 @@ class ParquetPartitionReader(
         batch = readBatch()
       }
     }
-    if (isFirstBatch) {
-      if (batch.isEmpty) {
-        // This is odd, but some operators return data even when there is no input so we need to
-        // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      }
-      isFirstBatch = false
-    }
+
+    // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
+    // We are not acquiring the semaphore here since this next() is getting called from
+    // the `PartitionReaderIterator` which implements a standard iterator pattern, and
+    // advertises `hasNext` as false when we return false here. No downstream tasks should
+    // try to call next after `hasNext` returns false, and any task that produces some kind of
+    // data when `hasNext` is false is responsible to get the semaphore themselves.
     batch.isDefined
   }
 
@@ -1515,7 +1525,6 @@ class ParquetPartitionReader(
           isSchemaCaseSensitive)
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-          .enableStrictDecimalType(true)
           .includeColumn(includeColumns: _*).build()
 
         // about to start using the GPU

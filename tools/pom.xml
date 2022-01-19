@@ -35,6 +35,8 @@
         <hadoop.version>3.1.1</hadoop.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
+        <spark.version.classifier>spark311</spark.version.classifier>
+        <target.classifier>spark311</target.classifier>
     </properties>
 
     <dependencies>

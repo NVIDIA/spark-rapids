@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -250,6 +250,12 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     val fallThroughReasons = new ListBuffer[String]()
     if (GpuShuffleEnv.isExternalShuffleEnabled) {
       fallThroughReasons += "External Shuffle Service is enabled"
+    }
+    if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
+      fallThroughReasons += "Spark authentication is enabled"
+    }
+    if (rapidsConf.isSqlExplainOnlyEnabled) {
+      fallThroughReasons += "Plugin is in explain only mode"
     }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +

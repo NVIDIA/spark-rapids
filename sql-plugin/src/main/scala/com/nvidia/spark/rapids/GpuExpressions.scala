@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.shims.v2.{ShimBinaryExpression, ShimExpression, S
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
-import org.apache.spark.sql.types.{DataType, StringType}
+import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -64,15 +64,14 @@ object GpuExpressionsUtils extends Arm {
    * should cover all the cases for GPU pipelines.
    *
    * @param any the input value. It will be closed if it is a closeable after the call done.
-   * @param numRows the expected row number of the output column, used when 'any' is a Scalar.
-   * @param dType the data type of the output column, used when 'any' is a Scalar.
+   * @param numRows the expected row number of the output column, used when 'any' is a GpuScalar.
    * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
    *         memory leak.
    */
-  def resolveColumnVector(any: Any, numRows: Int, dType: DataType): GpuColumnVector = {
+  def resolveColumnVector(any: Any, numRows: Int): GpuColumnVector = {
     withResourceIfAllowed(any) {
       case c: GpuColumnVector => c.incRefCount()
-      case s: GpuScalar => GpuColumnVector.from(s, numRows, dType)
+      case s: GpuScalar => GpuColumnVector.from(s, numRows, s.dataType)
       case other =>
         throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
           s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
@@ -91,7 +90,7 @@ object GpuExpressionsUtils extends Arm {
    *         memory leak.
    */
   def columnarEvalToColumn(expr: Expression, batch: ColumnarBatch): GpuColumnVector =
-    resolveColumnVector(expr.columnarEval(batch), batch.numRows, expr.dataType)
+    resolveColumnVector(expr.columnarEval(batch), batch.numRows)
 
   /**
    * Extract the GpuLiteral
@@ -161,6 +160,13 @@ trait GpuExpression extends Expression with Arm {
    */
   def convertToAst(numFirstTableColumns: Int): ast.AstExpression =
     throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
+
+  /** Could evaluating this expression cause side-effects, such as throwing an exception? */
+  def hasSideEffects: Boolean =
+    children.exists {
+      case c: GpuExpression => c.hasSideEffects
+      case _ => false // This path should never really happen
+    }
 }
 
 abstract class GpuLeafExpression extends GpuExpression with ShimExpression {

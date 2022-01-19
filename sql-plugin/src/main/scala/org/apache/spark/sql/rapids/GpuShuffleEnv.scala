@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,6 +89,13 @@ object GpuShuffleEnv extends Logging {
     SparkEnv.get.blockManager.externalShuffleServiceEnabled
   }
 
+  // Returns true if authentication is requested, which is not supported
+  // by the RAPIDS Shuffle Manager
+  def isSparkAuthenticateEnabled: Boolean = {
+    val conf = SparkEnv.get.conf
+    conf.getBoolean("spark.authenticate", false)
+  }
+
   //
   // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
   // this forces the initialization when we know we are ready in the driver and executor.
@@ -102,7 +109,7 @@ object GpuShuffleEnv extends Logging {
     }
   }
 
-  def isRapidsShuffleAvailable: Boolean = {
+  def isRapidsShuffleAvailable(conf: RapidsConf): Boolean = {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
     val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[VisibleShuffleManager]
@@ -112,11 +119,14 @@ object GpuShuffleEnv extends Logging {
     // executors have `env` defined when this is checked
     // in tests
     val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
-    (isConfiguredInEnv || isRapidsManager) && !isExternalShuffleEnabled
+    (isConfiguredInEnv || isRapidsManager) &&
+      !isExternalShuffleEnabled &&
+      !isSparkAuthenticateEnabled &&
+      conf.isSqlExecuteOnGPU
   }
 
   def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
-    conf.shuffleManagerEnabled && isRapidsShuffleAvailable
+    conf.shuffleManagerEnabled && isRapidsShuffleAvailable(conf)
   }
 
   def getCatalog: ShuffleBufferCatalog = if (env == null) {

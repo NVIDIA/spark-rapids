@@ -16,13 +16,6 @@
 
 package org.apache.spark.sql.rapids.aggregate
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuSumBase
-import org.apache.spark.sql.types.DataType
-
-case class GpuSum(child: Expression,
-    resultType: DataType,
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled) extends GpuSumBase {
-  override val extraDecimalOverflowChecks: Boolean = true
+object GpuSumDefaults {
+  val hasIsEmptyField: Boolean = true
 }
