@@ -21,8 +21,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicLong;
 
-// This is copied from Guava.
-// Guava has versions, avoid to use Guava.
+// This is copied from Google Guava.
+// Avoid to use Guava as it is a messy dependency in practice.
 public final class ThreadFactoryBuilder {
   private String nameFormat = null;
   private Boolean daemon = null;
