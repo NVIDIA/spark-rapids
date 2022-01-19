@@ -24,9 +24,13 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.types.StructType
 
 trait Spark33XShims extends Spark322PlusShims {
@@ -64,4 +68,83 @@ trait Spark33XShims extends Spark322PlusShims {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
+
+  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[ParquetScan](
+      "Parquet parsing",
+      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = {
+          GpuParquetScanBase.tagSupport(this)
+          // we are being overly cautious and that Parquet does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
+
+        override def convertToGpu(): Scan = {
+          GpuParquetScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.pushedFilters,
+            a.options,
+            a.pushedAggregate,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+        }
+      }),
+    GpuOverrides.scan[OrcScan](
+      "ORC parsing",
+      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = {
+          GpuOrcScanBase.tagSupport(this)
+          // we are being overly cautious and that Orc does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
+
+        override def convertToGpu(): Scan =
+          GpuOrcScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.pushedFilters,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      }),
+    GpuOverrides.scan[CSVScan](
+      "CSV parsing",
+      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = {
+          GpuCSVScan.tagSupport(this)
+          // we are being overly cautious and that Csv does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
+
+        override def convertToGpu(): Scan =
+          GpuCSVScan(a.sparkSession,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf.maxReadBatchSizeRows,
+            conf.maxReadBatchSizeBytes)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 }
