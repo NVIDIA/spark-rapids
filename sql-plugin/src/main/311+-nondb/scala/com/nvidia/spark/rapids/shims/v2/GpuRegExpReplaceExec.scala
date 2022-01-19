@@ -15,12 +15,10 @@
  */
 package com.nvidia.spark.rapids.shims.v2
 
-import java.util.regex.Pattern
-
 import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, QuaternaryExprMeta, RapidsConf, RapidsMeta, RegexUnsupportedException}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuStringReplace}
+import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpUtils, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -32,6 +30,7 @@ class GpuRegExpReplaceMeta(
   extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 
   private var pattern: Option[String] = None
+  private var replacement: Option[String] = None
 
   override def tagExprForGpu(): Unit = {
     expr.regexp match {
@@ -53,10 +52,11 @@ class GpuRegExpReplaceMeta(
 
     expr.rep match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        val backrefPattern = Pattern.compile("\\$[0-9]")
-        if (backrefPattern.matcher(s.toString).find()) {
+        if (GpuRegExpUtils.containsBackrefs(s.toString)) {
           willNotWorkOnGpu("regexp_replace with back-references is not supported")
         }
+        replacement = Some(GpuRegExpUtils.unescapeReplaceString(s.toString))
+      case _ =>
     }
 
     GpuOverrides.extractLit(expr.pos).foreach { lit =>
@@ -78,8 +78,12 @@ class GpuRegExpReplaceMeta(
     if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
       GpuStringReplace(subject, regexp, rep)
     } else {
-      GpuRegExpReplace(subject, regexp, rep, pattern.getOrElse(
-        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+      (pattern, replacement) match {
+        case (Some(cudfPattern), Some(cudfReplacement)) =>
+          GpuRegExpReplace(lhs, regexp, rep, cudfPattern, cudfReplacement)
+        case _ =>
+          throw new IllegalStateException("Expression has not been tagged correctly")
+      }
     }
   }
 }

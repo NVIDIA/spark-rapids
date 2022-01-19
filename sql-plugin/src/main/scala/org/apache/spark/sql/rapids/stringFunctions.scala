@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -744,6 +744,48 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   }
 }
 
+object GpuRegExpUtils {
+
+  /**
+   * Determine if a string contains back-references such as `$1` but ignoring
+   * if preceded by escape character.
+   */
+  def containsBackrefs(s: String): Boolean = {
+    var i = 0
+    while (i < s.length) {
+      if (s.charAt(i) == '\\') {
+        i += 2
+      } else {
+        if (s.charAt(i) == '$'  && i+1 < s.length) {
+          if (s.charAt(i+1).isDigit) {
+            return true
+          }
+        }
+        i += 1
+      }
+    }
+    false
+  }
+
+  /**
+   * We need to remove escape characters in the regexp_replace
+   * replacement string before passing to cuDF.
+   */
+  def unescapeReplaceString(s: String): String = {
+    val b = new StringBuilder
+    var i = 0
+    while (i < s.length) {
+      if (s.charAt(i) == '\\' && i+1 < s.length) {
+        i += 1
+      }
+      b.append(s.charAt(i))
+      i += 1
+    }
+    b.toString
+  }
+
+}
+
 class GpuRLikeMeta(
     expr: RLike,
     conf: RapidsConf,
@@ -854,7 +896,8 @@ case class GpuRegExpReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression,
-    cudfRegexPattern: String)
+    cudfRegexPattern: String,
+    cudfReplacementString: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes {
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
@@ -863,15 +906,16 @@ case class GpuRegExpReplace(
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
 
-  def this(srcExpr: Expression, searchExpr: Expression, cudfRegexPattern: String) = {
-    this(srcExpr, searchExpr, GpuLiteral("", StringType), cudfRegexPattern)
+  def this(srcExpr: Expression, searchExpr: Expression, cudfRegexPattern: String,
+      cudfReplacementString: String) = {
+    this(srcExpr, searchExpr, GpuLiteral("", StringType), cudfRegexPattern, cudfReplacementString)
   }
 
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    strExpr.getBase.replaceRegex(cudfRegexPattern, replaceExpr.getBase)
+    strExpr.getBase.replaceRegex(cudfRegexPattern, Scalar.fromString(cudfReplacementString))
   }
 
 }
