@@ -26,7 +26,6 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -101,7 +100,7 @@ object MultiFileThreadPoolUtil {
     val threadFactory = new ThreadFactoryBuilder()
       .setNameFormat(threadTag + " reader worker-%d")
       .setDaemon(true)
-      .build()
+      .build
 
     val threadPoolExecutor = new ThreadPoolExecutor(
       maxThreads, // corePoolSize: max number of threads to create before queuing the tasks

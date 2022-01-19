@@ -22,7 +22,7 @@ import java.util.regex.PatternSyntaxException
 
 import scala.collection.JavaConverters._
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.qualification.QualificationArgs
 import org.apache.hadoop.conf.Configuration

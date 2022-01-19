@@ -124,12 +124,6 @@
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
-	        <dependency>
-                    <groupId>com.google.guava</groupId>
-                    <artifactId>guava</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
             </dependencies>
         </profile>
     </profiles>

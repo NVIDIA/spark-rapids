@@ -71,6 +71,7 @@
     </developers>
 
     <modules>
+        <module>common</module>
         <module>dist</module>
         <module>integration_tests</module>
         <module>shims</module>
@@ -899,6 +900,12 @@
               <artifactId>spark-sql_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
               <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.google.flatbuffers</groupId>
+                <artifactId>flatbuffers-java</artifactId>
+                <version>${flatbuffers.java.version}</version>
+                <scope>compile</scope>  <!-- for shade -->
             </dependency>
             <dependency>
               <groupId>org.rogach</groupId>

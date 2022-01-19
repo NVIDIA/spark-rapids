@@ -20,7 +20,6 @@ import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.commons.lang3.mutable.MutableLong
 
 import org.apache.spark.SparkEnv

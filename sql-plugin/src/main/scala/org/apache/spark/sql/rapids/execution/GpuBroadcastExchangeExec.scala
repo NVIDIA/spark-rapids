@@ -26,7 +26,6 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -499,7 +498,7 @@ object GpuBroadcastExchangeExecBase {
    * Create a thread factory that names threads with a prefix and also sets the threads to daemon.
    */
   private def namedThreadFactory(prefix: String): ThreadFactory = {
-    new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build()
+    new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build
   }
 
   /**

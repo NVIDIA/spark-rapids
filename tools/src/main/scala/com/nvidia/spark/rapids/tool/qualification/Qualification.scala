@@ -20,7 +20,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecuto
 
 import scala.collection.JavaConverters._
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import org.apache.hadoop.conf.Configuration
 
