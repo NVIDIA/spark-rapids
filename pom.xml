@@ -848,7 +848,7 @@
         <shim.module.name>${spark.version.classifier}</shim.module.name>
         <slf4j.version>1.7.30</slf4j.version>
         <hive.storage.api.version>2.7.1</hive.storage.api.version>
-        <protobuf.java.version>2.5.0</protobuf.java.version>
+        <protobuf.java.version>3.19.2</protobuf.java.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>

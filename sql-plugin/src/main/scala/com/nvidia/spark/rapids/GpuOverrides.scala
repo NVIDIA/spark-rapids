@@ -2234,14 +2234,27 @@ object GpuOverrides extends Logging {
       }),
     expr[Max](
       "Max aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
+      ExprChecksImpl(
+        ExprChecks.reductionAndGroupByAgg(
+          // Max supports single level struct, e.g.:  max(struct(string, string))
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+          TypeSig.orderable,
+          Seq(ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
               .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
               .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-          TypeSig.orderable))
-      ),
+            TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.orderable,
+            Seq(ParamCheck("input",
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val dataType = max.child.dataType
@@ -2256,14 +2269,27 @@ object GpuOverrides extends Logging {
       }),
     expr[Min](
       "Min aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
+      ExprChecksImpl(
+        ExprChecks.reductionAndGroupByAgg(
+          // Min supports single level struct, e.g.:  max(struct(string, string))
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+          TypeSig.orderable,
+          Seq(ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
               .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
               .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-          TypeSig.orderable))
-      ),
+            TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.orderable,
+            Seq(ParamCheck("input",
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
@@ -3852,7 +3878,12 @@ object GpuOverrides extends Logging {
     override def getChecks: Option[TypeChecks[_]] = None
   }
 
-  // Only run the explain and don't actually convert or run on GPU.
+  /**
+   * Only run the explain and don't actually convert or run on GPU.
+   * This gets the plan from the dataframe so it's after catalyst has run through all the
+   * rules to modify the plan. This means we have to try to undo some of the last rules
+   * to make it close to when the columnar rules would normally run on the plan.
+   */
   def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     val plan = df.queryExecution.executedPlan
     val conf = new RapidsConf(plan.conf)
@@ -3877,6 +3908,23 @@ object GpuOverrides extends Logging {
       wrap.tagForExplain()
       val shouldExplainAll = explain.equalsIgnoreCase("ALL")
       wrap.explain(shouldExplainAll)
+    }
+  }
+
+  /**
+   * Use explain mode on an active SQL plan as its processed through catalyst.
+   * This path is the same as being run through the plugin running on hosts with
+   * GPUs.
+   */
+  private def explainCatalystSQLPlan(updatedPlan: SparkPlan, conf: RapidsConf): Unit = {
+    val explainSetting = if (conf.shouldExplain) {
+      conf.explain
+    } else {
+      "ALL"
+    }
+    val explainOutput = explainSinglePlan(updatedPlan, conf, explainSetting)
+    if (explainOutput.nonEmpty) {
+      logWarning(s"\n$explainOutput")
     }
   }
 
@@ -3953,26 +4001,35 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // gets called once for each query stage (where a query stage is an `Exchange`).
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled) {
+    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
-          // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
-          // distribution expressions are not semantically equal.
-          val newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
-
-          // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
-          // compared to the desired buffer type from a reused GPU shuffle.
-          GpuOverrides.fixupReusedExchangeExecs(newPlan)
-        } else {
-          plan
-        }
+        val updatedPlan = updateForAdaptivePlan(plan, conf)
         applyOverrides(updatedPlan, conf)
       }
+    } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
+      // this mode logs the explain output and returns the original CPU plan
+      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
+      plan
     } else {
       plan
     }
   }(sparkPlan)
+
+  private def updateForAdaptivePlan(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    if (plan.conf.adaptiveExecutionEnabled) {
+      // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+      // distribution expressions are not semantically equal.
+      val newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+
+      // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
+      // compared to the desired buffer type from a reused GPU shuffle.
+      GpuOverrides.fixupReusedExchangeExecs(newPlan)
+    } else {
+      plan
+    }
+  }
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)

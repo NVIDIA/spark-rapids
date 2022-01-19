@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,7 +163,13 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
     }
     try (NvtxRange ignored = buildRange;
          ColumnVector cv = devColumn;
-         Table tab = Table.convertFromRows(cv, rapidsTypes)) {
+         Table tab = rapidsTypes.length < 100 ?
+             // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means
+             // at most 184 double/long values. We are branching over the size of the output to
+             // know which kernel to call. If rapidsTypes.length < 100 we call the fixed-width
+             // optimized version, otherwise the generic one
+             Table.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
+             Table.convertFromRows(cv, rapidsTypes)) {
       return GpuColumnVector.from(tab, outputTypes);
     }
   }
