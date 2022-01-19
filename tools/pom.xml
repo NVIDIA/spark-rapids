@@ -99,17 +99,10 @@
                         <configuration>
                             <artifactSet>
                                 <includes>
-                                    <include>org.scala-lang:scala-library</include>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
                                 </includes>
                             </artifactSet>
                             <filters>
-                                <filter>
-                                    <artifact>org.scala-lang:scala-library</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.MF</exclude>
-                                    </excludes>
-                                </filter>
                                 <filter>
                                     <artifact>org.rogach:scallop_${scala.binary.version}:*</artifact>
                                     <excludes>
