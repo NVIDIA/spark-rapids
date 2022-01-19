@@ -465,24 +465,21 @@ CPU when the RAPIDS Accelerator determines that a pattern is either unsupported 
 
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
+- Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
+- Line anchor `$`
+- String anchor `\Z`
+- String anchor `\z` is not supported by `regexp_replace`
+- Non-digit character class `\D`
+- Non-word character class `\W`
+- Word and non-word boundaries, `\b` and `\B`
+- Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
-- Word and non-word boundaries, `\b` and `\B`
-- Non-digit character class `\D`
-- Non-word character class `\W`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
-  with a choice (`^|a`).
-- String anchors `\z` and `\Z` are not supported by `regexp_replace`
 - Hex and octal digits
-
-In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
-
-- Character classes for negative matches have different behavior between CPU and GPU for multiline
-  strings. The pattern `[^a]` will match line-terminators on CPU but not on GPU.
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
