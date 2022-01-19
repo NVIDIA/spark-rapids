@@ -915,7 +915,9 @@ case class GpuRegExpReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    strExpr.getBase.replaceRegex(cudfRegexPattern, Scalar.fromString(cudfReplacementString))
+    withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+      strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+    }
   }
 
 }

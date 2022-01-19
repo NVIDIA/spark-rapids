@@ -370,7 +370,7 @@ def test_re_replace_escaped():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
-            'REGEXP_REPLACE(a, "[A-Z]+", "\\\\A\\A")'),
+            'REGEXP_REPLACE(a, "[A-Z]+", "\\\\A\\A\\\\t\\\\r\\\\n\\t\\r\\n")'),
         conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_re_replace_null():
