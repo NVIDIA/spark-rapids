@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids;
+package com.nvidia.spark.rapids
 
-public class Utils {
-  public static void checkArgument(boolean expression, String msg) {
-    if (!expression) {
-      throw new IllegalArgumentException(msg);
-    }
+object CheckUtils {
+  def checkArgument(expression: Boolean, msg: String): Unit = {
+    if (!expression) throw new IllegalArgumentException(msg)
   }
 
-  public static <T> T checkNotNull(T reference) {
-    if (reference == null) {
-      throw new NullPointerException();
-    }
-    return reference;
+  def checkNotNull[T](reference: T): T = {
+    if (reference == null) throw new IllegalArgumentException("reference is null")
+    reference
   }
 }

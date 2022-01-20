@@ -261,7 +261,7 @@
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
-		        <dependency>
+                <dependency>
                     <groupId>org.apache.orc</groupId>
                     <artifactId>orc-core</artifactId>
                     <version>${spark.version}</version>

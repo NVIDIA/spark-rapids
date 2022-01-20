@@ -28,10 +28,16 @@
     </parent>
 
     <artifactId>rapids-4-spark-common_2.12</artifactId>
-    <name>RAPIDS Accelerator for Apache Spark Common Plugin</name>
+    <name>RAPIDS Accelerator for Apache Spark Common</name>
+    <description>Utility code that is common across the RAPIDS Accelerator projects</description>
     <version>22.02.0-SNAPSHOT</version>
 
     <dependencies>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -61,31 +67,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-notice</id>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <phase>process-resources</phase>
-                        <configuration>
-                            <target>
-                                <!-- copy NOTICE-binary to NOTICE -->
-                                <copy
-                                        todir="${project.build.directory}/classes/META-INF/"
-                                        verbose="true">
-                                    <fileset dir="${project.basedir}/..">
-                                        <include name="NOTICE-binary"/>
-                                    </fileset>
-                                    <mapper type="glob" from="*-binary" to="*"/>
-                                </copy>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <!-- disable surefire as tests are some place else -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -101,6 +82,10 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
