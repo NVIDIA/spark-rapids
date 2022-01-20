@@ -1,0 +1,10 @@
+27c27
+<       GpuOverrides.DECIMAL128_MAX_PRECISION)
+---
+>       DType.DECIMAL128_MAX_PRECISION)
+51,52c51,52
+<       math.min(outputType.precision + 1, GpuOverrides.DECIMAL128_MAX_PRECISION),
+<       math.min(outputType.scale + 1, GpuOverrides.DECIMAL128_MAX_PRECISION))
+---
+>       math.min(outputType.precision + 1, DType.DECIMAL128_MAX_PRECISION),
+>       math.min(outputType.scale + 1, DType.DECIMAL128_MAX_PRECISION))

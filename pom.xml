@@ -83,6 +83,24 @@
     </modules>
     <profiles>
         <profile>
+            <id>release24X</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>24X</value>
+                </property>
+            </activation>
+            <properties>
+                <scala.binary.version>2.11</scala.binary.version>
+                <scala.version>2.11.12</scala.version>
+                <spark.version>${spark248.version}</spark.version>
+                <spark.test.version>${spark248.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>spark2-sql-plugin</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release301</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -123,6 +141,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -169,6 +195,14 @@
                 <spark.version.classifier>spark302</spark.version.classifier>
             </properties>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>aggregator</module>
                 <module>tools</module>
                 <module>api_validation</module>
@@ -214,6 +248,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -259,6 +301,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -308,6 +358,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -364,6 +422,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -420,6 +486,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -467,6 +541,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
@@ -517,6 +599,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
@@ -563,6 +653,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -608,6 +706,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -653,6 +759,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -697,6 +811,14 @@
                 </plugins>
             </build>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -751,6 +873,14 @@
                 </repository>
             </repositories>
             <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -830,6 +960,7 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
+        <spark248.version>2.4.8</spark248.version>
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2</spark302.version>
@@ -1134,6 +1265,7 @@
                             </goals>
                             <configuration>
                                 <classifier>${spark.version.classifier}tests</classifier>
+                                <skipIfEmpty>true</skipIfEmpty>
                             </configuration>
                         </execution>
                     </executions>
@@ -1166,7 +1298,7 @@
                         <exclude>rmm_log.txt</exclude>
                         <exclude>dependency-reduced-pom*.xml</exclude>
                         <exclude>**/.*/**</exclude>
-                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
+                        <exclude>**/src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>**/*.csv</exclude>
                         <exclude>dist/*.txt</exclude>
                         <exclude>**/META-INF/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
@@ -1174,6 +1306,7 @@
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
+                        <exclude>scripts/spark2diffs/*.diff</exclude>
                     </excludes>
                 </configuration>
             </plugin>

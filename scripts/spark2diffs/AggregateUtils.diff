@@ -1,0 +1,43 @@
+32a33,74
+> 
+>   /**
+>    * Computes a target input batch size based on the assumption that computation can consume up to
+>    * 4X the configured batch size.
+>    * @param confTargetSize user-configured maximum desired batch size
+>    * @param inputTypes input batch schema
+>    * @param outputTypes output batch schema
+>    * @param isReductionOnly true if this is a reduction-only aggregation without grouping
+>    * @return maximum target batch size to keep computation under the 4X configured batch limit
+>    */
+>   def computeTargetBatchSize(
+>       confTargetSize: Long,
+>       inputTypes: Seq[DataType],
+>       outputTypes: Seq[DataType],
+>       isReductionOnly: Boolean): Long = {
+>     def typesToSize(types: Seq[DataType]): Long =
+>       types.map(GpuBatchUtils.estimateGpuMemory(_, nullable = false, rowCount = 1)).sum
+>     val inputRowSize = typesToSize(inputTypes)
+>     val outputRowSize = typesToSize(outputTypes)
+>     // The cudf hash table implementation allocates four 32-bit integers per input row.
+>     val hashTableRowSize = 4 * 4
+> 
+>     // Using the memory management for joins as a reference, target 4X batch size as a budget.
+>     var totalBudget = 4 * confTargetSize
+> 
+>     // Compute the amount of memory being consumed per-row in the computation
+>     var computationBytesPerRow = inputRowSize + hashTableRowSize
+>     if (isReductionOnly) {
+>       // Remove the lone output row size from the budget rather than track per-row in computation
+>       totalBudget -= outputRowSize
+>     } else {
+>       // The worst-case memory consumption during a grouping aggregation is the case where the
+>       // grouping does not combine any input rows, so just as many rows appear in the output.
+>       computationBytesPerRow += outputRowSize
+>     }
+> 
+>     // Calculate the max rows that can be processed during computation within the budget
+>     val maxRows = totalBudget / computationBytesPerRow
+> 
+>     // Finally compute the input target batching size taking into account the cudf row limits
+>     Math.min(inputRowSize * maxRows, Int.MaxValue)
+>   }
