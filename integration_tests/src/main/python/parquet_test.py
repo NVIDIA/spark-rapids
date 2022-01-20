@@ -688,9 +688,9 @@ def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp
 
 
 
-@pytest.mark.skipif(is_before_spark_330(), reason='???')
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
 @allow_non_gpu(any = True)
-def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
+def test_parquet_max_top_column_not_push_down(spark_tmp_path):
     data_path = spark_tmp_path + "/pushdown.parquet"
 
     def do_explain(spark):
@@ -708,9 +708,9 @@ def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
                                   "spark.sql.sources.useV1SourceList": ""})
 
 
-@pytest.mark.skipif(is_before_spark_330(), reason='???')
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
 @allow_non_gpu(any = True)
-def test_parquet_count_nested_column_push_down(spark_tmp_path):
+def test_parquet_count_top_column_push_down(spark_tmp_path):
     data_path = spark_tmp_path + "/pushdown.parquet"
 
     def do_explain(spark):
@@ -726,3 +726,44 @@ def test_parquet_count_nested_column_push_down(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
                                   "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+
+        data = map(lambda i: ((i, ["val_{}".format(i)]),), range(1, 11))
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("max(_1._2[0])")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_count_nested_column_not_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+
+        data = map(lambda i: ((i, ["val_{}".format(i)]),), range(1, 11))
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("Count(_1._2[0])")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
