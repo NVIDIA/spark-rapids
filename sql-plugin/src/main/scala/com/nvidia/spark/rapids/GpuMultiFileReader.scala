@@ -100,7 +100,7 @@ object MultiFileThreadPoolUtil {
     val threadFactory = new ThreadFactoryBuilder()
       .setNameFormat(threadTag + " reader worker-%d")
       .setDaemon(true)
-      .build
+      .build()
 
     val threadPoolExecutor = new ThreadPoolExecutor(
       maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
