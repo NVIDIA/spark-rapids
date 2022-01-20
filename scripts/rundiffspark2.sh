@@ -27,7 +27,16 @@
 
 # If this script fails then a developer should do soemthing like:
 #  1. Look at each file with a diff output from the script
-#  2. Look 
+#  2. Look at the commits for that file in sql-plugin module and see what changed dealing
+#     with the metadata.
+#  3. update the corresponding spark2-sql-plugin file to pick up the meta changes if necessary
+#  4. Rerun the diff script: cd scripts && ./rundiffspark2.sh
+#  5. If there is still diffs update the diff file in spark2diffs/ corresponding to the
+#     changed file.
+#     Generally the way I do this is find the commands below for the file that changed
+#     and run them manually. If the diff looks ok then just copy the .newdiff file to
+#     the diff file in the spark2diffs directory.
+#
 
 set -e
 
