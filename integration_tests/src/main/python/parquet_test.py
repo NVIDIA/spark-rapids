@@ -687,42 +687,39 @@ def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp
                 all_confs)
 
 
-def _help_test_parquet_aggregate_push_down(spark_tmp_path, expr, expect):
-    """
-    Helper function of testing aggregate push down for parquet.
-    `spark_tmp_path`: the path to store parquet file
-    `expr`: the sql query, String type
-    `expect`: expected info in the explaination of physical plan, String type
-    """
+
+@pytest.mark.skipif(is_before_spark_330(), reason='???')
+@allow_non_gpu(any = True)
+def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
     def do_explain(spark):
         data_path = spark_tmp_path + "/pushdown.parquet"
 
         data = map(lambda i: ((i, ["val_{}".format(i)]),), range(1, 11))
         spark.createDataFrame(data).write.parquet(data_path)
         
-        df = spark.read.parquet(data_path).selectExpr(expr)
+        df = spark.read.parquet(data_path).selectExpr("Max(_1)")
         explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
 
-        assert expect in explain
+        assert "PushedAggregation: []" in explain
 
     with_gpu_session(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
                                   "spark.sql.sources.useV1SourceList": ""})
 
-@pytest.mark.skipif(is_before_spark_330(), reason='???')
-@allow_non_gpu(any = True)
-def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
-    _help_test_parquet_aggregate_push_down(
-        spark_tmp_path,
-        "Max(_1)",
-        "PushedAggregation: []"
-    )
 
 @pytest.mark.skipif(is_before_spark_330(), reason='???')
 @allow_non_gpu(any = True)
 def test_parquet_count_nested_column_push_down(spark_tmp_path):
-    _help_test_parquet_aggregate_push_down(
-        spark_tmp_path,
-        "Count(_1)",
-        "PushedAggregation: [COUNT(_1)]"
-    )
+    data_path = spark_tmp_path + "/pushdown.parquet"
 
+    def do_explain(spark):
+
+        data = map(lambda i: ((i, ["val_{}".format(i)]),), range(1, 11))
+        spark.createDataFrame(data).write.mode('ignore').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("Count(_1)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert "PushedAggregation: [COUNT(_1)]" in explain
+
+    with_gpu_session(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
