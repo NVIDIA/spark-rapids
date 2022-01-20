@@ -1,0 +1,8 @@
+13c13
+<             e.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+---
+>               e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+14a15
+> 
+17a19
+> 

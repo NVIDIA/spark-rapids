@@ -63,13 +63,8 @@ the other is to modify your existing Spark application code to call a function d
 
 Please note that if using adaptive execution in Spark the explain output may not be perfect
 as the plan could have changed along the way in a way that we wouldn't see by looking at just
-the CPU plan.
-
-### Requirements
-
-- A Spark 3.x CPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
-- Ability to modify the existing Spark application code if using the function call directly
+the CPU plan. The same applies if you are using an older version of Spark. Spark planning
+may be slightly different if you go up to a newer version of Spark.
 
 ### Using the Configuration Flag for Explain Only Mode
 
@@ -77,6 +72,13 @@ Starting with version 22.02, the RAPIDS Accelerator can be run in explain only m
 This mode allows you to run on a CPU cluster and can help us understand the potential GPU plan and
 if there are any unsupported features. Basically it will log the output which is the same as
 the driver logs with `spark.rapids.sql.explain=all`.
+
+#### Requirements
+
+- A Spark 3.x CPU cluster
+- The `rapids-4-spark` and `cudf` [jars](../download.md)
+
+#### Usage
 
 1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
    Spark classpath and enable the configs `spark.rapids.sql.mode=explainOnly` and
@@ -125,18 +127,39 @@ pretty accurate.
 
 ### How to use the Function Call
 
-Starting with version 21.12 of the RAPIDS Accelerator, a new function named
-`explainPotentialGpuPlan` is added which can help us understand the potential GPU plan and if there
-are any unsupported features on a CPU cluster.  Basically it can return output which is the same as
-the driver logs with `spark.rapids.sql.explain=all`.
+A function named `explainPotentialGpuPlan` is available which can help us understand the potential
+GPU plan and if there are any unsupported features on a CPU cluster. Basically it can return output
+which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 
-1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
+#### Requirements with Spark 3.X
+
+- A Spark 3.X CPU cluster
+- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- Ability to modify the existing Spark application code
+- RAPIDS Accelerator for Apache Spark version 21.12 or newer
+
+#### Requirements with Spark 2.4.X
+
+- A Spark 2.4.X CPU cluster
+- The `rapids-4-spark-sql-meta` [jar](../download.md)
+- Ability to modify the existing Spark application code
+- RAPIDS Accelerator for Apache Spark version 22.02 or newer
+
+#### Usage
+
+1. In `spark-shell`, add the necessary jars into --jars option or put them in the
    Spark classpath.
 
-   For example:
+   For example, on Spark 3.X:
 
    ```bash
    spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar
+   ```
+
+   For example, on Spark 2.4.X:
+
+   ```bash
+   spark-shell --jars /PathTo/rapids-4-spark-sql-meta-<version and classifier>.jar
    ```
 
 2. Test if the class can be successfully loaded or not.
@@ -148,8 +171,8 @@ the driver logs with `spark.rapids.sql.explain=all`.
 3. Enable optional RAPIDS Accelerator related parameters based on your setup.
 
    Enabling optional parameters may allow more operations to run on the GPU but please understand
-   the meaning and risk of above parameters before enabling it. Please refer to [configs
-   doc](../configs.md) for details of RAPIDS Accelerator parameters.
+   the meaning and risk of above parameters before enabling it. Please refer to the
+   [configuration documentation](../configs.md) for details of RAPIDS Accelerator parameters.
    
    For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
    UDFs, you can set the following parameters:
