@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -64,6 +65,7 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
   override def sqlOperator: String = "AND"
 
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_AND
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_AND)
 }
 
 case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
@@ -74,6 +76,7 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
   override def sqlOperator: String = "OR"
 
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_OR
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_OR)
 }
 
 abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
@@ -256,6 +259,7 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
   override def outputTypeOverride: DType = DType.BOOL8
 
   override def binaryOp: BinaryOp = BinaryOp.GREATER
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.GREATER)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
@@ -332,6 +336,7 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
   override def outputTypeOverride: DType = DType.BOOL8
 
   override def binaryOp: BinaryOp = BinaryOp.GREATER_EQUAL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.GREATER_EQUAL)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
@@ -400,6 +405,7 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
   override def outputTypeOverride: DType = DType.BOOL8
 
   override def binaryOp: BinaryOp = BinaryOp.LESS
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.LESS)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
@@ -476,6 +482,7 @@ case class GpuLessThanOrEqual(left: Expression, right: Expression) extends CudfB
   override def outputTypeOverride: DType = DType.BOOL8
 
   override def binaryOp: BinaryOp = BinaryOp.LESS_EQUAL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.LESS_EQUAL)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -271,29 +271,11 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
 
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
-object CudfBinaryExpression {
-  lazy val opToAstMap: Map[BinaryOp, ast.BinaryOperator] = Map(
-    BinaryOp.ADD -> ast.BinaryOperator.ADD,
-    BinaryOp.BITWISE_AND -> ast.BinaryOperator.BITWISE_AND,
-    BinaryOp.BITWISE_OR -> ast.BinaryOperator.BITWISE_OR,
-    BinaryOp.BITWISE_XOR -> ast.BinaryOperator.BITWISE_XOR,
-    BinaryOp.GREATER -> ast.BinaryOperator.GREATER,
-    BinaryOp.GREATER_EQUAL -> ast.BinaryOperator.GREATER_EQUAL,
-    BinaryOp.LESS -> ast.BinaryOperator.LESS,
-    BinaryOp.LESS_EQUAL -> ast.BinaryOperator.LESS_EQUAL,
-    BinaryOp.LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
-    BinaryOp.NULL_LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
-    BinaryOp.LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
-    BinaryOp.NULL_LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
-    BinaryOp.MUL -> ast.BinaryOperator.MUL,
-    BinaryOp.POW -> ast.BinaryOperator.POW,
-    BinaryOp.SUB -> ast.BinaryOperator.SUB)
-}
-
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
   def outputTypeOverride: DType = null
   def castOutputAtEnd: Boolean = false
+  def astOperator: Option[ast.BinaryOperator] = None
 
   def outputType(l: BinaryOperable, r: BinaryOperable): DType = {
     val over = outputTypeOverride
@@ -341,7 +323,7 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
-    val astOp = CudfBinaryExpression.opToAstMap.getOrElse(binaryOp,
+    val astOp = astOperator.getOrElse(
       throw new IllegalStateException(s"$this is not supported by AST"))
     assert(left.dataType == right.dataType)
     new ast.BinaryOperation(astOp,
