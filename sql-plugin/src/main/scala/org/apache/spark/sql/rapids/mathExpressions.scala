@@ -423,23 +423,44 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
 
-  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
-    // naive implementation (needs to handle overflow/underflow)
-    withResource(lhs.mul(lhs)) { lhsSquared =>
-      withResource(rhs.mul(rhs)) { rhsSquared =>
-        withResource(lhsSquared.add(rhsSquared)) { sumSquares =>
-          sumSquares.sqrt()
+  override def doColumnar(x: BinaryOperable, y: BinaryOperable): ColumnVector = {
+    // naive implementation:
+    // r = sqrt(lhs^2 + rhs^2) (prone to overflow with regards either square)
+    // however, we can reduce it to
+    // r = sqrt(x^2 + y^2) = x * sqrt(1 + (y/x)^2)
+    // where x = max(abs(lhs), abs(rhs)), y = min(abs(lhs), abs(rhs))
+    // which will only overflow if both terms are near the maximum representation space
+
+    withResource(y.div(x)) { yOverX =>
+      withResource(yOverX.mul(yOverX)) { yOverXSquared =>
+        withResource(Scalar.fromInt(1)) { one =>
+          withResource(one.add(yOverXSquared)) { onePlusTerm =>
+            withResource(onePlusTerm.sqrt) { onePlusTermSqrt =>
+              x.mul(onePlusTermSqrt)
+            }
+          }
         }
       }
     }
   }
 
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val (x, y) = withResource(Seq(lhs.getBase.abs, rhs.getBase.abs)) { 
+      case Seq(lhsAbs, rhsAbs) => {
+        withResource(lhsAbs.greaterThan(rhsAbs)) { lhsGreater => 
+          (lhsGreater.ifElse(lhsAbs, rhsAbs), lhsGreater.ifElse(rhsAbs, lhsAbs))
+        }
+      }
+    }
+    doColumnar(x, y)
+  }
+
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    doColumnar(ColumnVector.fromScalar(lhs.getBase, rhs.getRowCount.toInt), rhs.getBase)
+    doColumnar(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType), rhs)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    doColumnar(lhs.getBase, ColumnVector.fromScalar(rhs.getBase, lhs.getRowCount.toInt))
+    doColumnar(lhs, GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType))
   }
 }
 
