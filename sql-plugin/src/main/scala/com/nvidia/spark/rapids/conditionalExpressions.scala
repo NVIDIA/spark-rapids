@@ -479,7 +479,9 @@ case class GpuCaseWhen(
           val whenReplaced = withResource(Scalar.fromBool(false)) { falseScalar =>
             whenBool.getBase.replaceNulls(falseScalar)
           }
-          GpuColumnVector.from(whenReplaced.and(notPrev), DataTypes.BooleanType)
+          withResource(whenReplaced) { _ =>
+            GpuColumnVector.from(whenReplaced.and(notPrev), DataTypes.BooleanType)
+          }
         }
       case None =>
         whenBool.incRefCount()

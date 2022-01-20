@@ -1,0 +1,31 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2021, NVIDIA CORPORATION.
+20d19
+< import org.apache.spark.sql.catalyst.expressions._
+21a21
+> import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+32,43d31
+<   /**
+<    * Check the Expression is or has Input File expressions.
+<    * @param exec expression to check
+<    * @return true or false
+<    */
+<   def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
+<     case _: InputFileName => true
+<     case _: InputFileBlockStart => true
+<     case _: InputFileBlockLength => true
+<     case e => e.children.exists(checkHasInputFileExpressions)
+<   }
+< 
+45c33
+<     plan.expressions.exists(checkHasInputFileExpressions)
+---
+>     plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
+79d66
+<         /*
+84d70
+<         */
+104a91
+> 

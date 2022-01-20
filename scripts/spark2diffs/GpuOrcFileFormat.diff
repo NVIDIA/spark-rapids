@@ -1,0 +1,14 @@
+12c12
+<   def tagGpuSupport(meta: RapidsMeta[_, _],
+---
+>   def tagGpuSupport(meta: RapidsMeta[_, _, _],
+15c15
+<                     schema: StructType): Unit = {
+---
+>                     schema: StructType): Option[GpuOrcFileFormat] = {
+79a80,84
+>     if (meta.canThisBeReplaced) {
+>       Some(new GpuOrcFileFormat)
+>     } else {
+>       None
+>     }

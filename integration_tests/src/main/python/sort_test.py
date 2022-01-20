@@ -299,11 +299,11 @@ def test_large_orderby_nested_ridealong(data_gen):
     decimal_gen_38_10,
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
-    ArrayGen(byte_gen, max_length=5)] + decimal_128_gens_no_neg, ids=idfn)
+    ArrayGen(byte_gen, max_length=5)] + decimal_128_gens_no_neg + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.order(2)
 def test_orderby_nested_ridealong_limit(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
     #  results, especially on distributed clusters.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, LongRangeGen(), data_gen)\
-                    .orderBy(f.col('a').desc()).limit(100))
+                    .orderBy(f.col('a').desc()).limit(100), conf=allow_negative_scale_of_decimal_conf)
