@@ -434,6 +434,54 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
 
+## JSON
+
+The JSON format read is a very experimental feature which is expected to have some issues, so we disable 
+it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
+`spark.rapids.sql.format.json.read.enabled`.
+
+Currently, the GPU accelerated JSON reader doesn't support column pruning, which will likely make 
+this difficult to use or even test. The user must specify the full schema or just let Spark infer 
+the schema from the JSON file. eg,
+
+We have a `people.json` file with below content
+
+``` console
+{"name":"Michael"}
+{"name":"Andy", "age":30}
+{"name":"Justin", "age":19}
+```
+
+Both below ways will work
+
+- Inferring the schema
+
+  ``` scala
+  val df = spark.read.json("people.json")
+  ```
+
+- Specifying the full schema
+
+  ``` scala
+  val schema = StructType(Seq(StructField("name", StringType), StructField("age", IntegerType)))
+  val df = spark.read.schema(schema).json("people.json")
+  ```
+
+While the below code will not work in the current version,
+
+``` scala
+val schema = StructType(Seq(StructField("name", StringType)))
+val df = spark.read.schema(schema).json("people.json")
+```
+
+### JSON supporting types
+
+The nested types(array, map and struct) are not supported yet in current version.
+
+### JSON Floating Point
+
+Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
+
 ## LIKE
 
 If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
@@ -841,3 +889,4 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
+
