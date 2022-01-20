@@ -16,14 +16,15 @@ object GpuParquetUtils {
     aggregation: Aggregation,
     aggSchema: StructType,
     partitionValues: InternalRow,
-    datetimeRebaseSpec: RebaseSpec): InternalRow = ParquetUtils.createAggInternalRowFromFooter(
-    footer,
-    filePath,
-    dataSchema,
-    partitionSchema,
-    aggregation,
-    aggSchema,
-    partitionValues,
-    datetimeRebaseSpec
-  )
+    datetimeRebaseSpec: RebaseSpec): InternalRow = {
+    ParquetUtils.createAggInternalRowFromFooter(
+      footer,
+      filePath,
+      dataSchema,
+      partitionSchema,
+      aggregation,
+      aggSchema,
+      partitionValues,
+      datetimeRebaseSpec
+  )}
 }

@@ -61,7 +61,6 @@ case class GpuParquetPartitionReaderFactoryForAggrerationPushdown(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val datetimeRebaseModeInRead = parquetOptions.datetimeRebaseModeInRead
-  private val enableOffHeapColumnVector = sqlConf.offHeapColumnVectorEnabled
 
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
 
@@ -174,7 +173,7 @@ case class GpuParquetScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    if (pushedAggregate.nonEmpty && rapidsConf.isParquetPerFileReadEnabled){
+    if (pushedAggregate.nonEmpty){
       GpuParquetPartitionReaderFactoryForAggrerationPushdown(
         sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, pushedAggregate,
