@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,11 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.csv._
+import org.apache.spark.sql.catalyst.json.rapids.shims.v2.Spark30Xuntil33XFileOptionsShims
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2._
 
-trait Spark30Xuntil33XShims extends SparkShims {
-  def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    Option(csvOpts.dateFormat)
-  }
-
-  def timestampFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    Option(csvOpts.timestampFormat)
-  }
+trait Spark30Xuntil33XShims extends Spark30Xuntil33XFileOptionsShims {
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
     GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")

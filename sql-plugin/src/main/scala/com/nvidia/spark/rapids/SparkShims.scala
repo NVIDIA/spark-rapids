@@ -30,7 +30,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
-import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -299,9 +298,9 @@ trait SparkShims {
   def getLegacyStatisticalAggregate(): Boolean
 
 
-  def dateFormatInRead(csvOpts: CSVOptions): Option[String]
+  def dateFormatInRead(fileOptions: Serializable): Option[String]
 
-  def timestampFormatInRead(csvOpts: CSVOptions): Option[String]
+  def timestampFormatInRead(fileOptions: Serializable): Option[String]
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 
