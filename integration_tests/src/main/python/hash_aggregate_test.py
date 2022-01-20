@@ -303,8 +303,9 @@ _init_list_full_decimal = [_grpkey_short_full_decimals,
     _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
+# or results in using too much memory on the GPU
 @nightly_gpu_mem_consuming_case
-@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31, 30], ids=idfn)
+@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
 def test_hash_reduction_decimal_overflow_sum(precision):
     constant = '9' * precision
     count = pow(10, 38 - precision)
