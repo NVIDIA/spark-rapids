@@ -25,7 +25,7 @@
 # just using interface, and we don't really expect them to use it on 2.x so just skip diffing
 #  ../spark2-sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java
 
-# If this script fails then a developer should do soemthing like:
+# If this script fails then a developer should do something like:
 #  1. Look at each file with a diff output from the script
 #  2. Look at the commits for that file in sql-plugin module and see what changed dealing
 #     with the metadata.
