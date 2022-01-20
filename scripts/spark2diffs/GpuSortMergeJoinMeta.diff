@@ -1,0 +1,34 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+17,20c17
+< package com.nvidia.spark.rapids.shims.v2
+< 
+< import com.nvidia.spark.rapids._
+< import com.nvidia.spark.rapids.shims.v2._
+---
+> package com.nvidia.spark.rapids
+29c26
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+76a74,91
+>   }
+> 
+>   override def convertToGpu(): GpuExec = {
+>     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+>     val joinExec = GpuShuffledHashJoinExec(
+>       leftKeys.map(_.convertToGpu()),
+>       rightKeys.map(_.convertToGpu()),
+>       join.joinType,
+>       buildSide,
+>       None,
+>       left,
+>       right,
+>       join.isSkewJoin)(
+>       join.leftKeys,
+>       join.rightKeys)
+>     // The GPU does not yet support conditional joins, so conditions are implemented
+>     // as a filter after the join when possible.
+>     condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)

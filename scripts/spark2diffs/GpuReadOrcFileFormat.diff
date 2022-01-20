@@ -1,0 +1,4 @@
+8c8
+<       fsse.sqlContext.sparkSession,
+---
+>       ShimLoader.getSparkShims.sessionFromPlan(fsse),

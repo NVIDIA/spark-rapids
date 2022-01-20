@@ -1,0 +1,15 @@
+4c4
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+31c31,36
+<       willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+---
+>       if (conf.isSqlExplainOnlyEnabled && wrapped.conf.adaptiveExecutionEnabled) {
+>         willNotWorkOnGpu("explain only mode with AQE, we cannot determine " +
+>           "if the broadcast for this join is on the GPU too")
+>       } else {
+>         willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+>       }
+37a43
+> 

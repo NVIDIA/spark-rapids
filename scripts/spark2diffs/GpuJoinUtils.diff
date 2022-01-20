@@ -1,0 +1,22 @@
+16,18d15
+< package com.nvidia.spark.rapids.shims.v2
+< 
+< import com.nvidia.spark.rapids.shims.v2._
+20,26c17
+< import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
+< 
+< /**
+<  * Spark BuildSide, BuildRight, BuildLeft moved packages in Spark 3.1
+<  * so create GPU versions of these that can be agnostic to Spark version.
+<  */
+< sealed abstract class GpuBuildSide
+---
+> package com.nvidia.spark.rapids.shims.v2
+28c19
+< case object GpuBuildRight extends GpuBuildSide
+---
+> import com.nvidia.spark.rapids.{GpuBuildLeft, GpuBuildRight, GpuBuildSide}
+30c21
+< case object GpuBuildLeft extends GpuBuildSide
+---
+> import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}

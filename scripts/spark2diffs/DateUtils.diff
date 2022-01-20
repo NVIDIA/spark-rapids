@@ -1,0 +1,63 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+19c19
+< import java.time._
+---
+> import java.time.LocalDate
+22a23,25
+> import ai.rapids.cudf.{DType, Scalar}
+> import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
+> 
+23a27
+> import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
+59,60c63,65
+<   // Spark 2.x - removed isSpark320orlater checks
+<   def specialDatesDays: Map[String, Int] = {
+---
+>   def specialDatesDays: Map[String, Int] = if (isSpark320OrLater) {
+>     Map.empty
+>   } else {
+71c76,78
+<   def specialDatesSeconds: Map[String, Long] = {
+---
+>   def specialDatesSeconds: Map[String, Long] = if (isSpark320OrLater) {
+>     Map.empty
+>   } else {
+73,74c80
+<     // spark 2.4 Date utils are different
+<     val now = DateTimeUtils.instantToMicros(Instant.now())
+---
+>     val now = DateTimeUtils.currentTimestamp()
+84c90,92
+<   def specialDatesMicros: Map[String, Long] = {
+---
+>   def specialDatesMicros: Map[String, Long] = if (isSpark320OrLater) {
+>     Map.empty
+>   } else {
+86c94
+<     val now = DateTimeUtils.instantToMicros(Instant.now())
+---
+>     val now = DateTimeUtils.currentTimestamp()
+96c104,121
+<   def currentDate(): Int = Math.toIntExact(LocalDate.now().toEpochDay)
+---
+>   def fetchSpecialDates(unit: DType): Map[String, () => Scalar] = unit match {
+>     case DType.TIMESTAMP_DAYS =>
+>       DateUtils.specialDatesDays.map { case (k, v) =>
+>         k -> (() => Scalar.timestampDaysFromInt(v))
+>       }
+>     case DType.TIMESTAMP_SECONDS =>
+>       DateUtils.specialDatesSeconds.map { case (k, v) =>
+>         k -> (() => Scalar.timestampFromLong(unit, v))
+>       }
+>     case DType.TIMESTAMP_MICROSECONDS =>
+>       DateUtils.specialDatesMicros.map { case (k, v) =>
+>         k -> (() => Scalar.timestampFromLong(unit, v))
+>       }
+>     case _ =>
+>       throw new IllegalArgumentException(s"unsupported DType: $unit")
+>   }
+> 
+>   def currentDate(): Int = localDateToDays(LocalDate.now())
