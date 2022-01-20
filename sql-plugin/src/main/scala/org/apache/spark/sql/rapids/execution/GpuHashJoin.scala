@@ -59,7 +59,7 @@ object JoinTypeChecks {
   val CONDITION = "condition"
 
   private[this] val cudfSupportedKeyTypes =
-    (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT).nested()
+    (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested()
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
