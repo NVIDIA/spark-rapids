@@ -492,21 +492,6 @@ object GpuOverrides extends Logging {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
-  private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Expression = {
-    if (expr.find(_.isInstanceOf[GpuExpression]).isDefined) {
-      // already been converted
-      expr
-    } else {
-      val wrapped = wrapExpr(expr, conf, None)
-      wrapped.tagForGpu()
-      if (wrapped.canExprTreeBeReplaced) {
-        wrapped.convertToGpu()
-      } else {
-        expr
-      }
-    }
-  }
-
   private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
     part match {
       case _: GpuPartitioning => part
@@ -900,7 +885,6 @@ object GpuOverrides extends Logging {
         private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
           expr.wrapped match {
             case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
-              val dt = lit.dataType.asInstanceOf[DecimalType]
               // Lets figure out if we can make the Literal value smaller
               val (newType, value) = lit.value match {
                 case null =>
@@ -920,8 +904,10 @@ object GpuOverrides extends Logging {
                   throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
               }
               expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
-            // We avoid unapply for Cast because it changes between versions of Spark
-            case PromotePrecision(c: CastBase) if c.dataType.isInstanceOf[DecimalType] =>
+            // Avoid unapply for PromotePrecision and Cast because it changes between Spark versions
+            case p: PromotePrecision if p.child.isInstanceOf[CastBase] &&
+                p.child.dataType.isInstanceOf[DecimalType] =>
+              val c = p.child.asInstanceOf[CastBase]
               val to = c.dataType.asInstanceOf[DecimalType]
               val fromType = DecimalUtil.optionallyAsDecimalType(c.child.dataType)
               fromType match {
