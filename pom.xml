@@ -70,17 +70,6 @@
         </developer>
     </developers>
 
-    <modules>
-        <module>common</module>
-        <module>dist</module>
-        <module>integration_tests</module>
-        <module>shims</module>
-        <module>shuffle-plugin</module>
-        <module>sql-plugin</module>
-        <module>tests</module>
-        <module>udf-compiler</module>
-        <module>udf-examples</module>
-    </modules>
     <profiles>
         <profile>
             <id>release24X</id>
@@ -141,6 +130,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -195,6 +185,7 @@
                 <spark.version.classifier>spark302</spark.version.classifier>
             </properties>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -248,6 +239,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -301,6 +293,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -358,6 +351,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -422,6 +416,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -486,6 +481,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -541,6 +537,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -599,6 +596,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -653,6 +651,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -706,6 +705,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -759,6 +759,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -811,6 +812,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
@@ -873,6 +875,7 @@
                 </repository>
             </repositories>
             <modules>
+                <module>common</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shims</module>
