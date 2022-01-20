@@ -94,15 +94,15 @@ object JoinTypeChecks {
 object GpuHashJoin {
 
   def tagJoin(
-      meta: RapidsMeta[_, _],
+      meta: SparkPlanMeta[_],
       joinType: JoinType,
       buildSide: GpuBuildSide,
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
-      condition: Option[Expression]): Unit = {
+      conditionMeta: Option[BaseExprMeta[_]]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
 
-    def unSupportNonEqualCondition(): Unit = if (condition.isDefined) {
+    def unSupportNonEqualCondition(): Unit = if (conditionMeta.isDefined) {
       meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
     }
     def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
@@ -111,10 +111,12 @@ object GpuHashJoin {
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+      case RightOuter | LeftOuter =>
+        conditionMeta.foreach(meta.requireAstForGpuOn)
+      case LeftSemi | LeftAnti =>
         unSupportNonEqualCondition()
       case FullOuter =>
-        unSupportNonEqualCondition()
+        conditionMeta.foreach(meta.requireAstForGpuOn)
         // FullOuter join cannot support with struct keys as two issues below
         //  * https://github.com/NVIDIA/spark-rapids/issues/2126
         //  * https://github.com/rapidsai/cudf/issues/7947

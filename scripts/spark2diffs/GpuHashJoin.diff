@@ -6,13 +6,9 @@
 < object GpuHashJoin {
 ---
 > object GpuHashJoin extends Arm {
-72c72
-<       meta: RapidsMeta[_, _],
----
->       meta: RapidsMeta[_, _, _],
-99a100
+101a102
 > 
-120c121
+122c123
 < }
 ---
 > 
