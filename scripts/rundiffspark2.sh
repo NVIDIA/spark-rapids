@@ -25,6 +25,10 @@
 # just using interface, and we don't really expect them to use it on 2.x so just skip diffing
 #  ../spark2-sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java
 
+# If this script fails then a developer should do soemthing like:
+#  1. Look at each file with a diff output from the script
+#  2. Look 
+
 set -e
 
 echo "Done running Diffs of spark2 files"
@@ -229,10 +233,8 @@ diff  $tmp_dir/LiteralExprMeta_new.out $tmp_dir/LiteralExprMeta_old.out > $tmp_d
 diff -c spark2diffs/LiteralExprMeta.diff $tmp_dir/LiteralExprMeta.newdiff
 
 # 2.x doesn't have a base aggregate class so this is much different, check the revision for now
-CUR_COMMIT=`git log -1  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala | grep commit | cut -d ' ' -f 2`
-if [ "$CUR_COMMIT" != "b17c685788c0a62763aa8101709e241877f02025" ]; then
-    echo "sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala has different commit - check manually"
-fi
+diff ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregateMeta.scala ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/aggregate.scala > $tmp_dir/aggregate.newdiff || true
+diff -c spark2diffs/aggregate.diff $tmp_dir/aggregate.newdiff
 
 sed -n  '/class GpuGenerateExecSparkPlanMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExecMeta.scala > $tmp_dir/GpuGenerateExecSparkPlanMeta_new.out
 sed -n  '/class GpuGenerateExecSparkPlanMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuGenerateExec.scala > $tmp_dir/GpuGenerateExecSparkPlanMeta_old.out
