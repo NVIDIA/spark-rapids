@@ -104,7 +104,6 @@
                         <configuration>
                             <artifactSet>
                                 <includes>
-                                    <include>org.scala-lang:scala-library</include>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
                                     <include>com.nvidia:rapids-4-spark-common_${scala.binary.version}</include>
                                 </includes>

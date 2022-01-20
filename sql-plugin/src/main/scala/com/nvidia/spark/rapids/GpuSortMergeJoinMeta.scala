@@ -31,7 +31,7 @@ class GpuSortMergeJoinMeta(
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
+  val conditionMeta: Option[BaseExprMeta[_]] = join.condition.map(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
   val buildSide: GpuBuildSide = if (GpuHashJoin.canBuildRight(join.joinType)) {
     GpuBuildRight
@@ -41,15 +41,15 @@ class GpuSortMergeJoinMeta(
     throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
   }
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
-      join.condition)
+      conditionMeta)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -74,20 +74,26 @@ class GpuSortMergeJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
+    val condition = conditionMeta.map(_.convertToGpu())
+    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+      (condition, None)
+    } else {
+      (None, condition)
+    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val joinExec = GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       buildSide,
-      None,
+      joinCondition,
       left,
       right,
       join.isSkewJoin)(
       join.leftKeys,
       join.rightKeys)
-    // The GPU does not yet support conditional joins, so conditions are implemented
-    // as a filter after the join when possible.
-    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+    // For inner joins we can apply a post-join condition for any conditions that cannot be
+    // evaluated directly in a mixed join that leverages a cudf AST expression
+    filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
   }
 }
