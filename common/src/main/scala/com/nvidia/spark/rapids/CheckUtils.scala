@@ -20,9 +20,4 @@ object CheckUtils {
   def checkArgument(expression: Boolean, msg: String): Unit = {
     if (!expression) throw new IllegalArgumentException(msg)
   }
-
-  def checkNotNull[T](reference: T): T = {
-    if (reference == null) throw new IllegalArgumentException("reference is null")
-    reference
-  }
 }

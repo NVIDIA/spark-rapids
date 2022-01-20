@@ -27,19 +27,19 @@ class ThreadFactoryBuilder {
 
   def setNameFormat(nameFormat: String): ThreadFactoryBuilder = {
     nameFormat.format(0)
-    this.nameFormat = Some(CheckUtils.checkNotNull(nameFormat))
+    this.nameFormat = Some(nameFormat)
     this
   }
 
   def setDaemon(daemon: Boolean): ThreadFactoryBuilder = {
-    this.daemon = Some(CheckUtils.checkNotNull(daemon))
+    this.daemon = Some(daemon)
     this
   }
 
   def build(): ThreadFactory = {
     val count = nameFormat.map(_ => new AtomicLong(0))
     new ThreadFactory() {
-      val defaultThreadFactory = Executors.defaultThreadFactory
+      private val defaultThreadFactory = Executors.defaultThreadFactory
 
       override def newThread(r: Runnable): Thread = {
         val thread = defaultThreadFactory.newThread(r)
