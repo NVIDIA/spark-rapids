@@ -43,7 +43,6 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
@@ -51,9 +50,6 @@ import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
-import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
-import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
@@ -657,83 +653,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
-    GpuOverrides.scan[ParquetScan](
-      "Parquet parsing",
-      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = {
-          GpuParquetScanBase.tagSupport(this)
-          // we are being overly cautious and that Parquet does not support this yet
-          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
-              " on datasource V2 yet.")
-          }
-        }
 
-        override def convertToGpu(): Scan = {
-          GpuParquetScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.pushedFilters,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-        }
-      }),
-    GpuOverrides.scan[OrcScan](
-      "ORC parsing",
-      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = {
-          GpuOrcScanBase.tagSupport(this)
-          // we are being overly cautious and that Orc does not support this yet
-          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
-              " on datasource V2 yet.")
-          }
-        }
-
-        override def convertToGpu(): Scan =
-          GpuOrcScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.pushedFilters,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      }),
-    GpuOverrides.scan[CSVScan](
-      "CSV parsing",
-      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = {
-          GpuCSVScan.tagSupport(this)
-          // we are being overly cautious and that Csv does not support this yet
-          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
-              " on datasource V2 yet.")
-          }
-        }
-
-        override def convertToGpu(): Scan =
-          GpuCSVScan(a.sparkSession,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
-      })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def getPartitionFileNames(
       partitions: Seq[PartitionDirectory]): Seq[String] = {

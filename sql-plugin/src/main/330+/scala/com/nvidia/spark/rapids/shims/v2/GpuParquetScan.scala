@@ -19,11 +19,11 @@ package com.nvidia.spark.rapids.shims.v2
 import com.nvidia.spark.rapids.{GpuParquetScanBase, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.connector.expressions.aggregate.Aggregation
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
+import org.apache.spark.sql.execution.datasources.{AggregatePushDownUtils, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -38,6 +38,7 @@ case class GpuParquetScan(
   readPartitionSchema: StructType,
   pushedFilters: Array[Filter],
   options: CaseInsensitiveStringMap,
+  pushedAggregate: Option[Aggregation] = None,
   partitionFilters: Seq[Expression],
   dataFilters: Seq[Expression],
   rapidsConf: RapidsConf,
@@ -48,20 +49,40 @@ case class GpuParquetScan(
 
   override def isSplitable(path: Path): Boolean = super.isSplitableBase(path)
 
-  override def createReaderFactory(): PartitionReaderFactory = super.createReaderFactoryBase()
+  override def readSchema(): StructType = {
+    // If aggregate is pushed down, schema has already been pruned in `ParquetScanBuilder`
+    // and no need to call super.readSchema()
+    if (pushedAggregate.nonEmpty) readDataSchema else super.readSchema()
+  }
+
+  override def createReaderFactory(): PartitionReaderFactory = super.createReade33rFactoryBase()
 
   override def equals(obj: Any): Boolean = obj match {
     case p: GpuParquetScan =>
+      val pushedDownAggEqual = if (pushedAggregate.nonEmpty && p.pushedAggregate.nonEmpty) {
+        AggregatePushDownUtils.equivalentAggregations(pushedAggregate.get, p.pushedAggregate.get)
+      } else {
+        pushedAggregate.isEmpty && p.pushedAggregate.isEmpty
+      }
       super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
-        equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
-        queryUsesInputFile == p.queryUsesInputFile
+        equivalentFilters(pushedFilters, p.pushedFilters) && pushedDownAggEqual
     case _ => false
   }
 
   override def hashCode(): Int = getClass.hashCode()
 
+  lazy private val (pushedAggregationsStr, pushedGroupByStr) = if (pushedAggregate.nonEmpty) {
+    (seqToString(pushedAggregate.get.aggregateExpressions),
+      seqToString(pushedAggregate.get.groupByColumns))
+  } else {
+    ("[]", "[]")
+  }
+
   override def description(): String = {
-    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
+    super.description() + ", PushedFilters: " + seqToString(pushedFilters) +
+      ", PushedAggregation: " + pushedAggregationsStr +
+      ", PushedGroupBy: " + pushedGroupByStr
+
   }
 
   // overrides nothing in 330

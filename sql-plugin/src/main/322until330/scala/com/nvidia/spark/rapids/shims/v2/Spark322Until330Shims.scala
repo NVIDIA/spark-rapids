@@ -16,59 +16,20 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuCSVScan, GpuOrcScanBase, GpuOverrides, GpuParquetScanBase, ScanMeta, ScanRule}
 import org.apache.parquet.schema.MessageType
 import org.apache.spark.internal.Logging
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.csv.CSVOptions
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.types.StructType
 
-trait Spark33XShims extends Spark320PlusShims with RebaseShims with Logging {
-  override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
-
-  override def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    csvOpts.dateFormatInRead
-  }
-
-  override def timestampFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    csvOpts.timestampFormatInRead
-  }
-
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition],
-      readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
-  }
-
-  override def getParquetFilters(
-      schema: MessageType,
-      pushDownDate: Boolean,
-      pushDownTimestamp: Boolean,
-      pushDownDecimal: Boolean,
-      pushDownStartWith: Boolean,
-      pushDownInFilterThreshold: Int,
-      caseSensitive: Boolean,
-      lookupFileMeta: String => String,
-      dateTimeRebaseModeFromConf: String): ParquetFilters = {
-    val datetimeRebaseMode = DataSourceUtils
-      .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
-    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
-  }
-
+/**
+ * Shim base class that can be compiled with every supported 3.2.2+
+ */
+trait Spark322Until330Shims extends Spark320PlusShims with RebaseShims with Logging {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
@@ -91,7 +52,6 @@ trait Spark33XShims extends Spark320PlusShims with RebaseShims with Logging {
             a.readPartitionSchema,
             a.pushedFilters,
             a.options,
-            a.pushedAggregate,
             a.partitionFilters,
             a.dataFilters,
             conf)
@@ -148,4 +108,19 @@ trait Spark33XShims extends Spark320PlusShims with RebaseShims with Logging {
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      lookupFileMeta: String => String,
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils
+      .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+  }
 }

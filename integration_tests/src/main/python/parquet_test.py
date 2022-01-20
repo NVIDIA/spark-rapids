@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -708,7 +708,8 @@ def _help_test_parquet_aggregate_push_down(spark_tmp_path, expr, expect):
     with_gpu_session(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
                                   "spark.sql.sources.useV1SourceList": ""})
 
-
+@pytest.mark.skipif(is_before_spark_330(), reason='???')
+@allow_non_gpu(any = True)
 def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
     _help_test_parquet_aggregate_push_down(
         spark_tmp_path,
@@ -716,6 +717,8 @@ def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
         "PushedAggregation: []"
     )
 
+@pytest.mark.skipif(is_before_spark_330(), reason='???')
+@allow_non_gpu(any = True)
 def test_parquet_count_nested_column_push_down(spark_tmp_path):
     _help_test_parquet_aggregate_push_down(
         spark_tmp_path,
