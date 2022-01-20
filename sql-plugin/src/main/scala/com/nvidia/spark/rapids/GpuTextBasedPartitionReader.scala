@@ -209,6 +209,10 @@ abstract class GpuTextBasedPartitionReader(
 
   /**
    * Handle the table decoded by GPU
+   *
+   * Please note that, this function owns table which is supposed to be closed in this function
+   * But for the optimization, we just return the original table.
+   *
    * @param readDataSchema the Spark schema describing what will be read
    * @param table the table decoded by GPU
    * @return the new optional Table
@@ -222,6 +226,13 @@ abstract class GpuTextBasedPartitionReader(
           s"but only read ${table.getNumberOfColumns} from $partFile")
       }
     }
+
+    // For the GPU resource handling convention, we should close input table and return a new
+    // table just like below code. But for optimization, we just return the input table.
+    // withResource(table) { _
+    //  val cols = (0 until  table.getNumberOfColumns).map(i => table.getColumn(i))
+    //  Some(new Table(cols: _*))
+    // }
     Some(table)
   }
 

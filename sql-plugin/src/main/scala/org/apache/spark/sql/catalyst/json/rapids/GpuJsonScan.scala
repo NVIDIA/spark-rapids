@@ -300,6 +300,13 @@ class JsonPartitionReader(
    */
   override def handleResult(readDataSchema: StructType, table: Table): Option[Table] = {
     val tableCols = table.getNumberOfColumns
+
+    // For the GPU resource handling convention, we should close input table and return a new
+    // table just like below code. But for optimization, we just return the input table.
+    // withResource(table) { _
+    //  val cols = (0 until  table.getNumberOfColumns).map(i => table.getColumn(i))
+    //  Some(new Table(cols: _*))
+    // }
     if (readDataSchema.length == tableCols) {
       return Some(table)
     }
@@ -307,18 +314,15 @@ class JsonPartitionReader(
     // JSON will read all columns in dataSchema due to https://github.com/rapidsai/cudf/issues/9990,
     // but actually only the columns in readDataSchema are needed, we need to do the "column" prune,
     // Once the FEA is shipped in CUDF, we should remove this hack.
-
-    val prunedCols = readDataSchema.fieldNames.map { name =>
-      val optionIndex = dataSchema.getFieldIndex(name)
-      closeOnExcept(table) { _ =>
+    withResource(table) { _ =>
+      val prunedCols = readDataSchema.fieldNames.map { name =>
+        val optionIndex = dataSchema.getFieldIndex(name)
         if (optionIndex.isEmpty || optionIndex.get >= tableCols) {
           throw new QueryExecutionException(s"Something wrong for $name columns in readDataSchema")
         }
+        optionIndex.get
       }
-      optionIndex.get
-    }
 
-    withResource(table) { _ =>
       val prunedColumnVectors = prunedCols.map(i => table.getColumn(i))
       Some(new Table(prunedColumnVectors: _*))
     }
