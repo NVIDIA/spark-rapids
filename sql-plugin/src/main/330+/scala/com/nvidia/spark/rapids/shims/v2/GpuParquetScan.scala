@@ -55,7 +55,7 @@ case class GpuParquetScan(
     if (pushedAggregate.nonEmpty) readDataSchema else super.readSchema()
   }
 
-  override def createReaderFactory(): PartitionReaderFactory = super.createReade33rFactoryBase()
+  override def createReaderFactory(): PartitionReaderFactory = super.createReaderFactoryBase()
 
   override def equals(obj: Any): Boolean = obj match {
     case p: GpuParquetScan =>
