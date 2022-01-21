@@ -431,6 +431,8 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
   // where x = max(abs(lhs), abs(rhs)), y = min(abs(lhs), abs(rhs))
   // which will only overflow if both terms are near the maximum representation space
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // Using this form, because we really need a max and min that aren't NULL-aware
+    // In that case, then result will always be NULL, which is consistent with Spark
     val (x, y) = withResource(Seq(lhs.getBase.abs, rhs.getBase.abs)) { 
       case Seq(lhsAbs, rhsAbs) => {
         withResource(lhsAbs.greaterThan(rhsAbs)) { lhsGreater => 
