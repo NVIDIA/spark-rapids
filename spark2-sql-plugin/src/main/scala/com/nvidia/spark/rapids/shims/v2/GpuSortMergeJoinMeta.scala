@@ -34,7 +34,7 @@ class GpuSortMergeJoinMeta(
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
+  val conditionMeta: Option[BaseExprMeta[_]] = join.condition.map(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
   val buildSide: GpuBuildSide = if (GpuHashJoin.canBuildRight(join.joinType)) {
     GpuBuildRight
@@ -44,15 +44,15 @@ class GpuSortMergeJoinMeta(
     throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
   }
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
-      join.condition)
+      conditionMeta)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
