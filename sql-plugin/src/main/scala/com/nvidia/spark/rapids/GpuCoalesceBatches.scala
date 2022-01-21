@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,6 +79,7 @@ object ConcatAndConsumeAll {
   }
 
   /**
+   *
    * Verify that a single batch was returned from the iterator, or if it is empty return an empty
    * batch.
    * @param batches batches to be consumed.
@@ -423,7 +424,91 @@ abstract class AbstractGpuCoalesceIterator(
 }
 
 class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
-    schema: StructType,
+    sparkTypes: Array[DataType],
+    goal: CoalesceSizeGoal,
+    numInputRows: GpuMetric,
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    collectTime: GpuMetric,
+    concatTime: GpuMetric,
+    opTime: GpuMetric,
+    peakDevMemory: GpuMetric,
+    spillCallback: SpillCallback,
+    opName: String)
+  extends AbstractGpuCoalesceIterator(iter,
+    goal,
+    numInputRows,
+    numInputBatches,
+    numOutputRows,
+    numOutputBatches,
+    collectTime,
+    concatTime,
+    opTime,
+    opName) with Arm {
+
+  protected val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
+  private var maxDeviceMemory: Long = 0
+
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
+    batches.safeClose()
+    batches.clear()
+  }
+
+  override def addBatchToConcat(batch: ColumnarBatch): Unit =
+    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+      spillCallback))
+
+  protected def popAll(): Array[ColumnarBatch] = {
+    closeOnExcept(batches.map(_.getColumnarBatch())) { wip =>
+      batches.safeClose()
+      batches.clear()
+      wip.toArray
+    }
+  }
+
+  override def concatAllAndPutOnGPU(): ColumnarBatch = {
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(popAll(), sparkTypes)
+    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
+    ret
+  }
+
+  override def cleanupConcatIsDone(): Unit = {
+    peakDevMemory.set(maxDeviceMemory)
+    batches.clear()
+  }
+
+  private var onDeck: Option[SpillableColumnarBatch] = None
+
+  override protected def hasOnDeck: Boolean = onDeck.isDefined
+
+  override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
+    assert(onDeck.isEmpty)
+    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+      spillCallback))
+  }
+
+  override protected def clearOnDeck(): Unit = {
+    onDeck.foreach(_.close())
+    onDeck = None
+  }
+
+  override protected def popOnDeck(): ColumnarBatch = {
+    val ret = onDeck.get.getColumnarBatch()
+    clearOnDeck()
+    ret
+  }
+}
+
+/**
+ * Compression codec-aware `GpuCoalesceIterator` subclass which should be used in cases
+ * where the RAPIDS Shuffle Manager could be configured, as batches to be coalesced
+ * may be compressed.
+ */
+class GpuCompressionAwareCoalesceIterator(
+    iter: Iterator[ColumnarBatch],
+    sparkTypes: Array[DataType],
     goal: CoalesceSizeGoal,
     maxDecompressBatchMemory: Long,
     numInputRows: GpuMetric,
@@ -437,33 +522,14 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     spillCallback: SpillCallback,
     opName: String,
     codecConfigs: TableCompressionCodecConfig)
-  extends AbstractGpuCoalesceIterator(iter,
-    goal,
-    numInputRows,
-    numInputBatches,
-    numOutputRows,
-    numOutputBatches,
-    collectTime,
-    concatTime,
-    opTime,
-    opName) with Arm {
-
-  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
-  private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
-  private var maxDeviceMemory: Long = 0
-
-  override def initNewBatch(batch: ColumnarBatch): Unit = {
-    batches.safeClose()
-    batches.clear()
-  }
-
-  override def addBatchToConcat(batch: ColumnarBatch): Unit =
-    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-      spillCallback))
+  extends GpuCoalesceIterator(
+    iter, sparkTypes, goal,
+    numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+    collectTime, concatTime, opTime, peakDevMemory, spillCallback, opName) {
 
   private[this] var codec: TableCompressionCodec = _
 
-  private[this] def popAllDecompressed(): Array[ColumnarBatch] = {
+  override protected def popAll(): Array[ColumnarBatch] = {
     closeOnExcept(batches.map(_.getColumnarBatch())) { wip =>
       batches.safeClose()
       batches.clear()
@@ -502,39 +568,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       }
       wip.toArray
     }
-  }
-
-  override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(popAllDecompressed(), schema)
-    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
-    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
-    ret
-  }
-
-  override def cleanupConcatIsDone(): Unit = {
-    peakDevMemory.set(maxDeviceMemory)
-    batches.clear()
-  }
-
-  private var onDeck: Option[SpillableColumnarBatch] = None
-
-  override protected def hasOnDeck: Boolean = onDeck.isDefined
-
-  override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
-    assert(onDeck.isEmpty)
-    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-      spillCallback))
-  }
-
-  override protected def clearOnDeck(): Unit = {
-    onDeck.foreach(_.close())
-    onDeck = None
-  }
-
-  override protected def popOnDeck(): ColumnarBatch = {
-    val ret = onDeck.get.getColumnarBatch()
-    clearOnDeck()
-    ret
   }
 }
 
@@ -592,6 +625,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema
+    val dataTypes = GpuColumnVector.extractTypes(outputSchema)
     val decompressMemoryTarget = maxDecompressBatchMemory
 
     val batches = child.executeColumnar()
@@ -606,7 +640,8 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
       goal match {
         case sizeGoal: CoalesceSizeGoal =>
           batches.mapPartitions { iter =>
-            new GpuCoalesceIterator(iter, outputSchema, sizeGoal, decompressMemoryTarget,
+            new GpuCompressionAwareCoalesceIterator(
+              iter, dataTypes, sizeGoal, decompressMemoryTarget,
               numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
               concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches",
               codecConfigs)

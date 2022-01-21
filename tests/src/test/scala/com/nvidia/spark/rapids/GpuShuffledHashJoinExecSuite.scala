@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, JCudfSerialization, Table}
+import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
@@ -29,6 +30,9 @@ import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
+  val metricMap = mock[Map[String, GpuMetric]]
+  when(metricMap(any())).thenReturn(mock[GpuMetric])
+
   test("fallback with empty build iterator") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
       val mockBuildIter = mock[Iterator[ColumnarBatch]]
@@ -39,8 +43,8 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
         Seq.empty,
         mockBuildIter,
         mockStreamIter,
-        mock[GpuMetric],
-        mock[GpuMetric])
+        mock[SpillCallback],
+        metricMap)
       withResource(builtBatch) { _ =>
         // we ge an empty batch with no columns or rows
         assertResult(builtBatch.numCols())(0)
@@ -71,8 +75,8 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
             Seq.empty,
             buildIter,
             mockStreamIter,
-            mock[GpuMetric],
-            mock[GpuMetric])
+            mock[SpillCallback],
+            metricMap)
           withResource(builtBatch) { _ =>
             assertResult(builtBatch.numCols())(0)
             assertResult(builtBatch.numRows())(0)
@@ -103,8 +107,8 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
         Seq.empty,
         buildIter,
         mockStreamIter,
-        mock[GpuMetric],
-        mock[GpuMetric])
+        mock[SpillCallback],
+        metricMap)
       withResource(builtBatch) { _ =>
         assertResult(builtBatch.numCols())(1)
         assertResult(builtBatch.numRows())(0)
@@ -129,8 +133,8 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
           Seq.empty,
           buildIter,
           mockStreamIter,
-          mock[GpuMetric],
-          mock[GpuMetric])
+          mock[SpillCallback],
+          metricMap)
         withResource(builtBatch) { _ =>
           assertResult(builtBatch.numCols())(1)
           assertResult(builtBatch.numRows())(5)
@@ -175,10 +179,10 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
               attrs,
               buildIter,
               mockStreamIter,
-              mock[GpuMetric],
-              mock[GpuMetric])
+              mock[SpillCallback],
+              metricMap)
             withResource(builtBatch) { _ =>
-              verify(mockStreamIter, times(1)).hasNext
+              verify(mockBufferedStreamIterator, times(1)).hasNext
               assertResult(builtBatch.numCols())(1)
               assertResult(builtBatch.numRows())(5)
               // the buffered iterator drained the build iterator
@@ -208,14 +212,14 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
               val buildIter = Seq(serializedBatch, serializedBatch2).iterator
               val attrs = AttributeReference("a", IntegerType, false)() :: Nil
               val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-                0,
+                1,
                 attrs,
                 buildIter,
                 mockStreamIter,
-                mock[GpuMetric],
-                mock[GpuMetric])
+                mock[SpillCallback],
+                metricMap)
               withResource(builtBatch) { _ =>
-                verify(mockStreamIter, times(1)).hasNext
+                verify(mockBufferedStreamIterator, times(0)).hasNext
                 assertResult(builtBatch.numCols())(1)
                 assertResult(builtBatch.numRows())(10)
                 // the buffered iterator drained the build iterator
@@ -250,10 +254,10 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
                 attrs,
                 buildIter,
                 mockStreamIter,
-                mock[GpuMetric],
-                mock[GpuMetric])
+                mock[SpillCallback],
+                metricMap)
               withResource(builtBatch) { _ =>
-                verify(mockStreamIter, times(1)).hasNext
+                verify(mockBufferedStreamIterator, times(1)).hasNext
                 assertResult(builtBatch.numCols())(1)
                 assertResult(builtBatch.numRows())(10)
                 // the buffered iterator drained the build iterator

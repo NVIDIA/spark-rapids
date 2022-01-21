@@ -243,19 +243,20 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * `GpuShuffleCoalesceExec` class, and is handled differently to prevent holding onto the
    * GPU semaphore for stream IO.
    */
-  def optimizeShuffledHashJoin(plan: SparkPlan): SparkPlan = plan match {
+  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = plan match {
     case x@GpuShuffledHashJoinExec(
-        _,_,_, buildSide,_,
+         _, _, _, buildSide, _,
         left: GpuShuffleCoalesceExec,
         GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_) if buildSide == GpuBuildRight =>
-      x.withNewChildren(Seq(optimizeShuffledHashJoin(left), optimizeShuffledHashJoin(rc)))
+      x.withNewChildren(
+        Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
     case x@GpuShuffledHashJoinExec(
-        _,_,_, buildSide,_,
+         _, _, _, buildSide, _,
         GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
         right: GpuShuffleCoalesceExec, _) if buildSide == GpuBuildLeft =>
-      x.withNewChildren(Seq(optimizeShuffledHashJoin(lc), optimizeShuffledHashJoin(right)))
-    case p =>
-      p.withNewChildren(p.children.map(optimizeShuffledHashJoin))
+      x.withNewChildren(
+        Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
+    case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
   }
 
   private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal],
@@ -571,8 +572,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
         updatedPlan = fixupHostColumnarTransitions(updatedPlan)
         updatedPlan = optimizeCoalesce(updatedPlan)
-        if (rapidsConf.optimizeShuffledHashJoin) {
-          updatedPlan = optimizeShuffledHashJoin(updatedPlan)
+        if (rapidsConf.shuffledHashJoinOptimizeShuffle) {
+          updatedPlan = shuffledHashJoinOptimizeShuffle(updatedPlan)
         }
         if (rapidsConf.exportColumnarRdd) {
           updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
