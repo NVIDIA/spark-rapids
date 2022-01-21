@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2021, NVIDIA CORPORATION.
+  Copyright (c) 2020-2022, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -46,6 +46,11 @@
           <artifactId>jucx</artifactId>
           <version>1.11</version>
           <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-common_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
