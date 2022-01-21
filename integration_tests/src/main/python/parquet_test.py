@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from distutils.log import FATAL
+from sqlite3 import Timestamp
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from pyspark.sql.functions import expr
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 def read_parquet_df(data_path):
@@ -767,3 +770,269 @@ def test_parquet_count_nested_column_not_push_down(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
                                   "spark.sql.sources.useV1SourceList": ""})
 
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_max_partition_column_not_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+
+        spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("Max(p)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_count_partition_column_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+
+        spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("count(p)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert "PushedAggregation: [COUNT(p)]" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+                        
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_filter_alias_over_aggregate(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("min(_1) + max(_1) as res").filter(expr("res > 1"))
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: [MIN(_1), MAX(_1)]" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_alias_over_aggregate(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("min(_1) + 1 as minPlus1", "min(_1) + 2 as minPlus2 ")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: [MIN(_1)]" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_aggregate_over_alias_not_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("_1 as col1").agg(expr("min(col1)"))
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@ignore_order
+def test_parquet_aggregate_with_groupby_not_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).groupby("_3").min("_1")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@ignore_order
+def test_parquet_aggregate_with_filter_not_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).filter(expr("_1 > 0")).select(expr("min(_3)"))
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@ignore_order
+def test_parquet_push_down_only_if_all_aggregates_can_be_pushed_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        # sum cannot be pushed down
+        df = spark.read.parquet(data_path).selectExpr("min(_1)", "sum(_3)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: []" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@ignore_order
+def test_parquet_max_min_count_push_down(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+        data = [(-2, "abc", 2), (3, "def", 4), (6, "ghi", 2), (0, None, 19),
+                (9, "mno", 7), (2, None, 6)]
+
+        spark.createDataFrame(data).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr( "min(_1)", "max(_1)", "min(_3)", "max(_3)", "count(*)", "count(_1)", "count(_2)", "count(_3)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: [MIN(_1), MAX(_1), MIN(_3), MAX(_3), COUNT(*), COUNT(_1), COUNT(_2), COUNT(_3)]" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_aggregate_push_down_column_name_case_sensitivity(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_explain(spark):
+
+        spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr("max(iD)", "min(Id)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert "PushedAggregation: [MAX(id), MIN(id)]" in explain
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
+                                  "spark.sql.sources.useV1SourceList": ""})
+
+
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_aggregate_push_down_different_data_types(spark_tmp_path):
+    data_path = spark_tmp_path + "/pushdown.parquet"
+    gen = StructGen([
+        ('string_c', string_gen),
+        ('bool_c', BooleanGen(False)), 
+        ('byte_c', ByteGen(False)),
+        ('short_c', ShortGen(False)),
+        ('int_c', int_gen), 
+        ('long_c', LongGen(False)),
+        ('float_c', FloatGen(False)), 
+        ('double_c', DoubleGen(False)),
+        ('decimal_c', DecimalGen(25, 5)),
+        ('date_c', DateGen(nullable= False)),
+        ('timestamp_c', timestamp_gen)], nullable= False
+    )
+
+    def timestamp_not_push_down(spark):
+
+        gen_df(spark, gen, 3).write.mode('overwrite').parquet(data_path)
+        
+        # INT96 sort order is not defined,  cannot be pushed down
+        # Parquet Binary min/max could be truncated, so we disable aggregate
+        # push down for Parquet Binary (could be Spark StringType, BinaryType or DecimalType).
+        df = spark.read.parquet(data_path).selectExpr(
+            "min(string_c)", "min(bool_c)", "min(byte_c)",
+              " min(short_c)", "min(int_c)", "min(long_c)", "min(float_c)",
+              "min(double_c)", "min(decimal_c)", "min(date_c)", "min(timestamp_c)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: []" in explain
+        return df
+
+    def without_timestamp_and_binary(spark):
+
+        gen_df(spark, gen, 3).write.mode('overwrite').parquet(data_path)
+        
+        df = spark.read.parquet(data_path).selectExpr(
+             "min(bool_c)", "min(byte_c)", " min(short_c)", "min(int_c)", "min(long_c)", "min(float_c)","min(double_c)", "min(date_c)")
+        explain = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "simple")
+
+        assert  "PushedAggregation: [MIN(bool_c), MIN(byte_c), MIN(short_c), MIN(int_c), MIN(long_c), MIN(float_c), MIN(double_c), MIN(date_c)]" in explain
+        return df
+
+    conf = {"spark.sql.parquet.aggregatePushdown": "true", 
+            "spark.sql.sources.useV1SourceList": "",
+            "spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
+            "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
+            "spark.rapids.sql.format.parquet.writer.int96.enabled": "false"}
+
+    
+    assert_gpu_and_cpu_are_equal_collect(timestamp_not_push_down, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(without_timestamp_and_binary, conf=conf)
