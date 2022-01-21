@@ -15,13 +15,14 @@
  */
 package com.nvidia.spark.rapids
 
-import java.lang.Character
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
+
 import ai.rapids.cudf.{ColumnVector, CudfException}
 import org.scalatest.FunSuite
+
 import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
@@ -514,26 +515,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 }
 
 /**
- * Generates random regular expression patterns.
+ * Generates random regular expression patterns by building an AST and then
+ * converting to a string. This results in better coverage than randomly
+ * generating strings directly.
  *
- * See https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html
- *
- * TODO still:
- *
- * - unicode escaped hex \\uhhhh
- * - newlines and special control characters  \t \n \r \f \a \e \cx
- * - nested character classes
- * - POSIX character classes
- * - Java Character classes
- * - Classes for Unicode scripts, blocks, categories and binary properties
- * - Back references
- * - Quotation
- * - Special constructs (named-capturing and non-capturing)
+ * See https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html for
+ * Java regular expression syntax.
  */
 class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
-  val maxDepth = 5
+  private val maxDepth = 5
   private val rr = new Random(0)
-  val r = new EnhancedRandom(rr, FuzzerOptions())
 
   val chars = if (skipKnownIssues) {
     // skip '\\' and '-' due to https://github.com/NVIDIA/spark-rapids/issues/4505
@@ -548,43 +539,38 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       nonNestedTerm
     } else {
       val baseGenerators: Seq[() => RegexAST] = Seq(
+        () => lineTerminator,
+        () => escapedChar,
         () => char,
         () => hexDigit,
         () => octalDigit,
         () => characterClass,
-        () => choice(depth),
+        () => predefinedCharacterClass,
         () => group(depth),
+        () => boundaryMatch,
         () => sequence(depth))
       val generators = if (skipKnownIssues) {
         baseGenerators
       } else {
         baseGenerators ++ Seq(
-          () => escapedChar,
-          () => lineTerminator,
           () => repetition(depth), // https://github.com/NVIDIA/spark-rapids/issues/4487
-          () => boundaryMatch, // not implemented yet
-          () => predefinedCharacterClass) // not implemented yet
+          () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
       }
       generators(rr.nextInt(generators.length))()
     }
   }
 
   private def nonNestedTerm: RegexAST = {
-    val baseGenerators: Seq[() => RegexAST] = Seq(
+    val generators: Seq[() => RegexAST] = Seq(
+      () => lineTerminator,
+      () => escapedChar,
       () => char,
       () => hexDigit,
       () => octalDigit,
-      () => charRange)
-    //TODO link to GitHub issues
-    val generators: Seq[() => RegexAST] = if (skipKnownIssues) {
-      baseGenerators
-    } else {
-      baseGenerators ++ Seq(
-        () => escapedChar,
-        () => lineTerminator,
-        () => boundaryMatch, // not implemented yet
-        () => predefinedCharacterClass) // not implemented yet
-    }
+      () => charRange,
+      () => boundaryMatch,
+      () => predefinedCharacterClass
+    )
     generators(rr.nextInt(generators.length))()
   }
 
@@ -604,9 +590,6 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def charRange: RegexCharacterClassComponent = {
-    // TODO included specific tests for escaped chars
-    // once https://github.com/NVIDIA/spark-rapids/issues/4505 is
-    // implemented
     val baseGenerators = Seq[() => RegexCharacterClassComponent](
       () => RegexCharacterRange('a', 'z'),
       () => RegexCharacterRange('A', 'Z'),
@@ -694,7 +677,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       () => rr.nextInt(0xFF).toHexString,
       () => rr.nextInt(0xFFFF).toHexString,
       () => Character.MIN_CODE_POINT.toHexString,
-      () => Character.MAX_CODE_POINT.toHexString,
+      () => Character.MAX_CODE_POINT.toHexString
     )
     RegexHexDigit(generators(rr.nextInt(generators.length))())
   }
