@@ -423,27 +423,13 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
 
-  override def doColumnar(x: BinaryOperable, y: BinaryOperable): ColumnVector = {
-    // naive implementation:
-    // r = sqrt(lhs^2 + rhs^2) (prone to overflow with regards either square)
-    // however, we can reduce it to
-    // r = sqrt(x^2 + y^2) = x * sqrt(1 + (y/x)^2)
-    // where x = max(abs(lhs), abs(rhs)), y = min(abs(lhs), abs(rhs))
-    // which will only overflow if both terms are near the maximum representation space
-
-    withResource(y.div(x)) { yOverX =>
-      withResource(yOverX.mul(yOverX)) { yOverXSquared =>
-        withResource(Scalar.fromInt(1)) { one =>
-          withResource(one.add(yOverXSquared)) { onePlusTerm =>
-            withResource(onePlusTerm.sqrt) { onePlusTermSqrt =>
-              x.mul(onePlusTermSqrt)
-            }
-          }
-        }
-      }
-    }
-  }
-
+  // naive implementation of hypot
+  // r = sqrt(lhs^2 + rhs^2) 
+  // This is prone to overflow with regards either square term
+  // However, we can reduce it to
+  // r = sqrt(x^2 + y^2) = x * sqrt(1 + (y/x)^2)
+  // where x = max(abs(lhs), abs(rhs)), y = min(abs(lhs), abs(rhs))
+  // which will only overflow if both terms are near the maximum representation space
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val (x, y) = withResource(Seq(lhs.getBase.abs, rhs.getBase.abs)) { 
       case Seq(lhsAbs, rhsAbs) => {
@@ -452,7 +438,49 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
         }
       }
     }
-    doColumnar(x, y)
+    // in spark SQL HYPOT (java.math.Math.hypot), there are a couple of edge cases that produce
+    // specific results. Note that terms are absolute values (always positive)
+    //  - if either term is inf, then the answer is inf
+    //  - if either term is nan, and neither is inf, then the answer is nan
+    //  - if both terms are 0, then the answer is 0
+    val (zero, inf, nan) = (Scalar.fromDouble(0), 
+                            Scalar.fromDouble(Double.PositiveInfinity), 
+                            Scalar.fromDouble(Double.NaN))
+    val (returnInf, returnNan) = withResource(Seq(x.equalTo(inf), y.equalTo(inf))) { 
+      case Seq(xIsInf, yIsInf) => 
+        withResource(Seq(x.isNan, y.isNan)) { case Seq(xIsNan, yIsNan) => 
+          withResource(Seq(xIsInf.not, yIsInf.not)) { case Seq(xIsNotInf, yIsNotInf) =>
+            withResource(Seq(xIsNotInf.and(yIsNotInf), xIsNan.or(yIsNan))) { 
+              case Seq(xAndYNotInf,xOrYIsNan) => 
+                (xIsInf.or(yIsInf), xAndYNotInf.and(xOrYIsNan))
+          }
+        }
+      }
+    }
+    val returnZero = withResource(Seq(x.equalTo(zero), y.equalTo(zero))) { 
+      case Seq(xIsZero, yIsZero) =>
+        xIsZero.and(yIsZero)
+    }
+    val onePlusTermSqrt = withResource(y) { _ => 
+      withResource(y.div(x)) { yOverX =>
+        withResource(yOverX.mul(yOverX)) { yOverXSquared =>
+          withResource(Scalar.fromInt(1)) { one =>
+            withResource(one.add(yOverXSquared)) { onePlusTerm =>
+              onePlusTerm.sqrt
+            }
+          }
+        }
+      }
+    }
+    withResource(Seq(returnInf, returnNan, returnZero, onePlusTermSqrt, x)) { _ =>
+      returnInf.ifElse(ColumnVector.fromScalar(inf, x.getRowCount.toInt), 
+        returnNan.ifElse(ColumnVector.fromScalar(nan, x.getRowCount.toInt),
+          returnZero.ifElse(ColumnVector.fromScalar(zero, x.getRowCount.toInt),
+            x.mul(onePlusTermSqrt)
+          )
+        )
+      )
+    }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {

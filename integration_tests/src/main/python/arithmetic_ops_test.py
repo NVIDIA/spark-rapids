@@ -337,11 +337,12 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_hypot(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).selectExpr(
-            'hypot(a, b)', 'hypot(a, 12)', 'hypot(12, b)'
+            'hypot(a, b)',
         ))
 
 @pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + decimal_128_gens_no_neg, ids=idfn)
