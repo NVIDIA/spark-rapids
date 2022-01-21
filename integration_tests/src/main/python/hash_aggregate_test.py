@@ -303,8 +303,9 @@ _init_list_full_decimal = [_grpkey_short_full_decimals,
     _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
+# or results in using too much memory on the GPU
 @nightly_gpu_mem_consuming_case
-@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31, 30], ids=idfn)
+@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
 def test_hash_reduction_decimal_overflow_sum(precision):
     constant = '9' * precision
     count = pow(10, 38 - precision)
@@ -1702,3 +1703,46 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
+
+#
+# test min max on single level structure
+#
+gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(no_nans = True), DoubleGen(no_nans = True),
+    string_gen, boolean_gen,
+    date_gen, timestamp_gen,
+    DecimalGen(precision=12, scale=2),
+    DecimalGen(precision=36, scale=5),
+    null_gen]
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
+def test_min_max_for_single_level_struct(data_gen):
+    df_gen = [
+        ('a', StructGen([
+                ('aa', data_gen),
+                ('ab', data_gen)])),
+        ('b', RepeatSeqGen(IntegerGen(), length=20))]
+
+    # test max
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen),
+        "hash_agg_table",
+        'select b, max(a) from hash_agg_table group by b',
+        _no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen),
+        "hash_agg_table",
+        'select max(a) from hash_agg_table',
+        _no_nans_float_conf)
+
+    # test min
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen, length=1024),
+        "hash_agg_table",
+        'select b, min(a) from hash_agg_table group by b',
+        _no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, df_gen, length=1024),
+        "hash_agg_table",
+        'select min(a) from hash_agg_table',
+        _no_nans_float_conf)

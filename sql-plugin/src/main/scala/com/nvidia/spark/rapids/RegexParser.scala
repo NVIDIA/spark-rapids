@@ -441,16 +441,8 @@ class CudfRegexTranspiler(replace: Boolean) {
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
         case '$' =>
-          RegexSequence(ListBuffer(
-            RegexRepetition(
-              RegexCharacterClass(negated = false,
-                characters = ListBuffer(RegexChar('\r'))),
-              SimpleQuantifier('?')),
-            RegexRepetition(
-              RegexCharacterClass(negated = false,
-                characters = ListBuffer(RegexChar('\n'))),
-              SimpleQuantifier('?')),
-            RegexChar('$')))
+          // see https://github.com/NVIDIA/spark-rapids/issues/4533
+          throw new RegexUnsupportedException("line anchor $ is not supported")
         case _ =>
           regex
       }
@@ -466,30 +458,29 @@ class CudfRegexTranspiler(replace: Boolean) {
           s"cuDF does not support hex digits consistently with Spark")
 
       case RegexEscaped(ch) => ch match {
+        case 'D' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-digit class \\D is not supported")
+        case 'W' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4475
+          throw new RegexUnsupportedException("non-word class \\W is not supported")
         case 'b' | 'B' =>
-          // example: "a\Bb"
-          // this needs further analysis to determine why words boundaries behave
-          // differently between Java and cuDF
+          // see https://github.com/NVIDIA/spark-rapids/issues/4517
           throw new RegexUnsupportedException("word boundaries are not supported")
+        case 's' | 'S' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4528
+          throw new RegexUnsupportedException("whitespace classes are not supported")
         case 'z' =>
           if (replace) {
-            throw new RegexUnsupportedException("string anchor \\z not supported in replace mode")
+            // see https://github.com/NVIDIA/spark-rapids/issues/4425
+            throw new RegexUnsupportedException(
+              "string anchor \\z is not supported in replace mode")
           }
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>
-          if (replace) {
-            throw new RegexUnsupportedException("string anchor \\Z not supported in replace mode")
-          }
-          // We transpile "\\Z" to "(?:[\r\n]?$)" because of the different meanings of "\\Z"
-          // between Java and cuDF:
-          // Java: The end of the input but for the final terminator, if any
-          // cuDF: Matches at the end of the string
-          RegexGroup(capture = false, RegexSequence(
-            ListBuffer(RegexRepetition(
-              RegexCharacterClass(negated = false,
-                ListBuffer(RegexChar('\r'), RegexChar('\n'))), SimpleQuantifier('?')),
-            RegexChar('$'))))
+          // see https://github.com/NVIDIA/spark-rapids/issues/4532
+          throw new RegexUnsupportedException("string anchor \\Z is not supported")
         case _ =>
           regex
       }
@@ -568,21 +559,9 @@ class CudfRegexTranspiler(replace: Boolean) {
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
         }
-        def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
-            case RegexSequence(parts) => parts.nonEmpty && parts.forall(isBeginOrEndLineAnchor)
-            case RegexGroup(_, term) => isBeginOrEndLineAnchor(term)
-            case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
-            case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
-            case RegexChar(ch) => ch == '^' || ch == '$'
-            case _ => false
-        }
         if (parts.forall(isBeginOrEndLineAnchor)) {
           throw new RegexUnsupportedException(
             "sequences that only contain '^' or '$' are not supported")
-        }
-        if (isRegexChar(parts.last, '^')) {
-          throw new RegexUnsupportedException(
-            "sequences that end with '^' are not supported")
         }
         RegexSequence(parts.map(rewrite))
 
@@ -595,7 +574,7 @@ class CudfRegexTranspiler(replace: Boolean) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'D' =>
+        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'w' =>
           // example: "\B?"
           throw new RegexUnsupportedException(nothingToRepeat)
 
@@ -613,46 +592,36 @@ class CudfRegexTranspiler(replace: Boolean) {
       }
 
       case RegexChoice(l, r) =>
-        (l, r) match {
-          // check for empty left-hand side caused by ^ or $ or a repetition
-          case (RegexSequence(a), _) =>
-            a.lastOption match {
-              case None =>
-                // example: "|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexChar(ch)) if ch == '$' || ch == '^' =>
-                // example: "^|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexEscaped(ch)) if ch == '$' || ch == '^' =>
-                // example: "^|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexRepetition(_, _)) =>
-                // example: "a*|a"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case _ =>
-                RegexChoice(rewrite(l), rewrite(r))
-            }
-          // check for empty right-hand side caused by ^ or $
-          case (_, RegexSequence(b)) =>
-            b.headOption match {
-              case None =>
-                // example: "|b"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexChar(ch)) if ch == '$' || ch == '^' =>
-                // example: "a|$"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case Some(RegexEscaped(ch)) if ch == '$' || ch == '^' =>
-                // example: "a|$"
-                throw new RegexUnsupportedException(nothingToRepeat)
-              case _ =>
-                RegexChoice(rewrite(l), rewrite(r))
-            }
-          case (RegexRepetition(_, _), _) =>
-            // example: "a*|a"
-            throw new RegexUnsupportedException(nothingToRepeat)
-          case _ =>
-            RegexChoice(rewrite(l), rewrite(r))
+        val ll = rewrite(l)
+        val rr = rewrite(r)
+
+        // cuDF does not support repetition on one side of a choice, such as "a*|a"
+        def isRepetition(e: RegexAST): Boolean = {
+          e match {
+            case RegexRepetition(_, _) => true
+            case RegexGroup(_, term) => isRepetition(term)
+            case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
+            case _ => false
+          }
         }
+        if (isRepetition(ll) || isRepetition(rr)) {
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
+
+        // cuDF does not support terms ending with line anchors on one side
+        // of a choice, such as "^|$"
+        def endsWithLineAnchor(e: RegexAST): Boolean = {
+          e match {
+            case RegexSequence(parts) if parts.nonEmpty =>
+              isBeginOrEndLineAnchor(parts.last)
+            case _ => false
+          }
+        }
+        if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
+
+        RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
         RegexGroup(capture, rewrite(term))
@@ -660,6 +629,16 @@ class CudfRegexTranspiler(replace: Boolean) {
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
     }
+  }
+
+  private def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
+    case RegexSequence(parts) => parts.nonEmpty && parts.forall(isBeginOrEndLineAnchor)
+    case RegexGroup(_, term) => isBeginOrEndLineAnchor(term)
+    case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
+    case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
+    case RegexChar(ch) => ch == '^' || ch == '$'
+    case RegexEscaped('z') => true // \z gets translated to $
+    case _ => false
   }
 
   private def isRegexChar(expr: RegexAST, value: Char): Boolean = expr match {

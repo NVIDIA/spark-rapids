@@ -1,0 +1,7 @@
+9a10,15
+> 
+>   // Map Spark delta to cuDF delta
+>   def accuracy(accuracyExpression: GpuLiteral): Int = accuracyExpression.value match {
+>     case delta: Int => delta.max(1000)
+>     case _ => 1000
+>   }

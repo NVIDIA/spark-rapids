@@ -1,0 +1,6 @@
+4c4
+<     p: Option[RapidsMeta[_, _]],
+---
+>     p: Option[RapidsMeta[_, _, _]],
+17a18
+> 

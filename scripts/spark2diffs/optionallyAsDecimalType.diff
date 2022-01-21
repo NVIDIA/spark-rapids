@@ -1,0 +1,4 @@
+4c4
+<       val prec = DecimalUtil.getPrecisionForIntegralType(getNonNestedRapidsType(t))
+---
+>       val prec = DecimalUtil.getPrecisionForIntegralType(GpuColumnVector.getNonNestedRapidsType(t))

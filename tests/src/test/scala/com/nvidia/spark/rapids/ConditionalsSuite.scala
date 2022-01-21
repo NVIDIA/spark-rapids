@@ -28,40 +28,40 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("CASE WHEN test all branches", testData, conf) { df =>
     df.withColumn("test", expr(
       "CASE " +
-        "WHEN a RLIKE '^[0-9]{1,3}$' THEN CAST(a AS INT) " +
-        "WHEN a RLIKE '^[0-9]{4,6}$' THEN CAST(a AS INT) + 123 " +
+        "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) " +
+        "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) + 123 " +
         "ELSE -1 END"))
   }
 
   testSparkResultsAreEqual("CASE WHEN first branch always true", testData2, conf) { df =>
     df.withColumn("test", expr(
       "CASE " +
-        "WHEN a RLIKE '^[0-9]{1,3}$' THEN CAST(a AS INT) " +
-        "WHEN a RLIKE '^[0-9]{4,6}$' THEN CAST(a AS INT) + 123 " +
+        "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) " +
+        "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) + 123 " +
         "ELSE -1 END"))
   }
 
   testSparkResultsAreEqual("CASE WHEN second branch always true", testData2, conf) { df =>
     df.withColumn("test", expr(
       "CASE " +
-        "WHEN a RLIKE '^[0-9]{4,6}$' THEN CAST(a AS INT) " +
-        "WHEN a RLIKE '^[0-9]{1,3}$' THEN CAST(a AS INT) + 123 " +
+        "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) " +
+        "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) + 123 " +
         "ELSE -1 END"))
   }
 
   testSparkResultsAreEqual("CASE WHEN else condition always true", testData2, conf) { df =>
     df.withColumn("test", expr(
       "CASE " +
-        "WHEN a RLIKE '^[0-9]{4,6}$' THEN CAST(a AS INT) " +
-        "WHEN a RLIKE '^[0-9]{7,9}$' THEN CAST(a AS INT) + 123 " +
+        "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) " +
+        "WHEN a RLIKE '^[0-9]{7,9}\\z' THEN CAST(a AS INT) + 123 " +
         "ELSE CAST(a AS INT) END"))
   }
 
   testSparkResultsAreEqual("CASE WHEN first or second branch is true", testData3, conf) { df =>
     df.withColumn("test", expr(
       "CASE " +
-        "WHEN a RLIKE '^[0-9]{1,3}$' THEN CAST(a AS INT) " +
-        "WHEN a RLIKE '^[0-9]{4,6}$' THEN CAST(a AS INT) + 123 " +
+        "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) " +
+        "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) + 123 " +
         "ELSE -1 END"))
   }
 

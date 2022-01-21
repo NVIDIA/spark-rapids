@@ -434,6 +434,54 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
 
+## JSON
+
+The JSON format read is a very experimental feature which is expected to have some issues, so we disable 
+it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
+`spark.rapids.sql.format.json.read.enabled`.
+
+Currently, the GPU accelerated JSON reader doesn't support column pruning, which will likely make 
+this difficult to use or even test. The user must specify the full schema or just let Spark infer 
+the schema from the JSON file. eg,
+
+We have a `people.json` file with below content
+
+``` console
+{"name":"Michael"}
+{"name":"Andy", "age":30}
+{"name":"Justin", "age":19}
+```
+
+Both below ways will work
+
+- Inferring the schema
+
+  ``` scala
+  val df = spark.read.json("people.json")
+  ```
+
+- Specifying the full schema
+
+  ``` scala
+  val schema = StructType(Seq(StructField("name", StringType), StructField("age", IntegerType)))
+  val df = spark.read.schema(schema).json("people.json")
+  ```
+
+While the below code will not work in the current version,
+
+``` scala
+val schema = StructType(Seq(StructField("name", StringType)))
+val df = spark.read.schema(schema).json("people.json")
+```
+
+### JSON supporting types
+
+The nested types(array, map and struct) are not supported yet in current version.
+
+### JSON Floating Point
+
+Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
+
 ## LIKE
 
 If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
@@ -465,22 +513,22 @@ CPU when the RAPIDS Accelerator determines that a pattern is either unsupported 
 
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
+- Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
+- Line anchor `$`
+- String anchor `\Z`
+- String anchor `\z` is not supported by `regexp_replace`
+- Non-digit character class `\D`
+- Non-word character class `\W`
+- Word and non-word boundaries, `\b` and `\B`
+- Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
-- Word and non-word boundaries, `\b` and `\B`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
-  with a choice (`^|a`).
-- String anchors `\z` and `\Z` are not supported by `regexp_replace`
 - Hex and octal digits
-
-In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
-
-- Character classes for negative matches have different behavior between CPU and GPU for multiline
-  strings. The pattern `[^a]` will match line-terminators on CPU but not on GPU.
+- `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
@@ -841,3 +889,4 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
+
