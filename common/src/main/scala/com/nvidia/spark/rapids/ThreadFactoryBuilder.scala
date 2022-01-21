@@ -43,7 +43,7 @@ class ThreadFactoryBuilder {
 
       override def newThread(r: Runnable): Thread = {
         val thread = defaultThreadFactory.newThread(r)
-        nameFormat.foreach(f => f.format(count.get.getAndIncrement()))
+        nameFormat.foreach(f => thread.setName(f.format(count.get.getAndIncrement())))
         daemon.foreach(b => thread.setDaemon(b))
         thread
       }

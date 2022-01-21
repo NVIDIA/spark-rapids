@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{Callable, Executors}
 
 import org.scalatest.FunSuite
 
@@ -26,34 +26,43 @@ class ThreadFactoryBuilderTest extends FunSuite {
     var pool = Executors.newFixedThreadPool(2,
       new ThreadFactoryBuilder().setNameFormat("Thread %s").setDaemon(true).build())
 
-    pool.submit(new Runnable {
-      override def run(): Unit = {
+    var ret = pool.submit(new Callable[String] {
+      override def call(): String = {
         assert(Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName == "Thread 0")
+        assert(Thread.currentThread().getName() == "Thread 0")
+        ""
       }
     })
-
-    pool.submit(new Runnable {
-      override def run(): Unit = {
+    // waits and retrieves the result, if above asserts failed, will get execution exception
+    ret.get()
+    ret = pool.submit(new Callable[String] {
+      override def call(): String = {
         assert(Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName == "Thread 1")
+        assert(Thread.currentThread().getName() == "Thread 1")
+        ""
       }
     })
+    ret.get()
+    pool.shutdown()
 
     pool = Executors.newFixedThreadPool(2,
-      new ThreadFactoryBuilder().setNameFormat("Thread %s").build())
-    pool.submit(new Runnable {
-      override def run(): Unit = {
+      new ThreadFactoryBuilder().setNameFormat("Thread %d").build())
+    pool.submit(new Callable[String] {
+      override def call(): String = {
         assert(!Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName == "Thread 0")
+        assert(Thread.currentThread().getName() == "Thread 0")
+        ""
       }
     })
-
-    pool.submit(new Runnable {
-      override def run(): Unit = {
+    ret.get()
+    pool.submit(new Callable[String] {
+      override def call(): String = {
         assert(!Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName == "Thread 1")
+        assert(Thread.currentThread().getName() == "Thread 1")
+        ""
       }
     })
+    ret.get()
+    pool.shutdown()
   }
 }
