@@ -35,7 +35,7 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
  *  This plugin can be activated in spark with the configuration:
  *  `--conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin`
  */
-protected class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Proxy {
+class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Proxy {
   override def discoverResource(
     request: ResourceRequest,
     sparkConf: SparkConf

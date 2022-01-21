@@ -444,7 +444,7 @@ trait VisibleShuffleManager {
  * @param conf
  * @param isDriver
  */
-protected abstract class ProxyRapidsShuffleInternalManagerBase(
+abstract class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
 ) extends VisibleShuffleManager with Proxy {
