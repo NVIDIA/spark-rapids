@@ -519,7 +519,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
  * converting to a string. This results in better coverage than randomly
  * generating strings directly.
  *
- * See https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html for
+ * See https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html for
  * Java regular expression syntax.
  */
 class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
