@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.{GpuCSVScan, GpuOrcScanBase, GpuOverrides, GpuParquetScanBase, ScanMeta, ScanRule}
 import org.apache.parquet.schema.MessageType
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.datasources._

@@ -16,13 +16,17 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import java.net.URI
 
 import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.{Arm, ColumnarPartitionReaderWithPartitionValues, GpuMetric, GpuParquetFileFilterHandler, GpuParquetMultiFilePartitionReaderFactory, GpuParquetPartitionReaderFactory, GpuParquetScanBase, GpuRowToColumnConverter, ParquetPartitionReader, PartitionReaderWithBytesRead, RapidsConf}
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.format.converter.ParquetMetadataConverter.{NO_FILTER, SKIP_ROW_GROUPS}
 import org.apache.parquet.hadoop.metadata.{FileMetaData, ParquetMetadata}
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -32,8 +36,8 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
 import org.apache.spark.sql.connector.expressions.aggregate.Aggregation
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.v2.GpuParquetUtils
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFooterReader, ParquetOptions}
 import org.apache.spark.sql.execution.datasources.{AggregatePushDownUtils, DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetFooterReader, ParquetOptions}
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
@@ -42,19 +46,19 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-import java.net.URI
+
 
 
 case class GpuParquetPartitionReaderFactoryForAggrerationPushdown(
-  @transient sqlConf: SQLConf,
-  broadcastedConf: Broadcast[SerializableConfiguration],
-  dataSchema: StructType,
-  readDataSchema: StructType,
-  partitionSchema: StructType,
-  filters: Array[Filter],
-  aggregation: Option[Aggregation],
-  parquetOptions: ParquetOptions,
-  @transient rapidsConf: RapidsConf,
+    @transient sqlConf: SQLConf,
+    broadcastedConf: Broadcast[SerializableConfiguration],
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    partitionSchema: StructType,
+    filters: Array[Filter],
+    aggregation: Option[Aggregation],
+    parquetOptions: ParquetOptions,
+    @transient rapidsConf: RapidsConf,
   metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -144,19 +148,19 @@ case class GpuParquetPartitionReaderFactoryForAggrerationPushdown(
 }
 
 case class GpuParquetScan(
-  sparkSession: SparkSession,
-  hadoopConf: Configuration,
-  fileIndex: PartitioningAwareFileIndex,
-  dataSchema: StructType,
-  readDataSchema: StructType,
-  readPartitionSchema: StructType,
-  pushedFilters: Array[Filter],
-  options: CaseInsensitiveStringMap,
-  pushedAggregate: Option[Aggregation] = None,
-  partitionFilters: Seq[Expression],
-  dataFilters: Seq[Expression],
-  rapidsConf: RapidsConf,
-  queryUsesInputFile: Boolean = true)
+    sparkSession: SparkSession,
+    hadoopConf: Configuration,
+    fileIndex: PartitioningAwareFileIndex,
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    readPartitionSchema: StructType,
+    pushedFilters: Array[Filter],
+    options: CaseInsensitiveStringMap,
+    pushedAggregate: Option[Aggregation] = None,
+    partitionFilters: Seq[Expression],
+    dataFilters: Seq[Expression],
+    rapidsConf: RapidsConf,
+    queryUsesInputFile: Boolean = true)
   extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
     readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
     queryUsesInputFile) with FileScan {
@@ -177,7 +181,9 @@ case class GpuParquetScan(
       GpuParquetPartitionReaderFactoryForAggrerationPushdown(
         sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, pushedAggregate,
-        new ParquetOptions(options.asCaseSensitiveMap.asScala.toMap, sparkSession.sessionState.conf),
+        new ParquetOptions(
+          options.asCaseSensitiveMap.asScala.toMap,
+          sparkSession.sessionState.conf),
         rapidsConf, metrics)
     } else if (rapidsConf.isParquetPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
@@ -219,7 +225,7 @@ case class GpuParquetScan(
 
   // overrides nothing in 330
   def withFilters(
-    partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
