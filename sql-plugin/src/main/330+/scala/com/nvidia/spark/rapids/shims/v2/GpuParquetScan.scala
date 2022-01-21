@@ -21,7 +21,6 @@ import java.net.URI
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.{Arm, ColumnarPartitionReaderWithPartitionValues, GpuMetric, GpuParquetFileFilterHandler, GpuParquetMultiFilePartitionReaderFactory, GpuParquetPartitionReaderFactory, GpuParquetScanBase, GpuRowToColumnConverter, ParquetPartitionReader, PartitionReaderWithBytesRead, RapidsConf}
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.format.converter.ParquetMetadataConverter.{NO_FILTER, SKIP_ROW_GROUPS}
@@ -35,9 +34,9 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
 import org.apache.spark.sql.connector.expressions.aggregate.Aggregation
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
-import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.v2.GpuParquetUtils
 import org.apache.spark.sql.execution.datasources.{AggregatePushDownUtils, DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFooterReader, ParquetOptions}
+import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.v2.GpuParquetUtils
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter

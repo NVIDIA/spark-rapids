@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.{GpuCSVScan, GpuOrcScanBase, GpuOverrides, GpuParquetScanBase, ScanMeta, ScanRule}
-
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.internal.Logging
