@@ -15,6 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
+from spark_session import is_databricks91_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
@@ -212,6 +213,7 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 
 # ======= Test flat map group in Pandas =======
+@pytest.mark.skipif(is_databricks91_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4599")
 @ignore_order
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_group_apply_udf(data_gen):
@@ -226,6 +228,7 @@ def test_group_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
+@pytest.mark.skipif(is_databricks91_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4599")
 @ignore_order
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
 def test_group_apply_udf_more_types(data_gen):

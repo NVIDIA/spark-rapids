@@ -1,0 +1,55 @@
+1,20c1,31
+<   def toRapidsStringOrNull(dtype: DataType): Option[String] = {
+<     dtype match {
+<       case _: LongType => Some("INT64")
+<       case _: DoubleType => Some("FLOAT64")
+<       case _: ByteType => Some("INT8")
+<       case _: BooleanType => Some("BOOL8")
+<       case _: ShortType => Some("INT16")
+<       case _: IntegerType => Some("INT32")
+<       case _: FloatType => Some("FLOAT32")
+<       case _: DateType => Some("TIMESTAMP_DAYS")
+<       case _: TimestampType => Some("TIMESTAMP_MICROSECONDS")
+<       case _: StringType => Some("STRING")
+<       case _: BinaryType => Some("LIST")
+<       case _: NullType => Some("INT8")
+<       case _: DecimalType => 
+<         // Decimal supportable check has been conducted in the GPU plan overriding stage.
+<         // So, we don't have to handle decimal-supportable problem at here.
+<         val dt = dtype.asInstanceOf[DecimalType]
+<         createCudfDecimal(dt.precision, dt.scale)
+<       case _ => None
+---
+>   private static DType toRapidsOrNull(DataType type) {
+>     if (type instanceof LongType) {
+>       return DType.INT64;
+>     } else if (type instanceof DoubleType) {
+>       return DType.FLOAT64;
+>     } else if (type instanceof ByteType) {
+>       return DType.INT8;
+>     } else if (type instanceof BooleanType) {
+>       return DType.BOOL8;
+>     } else if (type instanceof ShortType) {
+>       return DType.INT16;
+>     } else if (type instanceof IntegerType) {
+>       return DType.INT32;
+>     } else if (type instanceof FloatType) {
+>       return DType.FLOAT32;
+>     } else if (type instanceof DateType) {
+>       return DType.TIMESTAMP_DAYS;
+>     } else if (type instanceof TimestampType) {
+>       return DType.TIMESTAMP_MICROSECONDS;
+>     } else if (type instanceof StringType) {
+>       return DType.STRING;
+>     } else if (type instanceof BinaryType) {
+>       return DType.LIST;
+>     } else if (type instanceof NullType) {
+>       // INT8 is used for both in this case
+>       return DType.INT8;
+>     } else if (type instanceof DecimalType) {
+>       // Decimal supportable check has been conducted in the GPU plan overriding stage.
+>       // So, we don't have to handle decimal-supportable problem at here.
+>       DecimalType dt = (DecimalType) type;
+>       return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
+21a33
+>     return null;

@@ -27,11 +27,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{And, Ascending, Attribute, AttributeReference, BoundReference, DynamicPruningExpression, Expression, Literal, PlanExpression, Predicate, SortOrder}
+import org.apache.spark.sql.catalyst.json.rapids.GpuReadJsonFileFormat
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.SQLMetrics
@@ -591,6 +593,7 @@ object GpuFileSourceScanExec {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
+      case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
       case f =>
         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
     }
@@ -601,6 +604,7 @@ object GpuFileSourceScanExec {
       case _: CSVFileFormat => new GpuReadCSVFileFormat
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
+      case _: JsonFileFormat => new GpuReadJsonFileFormat
       case f =>
         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
     }

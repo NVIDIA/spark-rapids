@@ -407,7 +407,8 @@ class CSVPartitionReader(
    */
   override def readToTable(
       dataBuffer: HostMemoryBuffer,
-      dataSize: Long, cudfSchema: Schema,
+      dataSize: Long,
+      cudfSchema: Schema,
       readDataSchema: StructType,
       isFirstChunk: Boolean): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
