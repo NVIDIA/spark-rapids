@@ -22,9 +22,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.catalyst.json.rapids.shims.v2.Spark33XFileOptionsShims
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -33,16 +33,8 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.types.StructType
 
-trait Spark33XShims extends Spark320PlusShims with RebaseShims with Logging {
+trait Spark33XShims extends Spark33XFileOptionsShims with Spark320PlusShims {
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
-
-  override def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    csvOpts.dateFormatInRead
-  }
-
-  override def timestampFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    csvOpts.timestampFormatInRead
-  }
 
   override def getFileScanRDD(
       sparkSession: SparkSession,

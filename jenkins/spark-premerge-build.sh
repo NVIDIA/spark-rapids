@@ -35,6 +35,9 @@ mvn_verify() {
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
+    # build the Spark 2.x explain jar
+    env -u SPARK_HOME mvn -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
+
     # build all the versions but only run unit tests on one 3.0.X version (base version covers this), one 3.1.X version, and one 3.2.X version.
     # All others shims test should be covered in nightly pipelines
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=302 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am

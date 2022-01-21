@@ -1,0 +1,23 @@
+4c4
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+44c44
+<         if shuffle.sqlContext.sparkSession.sessionState.conf
+---
+>         if ShimLoader.getSparkShims.sessionFromPlan(shuffle).sessionState.conf
+55a56,65
+>     // When AQE is enabled, we need to preserve meta data as outputAttributes and
+>     // availableRuntimeDataTransition to the spark plan for the subsequent query stages.
+>     // These meta data will be fetched in the SparkPlanMeta of CustomShuffleReaderExec.
+>     if (wrapped.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes).isEmpty) {
+>       wrapped.setTagValue(GpuShuffleMeta.shuffleExOutputAttributes, outputAttributes)
+>     }
+>     if (wrapped.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition).isEmpty) {
+>       wrapped.setTagValue(GpuShuffleMeta.availableRuntimeDataTransition,
+>         availableRuntimeDataTransition)
+>     }
+57c67
+< }
+---
+> 
