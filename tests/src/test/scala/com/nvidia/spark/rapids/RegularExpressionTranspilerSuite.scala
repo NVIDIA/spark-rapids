@@ -15,14 +15,13 @@
  */
 package com.nvidia.spark.rapids
 
+import java.lang.Character
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
-
 import ai.rapids.cudf.{ColumnVector, CudfException}
 import org.scalatest.FunSuite
-
 import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
@@ -590,17 +589,16 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def characterClassComponent = {
-    val generators: Seq[() => RegexCharacterClassComponent] = if (skipKnownIssues) {
-      //TODO link to GitHub issues
-      Seq(
+    val baseGenerators = Seq[() => RegexCharacterClassComponent](
         () => char,
         () => charRange)
+    val generators = if (skipKnownIssues) {
+      baseGenerators
     } else {
-      Seq(() => escapedChar,
-        () => char,
-        () => hexDigit,
-        () => octalDigit,
-        () => charRange)
+      baseGenerators ++ Seq(
+        () => escapedChar, // https://github.com/NVIDIA/spark-rapids/issues/4505
+        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4486
+        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4409
     }
     generators(rr.nextInt(generators.length))()
   }
@@ -688,13 +686,32 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def hexDigit: RegexHexDigit = {
-    //TODO randomize and cover all formats
-    RegexHexDigit("61")
+    // \\xhh      The character with hexadecimal value 0xhh
+    // \\uhhhh    The character with hexadecimal value 0xhhhh
+    // \\x{h...h} The character with hexadecimal value 0xh...h
+    //            (Character.MIN_CODE_POINT  <= 0xh...h <=  Character.MAX_CODE_POINT)
+    val generators: Seq[() => String] = Seq(
+      () => rr.nextInt(0xFF).toHexString,
+      () => rr.nextInt(0xFFFF).toHexString,
+      () => Character.MIN_CODE_POINT.toHexString,
+      () => Character.MAX_CODE_POINT.toHexString,
+    )
+    RegexHexDigit(generators(rr.nextInt(generators.length))())
   }
 
   private def octalDigit: RegexOctalChar = {
-    //TODO randomize and cover all formats
-    RegexOctalChar("0101")
+    // \\0n   The character with octal value 0n (0 <= n <= 7)
+    // \\0nn  The character with octal value 0nn (0 <= n <= 7)
+    // \\0mnn The character with octal value 0mnn (0 <= m <= 3, 0 <= n <= 7)
+    val chars = "01234567"
+    val generators: Seq[() => String] = Seq(
+      () => Range(0,1).map(_ => chars(rr.nextInt(chars.length))).mkString,
+      () => Range(0,2).map(_ => chars(rr.nextInt(chars.length))).mkString,
+      () =>
+        // this will generate some invalid octal numbers were the first digit > 3
+        Range(0,3).map(_ => chars(rr.nextInt(chars.length))).mkString
+    )
+    RegexOctalChar("0" + generators(rr.nextInt(generators.length))())
   }
 
   private def choice(depth: Int) = {
