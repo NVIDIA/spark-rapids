@@ -298,6 +298,7 @@ object GpuShuffledHashJoinExec extends Arm {
                   // semaphore)
                   GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
                   withResource(hostConcat) { _ =>
+                    val buildBatchToDeviceTime = System.nanoTime()
                     val thisBuildBatch =
                       withResource(hostConcat.toContiguousTable) { contigTable =>
                         GpuColumnVectorFromBuffer.from(contigTable, dataTypes)
@@ -311,6 +312,7 @@ object GpuShuffledHashJoinExec extends Arm {
                     } else {
                       thisBuildBatch
                     }
+                    buildTime += System.nanoTime() - buildBatchToDeviceTime
                   }
                 }
               }
