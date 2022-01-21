@@ -21,6 +21,8 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
+import ai.rapids.cudf.Cuda
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -404,10 +406,11 @@ object RapidsConf {
       "\"ASYNC\", and \"NONE\". With \"DEFAULT\", the RMM pool allocator is used; with " +
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS).")
+      "just passes through to CUDA memory allocation directly. When unset, if the CUDA driver is " +
+      "newer than 11.2, the \"ASYNC\" allocator is used; otherwise, the \"ARENA\" allocator is " +
+      "used.")
     .stringConf
-    .createWithDefault("ARENA")
+    .createWithDefault("")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -1513,7 +1516,18 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val rmmPool: String = get(RMM_POOL)
+  lazy val rmmPool: String = {
+    val pool = get(RMM_POOL)
+    if (pool.isEmpty) {
+      if (Cuda.getDriverVersion >= 11020) {
+        "ASYNC"
+      } else {
+        "ARENA"
+      }
+    } else {
+      pool
+    }
+  }
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
