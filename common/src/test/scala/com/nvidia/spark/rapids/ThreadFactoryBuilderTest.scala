@@ -16,53 +16,57 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{Callable, Executors}
+import java.util.concurrent.{Callable, Executors, ExecutorService}
 
 import org.scalatest.FunSuite
 
 class ThreadFactoryBuilderTest extends FunSuite {
 
   test("test thread factory builder") {
-    var pool = Executors.newFixedThreadPool(2,
-      new ThreadFactoryBuilder().setNameFormat("Thread %s").setDaemon(true).build())
-
-    var ret = pool.submit(new Callable[String] {
-      override def call(): String = {
+    var pool1: ExecutorService = null
+    try {
+      pool1 = Executors.newFixedThreadPool(2,
+        new ThreadFactoryBuilder().setNameFormat("thread-pool1-1 %s").setDaemon(true).build())
+      var ret = pool1.submit(new Callable[String] {
+        override def call(): String = {
+          assert(Thread.currentThread().isDaemon)
+          assert(Thread.currentThread().getName == "thread-pool1-1 0")
+          ""
+        }
+      })
+      // waits and retrieves the result, if above asserts failed, will get execution exception
+      ret.get()
+      ret = pool1.submit(() => {
         assert(Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName() == "Thread 0")
+        assert(Thread.currentThread().getName == "thread-pool1-1 1")
         ""
-      }
-    })
-    // waits and retrieves the result, if above asserts failed, will get execution exception
-    ret.get()
-    ret = pool.submit(new Callable[String] {
-      override def call(): String = {
-        assert(Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName() == "Thread 1")
-        ""
-      }
-    })
-    ret.get()
-    pool.shutdown()
+      })
+      ret.get()
+    } finally {
+      if (pool1 != null) pool1.shutdown()
+    }
 
-    pool = Executors.newFixedThreadPool(2,
-      new ThreadFactoryBuilder().setNameFormat("Thread %d").build())
-    pool.submit(new Callable[String] {
-      override def call(): String = {
+    var pool2: ExecutorService = null
+    try {
+      pool2 = Executors.newFixedThreadPool(2,
+        new ThreadFactoryBuilder().setNameFormat("pool2-%d").build())
+
+      var ret = pool2.submit(new Callable[String] {
+        override def call(): String = {
+          assert(!Thread.currentThread().isDaemon)
+          assert(Thread.currentThread().getName == "pool2-0")
+          ""
+        }
+      })
+      ret.get()
+      ret = pool2.submit(() => {
         assert(!Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName() == "Thread 0")
+        assert(Thread.currentThread().getName == "pool2-1")
         ""
-      }
-    })
-    ret.get()
-    pool.submit(new Callable[String] {
-      override def call(): String = {
-        assert(!Thread.currentThread().isDaemon)
-        assert(Thread.currentThread().getName() == "Thread 1")
-        ""
-      }
-    })
-    ret.get()
-    pool.shutdown()
+      })
+      ret.get()
+    } finally {
+      if (pool2 != null) pool2.shutdown()
+    }
   }
 }
