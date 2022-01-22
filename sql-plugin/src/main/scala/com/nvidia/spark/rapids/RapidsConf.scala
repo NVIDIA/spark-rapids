@@ -406,11 +406,9 @@ object RapidsConf {
       "\"ASYNC\", and \"NONE\". With \"DEFAULT\", the RMM pool allocator is used; with " +
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly. When unset, if the CUDA driver is " +
-      "newer than 11.2, the \"ASYNC\" allocator is used; otherwise, the \"ARENA\" allocator is " +
-      "used.")
+      "just passes through to CUDA memory allocation directly.")
     .stringConf
-    .createWithDefault("")
+    .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -1518,12 +1516,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmPool: String = {
     val pool = get(RMM_POOL)
-    if (pool.isEmpty) {
-      if (Cuda.getDriverVersion >= 11020) {
-        "ASYNC"
-      } else {
-        "ARENA"
-      }
+    if ("ASYNC".equalsIgnoreCase(pool) && Cuda.getDriverVersion < 11020) {
+      logWarning("CUDA driver does not support the ASYNC allocator, falling back to ARENA")
+      "ARENA"
     } else {
       pool
     }
