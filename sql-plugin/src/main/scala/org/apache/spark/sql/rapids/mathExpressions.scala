@@ -419,6 +419,68 @@ case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
   }
 }
 
+object GpuHypot extends Arm {
+  def chooseXandY(lhs: ColumnVector, rhs: ColumnVector): Seq[ColumnVector] = {
+    withResource(lhs.abs) { lhsAbs =>
+      withResource(rhs.abs) { rhsAbs => 
+        withResource(lhsAbs.greaterThan(rhsAbs)) { lhsGreater =>
+          closeOnExcept(lhsGreater.ifElse(lhsAbs, rhsAbs)) { x => 
+            Seq(x, lhsGreater.ifElse(rhsAbs, lhsAbs))
+          }
+        }
+      }
+    }
+  }
+
+  def either(value: Scalar, x: ColumnVector, y: ColumnVector): ColumnVector = {
+    withResource(x.equalTo(value)) { xIsVal =>
+      withResource(y.equalTo(value)) { yIsVal =>
+        xIsVal.or(yIsVal)
+      }
+    }
+  }
+
+  def both(value: Scalar, x: ColumnVector, y: ColumnVector): ColumnVector = {
+    withResource(x.equalTo(value)) { xIsVal =>
+      withResource(y.equalTo(value)) { yIsVal =>
+        xIsVal.and(yIsVal)
+      }
+    }
+  }
+
+  def eitherNan(x: ColumnVector, 
+                y: ColumnVector): ColumnVector = {
+    withResource(x.isNan) { xIsNan =>
+      withResource(y.isNan) { yIsNan =>
+        xIsNan.or(yIsNan)
+      }
+    }
+  }
+
+  def eitherNull(x: ColumnVector,
+                 y: ColumnVector): ColumnVector = {
+    withResource(x.isNull) { xIsNull =>
+      withResource(y.isNull) { yIsNull =>
+        xIsNull.or(yIsNull)
+      }
+    }
+  }
+
+  def computeHypot(x: ColumnVector, y: ColumnVector): ColumnVector = {
+    withResource(y.div(x)) { yOverX =>
+      withResource(yOverX.mul(yOverX)) { yOverXSquared =>
+        withResource(Scalar.fromDouble(1)) { one =>
+          withResource(one.add(yOverXSquared)) { onePlusTerm =>
+            withResource(onePlusTerm.sqrt) { onePlusTermSqrt =>
+              x.mul(onePlusTermSqrt)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathExpression("HYPOT") {
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
@@ -431,66 +493,51 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
   // where x = max(abs(lhs), abs(rhs)), y = min(abs(lhs), abs(rhs))
   // which will only overflow if both terms are near the maximum representation space
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    // Using this form, because we really need a max and min that aren't NULL-aware
-    // In that case, then result will always be NULL, which is consistent with Spark
-    val (x, y) = withResource(Seq(lhs.getBase.abs, rhs.getBase.abs)) { 
-      case Seq(lhsAbs, rhsAbs) => {
-        withResource(lhsAbs.greaterThan(rhsAbs)) { lhsGreater => 
-          (lhsGreater.ifElse(lhsAbs, rhsAbs), lhsGreater.ifElse(rhsAbs, lhsAbs))
-        }
-      }
-    }
+
     // in spark SQL HYPOT (java.math.Math.hypot), there are a couple of edge cases that produce
     // specific results. Note that terms are absolute values (always positive)
     //  - if either term is inf, then the answer is inf
     //  - if either term is nan, and neither is inf, then the answer is nan
     //  - if both terms are 0, then the answer is 0
-    val (zero, inf, nan) = (Scalar.fromDouble(0), 
-                            Scalar.fromDouble(Double.PositiveInfinity), 
+
+    val litForSpecial = Seq(Scalar.fromDouble(0),
+                            Scalar.fromDouble(Double.PositiveInfinity),
                             Scalar.fromDouble(Double.NaN))
-    val (returnInf, returnNan) = withResource(Seq(x.equalTo(inf), y.equalTo(inf))) { 
-      case Seq(xIsInf, yIsInf) => 
-        withResource(Seq(x.isNan, y.isNan)) { case Seq(xIsNan, yIsNan) => 
-          withResource(Seq(xIsInf.not, yIsInf.not)) { case Seq(xIsNotInf, yIsNotInf) =>
-            withResource(Seq(xIsNotInf.and(yIsNotInf), xIsNan.or(yIsNan))) { 
-              case Seq(xAndYNotInf,xOrYIsNan) => 
-                (xIsInf.or(yIsInf), xAndYNotInf.and(xOrYIsNan))
-          }
-        }
-      }
-    }
-    val returnZero = withResource(Seq(x.equalTo(zero), y.equalTo(zero))) { 
-      case Seq(xIsZero, yIsZero) =>
-        xIsZero.and(yIsZero)
-    }
-    val onePlusTermSqrt = withResource(y) { _ => 
-      withResource(y.div(x)) { yOverX =>
-        withResource(yOverX.mul(yOverX)) { yOverXSquared =>
-          withResource(Scalar.fromInt(1)) { one =>
-            withResource(one.add(yOverXSquared)) { onePlusTerm =>
-              onePlusTerm.sqrt
+    withResource(litForSpecial) { case Seq(zero, inf, nan) =>
+      withResource(GpuHypot.chooseXandY(lhs.getBase, rhs.getBase)) { case Seq(x, y) =>
+        withResource(Scalar.fromNull(x.getType)) { nullS => 
+          withResource(GpuHypot.either(inf, x, y)) { eitherInf =>
+            withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
+              withResource(GpuHypot.eitherNan(x, y)) { eitherNan =>
+                withResource(GpuHypot.both(zero, x, y)) { bothZero =>
+                  withResource(GpuHypot.computeHypot(x, y)) { hypotComputed =>
+                    withResource(bothZero.ifElse(zero, hypotComputed)) { zeroOrBase =>
+                      withResource(eitherNan.ifElse(nan, zeroOrBase)) { nanOrRest =>
+                        withResource(eitherInf.ifElse(inf, nanOrRest)) { infOrRest =>
+                          eitherNull.ifElse(nullS, infOrRest)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
       }
     }
-    withResource(Seq(returnInf, returnNan, returnZero, onePlusTermSqrt, x)) { _ =>
-      returnInf.ifElse(ColumnVector.fromScalar(inf, x.getRowCount.toInt), 
-        returnNan.ifElse(ColumnVector.fromScalar(nan, x.getRowCount.toInt),
-          returnZero.ifElse(ColumnVector.fromScalar(zero, x.getRowCount.toInt),
-            x.mul(onePlusTermSqrt)
-          )
-        )
-      )
-    }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    doColumnar(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType), rhs)
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    doColumnar(lhs, GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType))
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType)) { expandedRhs =>
+      doColumnar(lhs, expandedRhs)
+    }
   }
 }
 
