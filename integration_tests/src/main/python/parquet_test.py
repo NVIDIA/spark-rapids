@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from distutils.log import FATAL
-from sqlite3 import Timestamp
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
@@ -690,6 +688,10 @@ def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp
                 all_confs)
 
 
+conf_for_parquet_aggregate_pushdown = {
+    "spark.sql.parquet.aggregatePushdown": "true", 
+    "spark.sql.sources.useV1SourceList": ""
+}
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
 @allow_non_gpu(any = True)
@@ -707,8 +709,7 @@ def test_parquet_max_top_column_not_push_down(spark_tmp_path):
         assert "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -727,8 +728,7 @@ def test_parquet_count_top_column_push_down(spark_tmp_path):
         assert "PushedAggregation: [COUNT(_1)]" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -747,8 +747,7 @@ def test_parquet_max_nested_column_not_push_down(spark_tmp_path):
         assert "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -767,8 +766,7 @@ def test_parquet_count_nested_column_not_push_down(spark_tmp_path):
         assert "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -786,8 +784,7 @@ def test_parquet_max_partition_column_not_push_down(spark_tmp_path):
         assert "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -805,8 +802,7 @@ def test_parquet_count_partition_column_push_down(spark_tmp_path):
         assert "PushedAggregation: [COUNT(p)]" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
                         
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -826,8 +822,7 @@ def test_parquet_filter_alias_over_aggregate(spark_tmp_path):
         assert  "PushedAggregation: [MIN(_1), MAX(_1)]" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -847,8 +842,7 @@ def test_parquet_alias_over_aggregate(spark_tmp_path):
         assert  "PushedAggregation: [MIN(_1)]" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -868,8 +862,7 @@ def test_parquet_aggregate_over_alias_not_push_down(spark_tmp_path):
         assert  "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -890,8 +883,8 @@ def test_parquet_aggregate_with_groupby_not_push_down(spark_tmp_path):
         assert  "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
+
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
 @allow_non_gpu(any = True)
@@ -911,8 +904,7 @@ def test_parquet_aggregate_with_filter_not_push_down(spark_tmp_path):
         assert  "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -934,8 +926,7 @@ def test_parquet_push_down_only_if_all_aggregates_can_be_pushed_down(spark_tmp_p
         assert  "PushedAggregation: []" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -956,9 +947,7 @@ def test_parquet_max_min_count_push_down(spark_tmp_path):
         assert  "PushedAggregation: [MIN(_1), MAX(_1), MIN(_3), MAX(_3), COUNT(*), COUNT(_1), COUNT(_2), COUNT(_3)]" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
-
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
@@ -976,10 +965,7 @@ def test_parquet_aggregate_push_down_column_name_case_sensitivity(spark_tmp_path
         assert "PushedAggregation: [MAX(id), MIN(id)]" in explain
         return df
 
-    assert_gpu_and_cpu_are_equal_collect(do_explain, {"spark.sql.parquet.aggregatePushdown": "true", 
-                                  "spark.sql.sources.useV1SourceList": ""})
-
-
+    assert_gpu_and_cpu_are_equal_collect(do_explain, conf_for_parquet_aggregate_pushdown)
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='this is a new feature of Spark 330')
