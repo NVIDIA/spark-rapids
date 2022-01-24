@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.catalyst.json.rapids
 
+import java.nio.charset.StandardCharsets
+
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
@@ -137,6 +139,11 @@ object GpuJsonScan {
     if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
       meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
     }
+
+    parsedOptions.encoding.foreach(enc =>
+      if (enc != StandardCharsets.UTF_8.name() && enc != StandardCharsets.US_ASCII.name()) {
+      meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 encoded data")
+    })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
