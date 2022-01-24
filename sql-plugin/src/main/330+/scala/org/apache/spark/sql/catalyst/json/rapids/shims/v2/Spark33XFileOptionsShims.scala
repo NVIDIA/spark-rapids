@@ -16,12 +16,12 @@
 
 package org.apache.spark.sql.catalyst.json.rapids.shims.v2
 
-import com.nvidia.spark.rapids.shims.v2.Spark320PlusShims
+import com.nvidia.spark.rapids.shims.v2.Spark322PlusShims
 
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.json.JSONOptions
 
-trait Spark33XFileOptionsShims extends Spark320PlusShims {
+trait Spark33XFileOptionsShims extends Spark322PlusShims {
 
   def dateFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {

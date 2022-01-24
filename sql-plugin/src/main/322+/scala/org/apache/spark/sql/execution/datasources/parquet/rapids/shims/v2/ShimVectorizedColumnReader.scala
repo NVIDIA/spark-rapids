@@ -29,14 +29,14 @@ import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
 class ShimParquetRowConverter(
-  schemaConverter: ParquetToSparkSchemaConverter,
-  parquetType: GroupType,
-  catalystType: StructType,
-  convertTz: Option[ZoneId],
-  datetimeRebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.CORRECTED
-  int96RebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.EXCEPTION
-  int96CDPHive3Compatibility: Boolean,
-  updater: ParentContainerUpdater
+    schemaConverter: ParquetToSparkSchemaConverter,
+    parquetType: GroupType,
+    catalystType: StructType,
+    convertTz: Option[ZoneId],
+    datetimeRebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.CORRECTED
+    int96RebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.EXCEPTION
+    int96CDPHive3Compatibility: Boolean,
+    updater: ParentContainerUpdater
 ) extends ParquetRowConverter(
       schemaConverter,
       parquetType,
@@ -47,14 +47,14 @@ class ShimParquetRowConverter(
       updater)
 
 class ShimVectorizedColumnReader(
-  index: Int,
-  columns: java.util.List[ColumnDescriptor],
-  types: java.util.List[Type],
-  pageReadStore: PageReadStore,
-  convertTz: ZoneId,
-  datetimeRebaseMode: String, // always LegacyBehaviorPolicy.CORRECTED
-  int96RebaseMode: String, // always LegacyBehaviorPolicy.EXCEPTION
-  int96CDPHive3Compatibility: Boolean
+    index: Int,
+    columns: java.util.List[ColumnDescriptor],
+    types: java.util.List[Type],
+    pageReadStore: PageReadStore,
+    convertTz: ZoneId,
+    datetimeRebaseMode: String, // always LegacyBehaviorPolicy.CORRECTED
+    int96RebaseMode: String, // always LegacyBehaviorPolicy.EXCEPTION
+    int96CDPHive3Compatibility: Boolean
 ) extends VectorizedColumnReader(
       columns.get(index),
       types.get(index).getLogicalTypeAnnotation,

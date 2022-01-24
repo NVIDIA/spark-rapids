@@ -27,15 +27,15 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
  */
 trait Spark322PlusShims extends Spark320PlusShims with RebaseShims with Logging {
   override def getParquetFilters(
-    schema: MessageType,
-    pushDownDate: Boolean,
-    pushDownTimestamp: Boolean,
-    pushDownDecimal: Boolean,
-    pushDownStartWith: Boolean,
-    pushDownInFilterThreshold: Int,
-    caseSensitive: Boolean,
-    lookupFileMeta: String => String,
-    dateTimeRebaseModeFromConf: String): ParquetFilters = {
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      lookupFileMeta: String => String,
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
     val datetimeRebaseMode = DataSourceUtils
       .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
