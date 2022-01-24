@@ -468,16 +468,22 @@ object GpuHypot extends Arm {
   }
 
   def computeHypot(x: ColumnVector, y: ColumnVector): ColumnVector = {
-    withResource(y.div(x)) { yOverX =>
-      withResource(yOverX.mul(yOverX)) { yOverXSquared =>
-        withResource(Scalar.fromDouble(1)) { one =>
-          withResource(one.add(yOverXSquared)) { onePlusTerm =>
-            withResource(onePlusTerm.sqrt) { onePlusTermSqrt =>
-              x.mul(onePlusTermSqrt)
-            }
-          }
-        }
+    val yOverXSquared = withResource(y.div(x)) { yOverX =>
+      yOverX.mul(yOverX)
+    }
+
+    val onePlusTerm = withResource(yOverXSquared) { _ => 
+      withResource(Scalar.fromDouble(1)) { one =>
+        one.add(yOverXSquared)
       }
+    }
+
+    val onePlusTermSqrt = withResource(onePlusTerm) { _ => 
+      onePlusTerm.sqrt
+    } 
+
+    withResource(onePlusTermSqrt) { _ => 
+      x.mul(onePlusTermSqrt)
     }
   }
 }
@@ -501,28 +507,35 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
     //  - if either term is nan, and neither is inf, then the answer is nan
     //  - if both terms are 0, then the answer is 0
 
-    val litForSpecial = Seq(Scalar.fromDouble(0),
-                            Scalar.fromDouble(Double.PositiveInfinity),
-                            Scalar.fromDouble(Double.NaN))
-    withResource(litForSpecial) { case Seq(zero, inf, nan) =>
-      withResource(GpuHypot.chooseXandY(lhs.getBase, rhs.getBase)) { case Seq(x, y) =>
-        withResource(Scalar.fromNull(x.getType)) { nullS => 
+    withResource(GpuHypot.chooseXandY(lhs.getBase, rhs.getBase)) { case Seq(x, y) =>
+      val zeroOrBase = withResource(Scalar.fromDouble(0)) { zero =>
+        withResource(GpuHypot.both(zero, x, y)) { bothZero =>
+          withResource(GpuHypot.computeHypot(x, y)) { hypotComputed =>
+            bothZero.ifElse(zero, hypotComputed) 
+          }
+        }
+      }
+
+      val nanOrRest = withResource(zeroOrBase) { _ =>
+        withResource(Scalar.fromDouble(Double.NaN)) { nan => 
+          withResource(GpuHypot.eitherNan(x, y)) { eitherNan =>
+            eitherNan.ifElse(nan, zeroOrBase)
+          }
+        }
+      }
+
+      val infOrRest = withResource(nanOrRest) { _ => 
+          withResource(Scalar.fromDouble(Double.PositiveInfinity)) { inf =>
           withResource(GpuHypot.either(inf, x, y)) { eitherInf =>
-            withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
-              withResource(GpuHypot.eitherNan(x, y)) { eitherNan =>
-                withResource(GpuHypot.both(zero, x, y)) { bothZero =>
-                  withResource(GpuHypot.computeHypot(x, y)) { hypotComputed =>
-                    withResource(bothZero.ifElse(zero, hypotComputed)) { zeroOrBase =>
-                      withResource(eitherNan.ifElse(nan, zeroOrBase)) { nanOrRest =>
-                        withResource(eitherInf.ifElse(inf, nanOrRest)) { infOrRest =>
-                          eitherNull.ifElse(nullS, infOrRest)
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            eitherInf.ifElse(inf, nanOrRest)
+          }
+        }
+      }
+
+      withResource(infOrRest) { _ =>
+        withResource(Scalar.fromNull(x.getType)) { nullS => 
+          withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
+            eitherNull.ifElse(nullS, infOrRest)
           }
         }
       }
