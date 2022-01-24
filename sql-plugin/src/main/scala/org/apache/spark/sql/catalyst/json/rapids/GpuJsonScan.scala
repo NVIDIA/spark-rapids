@@ -32,8 +32,8 @@ import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.json.JsonDataSource
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.json.JsonDataSource
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
