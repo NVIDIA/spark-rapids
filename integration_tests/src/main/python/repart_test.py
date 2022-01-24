@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -240,6 +240,14 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', decimal_gen_scale_precision)], ['a']),
     ([('a', decimal_gen_same_scale_precision)], ['a']),
     ([('a', decimal_gen_64bit)], ['a']),
+    ([('a', decimal_gen_64bit)], ['a']),
+    ([('a', decimal_gen_128bit)], ['a']),
+    ([('a', decimal_gen_30_2)], ['a']),
+    ([('a', decimal_gen_36_5)], ['a']),
+    ([('a', decimal_gen_36_neg5)], ['a']),
+    ([('a', decimal_gen_38_0)], ['a']),
+    ([('a', decimal_gen_38_10)], ['a']),
+    ([('a', decimal_gen_38_neg10)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
     ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('c1_0', byte_gen), ('c1_1', string_gen), ('c1_2', boolean_gen)]))]))], ['a']), 
@@ -256,6 +264,7 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', timestamp_gen), ('b', date_gen), ('c', int_gen)], ['a', 'b', 'c']),
     ([('a', short_gen), ('b', string_gen), ('c', int_gen)], ['a', 'b', 'c']),
     ([('a', decimal_gen_default), ('b', decimal_gen_64bit), ('c', decimal_gen_scale_precision)], ['a', 'b', 'c']),
+    ([('a', decimal_gen_128bit), ('b', decimal_gen_38_neg10), ('c', decimal_gen_36_5)], ['a', 'b', 'c']),
     ], ids=idfn)
 def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
