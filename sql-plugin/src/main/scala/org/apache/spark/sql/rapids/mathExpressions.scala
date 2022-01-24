@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.Serializable
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
@@ -650,6 +651,7 @@ case class GpuRound(child: Expression, scale: Expression) extends
 case class GpuPow(left: Expression, right: Expression)
     extends CudfBinaryMathExpression("POWER") {
   override def binaryOp: BinaryOp = BinaryOp.POW
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.POW)
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
