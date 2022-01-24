@@ -20,7 +20,7 @@ import java.net.URI
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{Arm, GpuMetric, GpuParquetFileFilterHandler, GpuParquetMultiFilePartitionReaderFactory, GpuParquetPartitionReaderFactory, GpuParquetScanBase, GpuRowToColumnConverter, RapidsConf}
+import com.nvidia.spark.rapids.{Arm, GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuParquetPartitionReaderFactory, GpuParquetScanBase, GpuRowToColumnConverter, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER
@@ -59,13 +59,7 @@ case class GpuParquetPartitionReaderFactoryForAggregationPushdown(
     parquetOptions: ParquetOptions,
     @transient rapidsConf: RapidsConf,
   metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Arm with Logging {
-  private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
-  private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
-  private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val datetimeRebaseModeInRead = parquetOptions.datetimeRebaseModeInRead
-
-  private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
 
   private def getFooter(file: PartitionedFile): ParquetMetadata = {
     val conf = broadcastedConf.value.value
