@@ -17,12 +17,9 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.{GpuCSVScan, GpuOrcScanBase, GpuOverrides, GpuParquetScanBase, ScanMeta, ScanRule}
-import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
-import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -30,7 +27,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 /**
  * Shim base class that can be compiled with every supported 3.2.2+
  */
-trait Spark322Until330Shims extends Spark320PlusShims with RebaseShims with Logging {
+trait Spark322Until330Shims extends Spark322PlusShims with RebaseShims with Logging {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
@@ -108,20 +105,4 @@ trait Spark322Until330Shims extends Spark320PlusShims with RebaseShims with Logg
             conf.maxReadBatchSizeBytes)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getParquetFilters(
-      schema: MessageType,
-      pushDownDate: Boolean,
-      pushDownTimestamp: Boolean,
-      pushDownDecimal: Boolean,
-      pushDownStartWith: Boolean,
-      pushDownInFilterThreshold: Int,
-      caseSensitive: Boolean,
-      lookupFileMeta: String => String,
-      dateTimeRebaseModeFromConf: String): ParquetFilters = {
-    val datetimeRebaseMode = DataSourceUtils
-      .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
-    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
-  }
 }
