@@ -31,7 +31,7 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(), marks=[incompat]),
            pytest.param(DoubleGen(), marks=[incompat]),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-           decimal_gen_neg_scale, decimal_gen_64bit]
+           decimal_gen_neg_scale, decimal_gen_64bit] + decimal_128_gens
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
@@ -190,7 +190,7 @@ def test_sortmerge_join_ridealong(data_gen, join_type, batch_size):
 @allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
         'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens + single_array_gens_sample_with_decimal128 + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
     def do_join(spark):
@@ -258,7 +258,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
@@ -273,7 +273,7 @@ def test_cartesian_join(data_gen, batch_size):
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128 + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
@@ -301,7 +301,7 @@ def test_cartesian_join_special_case_group_by(data_gen, batch_size):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join_with_condition(data_gen, batch_size):
     def do_join(spark):
@@ -317,7 +317,7 @@ def test_cartesian_join_with_condition(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join(data_gen, batch_size):
     def do_join(spark):
@@ -329,7 +329,7 @@ def test_broadcast_nested_loop_join(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128 + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
