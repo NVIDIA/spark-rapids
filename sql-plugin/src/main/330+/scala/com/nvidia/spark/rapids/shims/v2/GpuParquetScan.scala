@@ -20,10 +20,10 @@ import java.net.URI
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{Arm, ColumnarPartitionReaderWithPartitionValues, GpuMetric, GpuParquetFileFilterHandler, GpuParquetMultiFilePartitionReaderFactory, GpuParquetPartitionReaderFactory, GpuParquetScanBase, GpuRowToColumnConverter, ParquetPartitionReader, PartitionReaderWithBytesRead, RapidsConf}
+import com.nvidia.spark.rapids.{Arm, GpuMetric, GpuParquetFileFilterHandler, GpuParquetMultiFilePartitionReaderFactory, GpuParquetPartitionReaderFactory, GpuParquetScanBase, GpuRowToColumnConverter, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.parquet.format.converter.ParquetMetadataConverter.{NO_FILTER, SKIP_ROW_GROUPS}
+import org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER
 import org.apache.parquet.hadoop.metadata.{FileMetaData, ParquetMetadata}
 
 import org.apache.spark.broadcast.Broadcast
@@ -45,17 +45,17 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-
-
-
-case class GpuParquetPartitionReaderFactoryForAggrerationPushdown(
+/**
+ * Users should make sure that `aggregation` is valid when using this factory.
+ */
+case class GpuParquetPartitionReaderFactoryForAggregationPushdown(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,
     filters: Array[Filter],
-    aggregation: Option[Aggregation],
+    aggregation: Aggregation,
     parquetOptions: ParquetOptions,
     @transient rapidsConf: RapidsConf,
   metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Arm with Logging {
@@ -71,12 +71,8 @@ case class GpuParquetPartitionReaderFactoryForAggrerationPushdown(
     val conf = broadcastedConf.value.value
     val filePath = new Path(new URI(file.filePath))
 
-    if (aggregation.isEmpty) {
-      ParquetFooterReader.readFooter(conf, filePath, SKIP_ROW_GROUPS)
-    } else {
-      // For aggregate push down, we will get max/min/count from footer statistics.
-      ParquetFooterReader.readFooter(conf, filePath, NO_FILTER)
-    }
+    // For aggregate push down, we will get max/min/count from footer statistics.
+    ParquetFooterReader.readFooter(conf, filePath, NO_FILTER)
   }
 
   private def getDatetimeRebaseSpec(
@@ -94,55 +90,38 @@ case class GpuParquetPartitionReaderFactoryForAggrerationPushdown(
 
   override def buildColumnarReader(
     partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    if (aggregation.isEmpty) {
-      val reader = new PartitionReaderWithBytesRead(buildBaseColumnarParquetReader(partitionedFile))
-      ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
-    } else {
-      new PartitionReader[ColumnarBatch] {
-        private var hasNext = true
-        private val batch: ColumnarBatch = {
-          val footer = getFooter(partitionedFile)
-          if (footer != null && footer.getBlocks.size > 0) {
-            val row = GpuParquetUtils.createAggInternalRowFromFooter(
-              footer,
-              partitionedFile.filePath,
-              dataSchema,
-              partitionSchema,
-              aggregation.get,
-              readDataSchema,
-              partitionedFile.partitionValues,
-              getDatetimeRebaseSpec(footer.getFileMetaData)
-            )
+    new PartitionReader[ColumnarBatch] {
+      private var hasNext = true
+      private val batch: ColumnarBatch = {
+        val footer = getFooter(partitionedFile)
+        if (footer != null && footer.getBlocks.size > 0) {
+          val row = GpuParquetUtils.createAggInternalRowFromFooter(
+            footer,
+            partitionedFile.filePath,
+            dataSchema,
+            partitionSchema,
+            aggregation,
+            readDataSchema,
+            partitionedFile.partitionValues,
+            getDatetimeRebaseSpec(footer.getFileMetaData)
+          )
 
-            new GpuRowToColumnConverter(readDataSchema).convertBatch(Array(row), readDataSchema)
-          } else {
-            null
-          }
+          new GpuRowToColumnConverter(readDataSchema).convertBatch(Array(row), readDataSchema)
+        } else {
+          null
         }
-        override def next(): Boolean = {
-          hasNext && batch != null
-        }
-
-        override def get(): ColumnarBatch = {
-          hasNext = false
-          batch
-        }
-
-        override def close(): Unit = {}
       }
+      override def next(): Boolean = {
+        hasNext && batch != null
+      }
+
+      override def get(): ColumnarBatch = {
+        hasNext = false
+        batch
+      }
+
+      override def close(): Unit = {}
     }
-
-  }
-
-  private def buildBaseColumnarParquetReader(
-    file: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    val conf = broadcastedConf.value.value
-    val singleFileInfo = filterHandler.filterBlocks(file, conf, filters, readDataSchema)
-    new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
-      singleFileInfo.schema, isCaseSensitive, readDataSchema,
-      debugDumpPrefix, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, metrics, singleFileInfo.isCorrectedInt96RebaseMode,
-      singleFileInfo.isCorrectedRebaseMode, singleFileInfo.hasInt96Timestamps)
   }
 }
 
@@ -177,9 +156,9 @@ case class GpuParquetScan(
       new SerializableConfiguration(hadoopConf))
 
     if (pushedAggregate.nonEmpty){
-      GpuParquetPartitionReaderFactoryForAggrerationPushdown(
+      GpuParquetPartitionReaderFactoryForAggregationPushdown(
         sparkSession.sessionState.conf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, pushedAggregate,
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, pushedAggregate.get,
         new ParquetOptions(
           options.asCaseSensitiveMap.asScala.toMap,
           sparkSession.sessionState.conf),
