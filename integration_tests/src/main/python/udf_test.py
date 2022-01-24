@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -213,8 +213,7 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 
 # ======= Test flat map group in Pandas =======
-@pytest.mark.skipif(is_databricks91_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4599")
-@ignore_order
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_group_apply_udf(data_gen):
     def pandas_add(data):
@@ -228,8 +227,7 @@ def test_group_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
-@pytest.mark.skipif(is_databricks91_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4599")
-@ignore_order
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):
