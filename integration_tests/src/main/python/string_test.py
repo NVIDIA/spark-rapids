@@ -20,7 +20,8 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311, is_before_spark_320
+from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330
+
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -400,6 +401,14 @@ def test_length():
                 'LENGTH(a)',
                 'CHAR_LENGTH(a)',
                 'CHARACTER_LENGTH(a)'))
+
+@pytest.mark.skipif(is_before_spark_330(),
+                    reason="octet_length and bit_length only available in 330+")
+def test_byte_length():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'BIT_LENGTH(a)', 'OCTET_LENGTH(a)'))
 
 @incompat
 def test_initcap():
