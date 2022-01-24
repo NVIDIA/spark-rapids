@@ -716,9 +716,9 @@ sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent
   override def toRegexString: String = s"\\$a"
 }
 
-sealed case class RegexChar(a: Char) extends RegexCharacterClassComponent {
+sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$a"
+  override def toRegexString: String = s"$ch"
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{

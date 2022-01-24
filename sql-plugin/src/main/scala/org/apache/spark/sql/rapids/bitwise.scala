@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
+import ai.rapids.cudf.{ast, BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
+import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes}
@@ -120,6 +121,7 @@ case class GpuBitwiseAnd(left: Expression, right: Expression) extends CudfBinary
   override def symbol: String = "&"
 
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_AND
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.BITWISE_AND)
 }
 
 case class GpuBitwiseOr(left: Expression, right: Expression) extends CudfBinaryArithmetic {
@@ -128,6 +130,7 @@ case class GpuBitwiseOr(left: Expression, right: Expression) extends CudfBinaryA
   override def symbol: String = "|"
 
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_OR
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.BITWISE_OR)
 }
 
 case class GpuBitwiseXor(left: Expression, right: Expression) extends CudfBinaryArithmetic {
@@ -136,6 +139,7 @@ case class GpuBitwiseXor(left: Expression, right: Expression) extends CudfBinary
   override def symbol: String = "^"
 
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_XOR
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.BITWISE_XOR)
 }
 
 case class GpuBitwiseNot(child: Expression) extends CudfUnaryExpression with ExpectsInputTypes {

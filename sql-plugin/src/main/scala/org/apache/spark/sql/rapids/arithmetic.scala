@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.math.BigInteger
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -219,6 +220,7 @@ case class GpuAdd(
   override def symbol: String = "+"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.ADD)
 
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
@@ -246,6 +248,7 @@ case class GpuSubtract(
   override def symbol: String = "-"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.SUB)
 
   private[this] def basicOpOverflowCheck(
       lhs: BinaryOperable,
@@ -534,6 +537,7 @@ case class GpuMultiply(
   override def symbol: String = "*"
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
 }
 
 object GpuDivModLike extends Arm {
