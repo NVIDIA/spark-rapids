@@ -440,39 +440,9 @@ The JSON format read is a very experimental feature which is expected to have so
 it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
 `spark.rapids.sql.format.json.read.enabled`.
 
-Currently, the GPU accelerated JSON reader doesn't support column pruning, which will likely make 
-this difficult to use or even test. The user must specify the full schema or just let Spark infer 
-the schema from the JSON file. eg,
-
-We have a `people.json` file with below content
-
-``` console
-{"name":"Michael"}
-{"name":"Andy", "age":30}
-{"name":"Justin", "age":19}
-```
-
-Both below ways will work
-
-- Inferring the schema
-
-  ``` scala
-  val df = spark.read.json("people.json")
-  ```
-
-- Specifying the full schema
-
-  ``` scala
-  val schema = StructType(Seq(StructField("name", StringType), StructField("age", IntegerType)))
-  val df = spark.read.schema(schema).json("people.json")
-  ```
-
-While the below code will not work in the current version,
-
-``` scala
-val schema = StructType(Seq(StructField("name", StringType)))
-val df = spark.read.schema(schema).json("people.json")
-```
+Currently, the GPU accelerated JSON reader doesn't support column pruning. So, everytime, we infer the 
+json data schema and to check if there is column pruning happening. If yes, we will fallback the json reader 
+to CPU.
 
 ### JSON supporting types
 

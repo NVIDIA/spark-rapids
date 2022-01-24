@@ -22,6 +22,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
@@ -31,6 +32,7 @@ import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
+import org.apache.spark.sql.execution.datasources.json.JsonDataSource
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
@@ -74,7 +76,8 @@ object GpuJsonScan {
       scan.dataSchema,
       scan.readDataSchema,
       scan.options.asScala.toMap,
-      scanMeta)
+      scanMeta,
+      scan.fileIndex.allFiles())
   }
 
   def tagSupport(
@@ -82,12 +85,28 @@ object GpuJsonScan {
       dataSchema: StructType,
       readSchema: StructType,
       options: Map[String, String],
-      meta: RapidsMeta[_, _, _]): Unit = {
+      meta: RapidsMeta[_, _, _],
+      files: Seq[FileStatus]): Unit = {
 
     val parsedOptions = new JSONOptionsInRead(
       options,
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+
+    // Since cudf (https://github.com/rapidsai/cudf/issues/9990) does not support
+    // column pruning for now, we just fallback to CPU.
+    val optSchema = JsonDataSource(parsedOptions).inferSchema(sparkSession, files, parsedOptions)
+    if (optSchema.isEmpty) {
+      meta.willNotWorkOnGpu("The input files are empty.")
+    } else {
+      optSchema.foreach(inferred => {
+        val inferredFields = inferred.fieldNames.sortWith(_ < _)
+        val dataFields = dataSchema.fieldNames.sortWith(_ < _)
+        if (!inferredFields.sameElements(dataFields)) {
+          meta.willNotWorkOnGpu("GpuJsonScan does not support column pruning")
+        }
+      })
+    }
 
     if (!meta.conf.isJsonEnabled) {
       meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set " +

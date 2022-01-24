@@ -23,7 +23,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.json.JSONOptionsInRead
 import org.apache.spark.sql.execution.FileSourceScanExec
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -67,13 +67,17 @@ class GpuReadJsonFileFormat extends JsonFileFormat with GpuReadFileFormatWithMet
 object GpuReadJsonFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
+    val files = fsse.relation.location match {
+      case p: PartitioningAwareFileIndex => p.allFiles()
+      case others => others.listFiles(Nil, Nil).flatMap(_.files)
+    }
     GpuJsonScan.tagSupport(
       ShimLoader.getSparkShims.sessionFromPlan(fsse),
       fsse.relation.dataSchema,
       fsse.output.toStructType,
       fsse.relation.options,
-      meta
+      meta,
+      files
     )
   }
 }
-

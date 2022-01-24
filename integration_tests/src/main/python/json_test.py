@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from src.main.python.marks import approximate_float, allow_non_gpu
 
@@ -58,6 +58,7 @@ def test_json_infer_schema_round_trip(spark_tmp_path, data_gen, v1_enabled_list)
 @approximate_float
 @pytest.mark.parametrize('data_gen', json_supported_gens, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu('FileSourceScanExec')
 def test_json_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'
@@ -70,6 +71,7 @@ def test_json_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
             conf=updated_conf)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu('FileSourceScanExec')
 def test_json_input_meta(spark_tmp_path, v1_enabled_list):
     gen = StructGen([('a', long_gen), ('b', long_gen), ('c', long_gen)], nullable=False)
     first_data_path = spark_tmp_path + '/JSON_DATA/key=0'
@@ -94,6 +96,7 @@ json_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
 @pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu('FileSourceScanExec')
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'
@@ -122,6 +125,7 @@ json_supported_ts_parts = ['', # Just the date
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu('FileSourceScanExec')
 def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -139,3 +143,23 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .option('timestampFormat', full_format)\
                     .json(data_path),
             conf=updated_conf)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@pytest.mark.parametrize("schema",[
+    StructType([StructField("c", short_gen.data_type), StructField("b", long_gen.data_type)]),
+    StructType([StructField("a", int_gen.data_type)]),
+    StructType([StructField("a", int_gen.data_type), StructField("c", short_gen.data_type)])
+])
+@allow_non_gpu('FileSourceScanExec')
+def test_json_schema_prune_fallback(spark_tmp_path, v1_enabled_list, schema):
+    data_path = spark_tmp_path + '/JSON_DATA'
+    with_cpu_session(
+            lambda spark: three_col_df(spark, int_gen, long_gen, short_gen)
+                .write
+                .json(data_path))
+
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': "json"})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read
+            .schema(schema)
+            .json(data_path), updated_conf)
