@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, SubstringIndex}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -1378,4 +1378,95 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
       regex: GpuColumnVector,
       limit: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
+}
+
+class GpuStringToMapMeta(
+    expr: StringToMap,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends TernaryExprMeta[StringToMap](expr, conf, parent, rule) {
+  import GpuOverrides._
+
+  def checkRegex(delimExpr: Expression) : Unit = {
+    extractLit(delimExpr).foreach { delim =>
+      val str = delim.value.asInstanceOf[UTF8String]
+      if (str != null && !canRegexpBeTreatedLikeARegularString(str)) {
+        willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
+      }
+    }
+  }
+
+  override def tagExprForGpu(): Unit = {
+    checkRegex(expr.pairDelim)
+    checkRegex(expr.keyValueDelim)
+  }
+
+  override def convertToGpu(str: Expression,
+                            pairDelim: Expression,
+                            keyValueDelim: Expression): GpuExpression =
+    GpuStringToMap(str, pairDelim, keyValueDelim)
+}
+
+case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim: Expression)
+    extends GpuTernaryExpression with ExpectsInputTypes with NullIntolerant {
+
+  def this(str: Expression, pairDelim: Expression) = {
+    this(str, pairDelim, GpuLiteral(":", StringType))
+  }
+
+  def this(str: Expression) = {
+    this(str, GpuLiteral(",", StringType), GpuLiteral(":", StringType))
+  }
+
+  override def dataType: DataType = MapType(StringType, StringType)
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
+  override def first: Expression = str
+  override def second: Expression = pairDelim
+  override def third: Expression = keyValueDelim
+  override def prettyName: String = "str_to_map"
+
+  override def doColumnar(strs: GpuColumnVector,
+                          pairDelim: GpuScalar,
+                          keyValueDelim: GpuScalar): ColumnVector = {
+    val pairDelimStr = pairDelim.getValue.asInstanceOf[UTF8String]
+    val keyValueDelimStr = keyValueDelim.getValue.asInstanceOf[UTF8String]
+    //strs.getBase.stringSplitRecord(pairDelim.getBase, pairDelimStr, keyValueDelimStr)
+    strs.getBase
+  }
+
+  override def doColumnar(numRows: Int,
+                          val0: GpuScalar,
+                          val1: GpuScalar,
+                          val2: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, val0.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
+  private def notSupported = throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(val0: GpuColumnVector,
+                          val1: GpuColumnVector,
+                          val2: GpuColumnVector): ColumnVector = notSupported
+
+  override def doColumnar(val0: GpuScalar,
+                          val1: GpuColumnVector,
+                          val2: GpuColumnVector): ColumnVector = notSupported
+
+  override def doColumnar(val0: GpuScalar,
+                          val1: GpuScalar,
+                          val2: GpuColumnVector): ColumnVector = notSupported
+
+  override def doColumnar(val0: GpuScalar,
+                          val1: GpuColumnVector,
+                          val2: GpuScalar): ColumnVector = notSupported
+
+  override def doColumnar(val0: GpuColumnVector,
+                          val1: GpuScalar,
+                          val2: GpuColumnVector): ColumnVector = notSupported
+
+  override def doColumnar(val0: GpuColumnVector,
+                          val1: GpuColumnVector,
+                          val2: GpuScalar): ColumnVector = notSupported
 }
