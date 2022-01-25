@@ -213,6 +213,29 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 
 # ======= Test flat map group in Pandas =======
+
+# seperate the tests into before and after db 91. To verify
+# the new "zero-conf-conversion" feature introduced from db 9.1.
+@pytest.mark.skipif(not is_databricks91_or_later(), reason="zero-conf is supported only from db9.1")
+@ignore_order(local=True)
+@pytest.mark.parametrize('zero_enabled', [False, True])
+@pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
+def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
+    def pandas_add(data):
+        data.sum = data.b + data.a
+        return data
+
+    conf_with_zero = arrow_udf_conf.update({
+        'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.enabled': zero_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen)\
+                    .groupBy('a')\
+                    .applyInPandas(pandas_add, schema="a long, b long"),
+            conf=conf_with_zero)
+
+
+@pytest.mark.skipif(is_databricks91_or_later(), reason="This is tested by other tests from db9.1")
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_group_apply_udf(data_gen):
