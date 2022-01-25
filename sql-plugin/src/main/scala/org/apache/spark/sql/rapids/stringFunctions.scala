@@ -1391,8 +1391,15 @@ class GpuStringToMapMeta(
   private def checkRegex(delimExpr: Expression) : Unit = {
     extractLit(delimExpr).foreach { delim =>
       val str = delim.value.asInstanceOf[UTF8String]
-      if (str != null && !canRegexpBeTreatedLikeARegularString(str)) {
-        willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
+      if (str != null){
+        if(!canRegexpBeTreatedLikeARegularString(str)) {
+          willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
+        }
+        if (str.numChars() == 0) {
+          willNotWorkOnGpu("delimiter is empty")
+        }
+      } else {
+        willNotWorkOnGpu("delimiter is null")
       }
     }
   }
