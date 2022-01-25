@@ -225,7 +225,8 @@ def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
         data.sum = data.b + data.a
         return data
 
-    conf_with_zero = arrow_udf_conf.update({
+    conf_with_zero = arrow_udf_conf.copy()
+    conf_with_zero.update({
         'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.enabled': zero_enabled
     })
     assert_gpu_and_cpu_are_equal_collect(
