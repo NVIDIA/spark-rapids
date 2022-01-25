@@ -2650,7 +2650,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringToMap](
       "Creates a map after splitting the input into key-value pairs using delimiters",
-      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("keyValueDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
