@@ -255,6 +255,11 @@ _grpkey_small_decimals = [
     ('b', DecimalGen(precision=5, scale=2)),
     ('c', DecimalGen(precision=8, scale=3))]
 
+_grpkey_big_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=32, scale=10, nullable=(True, 10.0)), length=50)),
+    ('b', DecimalGen(precision=20, scale=2)),
+    ('c', DecimalGen(precision=36, scale=5))]
+
 _grpkey_short_mid_decimals = [
     ('a', RepeatSeqGen(short_gen, length=50)),
     ('b', decimal_gen_18_3),
@@ -294,7 +299,7 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
 _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
-    _grpkey_small_decimals, _grpkey_short_mid_decimals, 
+    _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
@@ -303,8 +308,9 @@ _init_list_full_decimal = [_grpkey_short_full_decimals,
     _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
+# or results in using too much memory on the GPU
 @nightly_gpu_mem_consuming_case
-@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31, 30], ids=idfn)
+@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
 def test_hash_reduction_decimal_overflow_sum(precision):
     constant = '9' * precision
     count = pow(10, 38 - precision)
@@ -417,27 +423,16 @@ def test_hash_avg_nulls_partial_only(data_gen):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 def test_intersectAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)),
         conf=allow_negative_scale_of_decimal_conf)
 
-# Grouping by a 128-bit decimal value is not currently supported, so HashAggregateExec runs on
-# CPU followed by expression replicateRows which supports decimal128.
-@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', [_grpkey_short_big_decimals], ids=idfn)
-def test_intersectAll_decimal128(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
-
-@approximate_float
-@ignore_order
-@incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')),
@@ -446,7 +441,7 @@ def test_exceptAll(data_gen):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -454,7 +449,7 @@ def test_hash_grpby_pivot(data_gen, conf):
             .groupby('a')
             .pivot('b')
             .agg(f.sum('c')),
-        conf=conf)
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
 
 @approximate_float
 @ignore_order(local=True)

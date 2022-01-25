@@ -1,0 +1,8 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2021, NVIDIA CORPORATION.
+65c65
+<       GpuOverrides.explainPotentialGpuPlan(df, explain)
+---
+>       ShimLoader.newExplainPlan.explainPotentialGpuPlan(df, explain)

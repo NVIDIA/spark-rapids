@@ -1,0 +1,9 @@
+4c4
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+14a15,18
+> 
+>   /**
+>    * Convert what this wraps to a GPU enabled version.
+>    */

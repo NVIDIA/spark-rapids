@@ -1,0 +1,9 @@
+32c32,37
+<   
+---
+> 
+>           override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+>             GpuAverage(childExprs.head)
+> 
+>           // Average is not supported in ANSI mode right now, no matter the type
+>           override val ansiTypeToCheck: Option[DataType] = None
