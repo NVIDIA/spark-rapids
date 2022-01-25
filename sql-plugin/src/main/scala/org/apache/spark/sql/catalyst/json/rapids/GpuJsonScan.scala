@@ -142,7 +142,7 @@ object GpuJsonScan {
 
     parsedOptions.encoding.foreach(enc =>
       if (enc != StandardCharsets.UTF_8.name() && enc != StandardCharsets.US_ASCII.name()) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 encoded data")
+      meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
     })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
