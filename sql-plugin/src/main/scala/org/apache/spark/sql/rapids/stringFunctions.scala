@@ -1388,11 +1388,11 @@ class GpuStringToMapMeta(
     extends TernaryExprMeta[StringToMap](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  def checkRegex(delimExpr: Expression) : Unit = {
+  private def checkRegex(delimExpr: Expression) : Unit = {
     extractLit(delimExpr).foreach { delim =>
       val str = delim.value.asInstanceOf[UTF8String]
       if (str != null && !canRegexpBeTreatedLikeARegularString(str)) {
-        willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
+//        willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
       }
     }
   }
@@ -1408,8 +1408,8 @@ class GpuStringToMapMeta(
     GpuStringToMap(str, pairDelim, keyValueDelim)
 }
 
-case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim: Expression)
-    extends GpuTernaryExpression with ExpectsInputTypes with NullIntolerant {
+case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim: Expression)
+    extends GpuExpression with ExpectsInputTypes with NullIntolerant {
 
   def this(str: Expression, pairDelim: Expression) = {
     this(str, pairDelim, GpuLiteral(":", StringType))
@@ -1421,12 +1421,12 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
 
   override def dataType: DataType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
-  override def first: Expression = str
-  override def second: Expression = pairDelim
-  override def third: Expression = keyValueDelim
   override def prettyName: String = "str_to_map"
+  override def children: Seq[Expression] = Seq(strs, pairDelim, keyValueDelim)
+  override def nullable: Boolean = children.head.nullable
+  override def foldable: Boolean = children.forall(_.foldable)
 
-  override def doColumnar(strs: GpuColumnVector,
+  def doColumnar(strs: GpuColumnVector,
                           pairDelim: GpuScalar,
                           keyValueDelim: GpuScalar): ColumnVector = {
     val pairDelimStr = pairDelim.getValue.asInstanceOf[UTF8String]
@@ -1435,7 +1435,7 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
     strs.getBase
   }
 
-  override def doColumnar(numRows: Int,
+  def doColumnar(numRows: Int,
                           val0: GpuScalar,
                           val1: GpuScalar,
                           val2: GpuScalar): ColumnVector = {
@@ -1444,29 +1444,21 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
     }
   }
 
-  private def notSupported = throw new IllegalStateException("This is not supported yet")
-
-  override def doColumnar(val0: GpuColumnVector,
-                          val1: GpuColumnVector,
-                          val2: GpuColumnVector): ColumnVector = notSupported
-
-  override def doColumnar(val0: GpuScalar,
-                          val1: GpuColumnVector,
-                          val2: GpuColumnVector): ColumnVector = notSupported
-
-  override def doColumnar(val0: GpuScalar,
-                          val1: GpuScalar,
-                          val2: GpuColumnVector): ColumnVector = notSupported
-
-  override def doColumnar(val0: GpuScalar,
-                          val1: GpuColumnVector,
-                          val2: GpuScalar): ColumnVector = notSupported
-
-  override def doColumnar(val0: GpuColumnVector,
-                          val1: GpuScalar,
-                          val2: GpuColumnVector): ColumnVector = notSupported
-
-  override def doColumnar(val0: GpuColumnVector,
-                          val1: GpuColumnVector,
-                          val2: GpuScalar): ColumnVector = notSupported
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResourceIfAllowed(strs.columnarEval(batch)) { val0 =>
+      withResourceIfAllowed(pairDelim.columnarEval(batch)) { val1 =>
+        withResourceIfAllowed(keyValueDelim.columnarEval(batch)) { val2 =>
+          (val0, val1, val2) match {
+            case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: GpuScalar, v1: GpuScalar, v2: GpuScalar) =>
+              GpuColumnVector.from(doColumnar(batch.numRows(), v0, v1, v2), dataType)
+            case (v0, v1, v2) =>
+              throw new UnsupportedOperationException(s"Unsupported data '($v0: ${v0.getClass}," +
+                s" $v1: ${v1.getClass}, $v2: ${v2.getClass})' for GpuStringToMap.")
+          }
+        }
+      }
+    }
+  }
 }
