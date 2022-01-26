@@ -1432,7 +1432,9 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
     this(str, GpuLiteral(",", StringType), GpuLiteral(":", StringType))
   }
 
-  override def dataType: DataType = MapType(StringType, StringType)
+  // The original StringToMap class define dataType as "DataType", not "MapType".
+  // Not sure if using "MapType" is correct.
+  override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
   override def children: Seq[Expression] = Seq(strs, pairDelim, keyValueDelim)
@@ -1461,10 +1463,25 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
   private def toMap(strs: GpuColumnVector,
                     pairDelim: GpuScalar,
                     keyValueDelim: GpuScalar): GpuColumnVector = {
-    val pairDelimStr = pairDelim.getValue.asInstanceOf[UTF8String]
-    val keyValueDelimStr = keyValueDelim.getValue.asInstanceOf[UTF8String]
-    //strs.getBase.stringSplitRecord(pairDelim.getBase, pairDelimStr, keyValueDelimStr)
     GpuColumnVector.from(strs.getBase, dataType)
+
+    // Split the input strings into lists of strings.
+    withResource(strs.getBase.stringSplitRecord(pairDelim.getBase)) { stringLists =>
+      // Extract child strings column from the output lists column.
+      withResource(stringLists.getChildColumnView(0)) { stringsCol =>
+        // Split the key-value strings into pairs of strings of key-value (using maxSplit = 1).
+        // withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keyValuePairs =>
+        withResource(stringsCol.stringSplit(keyValueDelim.getBase)) { keyValuePairs =>
+
+          // TODO: Not sure if `keyValuePairs.getColumn()` needs to be wrapped in `withResource`?
+          withResource(ColumnVector.makeStruct(keyValuePairs.getColumn(0),
+            keyValuePairs.getColumn(1))) { structs =>
+              GpuCreateMap.createMapFromKeysValuesAsStructs(strs.getRowCount.toInt,
+                dataType, Seq(structs))
+          }
+        }
+      }
+    }
   }
 
 }
