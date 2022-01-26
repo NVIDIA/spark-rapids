@@ -27,9 +27,9 @@ json_supported_gens = [
     StringGen('[aAbB ]{0,10}'),
     byte_gen, short_gen, int_gen, long_gen, boolean_gen,
     pytest.param(double_gen),
-    pytest.param(FloatGen(no_nans=True)),
+    pytest.param(FloatGen(no_nans=False)),
     pytest.param(float_gen),
-    DoubleGen(no_nans=True)
+    DoubleGen(no_nans=False)
 ]
 
 _enable_all_types_conf = {

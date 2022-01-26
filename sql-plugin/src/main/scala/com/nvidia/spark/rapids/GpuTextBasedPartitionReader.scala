@@ -16,11 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ListBuffer
 import scala.math.max
+
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
+
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -28,8 +31,6 @@ import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, Partit
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable.ListBuffer
 
 /**
  * The text based PartitionReader
@@ -166,6 +167,7 @@ abstract class GpuTextBasedPartitionReader(
           readDataSchema
         }
 
+        // read floating-point columns as strings in cuDF
         val dataSchemaWithStrings = StructType(dataSchema.fields
           .map(f => {
             f.dataType match {
@@ -187,7 +189,8 @@ abstract class GpuTextBasedPartitionReader(
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
-        val t2 = withResource(table) { _ =>
+        // parse floating-point columns that were read as strings
+        val castTable = withResource(table) { _ =>
           val columns = new ListBuffer[ColumnVector]()
           val ansiEnabled = SQLConf.get.ansiEnabled
           for (i <- 0 until table.getNumberOfColumns) {
@@ -204,7 +207,7 @@ abstract class GpuTextBasedPartitionReader(
           new Table(columns: _*)
         }
 
-        handleResult(newReadDataSchema, t2)
+        handleResult(newReadDataSchema, castTable)
       }
     } finally {
       dataBuffer.close()
