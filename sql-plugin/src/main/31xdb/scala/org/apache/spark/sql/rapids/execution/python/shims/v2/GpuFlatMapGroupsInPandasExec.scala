@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
-import org.apache.spark.sql.rapids.execution.python.{GpuPythonExecBase, GpuPythonHelper, GpuPythonUDF, GroupArgs}
+import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonRunner, GpuPythonExecBase, GpuPythonHelper, GpuPythonUDF, GroupArgs}
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
@@ -120,6 +120,10 @@ case class GpuFlatMapGroupsInPandasExec(
     val pythonOutputSchema = StructType(
         StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
+    // Configs from DB 9.1 runtime
+    val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
+    val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
+
     // Resolve the argument offsets and related attributes.
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
         resolveArgOffsets(child, groupingAttributes)
@@ -138,24 +142,39 @@ case class GpuFlatMapGroupsInPandasExec(
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        // DB SPECIFIC serializer
-        val pyRunner = new GpuGroupUDFArrowPythonRunner(
-          chainedFunc,
-          PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-          Array(argOffsets),
-          StructType.fromAttributes(dedupAttrs),
-          sessionLocalTimeZone,
-          pythonRunnerConf,
-          // The whole group data should be written in a single call, so here is unlimited
-          Int.MaxValue,
-          spillCallback.semaphoreWaitTime,
-          onDataWriteFinished = null,
-          pythonOutputSchema,
-          // We can not assert the result batch from Python has the same row number with the
-          // input batch. Because Grouped Map UDF allows the output of arbitrary length.
-          // So try to read as many as possible by specifying `minReadTargetBatchSize` as
-          // `Int.MaxValue` here.
-          Int.MaxValue)
+        // Choose the right DB SPECIFIC serializer from 9.1 runtime.
+        val pyRunner = if (zeroConfEnabled && maxBytes > 0L) {
+          new GpuGroupUDFArrowPythonRunner(
+            chainedFunc,
+            PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+            Array(argOffsets),
+            StructType.fromAttributes(dedupAttrs),
+            sessionLocalTimeZone,
+            pythonRunnerConf,
+            // The whole group data should be written in a single call, so here is unlimited
+            Int.MaxValue,
+            spillCallback.semaphoreWaitTime,
+            onDataWriteFinished = null,
+            pythonOutputSchema,
+            // We can not assert the result batch from Python has the same row number with the
+            // input batch. Because Grouped Map UDF allows the output of arbitrary length.
+            // So try to read as many as possible by specifying `minReadTargetBatchSize` as
+            // `Int.MaxValue` here.
+            Int.MaxValue)
+        } else {
+          new GpuArrowPythonRunner(
+            chainedFunc,
+            PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+            Array(argOffsets),
+            StructType.fromAttributes(dedupAttrs),
+            sessionLocalTimeZone,
+            pythonRunnerConf,
+            Int.MaxValue,
+            spillCallback.semaphoreWaitTime,
+            onDataWriteFinished = null,
+            pythonOutputSchema,
+            Int.MaxValue)
+        }
 
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
