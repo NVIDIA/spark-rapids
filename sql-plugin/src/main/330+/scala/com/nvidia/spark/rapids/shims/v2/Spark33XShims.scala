@@ -73,7 +73,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
               " on datasource V2 yet.")
           } else if (a.pushedAggregate.nonEmpty) {
             willNotWorkOnGpu(
-              "Implementing aggregate push down on GPU gains little performance improvement"
+              "aggregates pushed into Parquet read, which is a metadata only operation"
             )
           }
         }
