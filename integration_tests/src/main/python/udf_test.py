@@ -214,7 +214,7 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 # ======= Test flat map group in Pandas =======
 
-# seperate the tests into before and after db 91. To verify
+# separate the tests into before and after db 91. To verify
 # the new "zero-conf-conversion" feature introduced from db 9.1.
 @pytest.mark.skipif(not is_databricks91_or_later(), reason="zero-conf is supported only from db9.1")
 @ignore_order(local=True)
