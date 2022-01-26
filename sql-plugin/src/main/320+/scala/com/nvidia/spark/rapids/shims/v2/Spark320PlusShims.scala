@@ -29,8 +29,8 @@ import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
-import org.apache.spark.SparkEnv
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
