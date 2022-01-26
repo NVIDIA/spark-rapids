@@ -17,18 +17,19 @@
 package com.nvidia.spark.rapids
 
 import scala.math.max
-
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
-
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
-import org.apache.spark.sql.types.{StructField, StructType}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.collection.mutable.ListBuffer
 
 /**
  * The text based PartitionReader
@@ -164,7 +165,18 @@ abstract class GpuTextBasedPartitionReader(
         } else {
           readDataSchema
         }
-        val cudfSchema = GpuColumnVector.from(dataSchema)
+
+        val dataSchemaWithStrings = StructType(dataSchema.fields
+          .map(f => {
+            f.dataType match {
+              case DataTypes.FloatType | DataTypes.DoubleType =>
+                f.copy(dataType = DataTypes.StringType)
+              case _ =>
+                f
+            }
+          }))
+        val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
+
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
@@ -175,7 +187,24 @@ abstract class GpuTextBasedPartitionReader(
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
-        handleResult(newReadDataSchema, table)
+        val t2 = withResource(table) { _ =>
+          val columns = new ListBuffer[ColumnVector]()
+          val ansiEnabled = SQLConf.get.ansiEnabled
+          for (i <- 0 until table.getNumberOfColumns) {
+            val castColumn = dataSchema.fields(i).dataType match {
+              case DataTypes.FloatType =>
+                GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
+              case DataTypes.DoubleType =>
+                GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT64)
+              case _ =>
+                table.getColumn(i)
+            }
+            columns += castColumn
+          }
+          new Table(columns: _*)
+        }
+
+        handleResult(newReadDataSchema, t2)
       }
     } finally {
       dataBuffer.close()

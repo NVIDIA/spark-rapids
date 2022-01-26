@@ -26,11 +26,9 @@ json_supported_gens = [
     StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
     StringGen('[aAbB ]{0,10}'),
     byte_gen, short_gen, int_gen, long_gen, boolean_gen,
-    # Once https://github.com/NVIDIA/spark-rapids/issues/125 and https://github.com/NVIDIA/spark-rapids/issues/124
-    # are fixed we should not have to special case float values any more.
-    pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-    pytest.param(FloatGen(no_nans=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124')),
-    pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
+    pytest.param(double_gen),
+    pytest.param(FloatGen(no_nans=True)),
+    pytest.param(float_gen),
     DoubleGen(no_nans=True)
 ]
 
