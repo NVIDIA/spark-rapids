@@ -1474,6 +1474,8 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
         withResource(stringsCol.stringSplit(keyValueDelim.getBase)) { keyValuePairs =>
 
           // TODO: Not sure if `keyValuePairs.getColumn()` needs to be wrapped in `withResource`?
+          // TODO: This is wrong, need to create lists of structs first before passing into
+          //  createMapFromKeysValuesAsStructs. That function should accept lists of structs, instead of structs.
           withResource(ColumnVector.makeStruct(keyValuePairs.getColumn(0),
             keyValuePairs.getColumn(1))) { structs =>
               GpuCreateMap.createMapFromKeysValuesAsStructs(strs.getRowCount.toInt,
