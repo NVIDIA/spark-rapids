@@ -29,8 +29,8 @@ import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
-
 import org.apache.spark.SparkEnv
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
@@ -44,7 +44,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
-import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command._
@@ -534,15 +534,24 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           // FileSourceScan is independent from the replacement of the partitionFilters. It is
           // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
           // are on the GPU. And vice versa.
-          private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
-            filter.transformDown {
-              case dpe@DynamicPruningExpression(inSub: InSubqueryExec)
-                if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
-
-                val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
-                subBcMeta.tagForExplain()
-                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
-                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+          private lazy val partitionFilters = {
+            val convertBroadcast = (bc: SubqueryBroadcastExec) => {
+              val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
+              meta.tagForExplain()
+              meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+            }
+            wrapped.partitionFilters.map { filter =>
+              filter.transformDown {
+                case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+                  inSub.plan match {
+                    case bc: SubqueryBroadcastExec =>
+                      dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+                    case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
+                      dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+                    case _ =>
+                      dpe
+                  }
+              }
             }
           }
 

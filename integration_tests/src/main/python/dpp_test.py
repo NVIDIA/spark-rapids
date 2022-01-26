@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -100,6 +100,25 @@ _statements = [
     WHERE dim.filter = {2}
     GROUP BY fact.key, fact.skey, fact.ex_key
     ''',
+    # This query checks the pattern of reused broadcast subquery: ReusedSubquery(SubqueryBroadcast(...))
+    # https://github.com/NVIDIA/spark-rapids/issues/4625
+    """
+    SELECT key, max(value)
+    FROM (
+        SELECT fact.key as key, fact.value as value
+        FROM {0} fact
+        JOIN {1} dim
+        ON fact.key = dim.key
+        WHERE dim.filter = {2}
+    UNION ALL
+        SELECT fact.key as key, fact.value as value
+        FROM {0} fact
+        JOIN {1} dim
+        ON fact.key = dim.key
+        WHERE dim.filter = {2}
+    )
+    GROUP BY key
+    """
 ]
 
 
