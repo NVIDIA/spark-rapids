@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ else
         CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER*.jar)
-        UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/../udf-examples/target/rapids-4-spark-udf-examples*.jar)
+        UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/target/dependency/rapids-4-spark-udf-examples*.jar)
     fi
     ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $UDF_EXAMPLE_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"

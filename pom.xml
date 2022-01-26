@@ -135,7 +135,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -188,7 +187,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>aggregator</module>
                 <module>tools</module>
                 <module>api_validation</module>
@@ -240,7 +238,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -292,7 +289,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -348,7 +344,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
@@ -413,7 +408,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -478,7 +472,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -532,7 +525,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
@@ -589,7 +581,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
@@ -643,7 +634,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -696,7 +686,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -749,7 +738,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -801,7 +789,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
@@ -863,7 +850,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>udf-examples</module>
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
