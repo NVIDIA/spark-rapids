@@ -1392,9 +1392,14 @@ class GpuStringToMapMeta(
     extractLit(delimExpr).foreach { delim =>
       val str = delim.value.asInstanceOf[UTF8String]
       if (str != null){
-        if(!canRegexpBeTreatedLikeARegularString(str)) {
-          willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
-        }
+        //
+        // Currently, we don't support regex. However, we can't check for regex very accurately.
+        // As such, just treat the delimiter string as a literal string without regex.
+        // In the future, we can re-enable regex check when it is improved.
+        //
+        // if(!canRegexpBeTreatedLikeARegularString(str)) {
+        //   willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
+        // }
         if (str.numChars() == 0) {
           willNotWorkOnGpu("delimiter is empty")
         }
@@ -1405,6 +1410,7 @@ class GpuStringToMapMeta(
   }
 
   override def tagExprForGpu(): Unit = {
+    // Will this work with GpuLiteral?
     checkRegex(expr.pairDelim)
     checkRegex(expr.keyValueDelim)
   }
