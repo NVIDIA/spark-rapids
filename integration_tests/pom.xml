@@ -268,23 +268,6 @@
                             </artifactItems>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>copy-udf-examples</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>copy</goal>
-                        </goals>
-                        <configuration>
-                            <useBaseVersion>true</useBaseVersion>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-udf-examples_2.12</artifactId>
-                                    <version>${project.version}</version>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
                 </executions>
             </plugin>
             <plugin>

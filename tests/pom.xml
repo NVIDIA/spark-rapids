@@ -75,13 +75,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <!-- It's from https://github.com/NVIDIA/spark-rapids-examples/tree/branch-xx.xx/examples/Spark-Rapids/udf-examples  -->
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
