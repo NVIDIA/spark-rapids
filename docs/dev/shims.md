@@ -16,7 +16,7 @@ common code, maximize reuse, and minimize logic duplication.
 This is achieved by using a ServiceProvider pattern. All Shims implement the same API, 
 the suitable Shim implementation is loaded after detecting the current Spark build version
 attempting to instantiate our plugin. We use the
-[ShimLoader](../sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimLoader.scala)
+[ShimLoader](../../sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimLoader.scala)
 class as a tight entry point for interacting with the host Spark runtime.
 
 In the following we provide recipes for typical scenarios addressed by the Shim layer.
@@ -43,8 +43,8 @@ between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes di
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.v2.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
 issue as you can see e.g., comparing TreeNode:
-1. [ShimExpression For 3.0.x and 3.1.x](../sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala#L23)
-2. [ShimExpression For 3.2.x](../sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala#L23)
+1. [ShimExpression For 3.0.x and 3.1.x](../../sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala#L23)
+2. [ShimExpression For 3.2.x](../../sql-plugin/src/main/post320-treenode/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala#L23)
 
 This resolves compile-time problems, however, now we face the problem at run time.
 
@@ -105,7 +105,7 @@ has not been loaded yet. More accurately, it may not be strictly needed until la
 query can be run when the Spark SQL session and its extensions are initialized. It improves the 
 user experience if the first query is not penalized beyond necessary though. By design, Plugin guarantees 
 that the classloader is 
-[set up at load time](../sql-plugin/src/main/scala/com/nvidia/spark/SQLPlugin.scala#L29)
+[set up at load time](../../sql-plugin/src/main/scala/com/nvidia/spark/SQLPlugin.scala#L29)
 before the DriverPlugin and ExecutorPlugin instances are called the `init` method on. 
 
 By making a visible class merely a wrapper of the real implementation, extending `scala.Proxy` where `self` is a lazy
