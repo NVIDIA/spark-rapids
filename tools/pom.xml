@@ -110,14 +110,9 @@
                             </artifactSet>
                             <filters>
                                 <filter>
-                                    <artifact>org.rogach:scallop_${scala.binary.version}:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.MF</exclude>
-                                    </excludes>
-                                </filter>
-                                <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
+                                        <exclude>META-INF/*.MF</exclude>
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
