@@ -71,7 +71,8 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
           if (a.isInstanceOf[SupportsRuntimeFiltering]) {
             willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
               " on datasource V2 yet.")
-          } else if (a.pushedAggregate.nonEmpty) {
+          }
+          if (a.pushedAggregate.nonEmpty) {
             willNotWorkOnGpu(
               "aggregates pushed into Parquet read, which is a metadata only operation"
             )
