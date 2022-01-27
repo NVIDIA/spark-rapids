@@ -14,27 +14,28 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.udf
+package com.nvidia.spark.rapids.tests.udf.scala
 
-import java.net.URLEncoder
+import java.net.URLDecoder
 
-import ai.rapids.cudf.{ColumnVector, DType}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.RapidsUDF
 
 /**
- * A Scala user-defined function (UDF) that URL-encodes strings.
+ * A Scala user-defined function (UDF) that decodes URL-encoded strings.
  * This class demonstrates how to implement a Scala UDF that also
  * provides a RAPIDS implementation that can run on the GPU when the query
  * is executed with the RAPIDS Accelerator for Apache Spark.
  */
-class URLEncode extends Function[String, String] with RapidsUDF with Serializable {
+class URLDecode extends Function[String, String] with RapidsUDF with Serializable {
   /** Row-by-row implementation that executes on the CPU */
   override def apply(s: String): String = {
     Option(s).map { s =>
-      URLEncoder.encode(s, "utf-8")
-        .replace("+", "%20")
-        .replace("*", "%2A")
-        .replace("%7E", "~")
+      try {
+        URLDecoder.decode(s, "utf-8")
+      } catch {
+        case _: IllegalArgumentException => s
+      }
     }.orNull
   }
 
@@ -45,6 +46,24 @@ class URLEncode extends Function[String, String] with RapidsUDF with Serializabl
     require(args.length == 1, s"Unexpected argument count: ${args.length}")
     val input = args.head
     require(input.getType == DType.STRING, s"Argument type is not a string: ${input.getType}")
-    input.urlEncode()
+
+    // The cudf urlDecode does not convert '+' to a space, so do that as a pre-pass first.
+    // All intermediate results are closed to avoid leaking GPU resources.
+    val plusScalar = Scalar.fromString("+")
+    try {
+      val spaceScalar = Scalar.fromString(" ")
+      try {
+        val replaced = input.stringReplace(plusScalar, spaceScalar)
+        try {
+          replaced.urlDecode()
+        } finally {
+          replaced.close()
+        }
+      } finally {
+        spaceScalar.close()
+      }
+    } finally {
+      plusScalar.close()
+    }
   }
 }

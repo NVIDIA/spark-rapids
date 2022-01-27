@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.udf.{URLDecode, URLEncode}
+import com.nvidia.spark.rapids.tests.udf.scala.{URLDecode, URLEncode}
 
 import org.apache.spark.sql.functions.col
 
