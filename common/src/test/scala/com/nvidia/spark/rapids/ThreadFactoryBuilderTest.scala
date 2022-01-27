@@ -16,17 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{Callable, Executors, ExecutorService}
+import java.util.concurrent.{Callable, Executors}
 
 import org.scalatest.FunSuite
 
 class ThreadFactoryBuilderTest extends FunSuite {
 
   test("test thread factory builder") {
-    var pool1: ExecutorService = null
+    val pool1 = Executors.newFixedThreadPool(2,
+      new ThreadFactoryBuilder().setNameFormat("thread-pool1-1 %s").setDaemon(true).build())
     try {
-      pool1 = Executors.newFixedThreadPool(2,
-        new ThreadFactoryBuilder().setNameFormat("thread-pool1-1 %s").setDaemon(true).build())
       var ret = pool1.submit(new Callable[String] {
         override def call(): String = {
           assert(Thread.currentThread().isDaemon)
@@ -43,14 +42,12 @@ class ThreadFactoryBuilderTest extends FunSuite {
       })
       ret.get()
     } finally {
-      if (pool1 != null) pool1.shutdown()
+      pool1.shutdown()
     }
 
-    var pool2: ExecutorService = null
+    val pool2 = Executors.newFixedThreadPool(2,
+      new ThreadFactoryBuilder().setNameFormat("pool2-%d").build())
     try {
-      pool2 = Executors.newFixedThreadPool(2,
-        new ThreadFactoryBuilder().setNameFormat("pool2-%d").build())
-
       var ret = pool2.submit(new Callable[String] {
         override def call(): String = {
           assert(!Thread.currentThread().isDaemon)
@@ -66,7 +63,21 @@ class ThreadFactoryBuilderTest extends FunSuite {
       })
       ret.get()
     } finally {
-      if (pool2 != null) pool2.shutdown()
+      pool2.shutdown()
+    }
+
+    val pool3 = Executors.newFixedThreadPool(2,
+      new ThreadFactoryBuilder().setNameFormat("pool3-%d").setDaemon(false).build())
+    try {
+      pool3.submit(new Callable[String] {
+        override def call(): String = {
+          assert(!Thread.currentThread().isDaemon)
+          assert(Thread.currentThread().getName == "pool3-0")
+          ""
+        }
+      }).get()
+    } finally {
+      pool3.shutdown()
     }
   }
 }
