@@ -800,11 +800,9 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to true enables orc output acceleration. We default it to false is because " +
-      "there is an ORC bug that ORC Java library fails to read ORC file without statistics in " +
-      "RowIndex. For more details, please refer to https://issues.apache.org/jira/browse/ORC-1075")
+    .doc("When set to false disables orc output acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
@@ -1377,7 +1375,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```

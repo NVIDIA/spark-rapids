@@ -59,7 +59,7 @@ object JoinTypeChecks {
   val CONDITION = "condition"
 
   private[this] val cudfSupportedKeyTypes =
-    (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested()
+    (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested()
   private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
 
   private[this] val joinRideAlongTypes =
@@ -104,25 +104,19 @@ object GpuHashJoin extends Arm {
       conditionMeta: Option[BaseExprMeta[_]]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
 
-    def unSupportNonEqualCondition(): Unit = if (conditionMeta.isDefined) {
-      meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-    }
-    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
-      meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
-    }
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
-      case LeftSemi | LeftAnti =>
-        unSupportNonEqualCondition()
       case FullOuter =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
         // FullOuter join cannot support with struct keys as two issues below
         //  * https://github.com/NVIDIA/spark-rapids/issues/2126
         //  * https://github.com/rapidsai/cudf/issues/7947
-        unSupportStructKeys()
+        if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+          meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
+        }
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
@@ -475,17 +469,26 @@ class ConditionalHashJoinIterator(
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
           val maps = joinType match {
-            case _: InnerLike => Table.mixedInnerJoinGatherMaps(
-              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
-            case LeftOuter => Table.mixedLeftJoinGatherMaps(
-              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case _: InnerLike =>
+              Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality)
+            case LeftOuter =>
+              Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality)
             case RightOuter =>
               // Reverse the output of the join, because we expect the right gather map to
               // always be on the right
               Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
                 compiledCondition, nullEquality).reverse
-            case FullOuter => Table.mixedFullJoinGatherMaps(
-              leftKeys, rightKeys, leftTable, rightTable, compiledCondition, nullEquality)
+            case FullOuter =>
+              Table.mixedFullJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality)
+            case LeftSemi =>
+              Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality))
+            case LeftAnti =>
+              Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, nullEquality))
             case _ =>
               throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
                   s" supported")
