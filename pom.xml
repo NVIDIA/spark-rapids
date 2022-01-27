@@ -615,7 +615,7 @@
                         <artifactId>build-helper-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>add-profile-src-320</id>
+                                <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
@@ -678,7 +678,7 @@
                         <artifactId>build-helper-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>add-profile-src-321</id>
+                                <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
@@ -741,7 +741,7 @@
                         <artifactId>build-helper-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>add-profile-src-322</id>
+                                <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
                                 <phase>generate-sources</phase>
                                 <configuration>
@@ -804,7 +804,7 @@
                         <artifactId>build-helper-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>add-profile-src-330</id>
+                                <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
