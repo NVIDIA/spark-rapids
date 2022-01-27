@@ -245,6 +245,8 @@ csv_supported_gens = [
         # This would require multiLine reads to work correctly so we avoid these chars
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
         StringGen('[aAbB ]{0,10}'),
+        StringGen('[nN][aA][nN]'),
+        StringGen('[+-]?[iI][nN][fF]([iI][nN][iI][tT][yY])?'),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen,
         DoubleGen(no_nans=False),
         pytest.param(double_gen),

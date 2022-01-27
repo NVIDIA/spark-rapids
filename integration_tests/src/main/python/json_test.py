@@ -25,6 +25,8 @@ json_supported_gens = [
     # This would require multiLine reads to work correctly, so we avoid these chars
     StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
     StringGen('[aAbB ]{0,10}'),
+    StringGen('[nN][aA][nN]'),
+    StringGen('[+-]?[iI][nN][fF]([iI][nN][iI][tT][yY])?'),
     byte_gen, short_gen, int_gen, long_gen, boolean_gen,
     pytest.param(double_gen),
     pytest.param(FloatGen(no_nans=False)),
@@ -35,6 +37,31 @@ json_supported_gens = [
 _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
     'spark.rapids.sql.format.json.read.enabled': 'true'}
+
+_float_schema = StructType([
+    StructField('number', FloatType())])
+
+_double_schema = StructType([
+    StructField('number', DoubleType())])
+
+def read_json_df(data_path, schema, options = {}):
+    def read_impl(spark):
+        reader = spark.read
+        if not schema is None:
+            reader = reader.schema(schema)
+        for key, value in options.items():
+            reader = reader.option(key, value)
+        return debug_df(reader.json(data_path))
+    return read_impl
+
+def read_json_sql(data_path, schema, options = {}):
+    opts = options
+    if not schema is None:
+        opts = copy_and_update(options, {'schema': schema})
+    def read_impl(spark):
+        spark.sql('DROP TABLE IF EXISTS `TMP_json_TABLE`')
+        return spark.catalog.createTable('TMP_json_TABLE', source='json', path=data_path, **opts)
+    return read_impl
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -137,3 +164,14 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .option('timestampFormat', full_format)\
                     .json(data_path),
             conf=updated_conf)
+
+@pytest.mark.parametrize('filename', ['nan_and_inf.json'])
+@pytest.mark.parametrize('schema', [_float_schema, _double_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers):
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+        schema,
+        { "allowNonNumericNumbers": allow_non_numeric_numbers }),
+        conf=_enable_all_types_conf)
