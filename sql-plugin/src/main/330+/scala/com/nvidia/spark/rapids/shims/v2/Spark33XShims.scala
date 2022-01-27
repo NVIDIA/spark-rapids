@@ -57,24 +57,4 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    (super.getExprs.values ++ Seq(
-      GpuOverrides.expr[BitLength](
-        "The bit length of string data",
-        ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
-                                TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
-        (a, conf, p, r) => new UnaryExprMeta[BitLength](a, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = GpuBitLength(child)
-        }),
-      GpuOverrides.expr[OctetLength](
-        "The bit length of string data",
-        ExprChecks.unaryProject(
-          TypeSig.INT, TypeSig.INT,
-          TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
-        (a, conf, p, r) => new UnaryExprMeta[OctetLength](a, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
-        })
-      )).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-  }
 }
