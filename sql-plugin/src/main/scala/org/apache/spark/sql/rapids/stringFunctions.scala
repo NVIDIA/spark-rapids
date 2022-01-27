@@ -1410,7 +1410,6 @@ class GpuStringToMapMeta(
   }
 
   override def tagExprForGpu(): Unit = {
-    // Will this work with GpuLiteral?
     checkRegex(expr.pairDelim)
     checkRegex(expr.keyValueDelim)
   }
@@ -1432,8 +1431,6 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
     this(str, GpuLiteral(",", StringType), GpuLiteral(":", StringType))
   }
 
-  // The original StringToMap class define dataType as "DataType", not "MapType".
-  // Not sure if using "MapType" is correct.
   override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
@@ -1463,23 +1460,22 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
   private def toMap(strs: GpuColumnVector,
                     pairDelim: GpuScalar,
                     keyValueDelim: GpuScalar): GpuColumnVector = {
-    GpuColumnVector.from(strs.getBase, dataType)
-
-    // Split the input strings into lists of strings.
-    withResource(strs.getBase.stringSplitRecord(pairDelim.getBase)) { stringLists =>
-      // Extract child strings column from the output lists column.
-      withResource(stringLists.getChildColumnView(0)) { stringsCol =>
+    // Firstly, split the input strings into lists of strings.
+    withResource(strs.getBase.stringSplitRecord(pairDelim.getBase)) { listsOfStrings =>
+      // Extract strings column from the output lists column.
+      withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using maxSplit = 1).
         // withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keyValuePairs =>
-        withResource(stringsCol.stringSplit(keyValueDelim.getBase)) { keyValuePairs =>
-
-          // TODO: Not sure if `keyValuePairs.getColumn()` needs to be wrapped in `withResource`?
-          // TODO: This is wrong, need to create lists of structs first before passing into
-          //  createMapFromKeysValuesAsStructs. That function should accept lists of structs, instead of structs.
-          withResource(ColumnVector.makeStruct(keyValuePairs.getColumn(0),
-            keyValuePairs.getColumn(1))) { structs =>
-              GpuCreateMap.createMapFromKeysValuesAsStructs(strs.getRowCount.toInt,
-                dataType, Seq(structs))
+        withResource(stringsCol.stringSplit(keyValueDelim.getBase)) { keysValuesTable =>
+          // Zip the key-value pairs into structs.
+          withResource(ColumnVector.makeStruct(keysValuesTable.getColumn(0),
+            keysValuesTable.getColumn(1))) { structsCol =>
+            // Make a lists column from the new structs column, which will have the same shape as
+            // the previous lists of strings column.
+            withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
+              listsOfStructs =>
+                GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+            }
           }
         }
       }
