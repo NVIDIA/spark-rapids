@@ -200,11 +200,15 @@ abstract class GpuTextBasedPartitionReader(
               case DataTypes.DoubleType =>
                 GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT64)
               case _ =>
-                table.getColumn(i)
+                table.getColumn(i).incRefCount()
             }
             columns += castColumn
           }
-          new Table(columns: _*)
+          // Table increases the ref counts on the columns so we have
+          // to close them after creating the table
+          withResource(columns) { _ =>
+            new Table(columns: _*)
+          }
         }
 
         handleResult(newReadDataSchema, castTable)
