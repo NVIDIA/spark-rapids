@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -38,7 +37,7 @@ case class GpuScalarSubquery(
   override def dataType: DataType = plan.schema.fields.head.dataType
   override def children: Seq[Expression] = Seq.empty
   override def nullable: Boolean = true
-  override def toString: String = plan.simpleString(SQLConf.get.maxToStringFields)
+  override def toString: String = s"gpu-scalar-query#${exprId.id} $conditionString"
   override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
 
   // the first column in first row from `query`.
@@ -71,3 +70,47 @@ case class GpuScalarSubquery(
     GpuScalar(result, dataType)
   }
 }
+
+case class GpuSharedScalarSubquery(
+    plan: BaseSubqueryExec,
+    exprId: ExprId,
+    ordinal: Int)
+  extends ExecSubqueryExpression with GpuExpression with ShimExpression {
+
+  override def dataType: DataType = plan.schema.fields(ordinal).dataType
+  override def children: Seq[Expression] = Seq.empty
+  override def nullable: Boolean = true
+  override def toString: String =
+    s"gpu-shared-scalar-query#${exprId.id} ordinal($ordinal) $conditionString"
+  override def withNewPlan(query: BaseSubqueryExec): GpuSharedScalarSubquery = copy(plan = query)
+
+  // the first column in first row from `query`.
+  @volatile private var result: Any = _
+  @volatile private var updated: Boolean = false
+
+  override def updateResult(): Unit = {
+    val rows = plan.executeCollect()
+    if (rows.length > 1) {
+      sys.error(s"more than one row returned by a subquery used as an expression:\n$plan")
+    } else if (rows.length == 1) {
+      result = rows.head.get(ordinal, dataType)
+    } else {
+      // If there is no rows returned, the result should be null.
+      result = null
+    }
+    updated = true
+  }
+
+  override lazy val canonicalized: Expression = {
+    GpuSharedScalarSubquery(
+      plan.canonicalized.asInstanceOf[BaseSubqueryExec],
+      ExprId(0),
+      ordinal)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    require(updated, s"$this has not finished")
+    GpuScalar(result, dataType)
+  }
+}
+

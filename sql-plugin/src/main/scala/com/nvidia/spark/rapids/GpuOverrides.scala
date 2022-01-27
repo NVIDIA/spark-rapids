@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
-import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
+import org.apache.spark.sql.catalyst.optimizer.{CombineAggregateForScalarSubquery, NormalizeNaNAndZero}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -3331,7 +3331,14 @@ object GpuOverrides extends Logging {
         Nil, None),
       (a, conf, p, r) =>
         new ExprMeta[org.apache.spark.sql.execution.ScalarSubquery](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
+          override def convertToGpu(): GpuExpression = {
+            a.getTagValue(CombineAggregateForScalarSubquery.ORDINAL_TAG) match {
+              case Some(ord) =>
+                GpuSharedScalarSubquery(a.plan, a.exprId, ord)
+              case None =>
+                GpuScalarSubquery(a.plan, a.exprId)
+            }
+          }
         }
     ),
     expr[CreateMap](
