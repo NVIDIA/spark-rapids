@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuMapUtils}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -82,8 +82,7 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
 
 case class GpuCreateMap(
       children: Seq[Expression],
-      useStringTypeWhenEmpty: Boolean,
-      isExceptionDedupePolicy: Boolean)
+      useStringTypeWhenEmpty: Boolean)
     extends GpuExpression with ShimExpression {
 
   private val valueIndices: Seq[Int] = children.indices.filter(_ % 2 != 0)
@@ -108,8 +107,10 @@ case class GpuCreateMap(
       }
 
       withResource(Range(0, columns.length, 2)
-        .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))) { structs =>
-        GpuCreateMap.createMapFromKeysValuesAsStructs(numRows, dataType, structs)
+        .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))) { structsCols =>
+        withResource(ColumnVector.makeList(numRows, DType.STRUCT, structsCols: _*)) {
+          listsOfStructs => GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+        }
       }
     }
   }
@@ -131,32 +132,25 @@ case class GpuCreateMap(
 object GpuCreateMap extends Arm {
   def apply(children: Seq[Expression]): GpuCreateMap = {
     new GpuCreateMap(children,
-      SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE),
-
-      // TODO: Remove parameter below
-      SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-        SQLConf.MapKeyDedupPolicy.EXCEPTION.toString)
+      SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
   }
 
-  def createMapFromKeysValuesAsStructs(numRows: Int,
-                                       dataType: MapType,
-                                       keyValuePairs : Seq[ColumnVector]): GpuColumnVector = {
-    withResource(ColumnVector.makeList(numRows, DType.STRUCT, keyValuePairs: _*)) { listOfStruct =>
-      withResource(listOfStruct.dropListDuplicatesWithKeysValues()) { deduped =>
-        if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-          SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
-          // compare child data row count before and after
-          // removing duplicates to determine if there were duplicates
-          withResource(deduped.getChildColumnView(0)) { a =>
-            withResource(listOfStruct.getChildColumnView(0)) { b =>
-              if (a.getRowCount != b.getRowCount) {
-                throw GpuMapUtils.duplicateMapKeyFoundError
-              }
+  def createMapFromKeysValuesAsStructs(dataType: MapType,
+                                       listsOfKeyValueStructs : ColumnView): GpuColumnVector = {
+    withResource(listsOfKeyValueStructs.dropListDuplicatesWithKeysValues()) { deduped =>
+      if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+        SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
+        // Compare child data row count before and after removing duplicates to determine
+        // if there were duplicates.
+        withResource(deduped.getChildColumnView(0)) { a =>
+          withResource(listsOfKeyValueStructs.getChildColumnView(0)) { b =>
+            if (a.getRowCount != b.getRowCount) {
+              throw GpuMapUtils.duplicateMapKeyFoundError
             }
           }
         }
-        GpuColumnVector.from(deduped.incRefCount(), dataType)
       }
+      GpuColumnVector.from(deduped.incRefCount(), dataType)
     }
   }
 }
