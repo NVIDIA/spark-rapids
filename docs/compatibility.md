@@ -480,7 +480,19 @@ The nested types(array, map and struct) are not supported yet in current version
 
 ### JSON Floating Point
 
-Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
+The GPU JSON reader does not support `NaN` and `Inf` values with full compatibility with Spark.
+
+The following are the only formats that are parsed consistently between CPU and GPU. Any other variation, including 
+these formats when unquoted, will produce `null` on the CPU and may produce valid `NaN` and `Inf` results on the GPU.
+
+```json
+{ "number": "NaN" }
+{ "number": "Infinity" }
+{ "number": "-Infinity" }
+```
+
+Another limitation of the GPU JSON reader is that it will parse numeric values in quotes where Spark will just 
+return `null`.
 
 ## LIKE
 

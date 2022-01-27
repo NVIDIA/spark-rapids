@@ -165,7 +165,13 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .json(data_path),
             conf=updated_conf)
 
-@pytest.mark.parametrize('filename', ['nan_and_inf.json'])
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'nan_and_inf.json',
+    pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
+    'floats.json',
+    pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
+])
 @pytest.mark.parametrize('schema', [_float_schema, _double_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
