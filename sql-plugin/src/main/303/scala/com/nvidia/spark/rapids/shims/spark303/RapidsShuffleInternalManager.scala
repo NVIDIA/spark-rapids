@@ -78,4 +78,3 @@ class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       context, metrics)
   }
 }
-
