@@ -1281,6 +1281,17 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryAstExprMeta[Cbrt](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCbrt(child)
       }),
+    expr[Hypot](
+      "Pythagorean addition (Hypotenuse) of real numbers",
+      ExprChecks.binaryProject(
+        TypeSig.DOUBLE,
+        TypeSig.DOUBLE,
+        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE),
+        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE)),
+      (a, conf, p, r) => new BinaryExprMeta[Hypot](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuHypot(lhs, rhs)
+      }),
     expr[Floor](
       "Floor of a number",
       ExprChecks.unaryProjectInputMatchesOutput(
@@ -2182,17 +2193,17 @@ object GpuOverrides extends Logging {
     expr[PivotFirst](
       "PivotFirst operator",
       ExprChecks.reductionAndGroupByAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128),
         TypeSig.all,
         Seq(ParamCheck(
           "pivotColumn",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128)
               .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
               .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
           TypeSig.all),
           ParamCheck("valueColumn",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
           TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -3017,8 +3028,8 @@ object GpuOverrides extends Logging {
       "Murmur3 hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
-          TypeSig.all))),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+              TypeSig.STRUCT).nested(), TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -3128,9 +3139,6 @@ object GpuOverrides extends Logging {
     expr[ReplicateRows](
       "Given an input row replicates the row N times",
       ExprChecks.projectOnly(
-        // The plan is optimized to run HashAggregate on the rows to be replicated.
-        // HashAggregateExec doesn't support grouping by 128-bit decimal value yet.
-        // Issue to track decimal 128 support: https://github.com/NVIDIA/spark-rapids/issues/4410
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -3412,8 +3420,8 @@ object GpuOverrides extends Logging {
       "Hash based partitioning",
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
-        TypeSig.all)),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT).nested(), TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -3744,7 +3752,7 @@ object GpuOverrides extends Logging {
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),

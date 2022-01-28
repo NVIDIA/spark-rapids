@@ -154,6 +154,7 @@ else
           $TEST_TYPE_PARAM
           "$TEST_ARGS"
           $RUN_TEST_PARAMS
+          --junitxml=TEST-pytest-`date +%s%N`.xml
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}

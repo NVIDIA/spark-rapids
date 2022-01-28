@@ -151,15 +151,24 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
           // FileSourceScan is independent from the replacement of the partitionFilters. It is
           // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
           // are on the GPU. And vice versa.
-          private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
-            filter.transformDown {
-              case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
-                if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
-
-                val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
-                subBcMeta.tagForExplain()
-                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
-                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+          private lazy val partitionFilters = {
+            val convertBroadcast = (bc: SubqueryBroadcastExec) => {
+              val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
+              meta.tagForExplain()
+              meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+            }
+            wrapped.partitionFilters.map { filter =>
+              filter.transformDown {
+                case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+                  inSub.plan match {
+                    case bc: SubqueryBroadcastExec =>
+                      dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+                    case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
+                      dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+                    case _ =>
+                      dpe
+                  }
+              }
             }
           }
 
