@@ -259,8 +259,7 @@ object GpuShuffledHashJoinExec extends Arm {
         (builtBatch, streamIter)
       } else {
         val dataTypes = buildOutput.map(_.dataType).toArray
-        val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
-        closeOnExcept(bufferedStreamIter) { _ =>
+        closeOnExcept(new CloseableBufferedIterator(streamIter.buffered)) { bufferedStreamIter =>
           val hostConcatIter = new MaybeHostConcatResultIterator(bufferedBuildIterator,
               hostTargetBatchSize, dataTypes, coalesceMetricsMap)
           closeOnExcept(hostConcatIter.next()) { maybeHostConcatResult =>
