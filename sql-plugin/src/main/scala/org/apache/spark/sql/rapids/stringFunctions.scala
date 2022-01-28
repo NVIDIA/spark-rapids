@@ -1430,10 +1430,10 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
   override def foldable: Boolean = children.forall(_.foldable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(str.columnarEval(batch)) { strsVal =>
+    withResourceIfAllowed(str.columnarEval(batch)) { strVal =>
       withResourceIfAllowed(pairDelim.columnarEval(batch)) { pairDelimVal =>
         withResourceIfAllowed(keyValueDelim.columnarEval(batch)) { keyValueDelimVal =>
-          (strsVal, pairDelimVal, keyValueDelimVal) match {
+          (strVal, pairDelimVal, keyValueDelimVal) match {
             case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) => toMap(v0, v1, v2)
             case (v0: GpuScalar, v1: GpuScalar, v2: GpuScalar) =>
               withResource(GpuColumnVector.from(v0, batch.numRows, v0.dataType)) {
