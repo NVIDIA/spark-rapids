@@ -41,6 +41,8 @@ def PROJECT_VER // project version retrieved from 'version-def.sh' to determine 
 def major_ver // major version extracted from project version
 def minor_ver // minor version extracted from project version
 def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
+def TestResult1 // keep ci_1 pytest result files that's in JUnit-XML style
+def TestResult2 // keep ci_2 pytest result files that's in JUnit-XML style
 
 // constant parameters for aws and azure databricks cluster
 // CSP params
@@ -114,7 +116,7 @@ pipeline {
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CUDA_CLASSIFIER = 'cuda11'
         // DB related ENVs
-        IDLE_TIMEOUT = '180' // 3 hours
+        IDLE_TIMEOUT = '240' // 4 hours
         NUM_WORKERS = '0'
         DB_TYPE = getDbType()
         DATABRICKS_HOST = "${PARAM_MAP["$DB_TYPE"][ID_HOST]}"
@@ -314,19 +316,24 @@ pipeline {
                         script {
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
-                                    sh "$PREMERGE_SCRIPT mvn_verify"
-                                    step([$class                : 'JacocoPublisher',
-                                          execPattern           : '**/target/jacoco.exec',
-                                          classPattern          : 'target/jacoco_classes/',
-                                          sourceInclusionPattern: '**/*.java,**/*.scala',
-                                          sourcePattern         : 'shuffle-plugin/src/main/scala/,' +
-                                                  'udf-compiler/src/main/scala/,sql-plugin/src/main/java/,' +
-                                                  'sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,' +
-                                                  'shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,' +
-                                                  'shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,' +
-                                                  'shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,' +
-                                                  'shims/spark313/src/main/scala/'
-                                    ])
+                                    try {
+                                        sh "$PREMERGE_SCRIPT mvn_verify"
+                                        step([$class                : 'JacocoPublisher',
+                                              execPattern           : '**/target/jacoco.exec',
+                                              classPattern          : 'target/jacoco_classes/',
+                                              sourceInclusionPattern: '**/*.java,**/*.scala',
+                                              sourcePattern         : 'shuffle-plugin/src/main/scala/,' +
+                                                                      'udf-compiler/src/main/scala/,sql-plugin/src/main/java/,' +
+                                                                      'sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,' +
+                                                                      'shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,' +
+                                                                      'shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,' +
+                                                                      'shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,' +
+                                                                      'shims/spark313/src/main/scala/'
+                                        ])
+                                    } finally {
+                                        // Save pytest result and publish to Jenkins at last
+                                        TestResult1 = stashPytestResult("testResult1")
+                                    }
                                 }
                             }
                         }
@@ -362,7 +369,12 @@ pipeline {
 
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') {
-                                    sh "$PREMERGE_SCRIPT $PREMERGE_CI_2_ARGUMENT"
+                                    try {
+                                        sh "$PREMERGE_SCRIPT $PREMERGE_CI_2_ARGUMENT"
+                                    } finally {
+                                        // Save pytest result and publish to Jenkins at last
+                                        TestResult2 = stashPytestResult("testResult2")
+                                    }
                                 }
                             }
                         }
@@ -395,7 +407,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 4, unit: 'HOURS') {
+                            timeout(time: 5, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
@@ -430,7 +442,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 4, unit: 'HOURS') {
+                            timeout(time: 5, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
@@ -476,6 +488,21 @@ pipeline {
                     container('cpu') {
                         deleteDockerTempTag("${PREMERGE_TAG}") // clean premerge temp image
                     }
+                }
+
+                // Collect test results
+                if (TestResult1) {
+                    unstash "testResult1"
+                }
+                if (TestResult2) {
+                    unstash "testResult2"
+                }
+
+                // Record test results to Jenkins
+                if (TestResult1 || TestResult2) {
+                    junit skipPublishingChecks: true, testResults: '**/TEST-pytest*.xml'
+                } else {
+                    echo 'Skip recording test results'
                 }
             }
         }
@@ -586,4 +613,15 @@ void abortDupBuilds() {
         }
         prevBuild = prevBuild.getPreviousBuildInProgress()
     }
+}
+
+String stashPytestResult(String name) {
+    def result = sh(returnStdout: true, script: "find . -name 'TEST-pytest*.xml' -exec ls -l {} \\;")
+    echo result
+
+    if (result) {
+        stash(name: name, includes: "**/TEST-pytest*.xml")
+    }
+
+    return result
 }

@@ -174,13 +174,8 @@ abstract class GpuTextBasedPartitionReader(
           readToTable(dataBuffer, dataSize, cudfSchema, newReadDataSchema, isFirstChunk)
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
-        val numColumns = table.getNumberOfColumns
-        if (newReadDataSchema.length != numColumns) {
-          table.close()
-          throw new QueryExecutionException(s"Expected ${newReadDataSchema.length} columns " +
-            s"but only read ${table.getNumberOfColumns} from $partFile")
-        }
-        Some(table)
+
+        handleResult(newReadDataSchema, table)
       }
     } finally {
       dataBuffer.close()
@@ -210,6 +205,35 @@ abstract class GpuTextBasedPartitionReader(
    * @return the file format short name
    */
   def getFileFormatShortName: String
+
+  /**
+   * Handle the table decoded by GPU
+   *
+   * Please note that, this function owns table which is supposed to be closed in this function
+   * But for the optimization, we just return the original table.
+   *
+   * @param readDataSchema the Spark schema describing what will be read
+   * @param table the table decoded by GPU
+   * @return the new optional Table
+   */
+  def handleResult(readDataSchema: StructType, table: Table): Option[Table] = {
+    val numColumns = table.getNumberOfColumns
+
+    closeOnExcept(table) { _ =>
+      if (readDataSchema.length != numColumns) {
+        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+          s"but only read ${table.getNumberOfColumns} from $partFile")
+      }
+    }
+
+    // For the GPU resource handling convention, we should close input table and return a new
+    // table just like below code. But for optimization, we just return the input table.
+    // withResource(table) { _
+    //  val cols = (0 until  table.getNumberOfColumns).map(i => table.getColumn(i))
+    //  Some(new Table(cols: _*))
+    // }
+    Some(table)
+  }
 
   override def next(): Boolean = {
     batch.foreach(_.close())

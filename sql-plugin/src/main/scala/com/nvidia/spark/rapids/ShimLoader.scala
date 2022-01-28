@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,13 +53,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
