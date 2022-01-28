@@ -402,8 +402,6 @@ def test_length():
                 'CHAR_LENGTH(a)',
                 'CHARACTER_LENGTH(a)'))
 
-@pytest.mark.skipif(is_before_spark_330(),
-                    reason="octet_length and bit_length only available in 330+")
 def test_byte_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
