@@ -273,7 +273,7 @@ def form_changelog(path: str, changelog: dict):
         subsections += form_subsection(issues, PRS)
     markdown = f"""# Change log
 Generated on {date.today()}{subsections}
-## Older Releases
+\n## Older Releases
 Changelog of older releases can be found at [docs/archives](/docs/archives)
 """
     with open(path, "w") as file:

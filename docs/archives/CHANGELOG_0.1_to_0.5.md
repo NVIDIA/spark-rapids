@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-01-27
+Generated on 2022-01-28
 
 ## Release 0.5
 
@@ -1320,5 +1320,6 @@ Generated on 2022-01-27
 |[#164](https://github.com/NVIDIA/spark-rapids/pull/164)|Fix compiler warnings|
 |[#152](https://github.com/NVIDIA/spark-rapids/pull/152)|Moved cudf to 0.14 for CI|
 |[#151](https://github.com/NVIDIA/spark-rapids/pull/151)|Switch CICD pipelines to Github|
+
 ## Older Releases
 Changelog of older releases can be found at [docs/archives](/docs/archives)

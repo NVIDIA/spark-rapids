@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-01-27
+Generated on 2022-01-28
 
 ## Release 22.02
 
@@ -10,22 +10,16 @@ Generated on 2022-01-27
 |[#4360](https://github.com/NVIDIA/spark-rapids/issues/4360)|[FEA] Add explain api for Spark 2.X|
 |[#3541](https://github.com/NVIDIA/spark-rapids/issues/3541)|[FEA] Support max on single-level struct in aggregation context|
 |[#4238](https://github.com/NVIDIA/spark-rapids/issues/4238)|[FEA] Add a Spark 3.X Explain only mode to the plugin|
-|[#3761](https://github.com/NVIDIA/spark-rapids/issues/3761)|[FEA] Call the appropriate method when transitioning from Row<=>Col |
-|[#3949](https://github.com/NVIDIA/spark-rapids/issues/3949)|[Audit][SPARK-32709][SQL] Support writing Hive bucketed table (Parquet/ORC format with Hive hash)|
 |[#3952](https://github.com/NVIDIA/spark-rapids/issues/3952)|[Audit] [FEA][SPARK-32986][SQL] Add bucketed scan info in query plan of data source v1|
 |[#4412](https://github.com/NVIDIA/spark-rapids/issues/4412)|[FEA] Improve support for \A, \Z, and \z in regular expressions|
 |[#3979](https://github.com/NVIDIA/spark-rapids/issues/3979)|[FEA] Improvements for  CPU(Row) based UDF|
 |[#4467](https://github.com/NVIDIA/spark-rapids/issues/4467)|[FEA] Add support for regular expression with repeated digits (`\d+`, `\d*`, `\d?`)|
 |[#4439](https://github.com/NVIDIA/spark-rapids/issues/4439)|[FEA] Enable GPU broadcast exchange reuse for DPP when AQE enabled|
-|[#4350](https://github.com/NVIDIA/spark-rapids/issues/4350)|[FEA] Optimize the all-true and all-false cases in GPU `If` and `CaseWhen` |
 |[#3512](https://github.com/NVIDIA/spark-rapids/issues/3512)|[FEA] Support org.apache.spark.sql.catalyst.expressions.Sequence|
-|[#3475](https://github.com/NVIDIA/spark-rapids/issues/3475)|[FEA] Spark 3.2.0 read parquet unsigned int64(UINT64) as Decimal(20,0) but CUDF does not support now|
+|[#3475](https://github.com/NVIDIA/spark-rapids/issues/3475)|[FEA] Spark 3.2.0 reads Parquet unsigned int64(UINT64) as Decimal(20,0) but CUDF does not support it |
 |[#4091](https://github.com/NVIDIA/spark-rapids/issues/4091)|[FEA] regexp_replace: Improve support for ^ and $|
-|[#3959](https://github.com/NVIDIA/spark-rapids/issues/3959)|[Audit][FEA] [SPARK-36070][CORE] Log time cost info for writing rows out and committing the task|
-|[#4438](https://github.com/NVIDIA/spark-rapids/issues/4438)|[FEA] Create shims for spark 3.2.2|
 |[#4104](https://github.com/NVIDIA/spark-rapids/issues/4104)|[FEA] Support org.apache.spark.sql.catalyst.expressions.ReplicateRows|
 |[#4027](https://github.com/NVIDIA/spark-rapids/issues/4027)|[FEA]  Support SubqueryBroadcast on GPU to enable exchange reuse during DPP|
-|[#4325](https://github.com/NVIDIA/spark-rapids/issues/4325)|[FEA][Audit][SPARK-37268][SQL] Remove unused method call in FileScanRDD|
 |[#4284](https://github.com/NVIDIA/spark-rapids/issues/4284)|[FEA] Support idx = 0 in GpuRegExpExtract|
 |[#4002](https://github.com/NVIDIA/spark-rapids/issues/4002)|[FEA] Implement regexp_extract on GPU|
 |[#3221](https://github.com/NVIDIA/spark-rapids/issues/3221)|[FEA] Support GpuFirst and GpuLast on nested types under reduction aggregations|
@@ -42,6 +36,7 @@ Generated on 2022-01-27
 |:---|:---|
 |[#4392](https://github.com/NVIDIA/spark-rapids/issues/4392)|[FEA] could the parquet scan code avoid acquiring the semaphore for an empty batch?|
 |[#679](https://github.com/NVIDIA/spark-rapids/issues/679)|[FEA] move some deserialization code out of the scope of the gpu-semaphore to increase cpu concurrent|
+|[#4350](https://github.com/NVIDIA/spark-rapids/issues/4350)|[FEA] Optimize the all-true and all-false cases in GPU `If` and `CaseWhen` |
 |[#4309](https://github.com/NVIDIA/spark-rapids/issues/4309)|[FEA] Leverage cudf conditional nested loop join to implement semi/anti hash join with condition|
 |[#4395](https://github.com/NVIDIA/spark-rapids/issues/4395)|[FEA] acquire the semaphore after concatToHost in GpuShuffleCoalesceIterator|
 |[#4134](https://github.com/NVIDIA/spark-rapids/issues/4134)|[FEA] Allow `EliminateJoinToEmptyRelation` in `GpuBroadcastExchangeExec` |
@@ -50,6 +45,8 @@ Generated on 2022-01-27
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#4631](https://github.com/NVIDIA/spark-rapids/issues/4631)|[BUG] Release build with mvn option `-P source-javadoc` FAILED|
+|[#4625](https://github.com/NVIDIA/spark-rapids/issues/4625)|[BUG] NDS query 5 fails with AdaptiveSparkPlanExec assertion|
 |[#4632](https://github.com/NVIDIA/spark-rapids/issues/4632)|[BUG] Build failing for Spark 3.3.0 due to deprecated method warnings|
 |[#4599](https://github.com/NVIDIA/spark-rapids/issues/4599)|[BUG] test_group_apply_udf and test_group_apply_udf_more_types hangs on Databricks 9.1|
 |[#4600](https://github.com/NVIDIA/spark-rapids/issues/4600)|[BUG] crash if we have a decimal128 in a struct in an array |
@@ -116,6 +113,9 @@ Generated on 2022-01-27
 ### PRs
 |||
 |:---|:---|
+|[#4652](https://github.com/NVIDIA/spark-rapids/pull/4652)|Remove non-deterministic test order in nightly [skip ci]|
+|[#4643](https://github.com/NVIDIA/spark-rapids/pull/4643)|Add profile release301 when mvn help:evaluate|
+|[#4630](https://github.com/NVIDIA/spark-rapids/pull/4630)|Fix the incomplete capture of SubqueryBroadcast |
 |[#4633](https://github.com/NVIDIA/spark-rapids/pull/4633)|Suppress newTaskTempFile method warnings for Spark 3.3.0 build|
 |[#4618](https://github.com/NVIDIA/spark-rapids/pull/4618)|[DB31x] Pick the correct Python runner for flatmap-group Pandas UDF|
 |[#4622](https://github.com/NVIDIA/spark-rapids/pull/4622)|Fallback to CPU when encoding is not supported for JSON reader|
@@ -1514,5 +1514,6 @@ Generated on 2022-01-27
 |[#2448](https://github.com/NVIDIA/spark-rapids/pull/2448)|support creating list ColumnVector for Literal(ArrayType(NullType))|
 |[#2402](https://github.com/NVIDIA/spark-rapids/pull/2402)|Add profiling tool|
 |[#2313](https://github.com/NVIDIA/spark-rapids/pull/2313)|Supports `GpuLiteral` of array type|
+
 ## Older Releases
 Changelog of older releases can be found at [docs/archives](/docs/archives)
