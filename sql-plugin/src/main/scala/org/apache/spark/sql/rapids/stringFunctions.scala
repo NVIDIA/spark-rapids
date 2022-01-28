@@ -1423,12 +1423,12 @@ class GpuStringToMapMeta(
 case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim: Expression)
     extends GpuExpression with ExpectsInputTypes with NullIntolerant {
 
-  def this(str: Expression, pairDelim: Expression) = {
-    this(str, pairDelim, GpuLiteral(":", StringType))
+  def this(strs: Expression, pairDelim: Expression) = {
+    this(strs, pairDelim, GpuLiteral(":", StringType))
   }
 
-  def this(str: Expression) = {
-    this(str, GpuLiteral(",", StringType), GpuLiteral(":", StringType))
+  def this(strs: Expression) = {
+    this(strs, GpuLiteral(",", StringType), GpuLiteral(":", StringType))
   }
 
   override def dataType: MapType = MapType(StringType, StringType)
@@ -1445,8 +1445,8 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
           (val0, val1, val2) match {
             case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) => toMap(v0, v1, v2)
             case (v0: GpuScalar, v1: GpuScalar, v2: GpuScalar) =>
-              withResource(GpuColumnVector.from(v0, batch.numRows, v0.dataType)) { v0Col =>
-                toMap(v0Col, v1, v2)
+              withResource(GpuColumnVector.from(v0, batch.numRows, v0.dataType)) {
+                v0Col => toMap(v0Col, v1, v2)
               }
             case (v0, v1, v2) =>
               throw new UnsupportedOperationException(s"Unsupported data '($v0: ${v0.getClass}," +
@@ -1465,8 +1465,7 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using maxSplit = 1).
-        // withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keyValuePairs =>
-        withResource(stringsCol.stringSplit(keyValueDelim.getBase)) { keysValuesTable =>
+        withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keysValuesTable =>
           // Zip the key-value pairs into structs.
           withResource(ColumnVector.makeStruct(keysValuesTable.getColumn(0),
             keysValuesTable.getColumn(1))) { structsCol =>
