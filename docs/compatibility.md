@@ -377,7 +377,7 @@ date. Typically, one that overflowed.
 
 ### CSV Floating Point
 
-Any number that overflows will not be turned into a null value.
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -472,6 +472,8 @@ val df = spark.read.schema(schema).json("people.json")
 The nested types(array, map and struct) are not supported yet in current version.
 
 ### JSON Floating Point
+
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
 The GPU JSON reader does not support `NaN` and `Inf` values with full compatibility with Spark.
 
