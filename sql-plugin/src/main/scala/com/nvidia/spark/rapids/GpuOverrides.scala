@@ -2663,8 +2663,8 @@ object GpuOverrides extends Logging {
       "Creates a map after splitting the input into key-value pairs using delimiters",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("keyValueDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+          ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)),
+          ParamCheck("keyValueDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)))),
       (in, conf, p, r) => new GpuStringToMapMeta(in, conf, p, r)),
     expr[ArrayMin](
       "Returns the minimum value in the array",
