@@ -263,8 +263,6 @@ object GpuShuffledHashJoinExec extends Arm {
           val hostConcatIter = new MaybeHostConcatResultIterator(bufferedBuildIterator,
               hostTargetBatchSize, dataTypes, coalesceMetricsMap)
           closeOnExcept(hostConcatIter.next()) { maybeHostConcatResult =>
-            // hasNext is false
-            // then we have HostConcat result we need to do the hack with prior
             val buildBatch = if (!hostConcatIter.hasNext()) {
               val singleBatchBufferTimeDelta = System.nanoTime() - startTime
               // Optimal case, we drained the build iterator and we didn't have a prior
