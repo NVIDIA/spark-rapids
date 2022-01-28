@@ -704,11 +704,10 @@ def test_parquet_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
         df = spark.read.parquet(data_path).selectExpr("Max(p)")
         return df
 
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_are_equal_collect(
         do_parquet_scan,
-        exist_classes= "GpuBatchScanExec",
-        non_exist_classes= "BatchScanExec",
-        conf= conf_for_parquet_aggregate_pushdown)
+        conf_for_parquet_aggregate_pushdown
+    )
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on Parquet is a new feature of Spark 330')
