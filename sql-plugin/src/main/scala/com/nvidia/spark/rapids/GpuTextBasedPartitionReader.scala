@@ -28,7 +28,6 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -192,7 +191,8 @@ abstract class GpuTextBasedPartitionReader(
         // parse floating-point columns that were read as strings
         val castTable = withResource(table) { _ =>
           val columns = new ListBuffer[ColumnVector]()
-          val ansiEnabled = SQLConf.get.ansiEnabled
+          // ansi mode does not apply to text inputs
+          val ansiEnabled = false
           for (i <- 0 until table.getNumberOfColumns) {
             val castColumn = dataSchema.fields(i).dataType match {
               case DataTypes.FloatType =>

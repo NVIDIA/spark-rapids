@@ -235,8 +235,12 @@ def read_csv_sql(data_path, schema, options = {}):
     ], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-def test_basic_read(std_input_path, name, schema, options, read_func, v1_enabled_list):
-    updated_conf=copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled):
+    updated_conf=copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled
+    })
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
             conf=updated_conf)
 

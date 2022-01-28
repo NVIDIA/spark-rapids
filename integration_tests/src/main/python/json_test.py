@@ -175,9 +175,11 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 @pytest.mark.parametrize('schema', [_float_schema, _double_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
-def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers):
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, ansi_enabled):
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
         schema,
         { "allowNonNumericNumbers": allow_non_numeric_numbers }),
-        conf=_enable_all_types_conf)
+        conf=updated_conf)
