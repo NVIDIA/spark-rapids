@@ -1420,20 +1420,20 @@ class GpuStringToMapMeta(
     GpuStringToMap(str, pairDelim, keyValueDelim)
 }
 
-case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim: Expression)
+case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim: Expression)
     extends GpuExpression with ExpectsInputTypes with NullIntolerant {
   override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
-  override def children: Seq[Expression] = Seq(strs, pairDelim, keyValueDelim)
+  override def children: Seq[Expression] = Seq(str, pairDelim, keyValueDelim)
   override def nullable: Boolean = children.head.nullable
   override def foldable: Boolean = children.forall(_.foldable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(strs.columnarEval(batch)) { val0 =>
-      withResourceIfAllowed(pairDelim.columnarEval(batch)) { val1 =>
-        withResourceIfAllowed(keyValueDelim.columnarEval(batch)) { val2 =>
-          (val0, val1, val2) match {
+    withResourceIfAllowed(str.columnarEval(batch)) { strsVal =>
+      withResourceIfAllowed(pairDelim.columnarEval(batch)) { pairDelimVal =>
+        withResourceIfAllowed(keyValueDelim.columnarEval(batch)) { keyValueDelimVal =>
+          (strsVal, pairDelimVal, keyValueDelimVal) match {
             case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) => toMap(v0, v1, v2)
             case (v0: GpuScalar, v1: GpuScalar, v2: GpuScalar) =>
               withResource(GpuColumnVector.from(v0, batch.numRows, v0.dataType)) {
@@ -1448,11 +1448,11 @@ case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim
     }
   }
 
-  private def toMap(strs: GpuColumnVector,
+  private def toMap(str: GpuColumnVector,
                     pairDelim: GpuScalar,
                     keyValueDelim: GpuScalar): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
-    withResource(strs.getBase.stringSplitRecord(pairDelim.getBase)) { listsOfStrings =>
+    withResource(str.getBase.stringSplitRecord(pairDelim.getBase)) { listsOfStrings =>
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using maxSplit = 1).
