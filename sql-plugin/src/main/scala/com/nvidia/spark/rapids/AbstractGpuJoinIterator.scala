@@ -52,8 +52,6 @@ abstract class AbstractGpuJoinIterator(
    * Called to setup the next join gatherer instance when the previous instance is done or
    * there is no previous instance. Because this is likely to call next or has next on the
    * stream side all implementations must track their own opTime metrics.
-   * @param startNanoTime system nanoseconds timestamp at the top of the iterator loop, useful for
-   *                      calculating the time spent producing the next stream batch
    * @return some gatherer to use next or None if there is no next gatherer or the loop should try
    *         to build the gatherer again (e.g.: to skip a degenerate join result batch)
    */

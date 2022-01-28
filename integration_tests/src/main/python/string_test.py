@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -337,16 +337,41 @@ def test_re_replace():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
                 'REGEXP_REPLACE(a, "^TEST", "PROD")',
-                'REGEXP_REPLACE(a, "^TEST$", "PROD")',
-                'REGEXP_REPLACE(a, "TEST$", "PROD")',
-                'REGEXP_REPLACE(a, "$TEST", "PROD")',
-                'REGEXP_REPLACE(a, "TEST\\$", "PROD")',
-                'REGEXP_REPLACE(a, "\\^TEST$", "PROD")',
-                'REGEXP_REPLACE(a, "\\^TEST\\$", "PROD")',
+                'REGEXP_REPLACE(a, "^TEST\\z", "PROD")',
+                'REGEXP_REPLACE(a, "TEST\\z", "PROD")',
+                'REGEXP_REPLACE(a, "\\zTEST", "PROD")',
+                'REGEXP_REPLACE(a, "TEST\\z", "PROD")',
+                'REGEXP_REPLACE(a, "\\^TEST\\z", "PROD")',
+                'REGEXP_REPLACE(a, "\\^TEST\\z", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_re_replace_backrefs():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "(TEST)", "[$0]")',
+            'REGEXP_REPLACE(a, "(TEST)", "[$1]")'),
+            'RegExpReplace',
+        conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_re_replace_backrefs_escaped():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "(TEST)", "[\\\\$0]")',
+            'REGEXP_REPLACE(a, "(TEST)", "[\\\\$1]")'),
+        conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
+def test_re_replace_escaped():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "[A-Z]+", "\\\\A\\A\\\\t\\\\r\\\\n\\t\\r\\n")'),
+        conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_re_replace_null():
     gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\
@@ -549,19 +574,19 @@ def test_regexp_extract():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 1)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 2)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)'),
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 1)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 2)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 3)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
 def test_regexp_extract_no_match():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 0)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 1)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 2)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 3)'),
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 0)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 1)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 2)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 3)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
 # if we determine that the index is out of range we fall back to CPU and let
@@ -597,15 +622,15 @@ def test_regexp_extract_multiline_negated_character_class():
     gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([a-d]*)([^a-z]*)([a-d]*)$", 2)'),
+                'regexp_extract(a, "^([a-d]*)([^a-z]*)([a-d]*)\\z", 2)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
 def test_regexp_extract_idx_0():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 0)',
-                'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)$", 0)'),
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 0)',
+                'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)\\z", 0)'),
             conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
 
 def test_rlike():
@@ -668,8 +693,8 @@ def test_rlike_multi_line():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "^a"',
                 'a rlike "^d"',
-                'a rlike "c$"',
-                'a rlike "e$"'),
+                'a rlike "c\\z"',
+                'a rlike "e\\z"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
 def test_rlike_missing_escape():

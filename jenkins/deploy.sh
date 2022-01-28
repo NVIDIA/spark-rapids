@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,6 +35,8 @@ set -ex
 SIGN_FILE=$1
 DATABRICKS=$2
 VERSIONS_BUILT=$3
+
+export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 
 ###### Build the path of jar(s) to be deployed ######
 
@@ -96,3 +98,17 @@ TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javad
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $TOOL_DOC_JARS \
             -Dfile=$TOOL_FPATH.jar -DpomFile=${TOOL_PL}/pom.xml
+
+###### Deploy Spark 2.x explain meta jar ######
+SPARK2_PL=${SPARK2_PL:-"spark2-sql-plugin"}
+SPARK2_ART_ID=`mvn help:evaluate -q -pl $SPARK2_PL -Dexpression=project.artifactId -DforceStdout -Dbuildver=24X`
+SPARK2_ART_VER=`mvn help:evaluate -q -pl $SPARK2_PL -Dexpression=project.version -DforceStdout -Dbuildver=24X`
+SPARK2_FPATH="$M2DIR/repository/com/nvidia/$SPARK2_ART_ID/$SPARK2_ART_VER/$SPARK2_ART_ID-$SPARK2_ART_VER"
+SPARK2_DOC_JARS="-Dsources=${SPARK2_FPATH}-sources.jar -Djavadoc=${SPARK2_FPATH}-javadoc.jar"
+# a bit ugly but just hardcode to spark24 for now since only version supported
+SPARK2_CLASSIFIER='spark24'
+SPARK2_CLASSIFIER_JAR="{$SPARK2_FPATH}-${SPARK2_CLASSIFIER}.jar"
+$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+            $SPARK2_DOC_JARS \
+            -Dclassifier=$SPARK2_CLASSIFIER \
+            -Dfile=$SPARK2_CLASSIFIER_JAR -DpomFile=${SPARK2_PL}/pom.xml

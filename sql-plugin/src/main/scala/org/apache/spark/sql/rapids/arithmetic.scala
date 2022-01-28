@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.math.BigInteger
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -73,19 +74,9 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
     }
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        if (DecimalType.is32BitDecimalType(dt)) {
-          withResource(Scalar.fromDecimal(-scale, 0)) { scalar =>
-            scalar.sub(input.getBase)
-          }
-        } else if (DecimalType.is64BitDecimalType(dt)) {
-          withResource(Scalar.fromDecimal(-scale, 0L)) { scalar =>
-            scalar.sub(input.getBase)
-          }
-        } else { // Decimal-128
-          withResource(Scalar.fromDecimal(-scale, BigInteger.ZERO)) { scalar =>
-            scalar.sub(input.getBase)
-          }
+        val zeroLit = Decimal(0L, dt.precision, dt.scale)
+        withResource(GpuScalar.from(zeroLit, dt)) { scalar =>
+          scalar.sub(input.getBase)
         }
       case _ =>
         withResource(Scalar.fromByte(0.toByte)) { scalar =>
@@ -229,6 +220,7 @@ case class GpuAdd(
   override def symbol: String = "+"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.ADD)
 
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
@@ -256,6 +248,7 @@ case class GpuSubtract(
   override def symbol: String = "-"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.SUB)
 
   private[this] def basicOpOverflowCheck(
       lhs: BinaryOperable,
@@ -544,6 +537,7 @@ case class GpuMultiply(
   override def symbol: String = "*"
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
 }
 
 object GpuDivModLike extends Arm {

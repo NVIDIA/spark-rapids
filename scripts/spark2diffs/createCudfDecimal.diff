@@ -1,0 +1,20 @@
+1,7c1,9
+<  def createCudfDecimal(precision: Int, scale: Int): Option[String] = {
+<     if (precision <= GpuOverrides.DECIMAL32_MAX_PRECISION) {
+<       Some("DECIMAL32")
+<     } else if (precision <= GpuOverrides.DECIMAL64_MAX_PRECISION) {
+<       Some("DECIMAL64")
+<     } else if (precision <= GpuOverrides.DECIMAL128_MAX_PRECISION) {
+<       Some("DECIMAL128")
+---
+>   def createCudfDecimal(dt: DecimalType): DType = {
+>     createCudfDecimal(dt.precision, dt.scale)
+>   def createCudfDecimal(precision: Int, scale: Int): DType = {
+>     if (precision <= DType.DECIMAL32_MAX_PRECISION) {
+>       DType.create(DType.DTypeEnum.DECIMAL32, -scale)
+>     } else if (precision <= DType.DECIMAL64_MAX_PRECISION) {
+>       DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+>     } else if (precision <= DType.DECIMAL128_MAX_PRECISION) {
+>       DType.create(DType.DTypeEnum.DECIMAL128, -scale)
+10d11
+<       None

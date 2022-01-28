@@ -1,0 +1,6 @@
+4c4
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+23a24
+> 

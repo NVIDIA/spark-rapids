@@ -22,23 +22,15 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.json.rapids.shims.v2.Spark33XFileOptionsShims
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.types.StructType
 
-trait Spark33XShims extends Spark321PlusShims {
+trait Spark33XShims extends Spark33XFileOptionsShims {
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
-
-  override def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    csvOpts.dateFormatInRead
-  }
-
-  override def timestampFormatInRead(csvOpts: CSVOptions): Option[String] = {
-    csvOpts.timestampFormatInRead
-  }
 
   override def getFileScanRDD(
       sparkSession: SparkSession,

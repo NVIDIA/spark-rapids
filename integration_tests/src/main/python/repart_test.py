@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -95,7 +95,7 @@ def test_union(data_gen):
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -106,7 +106,7 @@ def test_unionAll(data_gen):
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]])),
@@ -154,7 +154,7 @@ def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
 
 
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -240,6 +240,14 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', decimal_gen_scale_precision)], ['a']),
     ([('a', decimal_gen_same_scale_precision)], ['a']),
     ([('a', decimal_gen_64bit)], ['a']),
+    ([('a', decimal_gen_64bit)], ['a']),
+    ([('a', decimal_gen_128bit)], ['a']),
+    ([('a', decimal_gen_30_2)], ['a']),
+    ([('a', decimal_gen_36_5)], ['a']),
+    ([('a', decimal_gen_36_neg5)], ['a']),
+    ([('a', decimal_gen_38_0)], ['a']),
+    ([('a', decimal_gen_38_10)], ['a']),
+    ([('a', decimal_gen_38_neg10)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
     ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('c1_0', byte_gen), ('c1_1', string_gen), ('c1_2', boolean_gen)]))]))], ['a']), 
@@ -256,6 +264,7 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', timestamp_gen), ('b', date_gen), ('c', int_gen)], ['a', 'b', 'c']),
     ([('a', short_gen), ('b', string_gen), ('c', int_gen)], ['a', 'b', 'c']),
     ([('a', decimal_gen_default), ('b', decimal_gen_64bit), ('c', decimal_gen_scale_precision)], ['a', 'b', 'c']),
+    ([('a', decimal_gen_128bit), ('b', decimal_gen_38_neg10), ('c', decimal_gen_36_5)], ['a', 'b', 'c']),
     ], ids=idfn)
 def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
