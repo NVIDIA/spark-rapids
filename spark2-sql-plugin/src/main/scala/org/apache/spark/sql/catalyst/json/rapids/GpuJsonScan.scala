@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
