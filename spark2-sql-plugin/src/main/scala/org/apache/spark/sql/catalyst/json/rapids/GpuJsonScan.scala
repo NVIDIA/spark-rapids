@@ -31,6 +31,20 @@ import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampTy
 
 object GpuJsonScan {
 
+  def dateFormatInRead(fileOptions: Serializable): Option[String] = {
+    fileOptions match {
+      case jsonOpts: JSONOptions => Option(jsonOpts.dateFormat.getPattern)
+      case _ => throw new RuntimeException("Wrong file options.")
+    }
+  }
+
+  def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
+    fileOptions match {
+      case jsonOpts: JSONOptions => Option(jsonOpts.timestampFormat.getPattern)
+      case _ => throw new RuntimeException("Wrong file options.")
+    }
+  }
+
   private val supportedDateFormats = Set(
     "yyyy-MM-dd",
     "yyyy/MM/dd",
@@ -55,20 +69,6 @@ object GpuJsonScan {
     "HH:mm:ss.SSS",
     "HH:mm:ss[.SSS]"
   )
-
-  def dateFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case jsonOpts: JSONOptions => Option(jsonOpts.dateFormat.getPattern)
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
-  }
-
-  def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case jsonOpts: JSONOptions => Option(jsonOpts.timestampFormat.getPattern)
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
-  }
 
   def tagSupport(
       sparkSession: SparkSession,
