@@ -214,7 +214,7 @@ get_cases_by_tags() {
   local args=${2}
   cases=$(TEST_TAGS="${1}" \
            ./run_pyspark_from_build.sh "${args}" --collect-only -p no:warnings -qq 2>/dev/null \
-           | grep -oP '(?<=::).*?(?=\[)' | uniq | shuf | xargs)
+           | grep -oP '(?<=::).*?(?=\[)' | uniq | xargs)
   echo "$cases"
 }
 export -f get_cases_by_tags

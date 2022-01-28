@@ -504,28 +504,13 @@ def test_broadcast_join_left_table(data_gen, join_type):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'Inner', 'Cross'], ids=idfn)
+@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_broadcast_join_with_conditionals(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right),
                    (left.a == right.r_a) & (left.b >= right.r_b), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
-
-# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
-@allow_non_gpu('BroadcastExchangeExec', 'BroadcastHashJoinExec', 'Cast', 'GreaterThan')
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
-@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti'], ids=idfn)
-def test_broadcast_join_with_condition_join_type_fallback(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 50, 25)
-        # AST does not support cast or logarithm yet
-        return left.join(broadcast(right),
-                         (left.a == right.r_a) & (left.b > right.r_b), join_type)
-    conf = allow_negative_scale_of_decimal_conf
-    assert_gpu_fallback_collect(do_join, 'BroadcastHashJoinExec', conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -574,18 +559,8 @@ def test_broadcast_join_with_condition_post_filter(data_gen, join_type):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-def test_sortmerge_join_with_conditionals(data_gen):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 250)
-        return left.join(right, (left.a == right.r_a) & (left.b >= right.r_b), 'Inner')
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
-
-# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
-@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter'], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_sortmerge_join_with_condition_ast(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -594,22 +569,10 @@ def test_sortmerge_join_with_condition_ast(data_gen, join_type):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
-@allow_non_gpu('GreaterThan', 'ShuffleExchangeExec', 'SortMergeJoinExec')
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
-@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti'], ids=idfn)
-def test_sortmerge_join_with_condition_join_type_fallback(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 250)
-        return left.join(right, (left.a == right.r_a) & (left.b >= right.r_b), join_type)
-    assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
-
-# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
 @allow_non_gpu('GreaterThan', 'Log', 'ShuffleExchangeExec', 'SortMergeJoinExec')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter'], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_sortmerge_join_with_condition_ast_op_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
