@@ -693,7 +693,6 @@ conf_for_parquet_aggregate_pushdown = {
 }
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on Parquet is a new feature of Spark 330')
-@allow_non_gpu(any = True)
 def test_parquet_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
     """
     No aggregation will be pushed down in this test, so we should not fallback to CPU
