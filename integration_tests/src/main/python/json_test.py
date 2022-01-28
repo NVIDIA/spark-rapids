@@ -170,6 +170,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'nan_and_inf.json',
     pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
     'floats.json',
+    'floats_invalid.json',
     pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
 ])
 @pytest.mark.parametrize('schema', [_float_schema, _double_schema])
