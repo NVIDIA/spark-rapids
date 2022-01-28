@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -969,7 +969,7 @@ def copy_and_update(conf, *more_confs):
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-           decimal_gen_64bit]
+           decimal_gen_64bit, decimal_gen_128bit, decimal_gen_36_5, decimal_gen_38_10]
 
 # Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
 # so narrow down the time range to avoid exceptions causing test failures.
