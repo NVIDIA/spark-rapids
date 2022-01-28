@@ -20,8 +20,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330
-
+from spark_session import is_before_spark_311, is_before_spark_320
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
