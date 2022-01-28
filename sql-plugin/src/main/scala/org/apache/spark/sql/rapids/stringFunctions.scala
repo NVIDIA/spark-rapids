@@ -1422,15 +1422,6 @@ class GpuStringToMapMeta(
 
 case class GpuStringToMap(strs: Expression, pairDelim: Expression, keyValueDelim: Expression)
     extends GpuExpression with ExpectsInputTypes with NullIntolerant {
-
-  def this(strs: Expression, pairDelim: Expression) = {
-    this(strs, pairDelim, GpuLiteral(":", StringType))
-  }
-
-  def this(strs: Expression) = {
-    this(strs, GpuLiteral(",", StringType), GpuLiteral(":", StringType))
-  }
-
   override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
