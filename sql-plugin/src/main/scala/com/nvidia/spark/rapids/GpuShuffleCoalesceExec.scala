@@ -65,7 +65,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuShuffleCoalesceIterator(
-        new MaybeHostConcatResultIterator(iter, targetSize, dataTypes, metricsMap),
+        new HostShuffleCoalesceIterator(iter, targetSize, dataTypes, metricsMap),
         dataTypes, metricsMap)
     }
   }
@@ -110,10 +110,10 @@ case class MaybeHostConcatResult(
 /**
  * Iterator that coalesces columnar batches that are expected to only contain
  * [[SerializedTableColumn]]. The serialized tables within are collected up
- * to the target batch size and then concatenated on the host before the data
- * is transferred to the GPU.
+ * to the target batch size and then concatenated on the host before handing
+ * them to the caller on `.next()`
  */
-class MaybeHostConcatResultIterator(
+class HostShuffleCoalesceIterator(
     iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     dataTypes: Array[DataType],
@@ -171,7 +171,7 @@ class MaybeHostConcatResultIterator(
     result
   }
 
-  def bufferNextBatch(): Unit = {
+  private def bufferNextBatch(): Unit = {
     if (numTablesInBatch == serializedTables.size()) {
       var batchCanGrow = batchByteSize < targetBatchByteSize
       while (batchCanGrow && iter.hasNext) {
@@ -179,10 +179,10 @@ class MaybeHostConcatResultIterator(
           inputBatchesMetric += 1
           // don't bother tracking empty tables
           if (batch.numRows > 0) {
+            inputRowsMetric += batch.numRows()
             val tableColumn = batch.column(0).asInstanceOf[SerializedTableColumn]
             batchCanGrow = canAddToBatch(tableColumn.header)
             serializedTables.addLast(tableColumn)
-            inputRowsMetric += tableColumn.header.getNumRows
             // always add the first table to the batch even if its beyond the target limits
             if (batchCanGrow || numTablesInBatch == 0) {
               numTablesInBatch += 1

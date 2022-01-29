@@ -133,7 +133,11 @@ case class GpuShuffledHashJoinExec(
     val batchSizeBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput = buildPlan.output
-    // stomp on metrics that don't make sense in the join
+
+    // Create a map of metrics that can be handed down to shuffle and coalesce
+    // iterators, setting as noop certain metrics that the coalesce iterators
+    // normally update, but that in the case of the join they would produce
+    // the wrong statistics (since there are conflicts)
     val coalesceMetricsMap = allMetrics +
       (GpuMetric.NUM_INPUT_ROWS -> NoopMetric,
        GpuMetric.NUM_INPUT_BATCHES -> NoopMetric,
@@ -178,12 +182,19 @@ object GpuShuffledHashJoinExec extends Arm {
    */
   class CloseableBufferedIterator[T <: AutoCloseable](wrapped: BufferedIterator[T])
     extends BufferedIterator[T] with AutoCloseable {
+    // register against task completion to close any leaked buffered items
+    Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+
+    private[this] var isClosed = false
     override def head: T = wrapped.head
     override def headOption: Option[T] = wrapped.headOption
     override def next: T = wrapped.next
     override def hasNext: Boolean = wrapped.hasNext
     override def close(): Unit = {
-      headOption.foreach(_.close())
+      if (!isClosed) {
+        headOption.foreach(_.close())
+        isClosed = true
+      }
     }
   }
 
@@ -241,16 +252,14 @@ object GpuShuffledHashJoinExec extends Arm {
           if (firstBatch.numCols() != 1) {
             false
           } else {
-            firstBatch.column(0) match {
-              case _: SerializedTableColumn => true
-              case _ => false
-            }
+            firstBatch.column(0).isInstanceOf[SerializedTableColumn]
           }
         }
       }
 
       if (!firstBatchIsSerialized) {
-        // fallback if we failed to find serialized build batches
+        // In this scenario we are getting non host-side batches in the build side
+        // given the plan rules we expect this to be a single batch
         val builtBatch =
           ConcatAndConsumeAll.getSingleBatchWithVerification(
             Option(bufferedBuildIterator).getOrElse(buildIter), buildOutput)
@@ -260,9 +269,9 @@ object GpuShuffledHashJoinExec extends Arm {
       } else {
         val dataTypes = buildOutput.map(_.dataType).toArray
         closeOnExcept(new CloseableBufferedIterator(streamIter.buffered)) { bufferedStreamIter =>
-          val hostConcatIter = new MaybeHostConcatResultIterator(bufferedBuildIterator,
+          val hostConcatIter = new HostShuffleCoalesceIterator(bufferedBuildIterator,
               hostTargetBatchSize, dataTypes, coalesceMetricsMap)
-          closeOnExcept(hostConcatIter.next()) { maybeHostConcatResult =>
+          closeOnExcept(hostConcatIter.next()) { hostConcatResult =>
             val buildBatch = if (!hostConcatIter.hasNext()) {
               val singleBatchBufferTimeDelta = System.nanoTime() - startTime
               // Optimal case, we drained the build iterator and we didn't have a prior
@@ -282,7 +291,7 @@ object GpuShuffledHashJoinExec extends Arm {
               // we can bring the build batch to the GPU now
               withResource(hostConcatIter) { _ =>
                 val buildBatchToGpuTime = System.nanoTime()
-                withResource(maybeHostConcatResult) { _ =>
+                withResource(hostConcatResult) { _ =>
                   val res = maybeHostConcatResult.getColumnarBatch(dataTypes)
                   buildTime += (System.nanoTime() - buildBatchToGpuTime) +
                     singleBatchBufferTimeDelta
@@ -298,7 +307,7 @@ object GpuShuffledHashJoinExec extends Arm {
               // know we are now above `hostTargetBatchSize` (which is 2GB by default)
               withResource(hostConcatIter) { _ =>
                 val shuffleCoalesce = new GpuShuffleCoalesceIterator(
-                  Seq(maybeHostConcatResult).iterator ++ hostConcatIter,
+                  Seq(hostConcatResult).iterator ++ hostConcatIter,
                   dataTypes, coalesceMetricsMap)
                 val res = ConcatAndConsumeAll.getSingleBatchWithVerification(
                   new GpuCoalesceIterator(shuffleCoalesce,

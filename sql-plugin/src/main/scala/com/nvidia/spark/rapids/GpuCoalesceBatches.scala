@@ -79,7 +79,6 @@ object ConcatAndConsumeAll {
   }
 
   /**
-   *
    * Verify that a single batch was returned from the iterator, or if it is empty return an empty
    * batch.
    * @param batches batches to be consumed.
@@ -524,8 +523,15 @@ class GpuCompressionAwareCoalesceIterator(
     codecConfigs: TableCompressionCodecConfig)
   extends GpuCoalesceIterator(
     iter, sparkTypes, goal,
-    numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-    collectTime, concatTime, opTime, peakDevMemory, spillCallback, opName) {
+    numInputRows = numInputRows,
+    numInputBatches = numInputBatches,
+    numOutputRows = numOutputRows,
+    numOutputBatches = numOutputBatches,
+    collectTime = collectTime,
+    concatTime = concatTime,
+    opTime = opTime,
+    peakDevMemory = peakDevMemory,
+    spillCallback, opName) {
 
   private[this] var codec: TableCompressionCodec = _
 
