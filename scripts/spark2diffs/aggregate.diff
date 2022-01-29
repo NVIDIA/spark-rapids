@@ -9,7 +9,7 @@
 < import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ExprId, NamedExpression}
 ---
 > import ai.rapids.cudf
-> import ai.rapids.cudf.{DType, NvtxColor}
+> import ai.rapids.cudf.NvtxColor
 > import com.nvidia.spark.rapids.GpuMetric._
 > import com.nvidia.spark.rapids.RapidsPluginImplicits._
 > import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
@@ -811,11 +811,7 @@
 >     rule: DataFromReplacementRule) extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 > 
 >   val agg: BaseAggregateExec
-63c840
-<             dt.asInstanceOf[DecimalType].precision > GpuOverrides.DECIMAL64_MAX_PRECISION))
----
->             dt.asInstanceOf[DecimalType].precision > DType.DECIMAL64_MAX_PRECISION))
-68a846,854
+60a838,846
 > 
 >     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
 >         && agg.aggregateExpressions.exists(expr => expr.filter.isDefined)) {
@@ -825,7 +821,7 @@
 >       willNotWorkOnGpu(
 >         "DISTINCT and FILTER cannot be used in aggregate functions at the same time")
 >     }
-132a919,929
+124a911,921
 > 
 >   override def convertToGpu(): GpuExec = {
 >     GpuHashAggregateExec(
@@ -837,7 +833,7 @@
 >       childPlans.head.convertIfNeeded(),
 >       conf.gpuTargetBatchSizeBytes)
 >   }
-135,136c932,938
+127,128c924,930
 < class GpuSortAggregateExecMeta(
 <     val agg: SortAggregateExec,
 ---
@@ -848,7 +844,7 @@
 > abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggregateExec](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-138,140c940,948
+130,132c932,940
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
@@ -862,7 +858,7 @@
 >       expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] &&
 >           (expr.mode == Partial || expr.mode == PartialMerge)
 >     }
-142,149c950,951
+134,141c942,943
 <   val groupingExpressions: Seq[BaseExprMeta[_]] =
 <     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 <   val aggregateExpressions: Seq[BaseExprMeta[_]] =
@@ -874,7 +870,7 @@
 ---
 >   // overriding data types of Aggregation Buffers if necessary
 >   if (mayNeedAggBufferConversion) overrideAggBufTypes()
-151,152c953,964
+143,144c945,956
 <   override val childExprs: Seq[BaseExprMeta[_]] =
 <     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 ---
@@ -890,7 +886,7 @@
 >       case aggMeta: TypedImperativeAggExprMeta[_] => aggMeta.supportBufferConversion
 >       case _ => true
 >     }
-155,161c967,1011
+147,153c959,1003
 <     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
 <     // we need to run recursive type check on the structs.
 <     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
@@ -944,15 +940,10 @@
 >         conf.gpuTargetBatchSizeBytes)
 >     } else {
 >       super.convertToGpu()
-162a1013
+154a1005
 >   }
-164,169c1015,1039
-<     val dec128Grouping = agg.groupingExpressions.exists(e =>
-<       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-<         dt => dt.isInstanceOf[DecimalType] &&
-<             dt.asInstanceOf[DecimalType].precision > GpuOverrides.DECIMAL64_MAX_PRECISION))
-<     if (dec128Grouping) {
-<       willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
+156c1007,1268
+<     tagForReplaceMode()
 ---
 >   /**
 >    * The method replaces data types of aggregation buffers created by TypedImperativeAggregate
@@ -979,9 +970,8 @@
 >         desiredInputAggBufTypes(aggFn.inputAggBufferAttributes.head.exprId) = desiredType
 > 
 >       case _ =>
-172c1042,1276
-<     tagForReplaceMode()
----
+>     }
+> 
 >     // Overrides the data types of typed imperative aggregation buffers for type checking
 >     aggregateAttributes.foreach { attrMeta =>
 >       attrMeta.wrapped match {
@@ -1217,7 +1207,7 @@
 >       agg.requiredChildDistributionExpressions, conf, parent, rule) {
 >   override def tagPlanForGpu(): Unit = {
 >     super.tagPlanForGpu()
-199,261d1302
+183,245d1294
 < 
 <   /**
 <    * Tagging checks tied to configs that control the aggregation modes that are replaced.
@@ -1281,15 +1271,15 @@
 <           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
 <     }
 <   }
-264,266d1304
+248,250d1296
 < // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 < // ObjectHashAggregate
 < /*
-270c1308
+254c1300
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-275c1313,1514
+259c1305,1506
 < */
 ---
 > /**

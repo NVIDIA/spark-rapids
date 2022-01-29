@@ -6,7 +6,7 @@
 <                     schema: StructType): Unit = {
 ---
 >                     schema: StructType): Option[GpuOrcFileFormat] = {
-79a80,84
+75a76,80
 >     if (meta.canThisBeReplaced) {
 >       Some(new GpuOrcFileFormat)
 >     } else {
