@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util
 
-import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostConcatResultUtil, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.{HostConcatResult, SerializedTableHeader}
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
@@ -72,42 +72,6 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 }
 
 /**
- * A helper (but ugly) way of encapsulating the output of the
- * `MaybeHostConcatResultIterator`. Batches fetched from the shuffle may or may
- * not be empty, yet still on the host. There isn't a `HostConcatResult` for an empty
- * batch, so this case class exists to expose a `getColumnarBatch` that always returns
- * a `ColumnarBatch`.
- *
- * Users of `MaybeHostConcatResult` need to close it to release resources held by a likely
- * defined `HostConcatResult`.
- *
- * @param hostConcatResult an optional host-side concatenated batch
- * @param rowCount a row count used in case row-count-only batch is required
- */
-case class MaybeHostConcatResult(
-    var hostConcatResult: Option[HostConcatResult],
-    rowCount: Int) extends Arm with AutoCloseable {
-
-  override def close(): Unit = {
-    hostConcatResult.foreach(_.close())
-    hostConcatResult = None
-  }
-
-  def getColumnarBatch(sparkSchema: Array[DataType]): ColumnarBatch = {
-    hostConcatResult.map { hcr =>
-      withResource(hcr.toContiguousTable) { ct =>
-        GpuColumnVector.from(ct.getTable, sparkSchema)
-      }
-    }.getOrElse {
-      // We expect the caller to have acquired the GPU unconditionally before calling
-      // `getColumnarBatch`, as a downstream exec may need the GPU, and the assumption is
-      // that it is acquired in the coalesce code.
-      new ColumnarBatch(Array.empty, rowCount)
-    }
-  }
-}
-
-/**
  * Iterator that coalesces columnar batches that are expected to only contain
  * [[SerializedTableColumn]]. The serialized tables within are collected up
  * to the target batch size and then concatenated on the host before handing
@@ -118,7 +82,7 @@ class HostShuffleCoalesceIterator(
     targetBatchByteSize: Long,
     dataTypes: Array[DataType],
     metricsMap: Map[String, GpuMetric])
-      extends Iterator[MaybeHostConcatResult] with Arm with AutoCloseable {
+      extends Iterator[HostConcatResult] with Arm with AutoCloseable {
   private[this] val concatTimeMetric = metricsMap(GpuMetric.CONCAT_TIME)
   private[this] val inputBatchesMetric = metricsMap(GpuMetric.NUM_INPUT_BATCHES)
   private[this] val inputRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
@@ -134,12 +98,12 @@ class HostShuffleCoalesceIterator(
     serializedTables.clear()
   }
 
-  def concatenateTablesInHost(): MaybeHostConcatResult = {
+  def concatenateTablesInHost(): HostConcatResult = {
     val result = withResource(new MetricRange(concatTimeMetric)) { _ =>
       val firstHeader = serializedTables.peekFirst().header
       if (firstHeader.getNumColumns == 0) {
         (0 until numTablesInBatch).foreach(_ => serializedTables.removeFirst())
-        MaybeHostConcatResult(None, numRowsInBatch)
+        HostConcatResultUtil.rowsOnlyHostConcatResult(numRowsInBatch)
       } else {
         val headers = new Array[SerializedTableHeader](numTablesInBatch)
         withResource(new Array[HostMemoryBuffer](numTablesInBatch)) { buffers =>
@@ -148,9 +112,7 @@ class HostShuffleCoalesceIterator(
             headers(i) = serializedTable.header
             buffers(i) = serializedTable.hostBuffer
           }
-          MaybeHostConcatResult(
-            Some(JCudfSerialization.concatToHostBuffer(headers, buffers)),
-            numRowsInBatch)
+          JCudfSerialization.concatToHostBuffer(headers, buffers)
         }
       }
     }
@@ -202,7 +164,7 @@ class HostShuffleCoalesceIterator(
     numTablesInBatch > 0
   }
 
-  override def next(): MaybeHostConcatResult = {
+  override def next(): HostConcatResult = {
     if (!hasNext()) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
@@ -226,7 +188,7 @@ class HostShuffleCoalesceIterator(
  * to the target batch size and then concatenated on the host before the data
  * is transferred to the GPU.
  */
-class GpuShuffleCoalesceIterator(iter: Iterator[MaybeHostConcatResult],
+class GpuShuffleCoalesceIterator(iter: Iterator[HostConcatResult],
                                  dataTypes: Array[DataType],
                                  metricsMap: Map[String, GpuMetric])
       extends Iterator[ColumnarBatch] with Arm {
@@ -242,14 +204,14 @@ class GpuShuffleCoalesceIterator(iter: Iterator[MaybeHostConcatResult],
       throw new NoSuchElementException("No more columnar batches")
     }
     withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-      withResource(iter.next()) { maybeHostConcatResult =>
-        // We acquire the GPU regardless of whether `maybeHostConcatResult`
+      withResource(iter.next()) { hostConcatResult =>
+        // We acquire the GPU regardless of whether `hostConcatResult`
         // is an empty batch or not, because the downstream tasks expect
         // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
         // generate GPU data from batches that are empty.
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
         withResource(new MetricRange(opTimeMetric)) { _ =>
-          val batch = maybeHostConcatResult.getColumnarBatch(dataTypes)
+          val batch = HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
           outputBatchesMetric += 1
           outputRowsMetric += batch.numRows()
           batch

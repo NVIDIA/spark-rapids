@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostConcatResultUtil, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.shims.v2.{GpuHashPartitioning, GpuJoinUtils, ShimBinaryExecNode}
-
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -292,7 +291,7 @@ object GpuShuffledHashJoinExec extends Arm {
               withResource(hostConcatIter) { _ =>
                 val buildBatchToGpuTime = System.nanoTime()
                 withResource(hostConcatResult) { _ =>
-                  val res = maybeHostConcatResult.getColumnarBatch(dataTypes)
+                  val res = HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
                   buildTime += (System.nanoTime() - buildBatchToGpuTime) +
                     singleBatchBufferTimeDelta
                   res

@@ -159,6 +159,46 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
     }
   }
 
+  def getSerializedBatch(numRows: Int): ColumnarBatch = {
+    val outStream = new ByteArrayOutputStream()
+    JCudfSerialization.writeRowsToStream(outStream, numRows)
+    val dIn = new DataInputStream(new ByteArrayInputStream(outStream.toByteArray))
+    val header = new JCudfSerialization.SerializedTableHeader(dIn)
+    closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen, false)) { hostBuffer =>
+      JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
+      SerializedTableColumn.from(header, hostBuffer)
+    }
+  }
+
+  test("test a 0-column SerializedTableColumn") {
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val serializedBatch = getSerializedBatch(5)
+      val mockStreamIter = mock[Iterator[ColumnarBatch]]
+      val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
+      when(mockStreamIter.hasNext).thenReturn(true)
+      when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
+      when(mockBufferedStreamIterator.hasNext).thenReturn(true)
+      closeOnExcept(serializedBatch) { _ =>
+        val buildIter = Seq(serializedBatch).iterator
+        val attrs = AttributeReference("a", IntegerType, false)() :: Nil
+        val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+          1024,
+          attrs,
+          buildIter,
+          mockStreamIter,
+          mock[SpillCallback],
+          metricMap)
+        withResource(builtBatch) { _ =>
+          verify(mockBufferedStreamIterator, times(1)).hasNext
+          assertResult(builtBatch.numCols())(0)
+          assertResult(builtBatch.numRows())(5)
+          // the buffered iterator drained the build iterator
+          assertResult(buildIter.hasNext)(false)
+        }
+      }
+    }
+  }
+
   test("test a SerializedTableColumn") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
       closeOnExcept(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
