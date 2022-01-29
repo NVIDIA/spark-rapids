@@ -18,8 +18,10 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.json.rapids.GpuReadJsonFileFormat
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 
 object GpuFileSourceScanExec {
@@ -28,6 +30,7 @@ object GpuFileSourceScanExec {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
+      case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
       case f =>
         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
     }
