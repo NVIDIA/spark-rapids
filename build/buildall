@@ -127,7 +127,6 @@ case $DIST_PROFILE in
       303
       304
       311
-      311cdh
       312
       313
       320
@@ -143,7 +142,6 @@ case $DIST_PROFILE in
       302
       303
       311
-      311cdh
       312
       320
       321
@@ -153,7 +151,6 @@ case $DIST_PROFILE in
   minimumFeatureVersionMix)
     SPARK_SHIM_VERSIONS=(
       302
-      311cdh
       312
       320
     )
