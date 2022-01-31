@@ -66,7 +66,6 @@ def test_grouped_sliding_window_array(data_gen):
             lambda spark : gen_df(spark, row_gen).groupBy(f.window('ts', '5 hour', '1 hour')).agg(f.max(f.col("data")[3]).alias("max_data")))
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
-@allow_non_gpu('WindowExec', 'WindowExpression', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'UnboundedPreceding$', 'UnboundedFollowing$', 'AggregateExpression', 'Max', 'Alias')
 @ignore_order
 def test_tumbling_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
@@ -75,7 +74,6 @@ def test_tumbling_window(data_gen):
             lambda spark : gen_df(spark, row_gen).withColumn('rolling_max', f.max("data").over(w)))
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
-@allow_non_gpu('WindowExec', 'WindowExpression', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'UnboundedPreceding$', 'UnboundedFollowing$', 'AggregateExpression', 'Max', 'Alias')
 @ignore_order
 def test_sliding_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
