@@ -30,7 +30,6 @@ _restricted_ts_gen = TimestampGen(start=_restricted_start, end=_restricted_end)
 # Once we support grouping by a struct (even single level) this should go away
 # https://github.com/NVIDIA/spark-rapids/issues/2877
 # Shuffle falls back to CPU because it is in between two CPU hash/sort aggregates
-@allow_non_gpu('HashAggregateExec', 'SortAggregateExec', 'AggregateExpression', 'Max', 'Alias', 'ShuffleExchangeExec', 'HashPartitioning')
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
 def test_grouped_tumbling_window(data_gen):
@@ -45,7 +44,6 @@ def test_grouped_tumbling_window(data_gen):
 # Once we support grouping by a struct (even single level) this should go away
 # https://github.com/NVIDIA/spark-rapids/issues/2877
 # Shuffle falls back to CPU because it is in between two CPU hash/sort aggregates
-@allow_non_gpu('HashAggregateExec', 'SortAggregateExec', 'AggregateExpression', 'Max', 'Alias', 'ShuffleExchangeExec', 'HashPartitioning')
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
 def test_grouped_sliding_window(data_gen):
@@ -57,7 +55,6 @@ def test_grouped_sliding_window(data_gen):
 # Once we support grouping by a struct (even single level) this should go away
 # https://github.com/NVIDIA/spark-rapids/issues/2877
 # Shuffle falls back to CPU because it is in between two CPU hash/sort aggregates
-@allow_non_gpu('HashAggregateExec', 'SortAggregateExec', 'AggregateExpression', 'GetArrayItem', 'Literal', 'Max', 'Alias', 'ShuffleExchangeExec', 'HashPartitioning')
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
 def test_grouped_sliding_window_array(data_gen):
