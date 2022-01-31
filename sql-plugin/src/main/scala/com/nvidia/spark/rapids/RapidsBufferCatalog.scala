@@ -149,6 +149,13 @@ class RapidsBufferCatalog extends Logging {
     }
   }
 
+  /** Remove all buffers. Only to be called on shutdown. */
+  def removeAllBuffersOnShutdown(): Unit = {
+    val existingBuffers = bufferMap.keySet()
+    logWarning(s"Removing all buffers (${existingBuffers.size()}) from catalog when shutting down.")
+    existingBuffers.forEach(removeBuffer(_))
+  }
+
   /** Return the number of buffers currently in the catalog. */
   def numBuffers: Int = bufferMap.size()
 }
@@ -232,6 +239,8 @@ object RapidsBufferCatalog extends Logging with Arm {
       gdsStorage.close()
       gdsStorage = null
     }
+
+    singleton.removeAllBuffersOnShutdown()
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
