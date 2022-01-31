@@ -152,7 +152,7 @@ class RapidsBufferCatalog extends Logging {
   /** Remove all buffers. Only to be called on shutdown. */
   def removeAllBuffersOnShutdown(): Unit = {
     val existingBuffers = bufferMap.keySet()
-    logWarning(s"Removing all buffers (${existingBuffers.size()}) from catalog when shutting down.")
+    logDebug(s"Removing all buffers (${existingBuffers.size()}) from catalog when shutting down.")
     existingBuffers.forEach(removeBuffer(_))
   }
 
