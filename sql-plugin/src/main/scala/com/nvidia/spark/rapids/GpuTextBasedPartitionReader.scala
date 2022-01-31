@@ -191,22 +191,22 @@ abstract class GpuTextBasedPartitionReader(
         // parse floating-point columns that were read as strings
         val castTable = withResource(table) { _ =>
           val columns = new ListBuffer[ColumnVector]()
-          // ansi mode does not apply to text inputs
-          val ansiEnabled = false
-          for (i <- 0 until table.getNumberOfColumns) {
-            val castColumn = dataSchema.fields(i).dataType match {
-              case DataTypes.FloatType =>
-                GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
-              case DataTypes.DoubleType =>
-                GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT64)
-              case _ =>
-                table.getColumn(i).incRefCount()
-            }
-            columns += castColumn
-          }
           // Table increases the ref counts on the columns so we have
           // to close them after creating the table
           withResource(columns) { _ =>
+            // ansi mode does not apply to text inputs
+            val ansiEnabled = false
+            for (i <- 0 until table.getNumberOfColumns) {
+              val castColumn = dataSchema.fields(i).dataType match {
+                case DataTypes.FloatType =>
+                  GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
+                case DataTypes.DoubleType =>
+                  GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT64)
+                case _ =>
+                  table.getColumn(i).incRefCount()
+              }
+              columns += castColumn
+            }
             new Table(columns: _*)
           }
         }
