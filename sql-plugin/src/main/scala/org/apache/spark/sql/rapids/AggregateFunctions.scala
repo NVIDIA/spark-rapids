@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.{ShimExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.v2.{GpuCollectDeterministicShim, GpuFirstDeterministicShim, GpuLastDeterministicShim, ShimExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -1389,7 +1389,10 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
  * here).
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean)
-  extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
+  extends GpuAggregateFunction
+  with GpuFirstDeterministicShim
+  with ImplicitCastInputTypes
+  with Serializable {
 
   private lazy val cudfFirst = AttributeReference("first", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
@@ -1419,8 +1422,6 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   override def children: Seq[Expression] = child :: Nil
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
-  // First is not a deterministic function.
-  override lazy val deterministic: Boolean = false
   override def toString: String = s"gpufirst($child)${if (ignoreNulls) " ignore nulls"}"
 
   override def checkInputDataTypes(): TypeCheckResult = {
@@ -1434,7 +1435,10 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
-  extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
+  extends GpuAggregateFunction
+  with GpuLastDeterministicShim
+  with ImplicitCastInputTypes
+  with Serializable {
 
   private lazy val cudfLast = AttributeReference("last", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
@@ -1463,8 +1467,6 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
   override def children: Seq[Expression] = child :: Nil
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
-  // Last is not a deterministic function.
-  override lazy val deterministic: Boolean = false
   override def toString: String = s"gpulast($child)${if (ignoreNulls) " ignore nulls"}"
 
   override def checkInputDataTypes(): TypeCheckResult = {
@@ -1477,13 +1479,12 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
   }
 }
 
-trait GpuCollectBase extends GpuAggregateFunction with GpuAggregateWindowFunction {
+trait GpuCollectBase
+  extends GpuAggregateFunction
+  with GpuCollectDeterministicShim
+  with GpuAggregateWindowFunction {
 
   def child: Expression
-
-  // Collect operations are non-deterministic since their results depend on the
-  // actual order of input rows.
-  override lazy val deterministic: Boolean = false
 
   override def nullable: Boolean = false
 
