@@ -638,7 +638,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testSparkResultsAreEqual(
       "doubles basic aggregates group by doubles",
       doubleCsvDf,
-      maxFloatDiff = 0.0001,
+      maxFloatDiff = 0.000001,
       conf = makeBatchedBytes(3, enableCsvConf())) {
     frame => frame.groupBy("doubles").agg(
       lit(456f),
@@ -655,7 +655,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testSparkResultsAreEqual(
       "doubles basic aggregates group by more_doubles",
       doubleCsvDf,
-      maxFloatDiff = 0.0001,
+      maxFloatDiff = 0.000001,
       conf = makeBatchedBytes(3, enableCsvConf())) {
     frame => frame.groupBy("more_doubles").agg(
       lit(456f),
