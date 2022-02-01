@@ -27,9 +27,6 @@ _restricted_start = datetime(2020, 1, 1, tzinfo=timezone.utc)
 _restricted_end = datetime(2020, 1, 2, tzinfo=timezone.utc)
 _restricted_ts_gen = TimestampGen(start=_restricted_start, end=_restricted_end)
 
-# Once we support grouping by a struct (even single level) this should go away
-# https://github.com/NVIDIA/spark-rapids/issues/2877
-# Shuffle falls back to CPU because it is in between two CPU hash/sort aggregates
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
 def test_grouped_tumbling_window(data_gen):
@@ -41,9 +38,6 @@ def test_grouped_tumbling_window(data_gen):
 # have some real problems and even crash some times when trying to JIT it. This problem only happens on the CPU
 # so be careful.
 
-# Once we support grouping by a struct (even single level) this should go away
-# https://github.com/NVIDIA/spark-rapids/issues/2877
-# Shuffle falls back to CPU because it is in between two CPU hash/sort aggregates
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
 def test_grouped_sliding_window(data_gen):
@@ -51,10 +45,6 @@ def test_grouped_sliding_window(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, row_gen).groupBy(f.window('ts', '5 hour', '1 hour')).agg(f.max("data").alias("max_data")))
 
-# Having arrays allows us to verify that expand exec in this case works with arrays too
-# Once we support grouping by a struct (even single level) this should go away
-# https://github.com/NVIDIA/spark-rapids/issues/2877
-# Shuffle falls back to CPU because it is in between two CPU hash/sort aggregates
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
 def test_grouped_sliding_window_array(data_gen):
