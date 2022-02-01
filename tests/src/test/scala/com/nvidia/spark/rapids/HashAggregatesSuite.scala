@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     conf: SparkConf = new SparkConf(),
     execsAllowedNonGpu: Seq[String] = Seq.empty,
     batchSize: Int = 0,
-    repart: Int = 1)
+    repart: Int = 1,
+    maxFloatDiff: Double = 0.0)
     (fn: DataFrame => DataFrame) {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
@@ -69,7 +70,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testSparkResultsAreEqual(testName, df,
       conf = conf, repart = repart,
       execsAllowedNonGpu = execsAllowedNonGpu,
-      incompat = true, sort = true)(fn)
+      incompat = true, sort = true, maxFloatDiff = maxFloatDiff)(fn)
   }
 
   def firstDf(spark: SparkSession): DataFrame = {
@@ -637,6 +638,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testSparkResultsAreEqual(
       "doubles basic aggregates group by doubles",
       doubleCsvDf,
+      maxFloatDiff = 0.0001,
       conf = makeBatchedBytes(3, enableCsvConf())) {
     frame => frame.groupBy("doubles").agg(
       lit(456f),
@@ -653,6 +655,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testSparkResultsAreEqual(
       "doubles basic aggregates group by more_doubles",
       doubleCsvDf,
+      maxFloatDiff = 0.0001,
       conf = makeBatchedBytes(3, enableCsvConf())) {
     frame => frame.groupBy("more_doubles").agg(
       lit(456f),
