@@ -142,13 +142,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support hex digits consistently with Spark"))
   }
 
-  test("cuDF does not support octal digits consistently with Spark") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4288
-    val patterns = Seq(raw"\07", raw"\077", raw"\0377")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, replace = false,
-        "cuDF does not support octal digits consistently with Spark"))
-  }
+  // test("cuDF does not support octal digits consistently with Spark") {
+  //   // see https://github.com/NVIDIA/spark-rapids/issues/4288
+  //   val patterns = Seq(raw"\07", raw"\077", raw"\0377")
+  //   patterns.foreach(pattern =>
+  //     assertUnsupported(pattern, replace = false,
+  //       "cuDF does not support octal digits consistently with Spark"))
+  // }
   
   test("string anchors - find") {
     val patterns = Seq("\\Atest", "test\\z")
@@ -577,14 +577,15 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   private def characterClassComponent = {
     val baseGenerators = Seq[() => RegexCharacterClassComponent](
         () => char,
-        () => charRange)
+        () => charRange,
+        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4409
     val generators = if (skipKnownIssues) {
       baseGenerators
     } else {
       baseGenerators ++ Seq(
         () => escapedChar, // https://github.com/NVIDIA/spark-rapids/issues/4505
-        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4486
-        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4409
+        () => hexDigit) // https://github.com/NVIDIA/spark-rapids/issues/4486
+        // () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4409
     }
     generators(rr.nextInt(generators.length))()
   }

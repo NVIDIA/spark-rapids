@@ -471,10 +471,11 @@ class CudfRegexTranspiler(replace: Boolean) {
           regex
       }
 
-      case RegexOctalChar(_) =>
-        // see https://github.com/NVIDIA/spark-rapids/issues/4288
-        throw new RegexUnsupportedException(
-          s"cuDF does not support octal digits consistently with Spark")
+      case RegexOctalChar(digits) =>
+        regex
+      //   // see https://github.com/NVIDIA/spark-rapids/issues/4288
+      //   throw new RegexUnsupportedException(
+      //     s"cuDF does not support octal digits consistently with Spark")
 
       case RegexHexDigit(_) =>
         // see https://github.com/NVIDIA/spark-rapids/issues/4486
@@ -737,7 +738,12 @@ sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent 
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"\\$a"
+  override def toRegexString: String = {
+    if (a.length == 4)
+      s"\\${a.substring(1)}"
+    else 
+      s"\\${a}"
+  }
 }
 
 sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
