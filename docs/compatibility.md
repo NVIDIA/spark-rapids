@@ -482,12 +482,6 @@ The nested types(array, map and struct) are not supported yet in current version
 
 Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
 
-## LIKE
-
-If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
-the end of the string.  This will be fixed in a future release. The issue is
-[here](https://github.com/NVIDIA/spark-rapids/issues/119).
-
 ## Regular Expressions
 
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
