@@ -404,6 +404,32 @@ class RegexParser(pattern: String) {
 
 }
 
+object RegexParser {
+  private val regexpChars = Seq('\u0000', '\\', '.', '^', '$', '\f')
+  private val regexpEscapedChars = Seq('\\', 'b', 'B', 's', 'S', 'w', 'W', 'd', 'D', 'Q', 'E',
+    'h', 'H', 'v', 'V', 'A', 'a', 'z', 'Z', 'x', 'e', 'c', 'p', 'G', 'R', 'k')
+
+  def isNonRegExpString(s: String): Boolean = {
+
+    def isSimpleString(ast: RegexAST): Boolean = ast match {
+      case RegexChar(ch) => !regexpChars.contains(ch)
+      case RegexEscaped(ch) => !regexpEscapedChars.contains(ch)
+      case RegexSequence(parts) => parts.forall(isSimpleString)
+      case _ => false
+    }
+
+    try {
+      val parser = new RegexParser(s)
+      val ast = parser.parse()
+      isSimpleString(ast)
+    } catch {
+      case _: RegexUnsupportedException =>
+        // if we cannot parse it then assume that it might be valid regexp
+        false
+    }
+  }
+}
+
 /**
  * Transpile Java/Spark regular expression to a format that cuDF supports, or throw an exception
  * if this is not possible.

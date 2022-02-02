@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,24 @@ import scala.collection.mutable.ListBuffer
 import org.scalatest.FunSuite
 
 class RegularExpressionParserSuite extends FunSuite {
+
+  test("detect regexp strings") {
+    // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+    val strings: Seq[String] = Seq("\\", "\u0000", "\\x00",
+      "\f", "\\a", "\\e", "\\cx", "[abc]", "^", "[a-z&&[def]]", ".", "*", "\\d", "\\D",
+      "\\h", "\\H", "\\s", "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B",
+      "\\A", "\\G", "\\Z", "\\z", "\\R", "?", "|", "(abc)", "a{1,}", "\\k", "\\Q", "\\E")
+    for (string <- strings) {
+      assert(!RegexParser.isNonRegExpString(string))
+    }
+  }
+
+  test("detect non-regexp strings") {
+    val strings = Seq("\\.", "A", ",", "\t")
+    for (string <- strings) {
+      assert(RegexParser.isNonRegExpString(string))
+    }
+  }
 
   test("empty pattern") {
     assert(parse("") === RegexSequence(ListBuffer()))
