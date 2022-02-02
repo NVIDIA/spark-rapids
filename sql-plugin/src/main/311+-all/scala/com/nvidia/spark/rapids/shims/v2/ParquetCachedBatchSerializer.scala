@@ -259,7 +259,7 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 /**
  * This class assumes, the data is Columnar and the plugin is on
  */
-class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
+protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
 
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 

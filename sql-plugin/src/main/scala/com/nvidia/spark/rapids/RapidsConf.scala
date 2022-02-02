@@ -21,6 +21,8 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
+import ai.rapids.cudf.Cuda
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -404,10 +406,9 @@ object RapidsConf {
       "\"ASYNC\", and \"NONE\". With \"DEFAULT\", the RMM pool allocator is used; with " +
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS).")
+      "just passes through to CUDA memory allocation directly.")
     .stringConf
-    .createWithDefault("ARENA")
+    .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -810,11 +811,9 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to true enables orc output acceleration. We default it to false is because " +
-      "there is an ORC bug that ORC Java library fails to read ORC file without statistics in " +
-      "RowIndex. For more details, please refer to https://issues.apache.org/jira/browse/ORC-1075")
+    .doc("When set to false disables orc output acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
@@ -931,6 +930,17 @@ object RapidsConf {
           "point numbers and can be more lenient on parsing inf and -inf values")
       .booleanConf
       .createWithDefault(false)
+
+  val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
+    .doc("When set to true enables all json input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
+    .doc("When set to true enables json input acceleration")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1376,7 +1386,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1514,7 +1524,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val rmmPool: String = get(RMM_POOL)
+  lazy val rmmPool: String = {
+    val pool = get(RMM_POOL)
+    if ("ASYNC".equalsIgnoreCase(pool) && Cuda.getDriverVersion < 11020) {
+      logWarning("CUDA driver does not support the ASYNC allocator, falling back to ARENA")
+      "ARENA"
+    } else {
+      pool
+    }
+  }
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
@@ -1663,6 +1681,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
+
+  lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
+
+  lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>22.02.0-SNAPSHOT</version>
+    <version>22.04.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -114,6 +114,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -130,7 +131,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -162,6 +162,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/302/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -183,7 +184,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -219,6 +219,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/303/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -235,7 +236,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -271,6 +271,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/304/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -287,7 +288,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -323,6 +323,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
@@ -343,7 +344,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -408,7 +408,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -456,6 +455,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/312db/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
@@ -473,7 +473,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -507,6 +506,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/312/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
@@ -527,7 +527,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -564,6 +563,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/313/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
@@ -584,7 +584,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -621,13 +620,24 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/320/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/320until322/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>add-test-profile-src-320</id>
+                                <goals><goal>add-test-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/test/320/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -638,7 +648,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -674,13 +683,24 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/321/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/320until322/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>add-test-profile-src-321</id>
+                                <goals><goal>add-test-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/test/321/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -691,7 +711,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -727,13 +746,24 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/322/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/322+/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>add-test-profile-src-322</id>
+                                <goals><goal>add-test-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/test/322/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -744,7 +774,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -780,12 +809,23 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/330/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/322+/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/330+/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>add-test-profile-src-330</id>
+                                <goals><goal>add-test-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/test/330/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -796,7 +836,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -858,7 +897,6 @@
             <modules>
                 <module>dist</module>
                 <module>integration_tests</module>
-                <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
@@ -922,7 +960,7 @@
         <spark.test.version>${spark.version}</spark.test.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <cudf.version>22.02.0-SNAPSHOT</cudf.version>
+        <cudf.version>22.04.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.15</scala.version>
         <orc.version>1.5.10</orc.version>
@@ -957,7 +995,7 @@
         <spark312db.version>3.1.2-databricks</spark312db.version>
         <spark313.version>3.1.3-SNAPSHOT</spark313.version>
         <spark320.version>3.2.0</spark320.version>
-        <spark321.version>3.2.1-SNAPSHOT</spark321.version>
+        <spark321.version>3.2.1</spark321.version>
         <spark322.version>3.2.2-SNAPSHOT</spark322.version>
         <spark330.version>3.3.0-SNAPSHOT</spark330.version>
         <mockito.version>3.6.0</mockito.version>

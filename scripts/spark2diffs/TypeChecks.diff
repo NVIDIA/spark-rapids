@@ -1,7 +1,7 @@
 2c2
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
->  * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+>  * Copyright (c) 2020-2022, NVIDIA CORPORATION.
 21a22
 > import ai.rapids.cudf.DType
 24d24
