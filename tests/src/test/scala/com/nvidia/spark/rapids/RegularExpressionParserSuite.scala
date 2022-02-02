@@ -23,7 +23,7 @@ class RegularExpressionParserSuite extends FunSuite {
 
   test("detect regexp strings") {
     // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
-    val strings: Seq[String] = Seq("\\", "\u0000", "\\x00",
+    val strings: Seq[String] = Seq("\\", "\u0000", "\\x00", "\\.",
       "\f", "\\a", "\\e", "\\cx", "[abc]", "^", "[a-z&&[def]]", ".", "*", "\\d", "\\D",
       "\\h", "\\H", "\\s", "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B",
       "\\A", "\\G", "\\Z", "\\z", "\\R", "?", "|", "(abc)", "a{1,}", "\\k", "\\Q", "\\E")
@@ -33,7 +33,7 @@ class RegularExpressionParserSuite extends FunSuite {
   }
 
   test("detect non-regexp strings") {
-    val strings = Seq("\\.", "A", ",", "\t", ":", "")
+    val strings = Seq("A", ",", "\t", ":", "")
     for (string <- strings) {
       assert(!RegexParser.isRegExpString(string))
     }

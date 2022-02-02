@@ -405,15 +405,13 @@ class RegexParser(pattern: String) {
 }
 
 object RegexParser {
-  private val regexpChars = Seq('\u0000', '\\', '.', '^', '$', '\f')
-  private val regexpEscapedChars = Seq('\\', 'b', 'B', 's', 'S', 'w', 'W', 'd', 'D', 'Q', 'E',
-    'h', 'H', 'v', 'V', 'A', 'a', 'z', 'Z', 'x', 'e', 'c', 'p', 'G', 'R', 'k')
+  private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\f')
 
   def isRegExpString(s: String): Boolean = {
 
     def isRegExpString(ast: RegexAST): Boolean = ast match {
       case RegexChar(ch) => regexpChars.contains(ch)
-      case RegexEscaped(ch) => regexpEscapedChars.contains(ch)
+      case RegexEscaped(_) => true
       case RegexSequence(parts) => parts.exists(isRegExpString)
       case _ => true
     }
