@@ -56,6 +56,7 @@
             302,
             303,
             311,
+            311cdh,
             312,
             320,
             321
@@ -111,7 +112,8 @@
                 <included_buildvers>
                     302,
                     312,
-                    320
+                    320,
+                    311cdh
                 </included_buildvers>
             </properties>
         </profile>
