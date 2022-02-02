@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.{GpuDeterministicAggregateShim, ShimExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.v2.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -1390,7 +1390,7 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
-  with GpuDeterministicAggregateShim
+  with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
   with Serializable {
 
@@ -1436,7 +1436,7 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
-  with GpuDeterministicAggregateShim
+  with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
   with Serializable {
 
@@ -1481,7 +1481,7 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
 
 trait GpuCollectBase
   extends GpuAggregateFunction
-  with GpuDeterministicAggregateShim
+  with GpuDeterministicFirstLastCollectShim
   with GpuAggregateWindowFunction {
 
   def child: Expression

@@ -145,4 +145,5 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 }
 
-trait GpuDeterministicAggregateShim extends Expression
+// Fallback to the default definition of `deterministic`
+trait GpuDeterministicFirstLastCollectShim extends Expression
