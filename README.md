@@ -43,7 +43,7 @@ Tests are described [here](tests/README.md).
 ## Integration
 The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero copy data
 transfer into other GPU enabled applications.  It is described
-[here](docs/ml-integration.md).
+[here](docs/additional-functionality/ml-integration.md).
 
 Currently, we are working with XGBoost to try to provide this integration out of the box.
 
