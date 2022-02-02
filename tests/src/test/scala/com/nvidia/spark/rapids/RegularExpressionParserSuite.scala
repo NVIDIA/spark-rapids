@@ -33,7 +33,7 @@ class RegularExpressionParserSuite extends FunSuite {
   }
 
   test("detect non-regexp strings") {
-    val strings = Seq("\\.", "A", ",", "\t", ":")
+    val strings = Seq("\\.", "A", ",", "\t", ":", "")
     for (string <- strings) {
       assert(!RegexParser.isRegExpString(string))
     }
