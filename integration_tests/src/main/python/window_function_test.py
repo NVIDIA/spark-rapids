@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -981,7 +981,8 @@ def test_window_aggs_for_rows_collect_set():
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), ArrayGen(long_gen)], ids=meta_idfn('partBy:'))
+# Arrays and struct of struct (more than single level nesting) are not supported
+@pytest.mark.parametrize('part_gen', [ArrayGen(long_gen), StructGen([["a", StructGen([["a1", long_gen]])]])], ids=meta_idfn('partBy:'))
 # For arrays the sort and hash partition are also not supported
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'AggregateExpression', 'Count', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'Literal', 'SortExec', 'SortOrder', 'ShuffleExchangeExec', 'HashPartitioning')
 def test_nested_part_fallback(part_gen):
@@ -996,6 +997,22 @@ def test_nested_part_fallback(part_gen):
             .withColumn('rn', f.count('c').over(window_spec))
 
     assert_gpu_fallback_collect(do_it, 'WindowExec')
+
+@ignore_order(local=True)
+# single-level structs (no nested structs) are now supported by the plugin
+@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]])], ids=meta_idfn('partBy:'))
+def test_nested_part_struct(part_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(part_gen, length=20)),
+            ('b', LongRangeGen()),
+            ('c', int_gen)]
+    window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=2048) \
+            .withColumn('rn', f.count('c').over(window_spec))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 # In a distributed setup the order of the partitions returend might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
