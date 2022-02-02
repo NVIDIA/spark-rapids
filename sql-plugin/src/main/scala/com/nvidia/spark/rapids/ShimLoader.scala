@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -53,13 +54,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -79,6 +80,8 @@ object ShimLoader extends Logging {
   @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
+  // store the version to avoid looking up the shim again
+  @volatile private var sparkShimsVersion: SparkShimVersion = _
 
   // REPL-only logic
   @volatile private var tmpClassLoader: MutableURLClassLoader = _
@@ -310,6 +313,7 @@ object ShimLoader extends Logging {
         shimServiceProvider.matchesVersion(sparkVersion)
     }.map { case (inst, url) =>
       shimURL = url
+      sparkShimsVersion = inst.getVersion
       // this class will be loaded again by the real executor classloader
       inst.getClass.getName
     }
@@ -332,10 +336,12 @@ object ShimLoader extends Logging {
   }
 
   def getSparkShims: SparkShims = {
-    if (sparkShims == null) {
-      sparkShims = newInstanceOf[SparkShimServiceProvider](findShimProvider()).buildShim
-    }
-    sparkShims
+    SparkShimImpl
+  }
+
+  def getSparkShimVersion: SparkShimVersion = {
+    initShimProviderIfNeeded()
+    sparkShimsVersion
   }
 
   def getSparkVersion: String = {

@@ -21,7 +21,8 @@ import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat, ShimLoader}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat}
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import org.apache.commons.lang3.reflect.ConstructorUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -163,7 +164,7 @@ case class GpuDataSource(
       format.inferSchema(
         sparkSession,
         caseInsensitiveOptions - "path",
-        ShimLoader.getSparkShims.filesFromFileIndex(tempFileIndex))
+        SparkShimImpl.filesFromFileIndex(tempFileIndex))
     }.getOrElse {
       throw new AnalysisException(
         s"Unable to infer schema for $format. It must be specified manually.")
@@ -234,7 +235,7 @@ case class GpuDataSource(
           format.inferSchema(
             sparkSession,
             caseInsensitiveOptions - "path",
-            ShimLoader.getSparkShims.filesFromFileIndex(fileCatalog))
+            SparkShimImpl.filesFromFileIndex(fileCatalog))
         }.getOrElse {
           throw new AnalysisException(
             s"Unable to infer schema for $format at ${fileCatalog.allFiles().mkString(",")}. " +
@@ -285,17 +286,17 @@ case class GpuDataSource(
 
     relation match {
       case hs: HadoopFsRelation =>
-        ShimLoader.getSparkShims.checkColumnNameDuplication(
+        SparkShimImpl.checkColumnNameDuplication(
           hs.dataSchema,
           "in the data schema",
           equality)
-        ShimLoader.getSparkShims.checkColumnNameDuplication(
+        SparkShimImpl.checkColumnNameDuplication(
           hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        ShimLoader.getSparkShims.checkColumnNameDuplication(
+        SparkShimImpl.checkColumnNameDuplication(
           relation.schema,
           "in the data schema",
            equality)
@@ -636,7 +637,7 @@ object GpuDataSource extends Logging {
     val allPaths = globbedPaths ++ nonGlobPaths
     if (checkFilesExist) {
       val (filteredOut, filteredIn) = allPaths.partition { path =>
-        ShimLoader.getSparkShims.shouldIgnorePath(path.getName)
+        SparkShimImpl.shouldIgnorePath(path.getName)
       }
       if (filteredIn.isEmpty) {
         logWarning(

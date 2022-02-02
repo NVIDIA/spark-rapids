@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.SparkSession
@@ -63,7 +64,7 @@ object GpuReadOrcFileFormat {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
     GpuOrcScanBase.tagSupport(
-      ShimLoader.getSparkShims.sessionFromPlan(fsse),
+      SparkShimImpl.sessionFromPlan(fsse),
       fsse.requiredSchema,
       meta
     )

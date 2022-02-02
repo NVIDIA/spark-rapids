@@ -20,6 +20,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -98,7 +99,7 @@ class GpuSorter(
         case Some(ref) =>
           cudfOrdering += SortUtils.getOrder(so, ref.ordinal)
           // It is a bound GPU reference so we have to translate it to the CPU
-          cpuOrdering += ShimLoader.getSparkShims.sortOrder(
+          cpuOrdering += SparkShimImpl.sortOrder(
             BoundReference(ref.ordinal, ref.dataType, ref.nullable),
             so.direction, so.nullOrdering)
         case None =>
@@ -108,7 +109,7 @@ class GpuSorter(
           sortOrdersThatNeedsComputation += so
           // We already did the computation so instead of trying to translate
           // the computation back to the CPU too, just use the existing columns.
-          cpuOrdering += ShimLoader.getSparkShims.sortOrder(
+          cpuOrdering += SparkShimImpl.sortOrder(
             BoundReference(index, so.dataType, so.nullable),
             so.direction, so.nullOrdering)
       }

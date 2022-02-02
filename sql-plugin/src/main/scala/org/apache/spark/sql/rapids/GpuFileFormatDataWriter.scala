@@ -22,6 +22,7 @@ import ai.rapids.cudf.{ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
@@ -120,9 +121,6 @@ class GpuSingleDirectoryDataWriter(
   // Initialize currentWriter and statsTrackers
   newOutputWriter()
 
-  @scala.annotation.nowarn(
-    "msg=method newTaskTempFile in class FileCommitProtocol is deprecated"
-  )
   private def newOutputWriter(): Unit = {
     recordsInFile = 0
     releaseResources()
@@ -233,7 +231,7 @@ class GpuDynamicPartitionDataWriter(
    */
   private lazy val partitionPathExpression: Expression = Concat(
     description.partitionColumns.zipWithIndex.flatMap { case (c, i) =>
-      val partitionName = ShimLoader.getSparkShims.getScalaUDFAsExpression(
+      val partitionName = SparkShimImpl.getScalaUDFAsExpression(
         ExternalCatalogUtils.getPartitionPathString _,
         StringType,
         Seq(Literal(c.name), Cast(c, StringType, Option(description.timeZoneId))))
@@ -248,9 +246,6 @@ class GpuDynamicPartitionDataWriter(
     row => proj(row).getString(0)
   }
 
-  @scala.annotation.nowarn(
-    "msg=method newTaskTempFile.* in class FileCommitProtocol is deprecated"
-  )
   private def newOutputWriter(partDir: String): Unit = {
     recordsInFile = 0
     releaseResources()

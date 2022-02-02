@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package com.nvidia.spark.rapids.shims.spark302
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 object SparkShimServiceProvider {
   val VERSION = SparkShimVersion(3, 0, 2)
@@ -29,6 +31,8 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   }
 
   def buildShim: SparkShims = {
-    new Spark302Shims()
+    SparkShimImpl
   }
+
+  override def getVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
 }

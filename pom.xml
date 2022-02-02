@@ -115,6 +115,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301/scala</source>
+                                        <source>${project.basedir}/src/main/301-303/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -164,6 +165,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/302/scala</source>
+                                        <source>${project.basedir}/src/main/301-303/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -222,6 +224,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/303/scala</source>
+                                        <source>${project.basedir}/src/main/301-303/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>

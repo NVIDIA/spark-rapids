@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package org.apache.spark.sql.rapids
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand, ShimLoader}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
@@ -74,14 +75,14 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
       val result = saveDataIntoTable(
         sparkSession, table, tableLocation, child, SaveMode.Overwrite, tableExists = false)
-      ShimLoader.getSparkShims.createTable(table, sessionState.catalog, tableLocation, result)
+      SparkShimImpl.createTable(table, sessionState.catalog, tableLocation, result)
 
       result match {
         case _: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
           sparkSession.sqlContext.conf.manageFilesourcePartitions =>
           // Need to recover partitions into the metastore so our saved data is visible.
           sessionState.executePlan(
-            ShimLoader.getSparkShims.v1RepairTableCommand(table.identifier)).toRdd
+            SparkShimImpl.v1RepairTableCommand(table.identifier)).toRdd
         case _ =>
       }
     }

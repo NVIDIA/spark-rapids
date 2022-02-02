@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -205,7 +205,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(cpuPartitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ cpuOrderSpec)
+    Seq(cpuPartitionSpec.map(SparkShimImpl.sortOrder(_, Ascending)) ++ cpuOrderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 

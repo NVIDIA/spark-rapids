@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -141,7 +141,7 @@ class GpuCollectLimitMeta(
 
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
-      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+      SparkShimImpl.getGpuShuffleExchangeExec(
         GpuSinglePartitioning,
         GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
         SinglePartition))

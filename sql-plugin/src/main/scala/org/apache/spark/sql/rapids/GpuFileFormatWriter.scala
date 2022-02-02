@@ -21,6 +21,7 @@ import java.util.{Date, UUID}
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._
@@ -196,10 +197,9 @@ object GpuFileFormatWriter extends Logging {
         // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
         // the physical plan may have different attribute ids due to optimizer removing some
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
-        val sparkShims = ShimLoader.getSparkShims
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
-            .map(attr => sparkShims.sortOrder(attr, Ascending)), outputSpec.outputColumns)
+            .map(attr => SparkShimImpl.sortOrder(attr, Ascending)), outputSpec.outputColumns)
         val sortType = if (RapidsConf.STABLE_SORT.get(plan.conf)) {
           FullSortSingleBatch
         } else {

@@ -29,7 +29,7 @@ import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{ShimBroadcastExchangeLike, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.v2.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -363,7 +363,7 @@ abstract class GpuBroadcastExchangeExecBase(
 
                 val d = data.collect()
                 val emptyRelation: Option[Any] = if (d.isEmpty) {
-                  ShimLoader.getSparkShims.tryTransformIfEmptyRelation(mode)
+                  SparkShimImpl.tryTransformIfEmptyRelation(mode)
                 } else {
                   None
                 }

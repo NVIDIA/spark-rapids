@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,8 @@
 
 package org.apache.spark.sql.catalyst.expressions.rapids
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, ShimLoader, TypeEnum, TypeSig}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
 import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
@@ -39,7 +40,7 @@ object TimeStamp {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
         override def shouldFallbackOnAnsiTimestamp: Boolean =
-          ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+          SparkShimImpl.shouldFallbackOnAnsiTimestamp
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)

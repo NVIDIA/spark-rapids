@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
@@ -29,7 +30,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.shims.v2.GpuShuffleBlockResolver
+import org.apache.spark.sql.rapids.shims.v2.{GpuShuffleBlockResolver, RapidsShuffleInternalManager}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -371,7 +372,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
         val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
         val blocksByAddress = try {
-          ShimLoader.getSparkShims.getMapSizesByExecutorId(gpu.shuffleId,
+          SparkShimImpl.getMapSizesByExecutorId(gpu.shuffleId,
             startMapIndex, endMapIndex, startPartition, endPartition)
         } finally {
           nvtxRange.close()
@@ -451,9 +452,7 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
 
   // touched in the plugin code after the shim initialization
   // is complete
-  lazy val self: ShuffleManager =
-    ShimLoader.newInternalShuffleManager(conf, isDriver)
-        .asInstanceOf[ShuffleManager]
+  lazy val self: ShuffleManager = new RapidsShuffleInternalManager(conf, isDriver)
 
   // This function touches the lazy val `self` so we actually instantiate
   // the manager. This is called from both the driver and executor.

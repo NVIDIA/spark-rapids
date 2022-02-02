@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark302
+package org.apache.spark.sql.rapids.shims.v2
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
@@ -52,9 +52,9 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
 }
 
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
+  extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
 
-  def getReader[K, C](
+  override def getReader[K, C](
       handle: ShuffleHandle,
       startPartition: Int,
       endPartition: Int,
@@ -64,7 +64,7 @@ class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     self.getReader(handle, startPartition, endPartition, context, metrics)
   }
 
-  def getReaderForRange[K, C](
+  override def getReaderForRange[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,
       endMapIndex: Int,

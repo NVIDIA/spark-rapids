@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -423,9 +423,8 @@ class GpuHashAggregateIterator(
           "without grouping keys")
     }
 
-    val shims = ShimLoader.getSparkShims
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
-    val ordering = groupingAttributes.map(shims.sortOrder(_, Ascending, NullsFirst))
+    val ordering = groupingAttributes.map(SparkShimImpl.sortOrder(_, Ascending, NullsFirst))
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -1210,10 +1209,10 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
         }
         converters.dequeue() match {
           case Left(converter) =>
-            ShimLoader.getSparkShims.alias(converter.createExpression(ref),
+            SparkShimImpl.alias(converter.createExpression(ref),
               ref.name + "_converted")(NamedExpression.newExprId)
           case Right(converter) =>
-            ShimLoader.getSparkShims.alias(converter.createExpression(ref),
+            SparkShimImpl.alias(converter.createExpression(ref),
               ref.name + "_converted")(NamedExpression.newExprId)
         }
       case retExpr =>
