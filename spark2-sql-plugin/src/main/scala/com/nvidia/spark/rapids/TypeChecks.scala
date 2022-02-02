@@ -2116,6 +2116,7 @@ object SupportedOpsForTools {
           case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
+          case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }

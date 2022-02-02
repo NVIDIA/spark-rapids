@@ -1,0 +1,43 @@
+3,16d2
+<   def dateFormatInRead(fileOptions: Serializable): Option[String] = {
+<     fileOptions match {
+<       case jsonOpts: JSONOptions => Option(jsonOpts.dateFormat.getPattern)
+<       case _ => throw new RuntimeException("Wrong file options.")
+<     }
+<   }
+< 
+<   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
+<     fileOptions match {
+<       case jsonOpts: JSONOptions => Option(jsonOpts.timestampFormat.getPattern)
+<       case _ => throw new RuntimeException("Wrong file options.")
+<     }
+<   }
+< 
+41a28,37
+>   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
+>     val scan = scanMeta.wrapped
+>     tagSupport(
+>       scan.sparkSession,
+>       scan.dataSchema,
+>       scan.readDataSchema,
+>       scan.options.asScala.toMap,
+>       scanMeta)
+>   }
+> 
+47c43
+<       meta: RapidsMeta[_, _]): Unit = {
+---
+>       meta: RapidsMeta[_, _, _]): Unit = {
+109c105
+<       dateFormatInRead(parsedOptions).foreach { dateFormat =>
+---
+>       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
+117,118c113
+<       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
+<       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
+---
+>       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
+121c116
+<       timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+---
+>       ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
