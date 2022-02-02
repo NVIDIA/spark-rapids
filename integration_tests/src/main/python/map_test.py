@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, \
+    assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_311
@@ -137,10 +138,22 @@ def test_map_expr_multi_non_literal_keys():
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(2).selectExpr(
-                "map(1, 2, 3, 4) as i", 
+                "map(1, 2, 3, 4) as i",
                 "map('a', 'b', 'c', 'd') as s",
                 "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
                 "id"))
+
+def test_str_to_map_expr_scalar_input():
+    # Test pattern "key1:val1,key2:val2".
+    # We don't hit duplicate keys in this test due to the high cardinality of the generated strings.
+    data_gen = StringGen(nullable=False).with_special_case('') \
+        .with_special_pattern('.{0,10}:.{0,10},.{0,10}:.{0,10}')
+    (s,) = gen_scalars_for_sql(data_gen, 1)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen).selectExpr(
+            'str_to_map({}) as m1'.format(s),
+            'str_to_map({}, ",") as m2'.format(s),
+            'str_to_map({}, ",", ":") as m3'.format(s)))
 
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
@@ -224,7 +237,7 @@ def test_transform_values(data_gen):
 
         return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, 
+    assert_gpu_and_cpu_are_equal_collect(do_it,
             conf=allow_negative_scale_of_decimal_conf)
 
 
@@ -242,7 +255,7 @@ def test_transform_keys(data_gen):
 
         return unary_op_df(spark, data_gen).selectExpr(columns)
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, 
+    assert_gpu_and_cpu_are_equal_collect(do_it,
             conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
