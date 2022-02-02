@@ -377,14 +377,7 @@ date. Typically, one that overflowed.
 
 ### CSV Floating Point
 
-The CSV parser is not able to parse `NaN` values.  These are
-likely to be turned into null values, as described in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/125).
-
-Some floating-point values also appear to overflow but do not for the CPU as described in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/124).
-
-Any number that overflows will not be turned into a null value.
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -480,7 +473,21 @@ The nested types(array, map and struct) are not supported yet in current version
 
 ### JSON Floating Point
 
-Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+
+The GPU JSON reader does not support `NaN` and `Inf` values with full compatibility with Spark.
+
+The following are the only formats that are parsed consistently between CPU and GPU. Any other variation, including 
+these formats when unquoted, will produce `null` on the CPU and may produce valid `NaN` and `Inf` results on the GPU.
+
+```json
+{ "number": "NaN" }
+{ "number": "Infinity" }
+{ "number": "-Infinity" }
+```
+
+Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
+Spark will treat them as invalid inputs and will just return `null`.
 
 ## LIKE
 
