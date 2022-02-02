@@ -17,20 +17,14 @@
 package ai.rapids.cudf
 
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector}
+import com.nvidia.spark.rapids.{Arm,  GpuColumnVectorFromBuffer}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object HostConcatResultUtil extends Arm {
   /**
-   * Create a `HostConcatResult` that only contains number of rows.
-   *
-   * In order to create an instance of `HostConcatResult` that is closeable,
-   * we allocate a 0-byte `HostMemoryBuffer`. Because this is requesting memory
-   * from the system, it becomes: UNSAFE.allocateMemory(0) which returns 0.
-   * The HostMemoryBuffer.close() logic skips such cases where the address
-   * is 0, so the resulting `HostConcatResult` can be used in withResources easily.
+   * Create a rows-only `HostConcatResult`.
    */
   def rowsOnlyHostConcatResult(numRows: Int): HostConcatResult = {
     new HostConcatResult(
@@ -41,7 +35,7 @@ object HostConcatResultUtil extends Arm {
 
   /**
    * Given a `HostConcatResult` and a SparkSchema produce a `ColumnarBatch`,
-   * handling the only-row case.
+   * handling the rows-only case.
    *
    * @note This function does not consume the `HostConcatResult`, and
    *       callers are responsible for closing the resulting `ColumnarBatch`
@@ -56,7 +50,7 @@ object HostConcatResultUtil extends Arm {
       new ColumnarBatch(Array.empty, hostConcatResult.getTableHeader.getNumRows)
     } else {
       withResource(hostConcatResult.toContiguousTable) { ct =>
-        GpuColumnVector.from(ct.getTable, sparkSchema)
+        GpuColumnVectorFromBuffer.from(ct, sparkSchema)
       }
     }
   }

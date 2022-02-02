@@ -17,7 +17,9 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{HostConcatResultUtil, NvtxColor, NvtxRange}
+import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.shims.v2.{GpuHashPartitioning, GpuJoinUtils, ShimBinaryExecNode}
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -267,65 +269,83 @@ object GpuShuffledHashJoinExec extends Arm {
         (builtBatch, streamIter)
       } else {
         val dataTypes = buildOutput.map(_.dataType).toArray
-        closeOnExcept(new CloseableBufferedIterator(streamIter.buffered)) { bufferedStreamIter =>
-          val hostConcatIter = new HostShuffleCoalesceIterator(bufferedBuildIterator,
-              hostTargetBatchSize, dataTypes, coalesceMetricsMap)
+        val hostConcatIter = new HostShuffleCoalesceIterator(bufferedBuildIterator,
+          hostTargetBatchSize, dataTypes, coalesceMetricsMap)
+        withResource(hostConcatIter) { _ =>
           closeOnExcept(hostConcatIter.next()) { hostConcatResult =>
-            val buildBatch = if (!hostConcatIter.hasNext()) {
-              val singleBatchBufferTimeDelta = System.nanoTime() - startTime
+            if (!hostConcatIter.hasNext()) {
+              // add the time it took to fetch that first host-side build batch
+              buildTime += System.nanoTime() - startTime
               // Optimal case, we drained the build iterator and we didn't have a prior
               // so it was a single batch, and is entirely on the host.
               // We peek at the stream iterator with `hasNext` on the buffered
               // iterator, which will grab the semaphore when putting the first stream
               // batch on the GPU, and then we bring the build batch to the GPU and return.
-              withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
-                if (bufferedStreamIter.hasNext) {
-                  bufferedStreamIter.head
-                } else {
-                  GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+              val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
+              closeOnExcept(bufferedStreamIter) { _ =>
+                withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+                  if (bufferedStreamIter.hasNext) {
+                    bufferedStreamIter.head
+                  } else {
+                    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+                  }
                 }
-              }
-
-              // we are on the GPU and our build batch is within `targetSizeBytes`.
-              // we can bring the build batch to the GPU now
-              withResource(hostConcatIter) { _ =>
-                val buildBatchToGpuTime = System.nanoTime()
-                withResource(hostConcatResult) { _ =>
-                  val res = HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
-                  buildTime += (System.nanoTime() - buildBatchToGpuTime) +
-                    singleBatchBufferTimeDelta
-                  res
-                }
+                val buildBatch = getBuildBatchOptimized(hostConcatResult, buildOutput, buildTime)
+                (buildBatch, bufferedStreamIter)
               }
             } else {
-              // In the fallback case we build the same iterator chain that the Spark plan
-              // would have produced:
-              //   GpuCoalesceIterator(GpuShuffleCoalesceIterator(shuffled build side))
-              // This allows us to make the shuffle batches spillable in case we have a large,
-              // build-side table, as `RequireSingleBatch` is virtually no limit, and we
-              // know we are now above `hostTargetBatchSize` (which is 2GB by default)
-              withResource(hostConcatIter) { _ =>
-                val shuffleCoalesce = new GpuShuffleCoalesceIterator(
-                  Seq(hostConcatResult).iterator ++ hostConcatIter,
-                  dataTypes, coalesceMetricsMap)
-                val res = ConcatAndConsumeAll.getSingleBatchWithVerification(
-                  new GpuCoalesceIterator(shuffleCoalesce,
-                    dataTypes,
-                    RequireSingleBatch,
-                    NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
-                    coalesceMetricsMap(GpuMetric.CONCAT_TIME),
-                    coalesceMetricsMap(GpuMetric.OP_TIME),
-                    coalesceMetricsMap(GpuMetric.PEAK_DEVICE_MEMORY),
-                    spillCallback,
-                    "build batch"),
-                  buildOutput)
-                buildTime += System.nanoTime() - startTime
-                res
-              }
+              val buildBatch = getBuildBatchFromUnfinished(
+                Seq(hostConcatResult).iterator ++ hostConcatIter,
+                buildOutput, spillCallback, coalesceMetricsMap)
+              buildTime += System.nanoTime() - startTime
+              (buildBatch, streamIter)
             }
-            (buildBatch, bufferedStreamIter)
           }
         }
+      }
+    }
+  }
+
+  private def getBuildBatchFromUnfinished(
+      iterWithPrior: Iterator[HostConcatResult],
+      buildOutput: Seq[Attribute],
+      spillCallback: SpillCallback,
+      coalesceMetricsMap: Map[String, GpuMetric]): ColumnarBatch = {
+    // In the fallback case we build the same iterator chain that the Spark plan
+    // would have produced:
+    //   GpuCoalesceIterator(GpuShuffleCoalesceIterator(shuffled build side))
+    // This allows us to make the shuffle batches spillable in case we have a large,
+    // build-side table, as `RequireSingleBatch` is virtually no limit, and we
+    // know we are now above `hostTargetBatchSize` (which is 2GB by default)
+    val dataTypes = buildOutput.map(_.dataType).toArray
+      val shuffleCoalesce = new GpuShuffleCoalesceIterator(
+        iterWithPrior,
+        dataTypes,
+        coalesceMetricsMap)
+      val res = ConcatAndConsumeAll.getSingleBatchWithVerification(
+        new GpuCoalesceIterator(shuffleCoalesce,
+          dataTypes,
+          RequireSingleBatch,
+          NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
+          coalesceMetricsMap(GpuMetric.CONCAT_TIME),
+          coalesceMetricsMap(GpuMetric.OP_TIME),
+          coalesceMetricsMap(GpuMetric.PEAK_DEVICE_MEMORY),
+          spillCallback,
+          "build batch"),
+        buildOutput)
+      res
+  }
+
+  private def getBuildBatchOptimized(
+      hostConcatResult: HostConcatResult,
+      buildOutput: Seq[Attribute],
+      buildTime: GpuMetric): ColumnarBatch = {
+    val dataTypes = buildOutput.map(_.dataType).toArray
+    // we are on the GPU and our build batch is within `targetSizeBytes`.
+    // we can bring the build batch to the GPU now
+    withResource(hostConcatResult) { _ =>
+      buildTime.ns {
+        HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
       }
     }
   }
