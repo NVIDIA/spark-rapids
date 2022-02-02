@@ -30,18 +30,7 @@ trait Spark30Xuntil33XShims extends Spark30Xuntil33XFileOptionsShims {
   }
 }
 
-trait GpuFirstDeterministicShim extends Expression {
-  // First is not a deterministic function until Spark-3.3
+trait GpuDeterministicAggregateShim extends Expression {
+  // First, Last and Collect are non-deterministic function until Spark-3.3
   override lazy val deterministic = false
-}
-
-trait GpuLastDeterministicShim extends Expression {
-  // Last is not a deterministic function until Spark-3.3
-  override lazy val deterministic = false
-}
-
-trait GpuCollectDeterministicShim extends Expression {
-  // Collect operations are non-deterministic since their results depend on the
-  // actual order of input rows until Spark-3.3
-  override lazy val deterministic: Boolean = false
 }
