@@ -1296,7 +1296,7 @@ class GpuStringSplitMeta(
     } else {
       val str = regexp.get.value.asInstanceOf[UTF8String]
       if (str != null) {
-        if (!RegexParser.isNonRegExpString(str.toString)) {
+        if (RegexParser.isRegExpString(str.toString)) {
           willNotWorkOnGpu("regular expressions are not supported yet")
         }
         if (str.numChars() == 0) {

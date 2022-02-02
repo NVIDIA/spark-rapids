@@ -409,23 +409,23 @@ object RegexParser {
   private val regexpEscapedChars = Seq('\\', 'b', 'B', 's', 'S', 'w', 'W', 'd', 'D', 'Q', 'E',
     'h', 'H', 'v', 'V', 'A', 'a', 'z', 'Z', 'x', 'e', 'c', 'p', 'G', 'R', 'k')
 
-  def isNonRegExpString(s: String): Boolean = {
+  def isRegExpString(s: String): Boolean = {
 
-    def isSimpleString(ast: RegexAST): Boolean = ast match {
-      case RegexChar(ch) => !regexpChars.contains(ch)
-      case RegexEscaped(ch) => !regexpEscapedChars.contains(ch)
-      case RegexSequence(parts) => parts.forall(isSimpleString)
-      case _ => false
+    def isRegExpString(ast: RegexAST): Boolean = ast match {
+      case RegexChar(ch) => regexpChars.contains(ch)
+      case RegexEscaped(ch) => regexpEscapedChars.contains(ch)
+      case RegexSequence(parts) => parts.exists(isRegExpString)
+      case _ => true
     }
 
     try {
       val parser = new RegexParser(s)
       val ast = parser.parse()
-      isSimpleString(ast)
+      isRegExpString(ast)
     } catch {
       case _: RegexUnsupportedException =>
         // if we cannot parse it then assume that it might be valid regexp
-        false
+        true
     }
   }
 }

@@ -28,14 +28,14 @@ class RegularExpressionParserSuite extends FunSuite {
       "\\h", "\\H", "\\s", "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B",
       "\\A", "\\G", "\\Z", "\\z", "\\R", "?", "|", "(abc)", "a{1,}", "\\k", "\\Q", "\\E")
     for (string <- strings) {
-      assert(!RegexParser.isNonRegExpString(string))
+      assert(RegexParser.isRegExpString(string))
     }
   }
 
   test("detect non-regexp strings") {
     val strings = Seq("\\.", "A", ",", "\t")
     for (string <- strings) {
-      assert(RegexParser.isNonRegExpString(string))
+      assert(!RegexParser.isRegExpString(string))
     }
   }
 
