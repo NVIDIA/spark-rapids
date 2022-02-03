@@ -18,6 +18,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gp
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from pyspark.sql.functions import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 def read_parquet_df(data_path):
@@ -757,10 +758,15 @@ def test_parquet_scan_with_hidden_metadata_column_names(spark_tmp_path):
     override the hidden metadata columns and we can run on GPU
     """
     data_path = spark_tmp_path + "/hidden_metadata_column_names.parquet"
+    with_cpu_session(lambda spark : spark.range(10) \
+                 .withColumn("_metadata", struct(col("id").alias("file_size"))) \
+                 .write \
+                 .partitionBy("id") \
+                 .mode("overwrite") \
+                 .parquet(data_path))
 
     def do_parquet_scan(spark):
-        spark.range(10).selectExpr("id", "id % 3 as file_size").write.partitionBy("id").mode("overwrite").parquet(data_path)
-        df = spark.read.parquet(data_path).selectExpr("Max(file_size)")
+        df = spark.read.parquet(data_path).selectExpr("_metadata.file_size")
         return df
 
     assert_gpu_and_cpu_are_equal_collect(do_parquet_scan)
