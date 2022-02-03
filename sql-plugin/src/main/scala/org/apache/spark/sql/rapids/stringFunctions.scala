@@ -1388,7 +1388,13 @@ class GpuStringToMapMeta(
     extends TernaryExprMeta[StringToMap](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private def checkRegex(delimExpr: Expression) : Unit = {
+  private def tagForGpuIfNotFoldable(children: Seq[Expression]) : Unit = {
+    if (children.forall(_.foldable)) {
+      willNotWorkOnGpu("result can be compile-time evaluated")
+    }
+  }
+
+  private def tagForGpuIfNotRegex(delimExpr: Expression) : Unit = {
     extractLit(delimExpr).foreach { delim =>
       val str = delim.value.asInstanceOf[UTF8String]
       if (str != null){
@@ -1410,8 +1416,9 @@ class GpuStringToMapMeta(
   }
 
   override def tagExprForGpu(): Unit = {
-    checkRegex(expr.pairDelim)
-    checkRegex(expr.keyValueDelim)
+    tagForGpuIfNotFoldable(expr.children)
+    tagForGpuIfNotRegex(expr.pairDelim)
+    tagForGpuIfNotRegex(expr.keyValueDelim)
   }
 
   override def convertToGpu(str: Expression,
