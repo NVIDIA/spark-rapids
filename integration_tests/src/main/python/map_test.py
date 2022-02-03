@@ -143,25 +143,12 @@ def test_map_scalar_project():
                 "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
                 "id"))
 
-def test_str_to_map_expr_scalar_input():
+def test_str_to_map_expr_fixed_pattern_input():
     # Test pattern "key1:val1,key2:val2".
     # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
     # key start with a letter [a-zA-Z].
-    data_gen = StringGen(nullable=False).with_special_case('') \
-               .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}')
-    (s,) = gen_scalars_for_sql(data_gen, 1)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen).selectExpr(
-            'str_to_map({}) as m1'.format(s),
-            'str_to_map({}, ",") as m2'.format(s),
-            'str_to_map({}, ",", ":") as m3'.format(s)))
-
-def test_str_to_map_expr_column_input():
-    # Test pattern "key1:val1,key2:val2".
-    # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
-    # key start with a letter [a-zA-Z].
-    data_gen = [('a', StringGen(nullable=True).with_special_case('')
-                 .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}'))]
+    data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
+                                nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
