@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,20 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
 }
 
 object GpuReadParquetFileFormat {
+
+  private val hiddenMetadataFields = Set(
+    "file_path",
+    "file_name",
+    "file_size",
+    "file_modification_time")
+
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    val hiddenColumns = meta.wrapped.expressions.map(_.sql)
+      .filter(hiddenMetadataFields.contains)
+      .filterNot(meta.wrapped.relation.schema.fieldNames.contains)
+    if (hiddenColumns.nonEmpty) {
+      meta.willNotWorkOnGpu("parquet hidden metadata columns are not supported on GPU")
+    }
     val fsse = meta.wrapped
     GpuParquetScanBase.tagSupport(
       ShimLoader.getSparkShims.sessionFromPlan(fsse),
