@@ -31,7 +31,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
   val metricMap = mock[Map[String, GpuMetric]]
-  when(metricMap(any())).thenReturn(mock[GpuMetric])
+  when(metricMap(any())).thenReturn(NoopMetric)
 
   test("fallback with empty build iterator") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
