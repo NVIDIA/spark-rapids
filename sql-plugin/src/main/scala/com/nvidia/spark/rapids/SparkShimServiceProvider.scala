@@ -21,6 +21,5 @@ package com.nvidia.spark.rapids
  */
 trait SparkShimServiceProvider {
   def matchesVersion(version:String): Boolean
-  def getVersion: SparkShimVersion
   def buildShim: SparkShims
 }

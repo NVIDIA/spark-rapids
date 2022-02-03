@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark302
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
-import com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider
 import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 object SparkShimServiceProvider {
@@ -33,6 +32,4 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   def buildShim: SparkShims = {
     SparkShimImpl
   }
-
-  override def getVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
 }

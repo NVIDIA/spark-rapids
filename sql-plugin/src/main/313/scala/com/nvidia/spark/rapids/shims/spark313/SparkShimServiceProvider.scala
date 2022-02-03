@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark313
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 object SparkShimServiceProvider {
   val VERSION = SparkShimVersion(3, 1, 3)
@@ -30,6 +31,6 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   }
 
   def buildShim: SparkShims = {
-    new Spark313Shims()
+    SparkShimImpl
   }
 }

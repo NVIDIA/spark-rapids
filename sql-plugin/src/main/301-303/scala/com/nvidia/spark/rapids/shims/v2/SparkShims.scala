@@ -23,7 +23,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
 object SparkShimImpl extends Spark30XShims with Spark30Xuntil33XShims {
 
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getSparkShimVersion
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def getParquetFilters(
       schema: MessageType,
