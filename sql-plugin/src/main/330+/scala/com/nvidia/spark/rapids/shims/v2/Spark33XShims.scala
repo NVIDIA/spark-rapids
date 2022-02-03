@@ -22,7 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.json.rapids.shims.v2.Spark33XFileOptionsShims
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.SparkPlan
@@ -144,3 +144,6 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 }
+
+// Fallback to the default definition of `deterministic`
+trait GpuDeterministicFirstLastCollectShim extends Expression
