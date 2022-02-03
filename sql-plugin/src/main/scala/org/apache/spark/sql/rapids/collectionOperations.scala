@@ -171,9 +171,8 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
               if (!exist.isValid || exist.getBoolean) {
                 lhs.getBase.getMapValue(rhs.getBase)
               } else {
-                throw new NoSuchElementException(
-                  s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +
-                    s"does not exist in one of the rows in the map column")
+                RapidsErrorUtils.throwInvalidElementAtIndexError(
+                  rhs.getValue.asInstanceOf[UTF8String].toString)
               }
             }
           }
