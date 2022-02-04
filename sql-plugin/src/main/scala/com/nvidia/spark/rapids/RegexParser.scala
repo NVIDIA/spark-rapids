@@ -284,7 +284,7 @@ class RegexParser(pattern: String) {
           case 'x' =>
             consumeExpected(ch)
             parseHexDigit
-          case _ if Character.isDigit(ch) =>
+          case '0' =>
             parseOctalDigit
           case other =>
             throw new RegexUnsupportedException(
@@ -337,7 +337,12 @@ class RegexParser(pattern: String) {
       if (pos + 1 < pattern.length && isOctalDigit(pattern.charAt(pos + 1))) {
         if (pos + 2 < pattern.length && isOctalDigit(pattern.charAt(pos + 2))
             && pattern.charAt(pos) <= '3') {
-          parseOctalDigits(3)
+          if (pos + 3 < pattern.length && isOctalDigit(pattern.charAt(pos + 3))
+              && pattern.charAt(pos+1) <= '3' && pattern.charAt(pos) == '0') {
+            parseOctalDigits(4)
+          } else {
+            parseOctalDigits(3)
+          }
         } else {
           parseOctalDigits(2)
         }
@@ -472,10 +477,15 @@ class CudfRegexTranspiler(replace: Boolean) {
       }
 
       case RegexOctalChar(digits) =>
-        regex
-      //   // see https://github.com/NVIDIA/spark-rapids/issues/4288
-      //   throw new RegexUnsupportedException(
-      //     s"cuDF does not support octal digits consistently with Spark")
+        val octal = if (digits.charAt(0) == '0' && digits.length == 4) {
+          digits.substring(0)
+        } else  {
+          digits
+        }
+        if (Integer.parseInt(octal, 8) >= 128) {
+          throw new RegexUnsupportedException("cuDF does not support octal digits 0o177 < n <= 0o377")
+        }
+        RegexOctalChar(octal)
 
       case RegexHexDigit(_) =>
         // see https://github.com/NVIDIA/spark-rapids/issues/4486
@@ -729,21 +739,22 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
   }
 }
 
-sealed trait RegexCharacterClassComponent extends RegexAST
+sealed trait RegexCharacterClassComponent extends RegexAST {
+  def escaped = false
+}
+
+// TODO: Consider merging some of these subclasses to handling escaping
 
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
+  override def escaped = true
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\x$a"
 }
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
+  override def escaped = true
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = {
-    if (a.length == 4)
-      s"\\${a.substring(1)}"
-    else 
-      s"\\${a}"
-  }
+  override def toRegexString: String = s"\\$a"
 }
 
 sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
@@ -752,6 +763,7 @@ sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
+  override def escaped = true
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
