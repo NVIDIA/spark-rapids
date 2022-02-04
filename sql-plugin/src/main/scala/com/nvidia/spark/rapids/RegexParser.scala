@@ -404,6 +404,30 @@ class RegexParser(pattern: String) {
 
 }
 
+object RegexParser {
+  private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\f')
+
+  def isRegExpString(s: String): Boolean = {
+
+    def isRegExpString(ast: RegexAST): Boolean = ast match {
+      case RegexChar(ch) => regexpChars.contains(ch)
+      case RegexEscaped(_) => true
+      case RegexSequence(parts) => parts.exists(isRegExpString)
+      case _ => true
+    }
+
+    try {
+      val parser = new RegexParser(s)
+      val ast = parser.parse()
+      isRegExpString(ast)
+    } catch {
+      case _: RegexUnsupportedException =>
+        // if we cannot parse it then assume that it might be valid regexp
+        true
+    }
+  }
+}
+
 /**
  * Transpile Java/Spark regular expression to a format that cuDF supports, or throw an exception
  * if this is not possible.
