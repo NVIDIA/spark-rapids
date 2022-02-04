@@ -172,7 +172,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 lhs.getBase.getMapValue(rhs.getBase)
               } else {
                 RapidsErrorUtils.throwInvalidElementAtIndexError(
-                  rhs.getValue.asInstanceOf[UTF8String].toString)
+                  rhs.getValue.asInstanceOf[UTF8String].toString, true)
               }
             }
           }
