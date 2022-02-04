@@ -459,7 +459,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       spillCallback))
 
   protected def popAll(): Array[ColumnarBatch] = {
-    closeOnExcept(batches.map(_.getColumnarBatch())) { wip =>
+    closeOnExcept(batches.safeMap(_.getColumnarBatch())) { wip =>
       batches.safeClose()
       batches.clear()
       wip.toArray
@@ -536,7 +536,7 @@ class GpuCompressionAwareCoalesceIterator(
   private[this] var codec: TableCompressionCodec = _
 
   override protected def popAll(): Array[ColumnarBatch] = {
-    closeOnExcept(batches.map(_.getColumnarBatch())) { wip =>
+    closeOnExcept(batches.safeMap(_.getColumnarBatch())) { wip =>
       batches.safeClose()
       batches.clear()
 
