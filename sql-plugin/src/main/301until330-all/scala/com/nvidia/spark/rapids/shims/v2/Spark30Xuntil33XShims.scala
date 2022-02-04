@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.json.rapids.shims.v2.Spark30Xuntil33XFileOptionsShims
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2._
@@ -27,4 +28,10 @@ trait Spark30Xuntil33XShims extends Spark30Xuntil33XFileOptionsShims {
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
     GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")
   }
+}
+
+// First, Last and Collect have mistakenly been marked as non-deterministic until Spark-3.3.
+// They are actually deterministic iff their child expression is deterministic.
+trait GpuDeterministicFirstLastCollectShim extends Expression {
+  override lazy val deterministic = false
 }
