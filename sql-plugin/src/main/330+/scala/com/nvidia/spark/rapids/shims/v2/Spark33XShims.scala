@@ -149,7 +149,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
       case MetadataAttribute(expr) => true
       case _ => false
     })) {
-      meta.willNotWorkOnGpu("parquet hidden metadata columns are not supported on GPU")
+      meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
     }
     GpuFileSourceScanExec.tagSupport(meta)
   }
