@@ -20,7 +20,6 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
@@ -58,19 +57,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
 }
 
 object GpuReadParquetFileFormat {
-
-  // copied from src/main/scala/org/apache/spark/sql/catalyst/util/package.scala
-  private val METADATA_COL_ATTR_KEY = "__metadata_col"
-
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    val metadataColumns: Seq[AttributeReference] = meta.wrapped.expressions
-      .filter(_.isInstanceOf[AttributeReference])
-      .map(_.asInstanceOf[AttributeReference])
-      .filter(_.metadata.contains(METADATA_COL_ATTR_KEY))
-      .filter(_.metadata.getBoolean(METADATA_COL_ATTR_KEY))
-    if (metadataColumns.nonEmpty) {
-      meta.willNotWorkOnGpu("parquet hidden metadata columns are not supported on GPU")
-    }
     val fsse = meta.wrapped
     GpuParquetScanBase.tagSupport(
       ShimLoader.getSparkShims.sessionFromPlan(fsse),
