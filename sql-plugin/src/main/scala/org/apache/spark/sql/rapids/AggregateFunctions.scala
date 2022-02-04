@@ -1066,6 +1066,16 @@ case class GpuDecimal128Sum(
     failOnErrorOverride: Boolean,
     forceWindowSumToNotBeReplaced: Boolean)
     extends GpuDecimalSum(child, dt, failOnErrorOverride) with GpuReplaceWindowFunction {
+  private lazy val childIsDecimal: Boolean =
+    child.dataType.isInstanceOf[DecimalType]
+
+  private lazy val childDecimalType: DecimalType =
+    child.dataType.asInstanceOf[DecimalType]
+
+  private lazy val needsDec128UpdateOverflowChecks: Boolean =
+    childIsDecimal &&
+        childDecimalType.precision > GpuDecimalSumOverflow.updateCutoffPrecision
+
   // For some operations we need to sum the higher digits in addition to the regular value so
   // we can detect overflow. This is the type of the higher digits SUM value.
   private lazy val higherDigitsCheckType: DecimalType = {
@@ -1144,8 +1154,13 @@ case class GpuDecimal128Sum(
     }
   }
 
-  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =
-    !forceWindowSumToNotBeReplaced
+  // Replacement Window Function
+  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = {
+    // We only will replace this if we think an update will fail. In the cases where we can
+    // handle a window function larger than a single batch, we already have merge overflow
+    // detection enabled.
+    !forceWindowSumToNotBeReplaced && needsDec128UpdateOverflowChecks
+  }
 
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
     // We need extra overflow checks for some larger decimal type. To do these checks we
