@@ -145,7 +145,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def tagHiddenMetadataExpressions(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    val metadataColumns = meta.wrapped.expressions.filter(expr =>
+    val metadataColumns = meta.wrapped.expressions.filter { expr =>
       expr match {
         case MetadataAttribute(expr) => true
         case _ => false
