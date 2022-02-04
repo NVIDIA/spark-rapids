@@ -489,12 +489,6 @@ these formats when unquoted, will produce `null` on the CPU and may produce vali
 Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
 Spark will treat them as invalid inputs and will just return `null`.
 
-## LIKE
-
-If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
-the end of the string.  This will be fixed in a future release. The issue is
-[here](https://github.com/NVIDIA/spark-rapids/issues/119).
-
 ## Regular Expressions
 
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
