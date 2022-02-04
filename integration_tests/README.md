@@ -5,41 +5,161 @@ are intended to be able to be run against any Spark-compatible cluster/release t
 verify that the plugin is doing the right thing in as many cases as possible.
 
 There are two sets of tests. The PySpark tests are described on this page. The scala tests are
-described [here](../tests/README.md). 
+described [here](../tests/README.md).
 
-## Dependencies
+## Setting Environment
 
 The tests are based off of `pyspark` and `pytest` running on Python 3. There really are
 only a small number of Python dependencies that you need to install for the tests. The
 dependencies also only need to be on the driver.  You can install them on all nodes
 in the cluster but it is not required.
 
-### pytest
-`pip install pytest`
+### Prerequisities
 
-Should be enough to get the basics started.
+The build requires `OpenJDK 8`, `maven`, and `python`.
+skip to the next section if you have already installed them.
 
-### sre_yield
-`pip install sre_yield`
+<details><summary><b>Java Environment</b></summary>
+<p>
 
-`sre_yield` provides a set of APIs to generate string data from a regular expression.
+It is recommended to use `alternatives` to manage multiple java versions.
+Then you can simply set `JAVA_HOME` to JDK directory:
 
-### pandas
-`pip install pandas`
+  ```shell script
+  JAVA_HOME=$(readlink -nf $(which java) | xargs dirname | xargs dirname | xargs dirname)
+  ```
 
-`pandas` is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool and is
-only needed when testing integration with pandas.
+</p>
+</details>
 
-### pyarrow
-`pip install pyarrow`
+<details><summary><b>Installing python using pyenv</b></summary>
+<p>
 
-`pyarrow` provides a Python API for functionality provided by the Arrow C++ libraries, along with tools for Arrow
-integration and interoperability with pandas, NumPy, and other software in the Python ecosystem. This is used
-to test improved transfer performance to pandas based user defined functions.
+It is recommended that you use `pyenv` to manage Python installations.
 
-## pytest-xdist and findspark
+- First, make sure to install all the required dependencies listed
+  [here](https://github.com/pyenv/pyenv/wiki#suggested-build-environment).
+- Follow instructions to use the right method of installation described
+  [here](https://github.com/pyenv/pyenv#installation)
+- Verify that `pyenv` is set correctly
+  
+  ```shell script
+  which pyenv  
+  ```
 
-`pytest-xdist` and `findspark` can be used to speed up running the tests by running them in parallel.
+- Using `pyenv` to set Python installation
+  - To check versions to be installed (will return a long list)
+  
+    ```shell script
+    ls ~/.pyenv/versions/
+    ```
+
+  - To install a specific version from the available list
+  
+    ```shell script
+    pyenv install 3.X.Y
+    ```
+
+  - To check available versions locally
+
+    ```shell script
+    ls ~/.pyenv/versions/
+    ```
+
+  - To set python environment to one of the installed versions
+
+    ```shell script
+    pyenv global 3.X.Y
+    ```
+
+For full details on `pyenv` and instructions, see [pyenv github page](https://github.com/pyenv/pyenv).
+</p>
+</details>
+
+<details><summary><b>Installing specific version of maven</b></summary>
+<p>
+
+All package managers like `brew` and `apt` offers maven. However, it may lag behind some
+versions. In that case, you can install the latest binary from the [Maven download page](https://maven.apache.org/download.cgi).
+For manual installation, you need to setup your environment:
+
+  ```shell script
+  export M2_HOME=PATH_TO_MAVEN_ROOT_DIRECTOTY
+  export M2=${M2_HOME}/bin
+  export PATH=$M2:$PATH
+  ```
+
+</p>
+</details>
+
+### Dependencies
+
+- pytest
+  : A framework that makes it easy to write small, readable tests, and can scale to support complex
+  functional testing for applications and libraries (requires  Python 3.6+).
+- sre_yield
+  : Provides a set of APIs to generate string data from a regular expression.
+- pandas
+  : A fast, powerful, flexible and easy to use open source data analysis and manipulation
+  tool and is only needed when testing integration with pandas.
+- pyarrow
+  : Provides a Python API for functionality provided by the Arrow C++ libraries, along with
+  tools for Arrow integration and interoperability with pandas, NumPy, and other software in
+  the Python ecosystem. This is used to test improved transfer performance to pandas based user
+  defined functions.
+- pytest-xdist
+  : A plugin that extends pytest with new test execution modes, the most used being distributing
+  tests across multiple CPUs to speed up test execution
+- findspark
+  : Adds pyspark to sys.path at runtime
+
+You can install all the dependencies using `pip` by running the following command:
+
+  ```shell script
+  pip install pytest \
+              sre_yield \
+              pandas \
+              pyarrow \
+              pytest-xdist \
+              findspark
+  ```
+
+### Installing Spark
+
+You need to install spark-3.x and set `SPARK_HOME/bin` to your `$PATH`.
+
+To build a distribution run the following command. Full instructions can be found [here](https://spark.apache.org/docs/latest/building-spark.html).
+
+To run the plugin against the latest spark, you will need to buid a new version from source:
+
+  ```shell script
+  ## to build a distribution from branch is branch-3.x.y
+  SPARK_BRANCH=branch-3.x.y
+  SPARK_VER=3xy
+  
+  git clone -b ${SPARK_BRANCH} https://github.com/apache/spark.git spark-src-${SPARK_VER}
+  cd spark-src-${SPARK_VER}
+  ## build a distribution with hive support
+  ./dev/make-distribution.sh --name spark-for-rapids-${SPARK_VER} --tgz -Pkubernetes -Phive
+  ## this will generate a single tgz file that you would need to untar it to $SPARK_INSTALLS_DIR
+  ```
+
+Set the environment:
+
+  ```shell script
+  SPARK_HOME=$SPARK_INSTALLS_DIR/spark-${SPARK_VER}
+  export SPARK_HOME
+  export PATH=${SPARK_HOME}/bin:$PATH
+  ```
+
+### Building The Plugin
+
+Make sure that you compile the plugin against the same version of Spark that it is going to run with.
+In that case, you build the plugin against `${SPARK_VER}`:
+
+  ```shell script
+  mvn package -DskipTests -Dbuildver=${SPARK_VER}
+  ```
 
 ## Running
 
@@ -59,6 +179,15 @@ The python tests run with pytest and the script honors pytest parameters. Some h
 - `-v` Increase the verbosity of the tests
 - `-r fExXs` Show extra test summary info as specified by chars: (f)ailed, (E)rror, (x)failed, (X)passed, (s)kipped
 - For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
+
+Examples:
+
+  ```shell script
+  ## running all integration tests for Map
+  ./integration_tests/run_pyspark_from_build.sh -k map_test.py
+  ## Running a single integration test in map_test
+  ./integration_tests/run_pyspark_from_build.sh -k test_map_integration_1
+  ```
 
 ### Spark execution mode
 
