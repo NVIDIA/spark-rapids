@@ -750,23 +750,3 @@ def test_parquet_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_col
         do_parquet_scan,
         exist_classes= "FileSourceScanExec",
         non_exist_classes= "GpuBatchScanExec")
-
-@pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
-def test_parquet_scan_with_hidden_metadata_column_names(spark_tmp_path):
-    """
-    If the parquet file has column names file_path, file_name, file_size, file_modification_time then these
-    override the hidden metadata columns and we can run on GPU
-    """
-    data_path = spark_tmp_path + "/hidden_metadata_column_names.parquet"
-    with_cpu_session(lambda spark : spark.range(10) \
-                 .withColumn("_metadata", struct(col("id").alias("file_size"))) \
-                 .write \
-                 .partitionBy("id") \
-                 .mode("overwrite") \
-                 .parquet(data_path))
-
-    def do_parquet_scan(spark):
-        df = spark.read.parquet(data_path).selectExpr("_metadata.file_size")
-        return df
-
-    assert_gpu_and_cpu_are_equal_collect(do_parquet_scan)
