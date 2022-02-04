@@ -36,7 +36,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
@@ -312,6 +312,4 @@ trait SparkShims {
   def supportsColumnarAdaptivePlans: Boolean
 
   def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan
-
-  def tagHiddenMetadataExpressions(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {}
 }
