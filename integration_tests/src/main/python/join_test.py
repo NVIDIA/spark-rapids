@@ -15,7 +15,7 @@
 import pytest
 from pyspark.sql.functions import broadcast
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
@@ -361,7 +361,7 @@ def test_broadcast_nested_loop_join_special_case_group_by(data_gen, batch_size):
 def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # This test is impacted by https://github.com/NVIDIA/spark-rapids/issues/294 
+        # This test is impacted by https://github.com/NVIDIA/spark-rapids/issues/294
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
@@ -651,7 +651,7 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
 
         if (cache_side == 'cache_left'):
             # Try to force the shuffle to be split between CPU and GPU for the join
-            # by default if the operation after the shuffle is not on the GPU then 
+            # by default if the operation after the shuffle is not on the GPU then
             # don't do a GPU shuffle, so do something simple after the repartition
             # to make sure that the GPU shuffle is used.
             left = left.repartition('a').selectExpr('b + 1 as b', 'a').cache()
@@ -659,7 +659,7 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
         else:
             #cache_right
             # Try to force the shuffle to be split between CPU and GPU for the join
-            # by default if the operation after the shuffle is not on the GPU then 
+            # by default if the operation after the shuffle is not on the GPU then
             # don't do a GPU shuffle, so do something simple after the repartition
             # to make sure that the GPU shuffle is used.
             right = right.repartition('r_a').selectExpr('c + 1 as c', 'r_a').cache()
@@ -785,3 +785,38 @@ def test_struct_self_join(spark_tmp_table_factory):
         return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
             resultdf_name, resultdf_name))
     assert_gpu_and_cpu_are_equal_collect(do_join)
+
+# ExistenceJoin occurs in the context of existential subqueries (which is rewritten to SemiJoin) if
+# there is an additional condition that may qualify left records even though they don't
+# join partner records from the right.
+#
+# Thus a query is rewritten as roughly as a LeftOuter with an additional Boolean column "exists" added.
+# which feeds into a filter "exists OR someOtherPredicate"
+# If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
+# the optimizer won't use ExistenceJoin.
+@ignore_order(local=True)
+@pytest.mark.parametrize(
+    "allowFallback", [
+        pytest.param('true',
+            marks=pytest.mark.allow_non_gpu('SortMergeJoinExec')),
+        pytest.param('false',
+            marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/589"))
+    ]
+)
+def test_existence_join(allowFallback, spark_tmp_table_factory):
+    leftTable = spark_tmp_table_factory.get()
+    rightTable = spark_tmp_table_factory.get()
+    def do_join(spark):
+        # create non-overlapping ranges to have a mix of exists=true and exists=false
+        spark.createDataFrame([v] for v in range(2, 10)).createOrReplaceTempView(leftTable)
+        spark.createDataFrame([v] for v in range(0, 8)).createOrReplaceTempView(rightTable)
+        res = spark.sql((
+            "select * "
+            "from {} as l "
+            "where l._1 < 0 "
+            "   OR l._1 in (select * from {} as r)"
+        ).format(leftTable, rightTable))
+        return res
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r".+Join ExistenceJoin\(exists#[0-9]+\).+")
+

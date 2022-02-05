@@ -408,8 +408,11 @@ object ExecutionPlanCaptureCallback {
       containsPlan(p.child, className)
     case p: ReusedExchangeExec =>
       containsPlan(p.child, className)
-    case p =>
-      p.expressions.exists(containsExpression(_, className))
+    case p if p.expressions.exists(containsExpression(_, className)) =>
+      true
+    case p: SparkPlan =>
+      val simpleNodeString = p.simpleStringWithNodeId()
+      Try(className.r).toOption.exists(_.findFirstIn(simpleNodeString).isDefined)
   }.nonEmpty
 }
 
