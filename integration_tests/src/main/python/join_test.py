@@ -787,10 +787,10 @@ def test_struct_self_join(spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 # ExistenceJoin occurs in the context of existential subqueries (which is rewritten to SemiJoin) if
-# there is an additional condition that may qualify left records even though they don't
+# there is an additional condition that may qualify left records even though they don't have
 # join partner records from the right.
 #
-# Thus a query is rewritten as roughly as a LeftOuter with an additional Boolean column "exists" added.
+# Thus a query is rewritten roughly as a LeftOuter with an additional Boolean column "exists" added.
 # which feeds into a filter "exists OR someOtherPredicate"
 # If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
 # the optimizer won't use ExistenceJoin.
