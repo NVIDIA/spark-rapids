@@ -141,6 +141,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support octal digits 0o177 < n <= 0o377"))
   }
 
+  test("cuDF does not support octal digits in character classes") {
+    val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, replace = false,
+        "cuDF does not support octal digits in character classes"
+      )
+    )
+  }
+
   test("cuDF does not support hex digits consistently with Spark") {
     // see https://github.com/NVIDIA/spark-rapids/issues/4486
     val patterns = Seq(raw"\xA9", raw"\x00A9", raw"\x10FFFF")

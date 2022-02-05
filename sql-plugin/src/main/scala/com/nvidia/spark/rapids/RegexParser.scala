@@ -530,6 +530,11 @@ class CudfRegexTranspiler(replace: Boolean) {
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
+          case RegexEscaped(ch) if ch == '0' =>
+            // examples
+            // - "[\02] should match the character with code point 2"
+            throw new RegexUnsupportedException(
+              "cuDF does not support octal digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
@@ -739,20 +744,16 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
   }
 }
 
-sealed trait RegexCharacterClassComponent extends RegexAST {
-  def escaped = false
-}
+sealed trait RegexCharacterClassComponent extends RegexAST
 
 // TODO: Consider merging some of these subclasses to handling escaping
 
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
-  override def escaped = true
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\x$a"
 }
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
-  override def escaped = true
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
@@ -763,7 +764,6 @@ sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
-  override def escaped = true
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
