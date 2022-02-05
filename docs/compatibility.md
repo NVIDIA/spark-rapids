@@ -489,6 +489,14 @@ these formats when unquoted, will produce `null` on the CPU and may produce vali
 Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
 Spark will treat them as invalid inputs and will just return `null`.
 
+### json options
+
+Below are some of the options that are supported by the plugin with minor differences when compared to Spark:
+
+- `allowNumericLeadingZeros`  - Allows leading zeros in numbers (e.g. 00012). Spark throws exception when the option 
+is set as false whereas plugin always strips off the leading zeros.
+- `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters. This matches with Spark's behavior.
+
 ## Regular Expressions
 
 The following Apache Spark regular expression functions and expressions are supported on the GPU:

@@ -44,6 +44,9 @@ _float_schema = StructType([
 _double_schema = StructType([
     StructField('number', DoubleType())])
 
+_string_schema = StructType([
+    StructField('a', StringType())])
+
 def read_json_df(data_path, schema, options = {}):
     def read_impl(spark):
         reader = spark.read
@@ -170,17 +173,33 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'nan_and_inf.json',
     pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
     'floats.json',
+    pytest.param('floats_leading_zeros.json', marks=pytest.mark.xfail(reason="cudf always strips off leading zeros")),
     'floats_invalid.json',
     pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
 ])
 @pytest.mark.parametrize('schema', [_float_schema, _double_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
+@pytest.mark.parametrize('allow_numeric_leading_zeros', ["true", "false"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, ansi_enabled):
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, allow_numeric_leading_zeros, ansi_enabled):
     updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
         schema,
-        { "allowNonNumericNumbers": allow_non_numeric_numbers }),
+        { "allowNonNumericNumbers": allow_non_numeric_numbers,
+          "allowNumericLeadingZeros": allow_numeric_leading_zeros}),
         conf=updated_conf)
+
+@pytest.mark.parametrize('schema', [_string_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('allow_unquoted_chars', ["true", "false"])
+@pytest.mark.parametrize('filename', [
+    pytest.param('unquotedChars.json',marks=pytest.mark.xfail(reason='Unquoted characters not parsed correctly when allowUnquotedControlChars=false'))
+])
+def test_json_unquotedCharacters(std_input_path, filename, schema, read_func, allow_unquoted_chars):
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+                  schema,
+                  {"allowUnquotedControlChars": allow_unquoted_chars}),
+        conf=_enable_all_types_conf)
