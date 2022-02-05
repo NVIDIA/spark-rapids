@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.util.Try
+import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
@@ -298,7 +299,7 @@ object RapidsExecutorPlugin {
   }
 }
 
-object ExecutionPlanCaptureCallback {
+object ExecutionPlanCaptureCallback extends Logging {
   private[this] val shouldCapture: AtomicBoolean = new AtomicBoolean(false)
   private[this] val execPlan: AtomicReference[SparkPlan] = new AtomicReference[SparkPlan]()
 
@@ -358,6 +359,7 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
+    implicit val regexMap = scala.collection.mutable.Map.empty[String, Try[Regex]]
     assert(containsPlan(gpuPlan, className),
       s"Could not find $className in the Spark plan\n$gpuPlan")
   }
@@ -368,6 +370,7 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
+    implicit val regexMap = scala.collection.mutable.Map.empty[String, Try[Regex]]
     assert(!containsPlan(gpuPlan, className),
       s"We found $className in the Spark plan\n$gpuPlan")
   }
@@ -391,13 +394,17 @@ object ExecutionPlanCaptureCallback {
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
+  private def containsExpression(exp: Expression, className: String)(
+    implicit regexMap: scala.collection.mutable.Map[String, Try[Regex]]
+  ): Boolean = exp.find {
     case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
     case e: ExecSubqueryExpression => containsPlan(e.plan, className)
     case _ => false
   }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+  private def containsPlan(plan: SparkPlan, className: String)(
+    implicit regexMap: scala.collection.mutable.Map[String, Try[Regex]]
+  ): Boolean = plan.find {
     case p if PlanUtils.sameClass(p, className) =>
       true
     case p: AdaptiveSparkPlanExec =>
@@ -411,8 +418,13 @@ object ExecutionPlanCaptureCallback {
     case p if p.expressions.exists(containsExpression(_, className)) =>
       true
     case p: SparkPlan =>
-      val simpleNodeString = p.simpleStringWithNodeId()
-      Try(className.r).toOption.exists(_.findFirstIn(simpleNodeString).isDefined)
+      regexMap.getOrElseUpdate(className,
+        Try(className.r).recoverWith { case t: Throwable =>
+          logWarning(s"Regex broken in a simpleStringWithNodeId match, $t")
+          scala.util.Failure(t)
+        })
+        .toOption
+        .flatMap(_.findFirstIn(p.simpleStringWithNodeId())).nonEmpty
   }.nonEmpty
 }
 

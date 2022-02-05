@@ -801,7 +801,7 @@ def test_struct_self_join(spark_tmp_table_factory):
             marks=pytest.mark.allow_non_gpu('SortMergeJoinExec')),
         pytest.param('false',
             marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/589"))
-    ]
+    ], ids=idfn
 )
 def test_existence_join(allowFallback, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
@@ -817,6 +817,5 @@ def test_existence_join(allowFallback, spark_tmp_table_factory):
             "   OR l._1 in (select * from {} as r)"
         ).format(leftTable, rightTable))
         return res
-
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r".+Join ExistenceJoin\(exists#[0-9]+\).+")
 
