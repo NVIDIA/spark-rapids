@@ -300,7 +300,7 @@ object RapidsExecutorPlugin {
   }
 }
 
-object ExecutionPlanCaptureCallback extends Logging {
+object ExecutionPlanCaptureCallback {
   private[this] val shouldCapture: AtomicBoolean = new AtomicBoolean(false)
   private[this] val execPlan: AtomicReference[SparkPlan] = new AtomicReference[SparkPlan]()
 
