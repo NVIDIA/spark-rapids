@@ -371,17 +371,31 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), replace = true)
   }
 
-  test("string split") {
+  test("string split - negative limit") {
     val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
     val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
-    for (limit <- Seq(-2, -1, 0, 1, 2, 5)) {
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("string split - zero limit") {
+    val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
+    val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
+    doStringSplitTest(patterns, data, 0)
+  }
+
+  test("string split - positive limit") {
+    val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
+    val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
+    for (limit <- Seq(1, 2, 5, Integer.MAX_VALUE)) {
       doStringSplitTest(patterns, data, limit)
     }
   }
 
   test("string split fuzz ") {
     val (data, patterns) = generateDataAndPatterns(Some(REGEXP_LIMITED_CHARS_REPLACE),
-      replace = true)
+      replace = false)
     for (limit <- Seq(-2, -1, 0, 1, 2, 5)) {
       doStringSplitTest(patterns, data, limit)
     }

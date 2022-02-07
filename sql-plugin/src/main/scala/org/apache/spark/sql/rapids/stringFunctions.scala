@@ -1331,20 +1331,17 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
       limit: GpuScalar): ColumnVector = {
     val intLimit = limit.getValue.asInstanceOf[Int]
     val pattern = regex.getValue.asInstanceOf[UTF8String].toString
-    if (RegexParser.isRegExpString(pattern)) {
-      val cudfPattern = new CudfRegexTranspiler(replace = false).transpile(pattern)
-      str.getBase.stringSplitRecord(
-        cudfPattern,
-        // TODO this parameter has different meaning between Java and cuDF (limit vs maxSplit)
-        intLimit,
-        true)
+    val isRegExp = RegexParser.isRegExpString(pattern)
+    val cudfPattern = if (isRegExp) {
+      new CudfRegexTranspiler(replace = false).transpile(pattern)
     } else {
-      str.getBase.stringSplitRecord(
-        pattern,
-        // TODO this parameter has different meaning between Java and cuDF (limit vs maxSplit)
-        intLimit,
-        false)
+      pattern
     }
+    str.getBase.stringSplitRecord(
+      cudfPattern,
+      // TODO this parameter has different meaning between Java and cuDF (limit vs maxSplit)
+      intLimit,
+      isRegExp)
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
