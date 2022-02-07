@@ -558,7 +558,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+          override def tagPlanForGpu(): Unit = tagFileSourceScanExec(this)
 
           override def convertToCpu(): SparkPlan = {
             wrapped.copy(partitionFilters = partitionFilters)
@@ -1051,4 +1051,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   }
 
   override def supportsColumnarAdaptivePlans: Boolean = true
+
+  def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    GpuFileSourceScanExec.tagSupport(meta)
+  }
 }
