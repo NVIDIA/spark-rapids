@@ -9080,7 +9080,7 @@ are limited.
 <tr>
 <td rowSpan="2">OctetLength</td>
 <td rowSpan="2">`octet_length`</td>
-<td rowSpan="2">The bit length of string data</td>
+<td rowSpan="2">The byte length of string data</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>

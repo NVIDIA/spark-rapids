@@ -3362,7 +3362,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitLength(child)
       }),
     expr[OctetLength](
-      "The bit length of string data",
+      "The byte length of string data",
       ExprChecks.unaryProject(
         TypeSig.INT, TypeSig.INT,
         TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
