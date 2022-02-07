@@ -7,7 +7,7 @@ verify that the plugin is doing the right thing in as many cases as possible.
 There are two sets of tests. The PySpark tests are described on this page. The scala tests are
 described [here](../tests/README.md).
 
-## Setting Environment
+## Setting Up the Environment
 
 The tests are based off of `pyspark` and `pytest` running on Python 3. There really are
 only a small number of Python dependencies that you need to install for the tests. The
@@ -17,10 +17,9 @@ in the cluster but it is not required.
 ### Prerequisities
 
 The build requires `OpenJDK 8`, `maven`, and `python`.
-skip to the next section if you have already installed them.
+Skip to the next section if you have already installed them.
 
-<details><summary><b>Java Environment</b></summary>
-<p>
+#### Java Environment
 
 It is recommended to use `alternatives` to manage multiple java versions.
 Then you can simply set `JAVA_HOME` to JDK directory:
@@ -29,11 +28,7 @@ Then you can simply set `JAVA_HOME` to JDK directory:
   JAVA_HOME=$(readlink -nf $(which java) | xargs dirname | xargs dirname | xargs dirname)
   ```
 
-</p>
-</details>
-
-<details><summary><b>Installing python using pyenv</b></summary>
-<p>
+#### Installing python using pyenv
 
 It is recommended that you use `pyenv` to manage Python installations.
 
@@ -73,11 +68,8 @@ It is recommended that you use `pyenv` to manage Python installations.
     ```
 
 For full details on `pyenv` and instructions, see [pyenv github page](https://github.com/pyenv/pyenv).
-</p>
-</details>
 
-<details><summary><b>Installing specific version of maven</b></summary>
-<p>
+#### Installing specific version of Maven
 
 All package managers like `brew` and `apt` offers maven. However, it may lag behind some
 versions. In that case, you can install the latest binary from the [Maven download page](https://maven.apache.org/download.cgi).
@@ -89,7 +81,6 @@ For manual installation, you need to setup your environment:
   export PATH=$M2:$PATH
   ```
 
-</p>
 </details>
 
 ### Dependencies
@@ -126,40 +117,41 @@ You can install all the dependencies using `pip` by running the following comman
 
 ### Installing Spark
 
-You need to install spark-3.x and set `SPARK_HOME/bin` to your `$PATH`.
+You need to install spark-3.x and set `$SPARK_HOME/bin` to your `$PATH`, where
+`SPARK_HOME` points to the directory of a runnable Spark distribution.  
+This can be done in the following three steps:
 
-To build a distribution run the following command. Full instructions can be found [here](https://spark.apache.org/docs/latest/building-spark.html).
+1. Choose the appropriate way to create Spark distribution:
 
-To run the plugin against the latest spark, you will need to buid a new version from source:
+   - To run the plugin against a non-snapshot version of spark, download a distribution from Apache-Spark [download page](https://spark.apache.org/downloads.html);
+   - To run the plugin against a snapshot version of Spark, you will need to buid
+     the distribution from source:
 
-  ```shell script
-  ## to build a distribution from branch is branch-3.x.y
-  SPARK_BRANCH=branch-3.x.y
-  SPARK_VER=3xy
-  
-  git clone -b ${SPARK_BRANCH} https://github.com/apache/spark.git spark-src-${SPARK_VER}
-  cd spark-src-${SPARK_VER}
-  ## build a distribution with hive support
-  ./dev/make-distribution.sh --name spark-for-rapids-${SPARK_VER} --tgz -Pkubernetes -Phive
-  ## this will generate a single tgz file that you would need to untar it to $SPARK_INSTALLS_DIR
-  ```
+      ```shell script
+      ## clone locally
+      git clone https://github.com/apache/spark.git spark-src-latest
+      cd spark-src-latest
+      ## build a distribution with hive support
+      ## generate a single tgz file $MY_SPARK_BUILD.tgz
+      ./dev/make-distribution.sh --name $MY_SPARK_BUILD --tgz -Pkubernetes -Phive
+      ```
 
-Set the environment:
+      For more details about the configurations, and the arguments, visit [Apache Spark Docs::Building Spark](https://spark.apache.org/docs/latest/building-spark.html#building-a-runnable-distribution).
 
-  ```shell script
-  SPARK_HOME=$SPARK_INSTALLS_DIR/spark-${SPARK_VER}
-  export SPARK_HOME
-  export PATH=${SPARK_HOME}/bin:$PATH
-  ```
+2. Extract the `.tgz` file to a suitable work directory `$SPARK_INSTALLS_DIR/$MY_SPARK_BUILD`.
+
+3. Set the  variables to appropriate values:
+
+    ```shell script
+    export SPARK_HOME=$SPARK_INSTALLS_DIR/$MY_SPARK_BUILD
+    export PATH=${SPARK_HOME}/bin:$PATH
+    ```
 
 ### Building The Plugin
 
+Next, visit [CONTRIBUTING::Building From Source](../CONTRIBUTING.md#building-from-source) to learn
+about building the plugin for different versions of Spark.
 Make sure that you compile the plugin against the same version of Spark that it is going to run with.
-In that case, you build the plugin against `${SPARK_VER}`:
-
-  ```shell script
-  mvn package -DskipTests -Dbuildver=${SPARK_VER}
-  ```
 
 ## Running
 
