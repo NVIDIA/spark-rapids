@@ -21,6 +21,7 @@ import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.{Map => MutableMap}
 import scala.util.Try
 import scala.util.matching.Regex
 
@@ -359,7 +360,6 @@ object ExecutionPlanCaptureCallback extends Logging {
   }
 
   def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
-    implicit val regexMap = scala.collection.mutable.Map.empty[String, Try[Regex]]
     assert(containsPlan(gpuPlan, className),
       s"Could not find $className in the Spark plan\n$gpuPlan")
   }
@@ -370,7 +370,6 @@ object ExecutionPlanCaptureCallback extends Logging {
   }
 
   def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
-    implicit val regexMap = scala.collection.mutable.Map.empty[String, Try[Regex]]
     assert(!containsPlan(gpuPlan, className),
       s"We found $className in the Spark plan\n$gpuPlan")
   }
@@ -394,37 +393,33 @@ object ExecutionPlanCaptureCallback extends Logging {
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String)(
-    implicit regexMap: scala.collection.mutable.Map[String, Try[Regex]]
+  private def containsExpression(exp: Expression, className: String,
+    regexMap: MutableMap[String, Regex] // regex memoization
   ): Boolean = exp.find {
     case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
-    case e: ExecSubqueryExpression => containsPlan(e.plan, className)
+    case e: ExecSubqueryExpression => containsPlan(e.plan, className, regexMap)
     case _ => false
   }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String)(
-    implicit regexMap: scala.collection.mutable.Map[String, Try[Regex]]
+  private def containsPlan(plan: SparkPlan, className: String,
+    regexMap: MutableMap[String, Regex] = MutableMap.empty // regex memoization
   ): Boolean = plan.find {
     case p if PlanUtils.sameClass(p, className) =>
       true
     case p: AdaptiveSparkPlanExec =>
-      containsPlan(p.executedPlan, className)
+      containsPlan(p.executedPlan, className, regexMap)
     case p: QueryStageExec =>
-      containsPlan(p.plan, className)
+      containsPlan(p.plan, className, regexMap)
     case p: ReusedSubqueryExec =>
-      containsPlan(p.child, className)
+      containsPlan(p.child, className, regexMap)
     case p: ReusedExchangeExec =>
-      containsPlan(p.child, className)
-    case p if p.expressions.exists(containsExpression(_, className)) =>
+      containsPlan(p.child, className, regexMap)
+    case p if p.expressions.exists(containsExpression(_, className, regexMap)) =>
       true
     case p: SparkPlan =>
-      regexMap.getOrElseUpdate(className,
-        Try(className.r).recoverWith { case t: Throwable =>
-          logWarning(s"Regex broken in a simpleStringWithNodeId match, $t")
-          scala.util.Failure(t)
-        })
-        .toOption
-        .flatMap(_.findFirstIn(p.simpleStringWithNodeId())).nonEmpty
+      regexMap.getOrElseUpdate(className, className.r)
+        .findFirstIn(p.simpleStringWithNodeId())
+        .nonEmpty
   }.nonEmpty
 }
 
