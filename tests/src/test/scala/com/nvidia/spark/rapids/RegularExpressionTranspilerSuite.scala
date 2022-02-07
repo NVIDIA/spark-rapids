@@ -533,14 +533,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => p.matcher(s).replaceAll(REPLACE_STRING)).toArray
   }
 
-  private def cpuSplit(pattern: String, input: Seq[String], maxSplit: Int): Seq[Array[String]] = {
-    input.map(s => s.split(pattern, maxSplit))
+  private def cpuSplit(pattern: String, input: Seq[String], limit: Int): Seq[Array[String]] = {
+    input.map(s => s.split(pattern, limit))
   }
 
-  private def gpuSplit(pattern: String, input: Seq[String], maxSplit: Int): Seq[Array[String]] = {
+  private def gpuSplit(pattern: String, input: Seq[String], limit: Int): Seq[Array[String]] = {
     val isRegex = RegexParser.isRegExpString(pattern)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      withResource(cv.stringSplitRecord(pattern, maxSplit, isRegex)) { x =>
+      withResource(cv.stringSplitRecord(pattern, limit, isRegex)) { x =>
         withResource(x.copyToHost()) { hcv =>
           (0 until hcv.getRowCount.toInt).map(i => {
             val list = hcv.getList(i)

@@ -1335,11 +1335,13 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
       val cudfPattern = new CudfRegexTranspiler(replace = false).transpile(pattern)
       str.getBase.stringSplitRecord(
         cudfPattern,
+        // TODO this parameter has different meaning between Java and cuDF (limit vs maxSplit)
         intLimit,
         true)
     } else {
       str.getBase.stringSplitRecord(
         pattern,
+        // TODO this parameter has different meaning between Java and cuDF (limit vs maxSplit)
         intLimit,
         false)
     }
