@@ -714,6 +714,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_COMBINE_AGGREGATE = conf("spark.rapids.sql.combineAggregate.enabled")
+      .doc("When set to true, combines compatible reduction-based scalar subqueries " +
+           "in order to reduce job numbers")
+      .booleanConf
+      .createWithDefault(false)
+
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
