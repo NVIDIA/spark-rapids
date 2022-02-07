@@ -1303,8 +1303,13 @@ class GpuStringSplitMeta(
         willNotWorkOnGpu("null regex is not supported yet")
       }
     }
-    if (!isLit(expr.limit)) {
-      willNotWorkOnGpu("only literal limit is supported")
+    extractLit(expr.limit) match {
+      case Some(Literal(n: Int, _)) =>
+        if (n == 0 || n == 1) {
+          willNotWorkOnGpu("limit of 0 or 1 is not supported")
+        }
+      case _ =>
+        willNotWorkOnGpu("only literal limit is supported")
     }
   }
   override def convertToGpu(

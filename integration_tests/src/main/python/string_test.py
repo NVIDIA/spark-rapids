@@ -14,7 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, \
+    assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
@@ -41,23 +43,37 @@ def test_split_re_negative_limit():
             'split(a, ":", -1)',
             'split(a, "o", -2)'))
 
-def test_split_re_zero_limit():
+@allow_non_gpu('ProjectExec', 'StringSplit')
+def test_split_re_zero_limit_fallback():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
         .with_special_case('boo:and:foo')
-    assert_gpu_and_cpu_are_equal_collect(
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'split(a, ":", 0)',
-            'split(a, "o", 0)'))
+            'split(a, "o", 0)'),
+            exist_classes= "ProjectExec",
+            non_exist_classes= "GpuProjectExec")
 
-def test_split_re_postive_limit():
+@allow_non_gpu('ProjectExec', 'StringSplit')
+def test_split_re_one_limit_fallback():
+    data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
+        .with_special_case('boo:and:foo')
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, ":", 1)',
+            'split(a, "o", 1)'),
+        exist_classes= "ProjectExec",
+        non_exist_classes= "GpuProjectExec")
+
+def test_split_re_positive_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
         .with_special_case('boo:and:foo')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, ":", 1)',
             'split(a, ":", 2)',
             'split(a, ":", 5)',
-            'split(a, "o", 1)',
             'split(a, "o", 2)',
             'split(a, "o", 5)'))
 
