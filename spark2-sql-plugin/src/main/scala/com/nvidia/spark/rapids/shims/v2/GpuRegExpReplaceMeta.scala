@@ -29,6 +29,7 @@ class GpuRegExpReplaceMeta(
   extends TernaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 
   private var pattern: Option[String] = None
+  private var replacement: Option[String] = None
 
   override def tagExprForGpu(): Unit = {
     expr.regexp match {
@@ -47,5 +48,56 @@ class GpuRegExpReplaceMeta(
       case _ =>
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
+
+    expr.rep match {
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
+        if (GpuRegExpUtils.containsBackrefs(s.toString)) {
+          willNotWorkOnGpu("regexp_replace with back-references is not supported")
+        }
+        replacement = Some(GpuRegExpUtils.unescapeReplaceString(s.toString))
+      case _ =>
+    }
   }
+}
+
+object GpuRegExpUtils {
+
+  /**
+   * Determine if a string contains back-references such as `$1` but ignoring
+   * if preceded by escape character.
+   */
+  def containsBackrefs(s: String): Boolean = {
+    var i = 0
+    while (i < s.length) {
+      if (s.charAt(i) == '\\') {
+        i += 2
+      } else {
+        if (s.charAt(i) == '$'  && i+1 < s.length) {
+          if (s.charAt(i+1).isDigit) {
+            return true
+          }
+        }
+        i += 1
+      }
+    }
+    false
+  }
+
+  /**
+   * We need to remove escape characters in the regexp_replace
+   * replacement string before passing to cuDF.
+   */
+  def unescapeReplaceString(s: String): String = {
+    val b = new StringBuilder
+    var i = 0
+    while (i < s.length) {
+      if (s.charAt(i) == '\\' && i+1 < s.length) {
+        i += 1
+      }
+      b.append(s.charAt(i))
+      i += 1
+    }
+    b.toString
+  }
+
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,11 +46,11 @@ Usage:
 
     # generate changelog for releases 0.1 to 21.12
     scripts/generate-changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> \
-    --releases=0.1,0.2,0.3,0.4,0.4.1,0.5,21.06,21.06.1,21.06.2,21.08,21.08.1,21.10,21.12
+    --releases=21.06,21.06.1,21.06.2,21.08,21.08.1,21.10,21.12,22.02
 
     # generate changelog for releases 0.1 to 21.12 to /tmp/CHANGELOG.md
     GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog \
-    --releases=0.1,0.2,0.3,0.4,0.4.1,0.5,21.06,21.06.1,21.06.2,21.08,21.08.1,21.10,21.12 \
+    --releases=21.06,21.06.1,21.06.2,21.08,21.08.1,21.10,21.12,22.02 \
     --path=/tmp/CHANGELOG.md
 """
 import os
@@ -273,6 +273,8 @@ def form_changelog(path: str, changelog: dict):
         subsections += form_subsection(issues, PRS)
     markdown = f"""# Change log
 Generated on {date.today()}{subsections}
+\n## Older Releases
+Changelog of older releases can be found at [docs/archives](/docs/archives)
 """
     with open(path, "w") as file:
         file.write(markdown)

@@ -366,6 +366,22 @@
                     </target>
                   </configuration>
                 </execution>
+                <execution>
+                  <id>generate-shim-service</id>
+                  <phase>generate-resources</phase>
+                  <goals>
+                      <goal>run</goal>
+                  </goals>
+                  <configuration>
+                      <target>
+                          <property name="servicesDir"
+                                    value="${project.build.directory}/extra-resources/META-INF/services"/>
+                          <mkdir dir="${servicesDir}"/>
+                          <echo file="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                message="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider${line.separator}"/>
+                      </target>
+                  </configuration>
+                </execution>
               </executions>
             </plugin>
             <plugin>

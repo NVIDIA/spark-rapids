@@ -420,8 +420,7 @@ def test_initcap_special_chars():
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/119')
-def test_like_null_xfail():
+def test_like_null():
     gen = mk_str_gen('.{0,3}a[|b*.$\r\n]{0,2}c.{0,3}')\
             .with_special_pattern('.{0,3}oo.{0,3}', weight=100.0)\
             .with_special_case('_')\

@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, TrampolineUtil}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
 
 // Spark 2.x - had to copy the GpuBaseAggregateMeta into each Hash and Sort Meta because no
 // BaseAggregateExec class in Spark 2.x
@@ -55,14 +55,6 @@ class GpuHashAggregateMeta(
         dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
     if (arrayOrMapGroupings) {
       willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
-    }
-
-    val dec128Grouping = agg.groupingExpressions.exists(e =>
-      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[DecimalType] &&
-            dt.asInstanceOf[DecimalType].precision > GpuOverrides.DECIMAL64_MAX_PRECISION))
-    if (dec128Grouping) {
-      willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
     }
 
     tagForReplaceMode()
@@ -159,14 +151,6 @@ class GpuSortAggregateExecMeta(
         dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
     if (arrayOrMapGroupings) {
       willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
-    }
-
-    val dec128Grouping = agg.groupingExpressions.exists(e =>
-      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[DecimalType] &&
-            dt.asInstanceOf[DecimalType].precision > GpuOverrides.DECIMAL64_MAX_PRECISION))
-    if (dec128Grouping) {
-      willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
     }
 
     tagForReplaceMode()

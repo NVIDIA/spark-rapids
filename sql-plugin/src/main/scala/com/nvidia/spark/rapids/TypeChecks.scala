@@ -1097,7 +1097,7 @@ object CaseWhenCheck extends ExprChecks {
 }
 
 /**
- * This is specific to WidowSpec, because it does not follow the typical parameter convention.
+ * This is specific to WindowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
   val check: TypeSig =

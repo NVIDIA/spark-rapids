@@ -25,18 +25,43 @@ json_supported_gens = [
     # This would require multiLine reads to work correctly, so we avoid these chars
     StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
     StringGen('[aAbB ]{0,10}'),
+    StringGen('[nN][aA][nN]'),
+    StringGen('[+-]?[iI][nN][fF]([iI][nN][iI][tT][yY])?'),
     byte_gen, short_gen, int_gen, long_gen, boolean_gen,
-    # Once https://github.com/NVIDIA/spark-rapids/issues/125 and https://github.com/NVIDIA/spark-rapids/issues/124
-    # are fixed we should not have to special case float values any more.
-    pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-    pytest.param(FloatGen(no_nans=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124')),
-    pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-    DoubleGen(no_nans=True)
+    pytest.param(double_gen),
+    pytest.param(FloatGen(no_nans=False)),
+    pytest.param(float_gen),
+    DoubleGen(no_nans=False)
 ]
 
 _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
     'spark.rapids.sql.format.json.read.enabled': 'true'}
+
+_float_schema = StructType([
+    StructField('number', FloatType())])
+
+_double_schema = StructType([
+    StructField('number', DoubleType())])
+
+def read_json_df(data_path, schema, options = {}):
+    def read_impl(spark):
+        reader = spark.read
+        if not schema is None:
+            reader = reader.schema(schema)
+        for key, value in options.items():
+            reader = reader.option(key, value)
+        return debug_df(reader.json(data_path))
+    return read_impl
+
+def read_json_sql(data_path, schema, options = {}):
+    opts = options
+    if not schema is None:
+        opts = copy_and_update(options, {'schema': schema})
+    def read_impl(spark):
+        spark.sql('DROP TABLE IF EXISTS `TMP_json_TABLE`')
+        return spark.catalog.createTable('TMP_json_TABLE', source='json', path=data_path, **opts)
+    return read_impl
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -139,3 +164,23 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .option('timestampFormat', full_format)\
                     .json(data_path),
             conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'nan_and_inf.json',
+    pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
+    'floats.json',
+    'floats_invalid.json',
+    pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
+])
+@pytest.mark.parametrize('schema', [_float_schema, _double_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, ansi_enabled):
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+        schema,
+        { "allowNonNumericNumbers": allow_non_numeric_numbers }),
+        conf=updated_conf)
