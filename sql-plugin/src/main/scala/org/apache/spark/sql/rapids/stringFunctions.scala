@@ -1296,9 +1296,6 @@ class GpuStringSplitMeta(
     } else {
       val str = regexp.get.value.asInstanceOf[UTF8String]
       if (str != null) {
-        if (RegexParser.isRegExpString(str.toString)) {
-          willNotWorkOnGpu("regular expressions are not supported yet")
-        }
         if (str.numChars() == 0) {
           willNotWorkOnGpu("An empty regex is not supported yet")
         }
@@ -1333,7 +1330,19 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
     val intLimit = limit.getValue.asInstanceOf[Int]
-    str.getBase.stringSplitRecord(regex.getBase, intLimit)
+    val pattern = regex.getValue.asInstanceOf[UTF8String].toString
+    if (RegexParser.isRegExpString(pattern)) {
+      val cudfPattern = new CudfRegexTranspiler(replace = false).transpile(pattern)
+      str.getBase.stringSplitRecord(
+        cudfPattern,
+        intLimit,
+        true)
+    } else {
+      str.getBase.stringSplitRecord(
+        pattern,
+        intLimit,
+        false)
+    }
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,

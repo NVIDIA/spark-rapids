@@ -371,8 +371,52 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), replace = true)
   }
 
-  private def doAstFuzzTest(validChars: Option[String], replace: Boolean) {
+  test("string split") {
+    val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
+    val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
+    for (limit <- Seq(-2, -1, 0, 1, 2, 5)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
 
+  test("string split fuzz ") {
+    val (data, patterns) = generateDataAndPatterns(Some(REGEXP_LIMITED_CHARS_REPLACE),
+      replace = true)
+    for (limit <- Seq(-2, -1, 0, 1, 2, 5)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  def doStringSplitTest(patterns: Set[String], data: Seq[String], limit: Int) {
+    for (pattern <- patterns) {
+      val cpu = cpuSplit(pattern, data, limit)
+      val cudfPattern = new CudfRegexTranspiler(replace = false).transpile(pattern)
+      val gpu = gpuSplit(cudfPattern, data, limit)
+      assert(cpu.length == gpu.length)
+      for (i <- cpu.indices) {
+        val cpuArray = cpu(i)
+        val gpuArray = gpu(i)
+        if (!cpuArray.sameElements(gpuArray)) {
+          fail(s"string_split pattern=${toReadableString(pattern)} " +
+            s"data=${toReadableString(data(i))} limit=$limit " +
+            s"\nCPU [${cpuArray.length}]: ${toReadableString(cpuArray.mkString(", "))} " +
+            s"\nGPU [${gpuArray.length}]: ${toReadableString(gpuArray.mkString(", "))}")
+        }
+      }
+    }
+  }
+
+  private def doAstFuzzTest(validChars: Option[String], replace: Boolean) {
+    val (data, patterns) = generateDataAndPatterns(validChars, replace)
+    if (replace) {
+      assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
+    } else {
+      assertCpuGpuMatchesRegexpFind(patterns.toSeq, data)
+    }
+  }
+
+  private def generateDataAndPatterns(validChars: Option[String], replace: Boolean)
+      : (Seq[String], Set[String]) = {
     val r = new EnhancedRandom(new Random(seed = 0L),
       FuzzerOptions(validChars, maxStringLen = 12))
 
@@ -391,12 +435,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         }
       }
     }
-
-    if (replace) {
-      assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
-    } else {
-      assertCpuGpuMatchesRegexpFind(patterns.toSeq, data)
-    }
+    (data, patterns.toSet)
   }
 
   private def assertCpuGpuMatchesRegexpFind(javaPatterns: Seq[String], input: Seq[String]) = {
@@ -492,6 +531,24 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private def cpuReplace(pattern: String, input: Seq[String]): Array[String] = {
     val p = Pattern.compile(pattern)
     input.map(s => p.matcher(s).replaceAll(REPLACE_STRING)).toArray
+  }
+
+  private def cpuSplit(pattern: String, input: Seq[String], maxSplit: Int): Seq[Array[String]] = {
+    input.map(s => s.split(pattern, maxSplit))
+  }
+
+  private def gpuSplit(pattern: String, input: Seq[String], maxSplit: Int): Seq[Array[String]] = {
+    val isRegex = RegexParser.isRegExpString(pattern)
+    withResource(ColumnVector.fromStrings(input: _*)) { cv =>
+      withResource(cv.stringSplitRecord(pattern, maxSplit, isRegex)) { x =>
+        withResource(x.copyToHost()) { hcv =>
+          (0 until hcv.getRowCount.toInt).map(i => {
+            val list = hcv.getList(i)
+            list.toArray(new Array[String](list.size()))
+          })
+        }
+      }
+    }
   }
 
   private def doTranspileTest(pattern: String, expected: String) {

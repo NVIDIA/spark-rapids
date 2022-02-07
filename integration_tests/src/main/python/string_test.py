@@ -27,12 +27,39 @@ def mk_str_gen(pattern):
 
 def test_split():
     data_gen = mk_str_gen('([ABC]{0,3}_?){0,7}')
-    delim = '_'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'split(a, "AB")',
                 'split(a, "C")',
                 'split(a, "_")'))
+
+def test_split_re_negative_limit():
+    data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
+        .with_special_case('boo:and:foo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, ":", -1)',
+            'split(a, "o", -2)'))
+
+def test_split_re_zero_limit():
+    data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
+        .with_special_case('boo:and:foo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, ":", 0)',
+            'split(a, "o", 0)'))
+
+def test_split_re_postive_limit():
+    data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
+        .with_special_case('boo:and:foo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, ":", 1)',
+            'split(a, ":", 2)',
+            'split(a, ":", 5)',
+            'split(a, "o", 1)',
+            'split(a, "o", 2)',
+            'split(a, "o", 5)'))
 
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
