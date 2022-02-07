@@ -135,7 +135,7 @@ type `DECIMAL64(scale=-2)`.
 ## RAPIDS Accelerated UDF Examples
 
 <!-- Note: should update the branch name to tag when releasing-->
-Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/Spark-Rapids/udf-examples) project.
+Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/RAPIDS-accelerated-UDFs) project.
 
 ## GPU Support for Pandas UDF
 
