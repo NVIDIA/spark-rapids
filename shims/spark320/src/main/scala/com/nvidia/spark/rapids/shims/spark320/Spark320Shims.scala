@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,43 @@ package com.nvidia.spark.rapids.shims.spark320
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
+import org.apache.parquet.schema.MessageType
 
-class Spark320Shims extends Spark32XShims with Spark30Xuntil33XShims {
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.types.StructType
+
+class Spark320Shims extends Spark320PlusShims with Spark30Xuntil33XShims with RebaseShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: PartitionedFile => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+    new FileScanRDD(sparkSession, readFunction, filePartitions)
+  }
+
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      lookupFileMeta: String => String,
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils
+      .datetimeRebaseMode(lookupFileMeta, dateTimeRebaseModeFromConf)
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+  }
+
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 }

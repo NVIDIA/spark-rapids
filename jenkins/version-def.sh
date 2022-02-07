@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"21.12.0"}
+CUDF_VER=${CUDF_VER:-"22.02.0"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"21.12.0"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"21.12.0"}
+PROJECT_VER=${PROJECT_VER:-"22.02.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.02.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.0.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -47,3 +47,10 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
+
+
+SPARK_SHIM_VERSIONS_STR=${SPARK_SHIM_VERSIONS_STR:-"301 302 303 304 311 311cdh 312 313 320 321 322 330"}
+
+IFS=" " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS
+
+SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}

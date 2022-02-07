@@ -1,0 +1,37 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2020, NVIDIA CORPORATION.
+18a19,21
+> import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
+> import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+> import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
+22c25
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+27d29
+<     // Spark 2.x - removed some checks only applicable to AQE
+28a31,36
+>       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
+>           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
+>           bqse.plan.asInstanceOf[ReusedExchangeExec]
+>               .child.isInstanceOf[GpuBroadcastExchangeExec]
+>       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
+>       case _: GpuBroadcastExchangeExec => true
+29a38,52
+>     }
+>   }
+> 
+>   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
+>     val buildSideOnGpu = buildSide match {
+>       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
+>           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
+>               bqse.plan.asInstanceOf[ReusedExchangeExec]
+>                   .child.isInstanceOf[GpuBroadcastExchangeExec]
+>       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
+>       case _: GpuBroadcastExchangeExec => true
+>       case _ => false
+>     }
+>     if (!buildSideOnGpu) {
+>       throw new IllegalStateException(s"the broadcast must be on the GPU too")

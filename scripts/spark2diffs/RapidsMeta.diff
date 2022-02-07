@@ -1,0 +1,374 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+23c23
+< import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+---
+> import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+25a26,27
+> import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+> import org.apache.spark.sql.connector.read.Scan
+27c29
+< import org.apache.spark.sql.execution.aggregate._
+---
+> import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
+30c32
+< import org.apache.spark.sql.execution.window.WindowExec
+---
+> import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
+54a57
+>   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+67a71,72
+>  * @tparam OUTPUT when converting to a GPU enabled version of the plan, the generic base
+>  *                    type for all GPU enabled versions.
+69c74
+< abstract class RapidsMeta[INPUT <: BASE, BASE](
+---
+> abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
+72c77
+<     val parent: Option[RapidsMeta[_, _]],
+---
+>     val parent: Option[RapidsMeta[_, _, _]],
+85a91,95
+>    * The wrapped scans that should be examined
+>    */
+>   val childScans: Seq[ScanMeta[_]]
+> 
+>   /**
+95a106,110
+>    * Convert what this wraps to a GPU enabled version.
+>    */
+>   def convertToGpu(): OUTPUT
+> 
+>   /**
+110a126
+>   import RapidsMeta.gpuSupportedTag
+127a144
+>     childScans.foreach(_.recursiveCostPreventsRunningOnGpu())
+133a151
+>     childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+140a159
+>     childScans.foreach(_.recursiveSparkPlanRemoved())
+158a178,183
+>     wrapped match {
+>       case p: SparkPlan =>
+>         p.setTagValue(gpuSupportedTag,
+>           p.getTagValue(gpuSupportedTag).getOrElse(Set.empty) + because)
+>       case _ =>
+>     }
+214a240,244
+>    * Returns true iff all of the scans can be replaced.
+>    */
+>   def canScansBeReplaced: Boolean = childScans.forall(_.canThisBeReplaced)
+> 
+>   /**
+244a275
+>     childScans.foreach(_.tagForGpu())
+380a412
+>     childScans.foreach(_.print(append, depth + 1, all))
+403c435
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+405,407c437
+<   extends RapidsMeta[INPUT, Partitioning](part, conf, parent, rule) {
+<   // 2.x - replaced GpuPartitioning with Partitioning, should be fine
+<   // since BASE only used for convert
+---
+>   extends RapidsMeta[INPUT, Partitioning, GpuPartitioning](part, conf, parent, rule) {
+410a441
+>   override val childScans: Seq[ScanMeta[_]] = Seq.empty
+431c462
+<     parent: Option[RapidsMeta[_, _]])
+---
+>     parent: Option[RapidsMeta[_, _, _]])
+437a469,505
+>   override def convertToGpu(): GpuPartitioning =
+>     throw new IllegalStateException("Cannot be converted to GPU")
+> }
+> 
+> /**
+>  * Base class for metadata around `Scan`.
+>  */
+> abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
+>     conf: RapidsConf,
+>     parent: Option[RapidsMeta[_, _, _]],
+>     rule: DataFromReplacementRule)
+>   extends RapidsMeta[INPUT, Scan, Scan](scan, conf, parent, rule) {
+> 
+>   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
+>   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+>   override val childScans: Seq[ScanMeta[_]] = Seq.empty
+>   override val childParts: Seq[PartMeta[_]] = Seq.empty
+>   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
+> 
+>   override def tagSelfForGpu(): Unit = {}
+> }
+> 
+> /**
+>  * Metadata for `Scan` with no rule found
+>  */
+> final class RuleNotFoundScanMeta[INPUT <: Scan](
+>     scan: INPUT,
+>     conf: RapidsConf,
+>     parent: Option[RapidsMeta[_, _, _]])
+>   extends ScanMeta[INPUT](scan, conf, parent, new NoRuleDataFromReplacementRule) {
+> 
+>   override def tagSelfForGpu(): Unit = {
+>     willNotWorkOnGpu(s"GPU does not currently support the operator ${scan.getClass}")
+>   }
+> 
+>   override def convertToGpu(): Scan =
+>     throw new IllegalStateException("Cannot be converted to GPU")
+446c514
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+448c516
+<     extends RapidsMeta[INPUT, DataWritingCommand](cmd, conf, parent, rule) {
+---
+>     extends RapidsMeta[INPUT, DataWritingCommand, GpuDataWritingCommand](cmd, conf, parent, rule) {
+451a520
+>   override val childScans: Seq[ScanMeta[_]] = Seq.empty
+464c533
+<     parent: Option[RapidsMeta[_, _]])
+---
+>     parent: Option[RapidsMeta[_, _, _]])
+469a539,541
+> 
+>   override def convertToGpu(): GpuDataWritingCommand =
+>     throw new IllegalStateException("Cannot be converted to GPU")
+477c549
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+479c551
+<   extends RapidsMeta[INPUT, SparkPlan](plan, conf, parent, rule) {
+---
+>   extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
+484a557
+>       childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+489a563
+>       childScans.foreach(_.recursiveSparkPlanRemoved())
+514a589
+>   override val childScans: Seq[ScanMeta[_]] = Seq.empty
+550a626,630
+> 
+>       childPlans.head.wrapped
+>           .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
+>         wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
+>       }
+592c672
+<     /*if (!canScansBeReplaced) {
+---
+>     if (!canScansBeReplaced) {
+594c674
+<     } */
+---
+>     }
+613a694,696
+>     wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
+>       .foreach(_.diff(cannotBeReplacedReasons.get)
+>       .foreach(willNotWorkOnGpu))
+637c720,724
+<       convertToCpu
+---
+>       if (canThisBeReplaced) {
+>         convertToGpu()
+>       } else {
+>         convertToCpu()
+>       }
+707c794
+<     parent: Option[RapidsMeta[_, _]])
+---
+>     parent: Option[RapidsMeta[_, _, _]])
+711a799,801
+> 
+>   override def convertToGpu(): GpuExec =
+>     throw new IllegalStateException("Cannot be converted to GPU")
+720c810
+<     parent: Option[RapidsMeta[_, _]])
+---
+>     parent: Option[RapidsMeta[_, _, _]])
+727a818,820
+> 
+>   override def convertToGpu(): GpuExec =
+>     throw new IllegalStateException("Cannot be converted to GPU")
+768c861
+<       case agg: SparkPlan if agg.isInstanceOf[WindowExec] =>
+---
+>       case agg: SparkPlan if ShimLoader.getSparkShims.isWindowFunctionExec(agg) =>
+770,777c863
+<       case agg: HashAggregateExec =>
+<         // Spark 2.x doesn't have the BaseAggregateExec class
+<         if (agg.groupingExpressions.isEmpty) {
+<           ReductionAggExprContext
+<         } else {
+<           GroupByAggExprContext
+<         }
+<       case agg: SortAggregateExec =>
+---
+>       case agg: BaseAggregateExec =>
+788c874
+<   def getRegularOperatorContext(meta: RapidsMeta[_, _]): ExpressionContext = meta.wrapped match {
+---
+>   def getRegularOperatorContext(meta: RapidsMeta[_, _, _]): ExpressionContext = meta.wrapped match {
+844c930
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+846c932
+<   extends RapidsMeta[INPUT, Expression](expr, conf, parent, rule) {
+---
+>   extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
+852a939
+>   override val childScans: Seq[ScanMeta[_]] = Seq.empty
+991c1078
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+993a1081,1082
+> 
+>   override def convertToGpu(): GpuExpression
+1002c1091
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1005a1095,1099
+>   override final def convertToGpu(): GpuExpression =
+>     convertToGpu(childExprs.head.convertToGpu())
+> 
+>   def convertToGpu(child: Expression): GpuExpression
+> 
+1021c1115
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1032c1126
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1037a1132,1134
+>     if (needsAnsiCheck) {
+>       GpuOverrides.checkAndTagAnsiAgg(ansiTypeToCheck, this)
+>     }
+1041a1139,1151
+> 
+>   override final def convertToGpu(): GpuExpression =
+>     convertToGpu(childExprs.map(_.convertToGpu()))
+> 
+>   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
+> 
+>   // Set to false if the aggregate doesn't overflow and therefore
+>   // shouldn't error
+>   val needsAnsiCheck: Boolean = true
+> 
+>   // The type to use to determine whether the aggregate could overflow.
+>   // Set to None, if we should fallback for all types
+>   val ansiTypeToCheck: Option[DataType] = Some(expr.dataType)
+1050c1160
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1052a1163,1164
+> 
+>   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
+1061c1173
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1072a1185,1200
+>    * Returns a buffer converter who can generate a Expression to transform the aggregation buffer
+>    * of wrapped function from CPU format to GPU format. The conversion occurs on the CPU, so the
+>    * generated expression should be a CPU Expression executed by row.
+>    */
+>   def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+>     throw new NotImplementedError("The method should be implemented by specific functions")
+> 
+>   /**
+>    * Returns a buffer converter who can generate a Expression to transform the aggregation buffer
+>    * of wrapped function from GPU format to CPU format. The conversion occurs on the CPU, so the
+>    * generated expression should be a CPU Expression executed by row.
+>    */
+>   def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+>     throw new NotImplementedError("The method should be implemented by specific functions")
+> 
+>   /**
+1086c1214
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1088a1217,1223
+> 
+>   override final def convertToGpu(): GpuExpression = {
+>     val Seq(lhs, rhs) = childExprs.map(_.convertToGpu())
+>     convertToGpu(lhs, rhs)
+>   }
+> 
+>   def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
+1095c1230
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1113c1248,1267
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+>     rule: DataFromReplacementRule)
+>   extends ExprMeta[INPUT](expr, conf, parent, rule) {
+> 
+>   override final def convertToGpu(): GpuExpression = {
+>     val Seq(child0, child1, child2) = childExprs.map(_.convertToGpu())
+>     convertToGpu(child0, child1, child2)
+>   }
+> 
+>   def convertToGpu(val0: Expression, val1: Expression,
+>                    val2: Expression): GpuExpression
+> }
+> 
+> /**
+>  * Base class for metadata around `QuaternaryExpression`.
+>  */
+> abstract class QuaternaryExprMeta[INPUT <: QuaternaryExpression](
+>     expr: INPUT,
+>     conf: RapidsConf,
+>     parent: Option[RapidsMeta[_, _, _]],
+1115a1270,1277
+> 
+>   override final def convertToGpu(): GpuExpression = {
+>     val Seq(child0, child1, child2, child3) = childExprs.map(_.convertToGpu())
+>     convertToGpu(child0, child1, child2, child3)
+>   }
+> 
+>   def convertToGpu(val0: Expression, val1: Expression,
+>     val2: Expression, val3: Expression): GpuExpression
+1121c1283
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1123a1286,1292
+> 
+>   override final def convertToGpu(): GpuExpression = {
+>     val gpuCol :: gpuTrimParam = childExprs.map(_.convertToGpu())
+>     convertToGpu(gpuCol, gpuTrimParam.headOption)
+>   }
+> 
+>   def convertToGpu(column: Expression, target: Option[Expression] = None): GpuExpression
+1132c1301
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+1134a1304,1307
+>   override final def convertToGpu(): GpuExpression =
+>     convertToGpu(childExprs.map(_.convertToGpu()))
+> 
+>   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
+1143c1316
+<     parent: Option[RapidsMeta[_, _]])
+---
+>     parent: Option[RapidsMeta[_, _, _]])
+1147a1321,1323
+> 
+>   override def convertToGpu(): GpuExpression =
+>     throw new IllegalStateException("Cannot be converted to GPU")

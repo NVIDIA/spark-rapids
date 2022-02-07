@@ -114,7 +114,7 @@ pipeline {
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CUDA_CLASSIFIER = 'cuda11'
         // DB related ENVs
-        IDLE_TIMEOUT = '180' // 3 hours
+        IDLE_TIMEOUT = '240' // 4 hours
         NUM_WORKERS = '0'
         DB_TYPE = getDbType()
         DATABRICKS_HOST = "${PARAM_MAP["$DB_TYPE"][ID_HOST]}"
@@ -228,7 +228,7 @@ pipeline {
             steps {
                 script {
                     unstash "source_tree"
-                    // Retrieve PROJECT_VER from version-def.sh, e.g, '21.12.0-SNAPSHOT'
+                    // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
                     PROJECT_VER = sh(returnStdout: true, script: "bash $JENKINS_ROOT/version-def.sh | cut -d ',' -f 3 | cut -d ' ' -f 3")
                     PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
                     echo PROJECT_VER
@@ -237,14 +237,14 @@ pipeline {
                     major_ver = versions[0].toInteger()
                     minor_ver = versions[1].toInteger()
 
-                    if (major_ver >= 21) {
+                    if (major_ver == 21) {
                         if (minor_ver == 8) {
                             PREMERGE_CI_2_ARGUMENT = "unit_test" // for '21.08' version
                         } else if (minor_ver >= 10) {
                             PREMERGE_CI_2_ARGUMENT = "ci_2" // for '21.10' or later version
-                        } else {
-                            // do nothing to avoid breaking old version
                         }
+                    } else if (major_ver >= 22) {
+                        PREMERGE_CI_2_ARGUMENT = "ci_2"
                     } else {
                         error("Unsupported major version: $major_ver")
                     }
@@ -337,8 +337,9 @@ pipeline {
                     when {
                         beforeAgent true
                         beforeOptions true
-                        expression {
-                            major_ver >= 21 && minor_ver >= 8
+                        anyOf {
+                            expression { major_ver >= 21 && minor_ver >= 8 }
+                            expression { major_ver >= 22 }
                         }
                     }
 
@@ -394,7 +395,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 4, unit: 'HOURS') {
+                            timeout(time: 5, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
@@ -429,7 +430,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 4, unit: 'HOURS') {
+                            timeout(time: 5, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,23 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.Optional
+
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnView, GroupByAggregation, GroupByOptions, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuLiteral, GpuMapUtils, GpuScalar, GpuUnaryExpression}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, Table}
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
@@ -141,11 +146,9 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
                 if (failOnError &&
-                  minNumElements < math.abs(ordinalValue) &&
-                  lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
-                  throw new ArrayIndexOutOfBoundsException(
-                    s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
-                      s"$minNumElements")
+                    minNumElements < math.abs(ordinalValue) &&
+                    lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
+                  RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinalValue, minNumElements)
                 } else {
                   if (ordinalValue > 0) {
                     // Positive index
@@ -392,4 +395,259 @@ case class GpuArrayMax(child: Expression) extends GpuBaseArrayAgg with ImplicitC
   override def prettyName: String = "array_max"
 
   override protected def agg: GroupByAggregation = GroupByAggregation.max()
+}
+
+class GpuSequenceMeta(
+    expr: Sequence,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends ExprMeta[Sequence](expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    //  We have to fall back to the CPU if the timeZoneId is not UTC when
+    //  we are processing date/timestamp.
+    //  Date/Timestamp are not enabled right now so this is probably fine.
+  }
+
+  override def convertToGpu(): GpuExpression = {
+    val (startExpr, stopExpr, stepOpt) = if (expr.stepOpt.isDefined) {
+        val Seq(start, stop, step) = childExprs.map(_.convertToGpu())
+        (start, stop, Some(step))
+      } else {
+        val Seq(start, stop) = childExprs.map(_.convertToGpu())
+        (start, stop, None)
+      }
+    GpuSequence(startExpr, stopExpr, stepOpt, expr.timeZoneId)
+  }
+}
+
+object GpuSequenceUtil extends Arm {
+
+  private def checkSequenceInputs(
+      start: ColumnVector,
+      stop: ColumnVector,
+      step: ColumnVector): Unit = {
+    // Keep the same requirement with Spark:
+    // (step > 0 && start <= stop) || (step < 0 && start >= stop) || (step == 0 && start == stop)
+    withResource(Scalar.fromByte(0.toByte)) { zero =>
+      // The check should ignore each row (Row(start, stop, step)) that contains at least
+      // one null element according to Spark's code. Thanks to the cudf binary ops, who ignore
+      // nulls already, skipping nulls can be done without any additional process.
+      //
+      // Because the filtered table (e.g. upTbl) in each rule check excludes the rows that the
+      // step is null. Next a null row will be produced when comparing start or stop when any
+      // of them is null, and the nulls are skipped in the final assertion 'isAllValidTrue'.
+      withResource(new Table(start, stop)) { startStopTable =>
+        // (step > 0 && start <= stop)
+        val upTbl = withResource(step.greaterThan(zero)) { positiveStep =>
+          startStopTable.filter(positiveStep)
+        }
+        val allUp = withResource(upTbl) { _ =>
+          upTbl.getColumn(0).lessOrEqualTo(upTbl.getColumn(1))
+        }
+        withResource(allUp) { _ =>
+          require(isAllValidTrue(allUp), "Illegal sequence boundaries: step > 0 but start > stop")
+        }
+
+        // (step < 0 && start >= stop)
+        val downTbl = withResource(step.lessThan(zero)) { negativeStep =>
+          startStopTable.filter(negativeStep)
+        }
+        val allDown = withResource(downTbl) { _ =>
+          downTbl.getColumn(0).greaterOrEqualTo(downTbl.getColumn(1))
+        }
+        withResource(allDown) { _ =>
+          require(isAllValidTrue(allDown),
+            "Illegal sequence boundaries: step < 0 but start < stop")
+        }
+
+        // (step == 0 && start == stop)
+        val equalTbl = withResource(step.equalTo(zero)) { zeroStep =>
+          startStopTable.filter(zeroStep)
+        }
+        val allEq = withResource(equalTbl) { _ =>
+          equalTbl.getColumn(0).equalTo(equalTbl.getColumn(1))
+        }
+        withResource(allEq) { _ =>
+          require(isAllValidTrue(allEq),
+            "Illegal sequence boundaries: step == 0 but start != stop")
+        }
+      }
+    } // end of zero
+  }
+
+  /**
+   * Compute the size of each sequence according to 'start', 'stop' and 'step'.
+   * A row (Row[start, stop, step]) contains at least one null element will produce
+   * a null in the output.
+   *
+   * The returned column should be closed.
+   */
+  def computeSequenceSizes(
+      start: ColumnVector,
+      stop: ColumnVector,
+      step: ColumnVector): ColumnVector = {
+    checkSequenceInputs(start, stop, step)
+
+    // Spark's algorithm to get the length (aka size)
+    // ``` Scala
+    //   size = if (start == stop) 1L else 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
+    //   require(size <= MAX_ROUNDED_ARRAY_LENGTH,
+    //       s"Too long sequence: $len. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
+    //   size.toInt
+    // ```
+    val sizeAsLong = withResource(Scalar.fromLong(1L)) { one =>
+      val diff = withResource(stop.castTo(DType.INT64)) { stopAsLong =>
+        withResource(start.castTo(DType.INT64)) { startAsLong =>
+          stopAsLong.sub(startAsLong)
+        }
+      }
+      val quotient = withResource(diff) { _ =>
+        withResource(step.castTo(DType.INT64)) { stepAsLong =>
+          diff.div(stepAsLong)
+        }
+      }
+      // actualSize = 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
+      val actualSize = withResource(quotient) { quotient =>
+        quotient.add(one, DType.INT64)
+      }
+      withResource(actualSize) { _ =>
+        val mergedEquals = withResource(start.equalTo(stop)) { equals =>
+          if (step.hasNulls) {
+            // Also set the row to null where step is null.
+            equals.mergeAndSetValidity(BinaryOp.BITWISE_AND, equals, step)
+          } else {
+            equals.incRefCount()
+          }
+        }
+        withResource(mergedEquals) { _ =>
+          mergedEquals.ifElse(one, actualSize)
+        }
+      }
+    }
+
+    withResource(sizeAsLong) { _ =>
+      // check max size
+      withResource(Scalar.fromInt(MAX_ROUNDED_ARRAY_LENGTH)) { maxLen =>
+        withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
+          require(isAllValidTrue(allValid),
+              s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
+        }
+      }
+      // cast to int and return
+      sizeAsLong.castTo(DType.INT32)
+    }
+  }
+
+}
+
+case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expression],
+    timeZoneId: Option[String] = None) extends TimeZoneAwareExpression with GpuExpression
+    with ShimExpression {
+
+  import GpuSequenceUtil._
+
+  override def dataType: ArrayType = ArrayType(start.dataType, containsNull = false)
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Some(timeZoneId))
+
+  override def children: Seq[Expression] = Seq(start, stop) ++ stepOpt
+
+  override def nullable: Boolean = children.exists(_.nullable)
+
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>
+      withResource(stepOpt.map(columnarEvalToColumn(_, batch))) { stepGpuColOpt =>
+        val startCol = startGpuCol.getBase
+
+        // 1 Compute the sequence size for each row.
+        val (sizeCol, stepCol) = withResource(columnarEvalToColumn(stop, batch)) { stopGpuCol =>
+          val stopCol = stopGpuCol.getBase
+          val steps = stepGpuColOpt.map(_.getBase.incRefCount())
+              .getOrElse(defaultStepsFunc(startCol, stopCol))
+          closeOnExcept(steps) { _ =>
+            (computeSequenceSizes(startCol, stopCol, steps), steps)
+          }
+        }
+
+        // 2 Generate the sequence
+        //
+        // cudf 'sequence' requires 'step' has the same type with 'start'.
+        // And the step type may differ due to the default steps.
+        val castedStepCol = withResource(stepCol) { _ =>
+          closeOnExcept(sizeCol) { _ =>
+            stepCol.castTo(startCol.getType)
+          }
+        }
+        withResource(Seq(sizeCol, castedStepCol)) { _ =>
+          GpuColumnVector.from(genSequence(startCol, sizeCol, castedStepCol), dataType)
+        }
+      }
+    }
+  }
+
+  @transient
+  private lazy val defaultStepsFunc: (ColumnView, ColumnView) => ColumnVector =
+      dataType.elementType match {
+    case _: IntegralType =>
+      // Default step:
+      //   start > stop, step == -1
+      //   start <= stop, step == 1
+      (starts, stops) => {
+        // It is ok to always use byte, since it will be casted to the same type before
+        // going into cudf sequence. Besides byte saves memory, and does not cause any
+        // type promotion during computation.
+        withResource(Scalar.fromByte((-1).toByte)) { minusOne =>
+          withResource(Scalar.fromByte(1.toByte)) { one =>
+            withResource(starts.greaterThan(stops)) { decrease =>
+              decrease.ifElse(minusOne, one)
+            }
+          }
+        }
+      }
+    // Timestamp and Date will come soon
+    // case TimestampType =>
+    // case DateType =>
+  }
+
+  private def genSequence(
+      start: ColumnView,
+      size: ColumnView,
+      step: ColumnView): ColumnVector = {
+    // size is calculated from start, stop and step, so its validity mask is equal to
+    // the merged validity of the three columns, and can be used as the final output
+    // validity mask directly.
+    // Then checking nulls only in size column is enough.
+    if(size.getNullCount > 0) {
+      // Nulls are not acceptable in cudf 'list::sequences'. (Pls refer to
+      //     https://github.com/rapidsai/cudf/issues/10012),
+      //
+      // So replace the nulls with 0 for size, and create temp views for start and
+      // stop with forcing null count to be 0.
+      val sizeNoNull = withResource(Scalar.fromInt(0)) { zero =>
+        size.replaceNulls(zero)
+      }
+      val ret = withResource(sizeNoNull) { _ =>
+        val startNoNull = new ColumnView(start.getType, start.getRowCount, Optional.of(0L),
+          start.getData, null)
+        withResource(startNoNull) { _ =>
+          val stepNoNull = new ColumnView(step.getType, step.getRowCount, Optional.of(0L),
+            step.getData, null)
+          withResource(stepNoNull) { _ =>
+            ColumnVector.sequence(startNoNull, sizeNoNull, stepNoNull)
+          }
+        }
+      }
+      withResource(ret) { _ =>
+        // Restore the null rows by setting the validity mask.
+        ret.mergeAndSetValidity(BinaryOp.BITWISE_AND, size)
+      }
+    } else {
+      ColumnVector.sequence(start, size, step)
+    }
+  }
 }

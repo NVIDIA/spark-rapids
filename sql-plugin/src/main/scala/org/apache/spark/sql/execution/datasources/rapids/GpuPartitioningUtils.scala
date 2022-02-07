@@ -109,9 +109,6 @@ object GpuPartitioningUtils {
    *
    * mainly copied from PartitioningAwareFileIndex.basePaths
    */
-  @scala.annotation.nowarn(
-    "msg=method isDirectory in class FileSystem is deprecated"
-  )
   private def getBasePaths(
     hadoopConf: Configuration,
     basePathOption: Option[Path],
@@ -121,7 +118,7 @@ object GpuPartitioningUtils {
     basePathOption match {
       case Some(userDefinedBasePath) =>
         val fs = userDefinedBasePath.getFileSystem(hadoopConf)
-        if (!fs.isDirectory(userDefinedBasePath)) {
+        if (!fs.getFileStatus(userDefinedBasePath).isDirectory) {
           throw new IllegalArgumentException(s"Option '$BASE_PATH_PARAM' must be a directory")
         }
         val qualifiedBasePath = fs.makeQualified(userDefinedBasePath)

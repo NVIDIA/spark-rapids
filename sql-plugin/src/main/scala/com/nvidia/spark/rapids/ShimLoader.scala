@@ -53,13 +53,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-21.12.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -355,15 +355,6 @@ object ShimLoader extends Logging {
     SPARK_BUILD_DATE
   )
 
-  // TODO broken right now, check if this can be supported with parallel worlds
-  // it implies the prerequisite of having such a class in the conventional root jar entry
-  // - or the necessity of an additional parameter for specifying the shim subdirectory
-  // - or enforcing the convention the class file parent directory is the shimId that is also
-  //   a top entry e.g. /spark301/com/nvidia/test/shim/spark301/Spark301Shims.class
-  def setSparkShimProviderClass(classname: String): Unit = {
-    shimProviderClass = classname
-  }
-
   def loadClass(className: String): Class[_] = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
@@ -428,6 +419,6 @@ object ShimLoader extends Logging {
   }
 
   def newExplainPlan(): ExplainPlanBase = {
-    ShimLoader.newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
+    newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
 }

@@ -117,23 +117,21 @@ class GpuShuffleCoalesceIterator(
       var batchCanGrow = batchByteSize < targetBatchByteSize
       while (batchCanGrow && iter.hasNext) {
         closeOnExcept(iter.next()) { batch =>
-          withResource(new MetricRange(opTimeMetric)) { _ =>
-            inputBatchesMetric += 1
-            // don't bother tracking empty tables
-            if (batch.numRows > 0) {
-              inputRowsMetric += batch.numRows
-              val tableColumn = batch.column(0).asInstanceOf[SerializedTableColumn]
-              batchCanGrow = canAddToBatch(tableColumn.header)
-              serializedTables.addLast(tableColumn)
-              // always add the first table to the batch even if its beyond the target limits
-              if (batchCanGrow || numTablesInBatch == 0) {
-                numTablesInBatch += 1
-                numRowsInBatch += tableColumn.header.getNumRows
-                batchByteSize += tableColumn.header.getDataLen
-              }
-            } else {
-              batch.close()
+          inputBatchesMetric += 1
+          // don't bother tracking empty tables
+          if (batch.numRows > 0) {
+            inputRowsMetric += batch.numRows
+            val tableColumn = batch.column(0).asInstanceOf[SerializedTableColumn]
+            batchCanGrow = canAddToBatch(tableColumn.header)
+            serializedTables.addLast(tableColumn)
+            // always add the first table to the batch even if its beyond the target limits
+            if (batchCanGrow || numTablesInBatch == 0) {
+              numTablesInBatch += 1
+              numRowsInBatch += tableColumn.header.getNumRows
+              batchByteSize += tableColumn.header.getDataLen
             }
+          } else {
+            batch.close()
           }
         }
       }
@@ -151,20 +149,21 @@ class GpuShuffleCoalesceIterator(
   }
 
   private def concatenateBatch(): ColumnarBatch = {
-    // about to start using the GPU in this task
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
+    val firstHeader = serializedTables.peekFirst().header
+    val batch = withResource(new MetricRange(concatTimeMetric)) { _ =>
+      if (firstHeader.getNumColumns == 0) {
+        // acquire the GPU unconditionally for now in this case, as a downstream exec
+        // may need the GPU, and the assumption is that it is acquired in the coalesce
+        // code.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
+        (0 until numTablesInBatch).foreach(_ => serializedTables.removeFirst())
+        new ColumnarBatch(Array.empty, numRowsInBatch)
+      } else {
+        concatenateTablesBatch()
+      }
+    }
 
     withResource(new MetricRange(opTimeMetric)) { _ =>
-      val firstHeader = serializedTables.peekFirst().header
-      val batch = withResource(new MetricRange(concatTimeMetric)) { _ =>
-        if (firstHeader.getNumColumns == 0) {
-          (0 until numTablesInBatch).foreach(_ => serializedTables.removeFirst())
-          new ColumnarBatch(Array.empty, numRowsInBatch)
-        } else {
-          concatenateTablesBatch()
-        }
-      }
-
       outputBatchesMetric += 1
       outputRowsMetric += batch.numRows
 
@@ -194,8 +193,14 @@ class GpuShuffleCoalesceIterator(
       }
 
       withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-        withResource(JCudfSerialization.concatToContiguousTable(headers, buffers)) { table =>
-          GpuColumnVectorFromBuffer.from(table, sparkSchema)
+        withResource(JCudfSerialization.concatToHostBuffer(headers, buffers)) { hostConcatResult =>
+          // about to start using the GPU in this task
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
+          withResource(new MetricRange(opTimeMetric)) { _ =>
+            withResource(hostConcatResult.toContiguousTable) { contigTable =>
+              GpuColumnVectorFromBuffer.from(contigTable, sparkSchema)
+            }
+          }
         }
       }
     }

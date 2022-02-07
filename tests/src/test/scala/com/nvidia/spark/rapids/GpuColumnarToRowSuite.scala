@@ -66,6 +66,7 @@ class GpuColumnarToRowSuite extends SparkQueryCompareTestSuite {
           }
           assert(input.getBinary(1) sameElements output.getBinary(1))
         }
+        assert(!c2rIterator.hasNext)
       }
     }
   }

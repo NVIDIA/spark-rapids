@@ -20,10 +20,12 @@ import java.io._
 import java.util.UUID
 import java.util.concurrent._
 
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
@@ -48,7 +50,9 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object SerializedHostTableUtils extends Arm {
-  /** Read in a cudf serialized table into host memory */
+  /**
+   * Read in a cudf serialized table into host memory
+   */
   def readTableHeaderAndBuffer(
       in: ObjectInputStream): (JCudfSerialization.SerializedTableHeader, HostMemoryBuffer) = {
     val din = new DataInputStream(in)
@@ -64,6 +68,22 @@ object SerializedHostTableUtils extends Arm {
         throw new IllegalStateException("Could not read serialized table data")
       }
       (header, buffer)
+    }
+  }
+
+  /**
+   * Deserialize a cuDF serialized table to host build column vectors
+   */
+  def buildHostColumns(
+      header: SerializedTableHeader,
+      buffer: HostMemoryBuffer,
+      dataTypes: Array[DataType]): Array[RapidsHostColumnVector] = {
+    assert(dataTypes.length == header.getNumColumns)
+    closeOnExcept(JCudfSerialization.unpackHostColumnVectors(header, buffer)) { hostColumns =>
+      assert(hostColumns.length == dataTypes.length)
+      dataTypes.zip(hostColumns).safeMap { case (dataType, hostColumn) =>
+        new RapidsHostColumnVector(dataType, hostColumn)
+      }
     }
   }
 }
@@ -116,6 +136,34 @@ class SerializeConcatHostBuffersDeserializeBatch(
       }
     }
     batchInternal
+  }
+
+  /**
+   * Create host columnar batches from either serialized buffers or device columnar batch. This
+   * method can be safely called in both driver node and executor nodes. For now, it is used on
+   * the driver side for reusing GPU broadcast results in the CPU.
+   *
+   * NOTE: The caller is responsible to release these host columnar batches.
+   */
+  def hostBatches: Array[ColumnarBatch] = this.synchronized {
+    batchInternal match {
+      case batch if batch == null =>
+        withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+          val columnBatches = new mutable.ArrayBuffer[ColumnarBatch]()
+          closeOnExcept(columnBatches) { cBatches =>
+            headers.zip(buffers).foreach { case (header, buffer) =>
+              val hostColumns = SerializedHostTableUtils.buildHostColumns(
+                header, buffer, dataTypes)
+              val rowCount = header.getNumRows
+              cBatches += new ColumnarBatch(hostColumns.toArray, rowCount)
+            }
+          }
+          columnBatches.toArray
+        }
+      case batch =>
+        val hostColumns = GpuColumnVector.extractColumns(batch).map(_.copyToHost())
+        Array(new ColumnarBatch(hostColumns.toArray, batch.numRows()))
+    }
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
@@ -303,28 +351,36 @@ abstract class GpuBroadcastExchangeExecBase(
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
               interruptOnCancel = true)
-            val batch = withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-              collectTime)) { _ =>
-              val data = child.executeColumnar().map(cb => try {
-                new SerializeBatchDeserializeHostBuffer(cb)
-              } finally {
-                cb.close()
-              })
-              val d = data.collect()
-              new SerializeConcatHostBuffersDeserializeBatch(d, output)
-            }
+            var dataSize = 0L
+            val broadcastResult =
+              withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
+                collectTime)) { _ =>
+                val childRdd = child.executeColumnar()
+                val data = childRdd.map(cb => try {
+                  new SerializeBatchDeserializeHostBuffer(cb)
+                } finally {
+                  cb.close()
+                })
 
-            val numRows = batch.numRows
-            checkRowLimit(numRows)
-            numOutputBatches += 1
-            numOutputRows += numRows
+                val d = data.collect()
+                val emptyRelation: Option[Any] = if (d.isEmpty) {
+                  ShimLoader.getSparkShims.tryTransformIfEmptyRelation(mode)
+                } else {
+                  None
+                }
 
+                emptyRelation.getOrElse({
+                  val batch = new SerializeConcatHostBuffersDeserializeBatch(d, output)
+                  val numRows = batch.numRows
+                  checkRowLimit(numRows)
+                  numOutputBatches += 1
+                  numOutputRows += numRows
+                  dataSize += batch.dataSize
+                  batch
+                })
+              }
             withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
                 buildTime)) { _ =>
-              // we only support hashjoin so this is a noop
-              // val relation = mode.transform(input, Some(numRows))
-              val dataSize = batch.dataSize
-
               gpuLongMetric("dataSize") += dataSize
               if (dataSize >= MAX_BROADCAST_TABLE_BYTES) {
                 throw new SparkException(
@@ -335,7 +391,7 @@ abstract class GpuBroadcastExchangeExecBase(
             val broadcasted = withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
                 broadcastTime)) { _ =>
               // Broadcast the relation
-              sparkContext.broadcast(batch.asInstanceOf[Any])
+              sparkContext.broadcast(broadcastResult)
             }
 
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,22 @@ package com.nvidia.spark.rapids.shims.spark321
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
-class Spark321Shims extends Spark32XShims with Spark30Xuntil33XShims {
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.types.StructType
+
+class Spark321Shims extends Spark321PlusShims with Spark30Xuntil33XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: PartitionedFile => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+    new FileScanRDD(sparkSession, readFunction, filePartitions)
+  }
 }

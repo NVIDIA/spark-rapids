@@ -121,9 +121,35 @@
         <concat destfile="${shimServiceFile}">
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
         </concat>
-        <exec executable="${project.basedir}/scripts/binary-dedupe.sh" failonerror="true"
-            dir="${project.build.directory}"/>
 
+        <!-- check shims revisions -->
+        <exec executable="${project.basedir}/scripts/check-shims-revisions.sh"
+              dir="${project.build.directory}"
+              resultproperty="build-parallel-worlds.checkRevisionsExitCode"
+              errorproperty="build-parallel-worlds.checkRevisionsErrorMsg"
+              failonerror="false">
+            <arg value="${included_buildvers}"/>
+        </exec>
+        <fail message="exec check-shims-revisions.sh failed, exit code is ${build-parallel-worlds.checkRevisionsExitCode}, error msg is ${build-parallel-worlds.checkRevisionsErrorMsg}">
+            <condition>
+                <not>
+                    <equals arg1="${build-parallel-worlds.checkRevisionsExitCode}" arg2="0"/>
+                </not>
+            </condition>
+        </fail>
+
+        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+              dir="${project.build.directory}"
+              resultproperty="build-parallel-worlds.dedupeExitCode"
+              errorproperty="build-parallel-worlds.dedupeErrorMsg"
+              failonerror="false"/>
+        <fail message="exec binary-dedupe.sh failed, exit code is ${build-parallel-worlds.dedupeExitCode}, error msg is ${build-parallel-worlds.dedupeErrorMsg}">
+            <condition>
+                <not>
+                    <equals arg1="${build-parallel-worlds.dedupeExitCode}" arg2="0"/>
+                </not>
+            </condition>
+        </fail>
 
         <echo level="info">Generating dependency-reduced-pom.xml</echo>
         <resources id="aggregatorDependencyRegexWithoutWhitespace">

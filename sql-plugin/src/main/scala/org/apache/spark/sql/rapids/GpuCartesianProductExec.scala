@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.Cross
 import org.apache.spark.sql.execution.{ExplainUtils, SparkPlan}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExec
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -187,7 +187,7 @@ class GpuCartesianRDD(
         spillBatchBuffer.toIterator.map(LazySpillableColumnarBatch.spillOnly)
       }
 
-      GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
+      GpuBroadcastNestedLoopJoinExec.nestedLoopJoin(
         Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
         targetSize, boundCondition, spillCallback,
         numOutputRows = numOutputRows,
@@ -268,7 +268,7 @@ case class GpuCartesianProductExec(
       // TODO here too it would probably be best to avoid doing any re-computation
       //  that happens with the built in cartesian, but writing another custom RDD
       //  just for this use case is not worth it without an explicit use case.
-      GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
+      GpuBroadcastNestedLoopJoinExec.divideIntoBatches(
         l.cartesian(r).map(p => p._1 * p._2),
         targetSizeBytes,
         numOutputRows,

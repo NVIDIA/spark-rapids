@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,6 +120,9 @@ class GpuSingleDirectoryDataWriter(
   // Initialize currentWriter and statsTrackers
   newOutputWriter()
 
+  @scala.annotation.nowarn(
+    "msg=method newTaskTempFile in class FileCommitProtocol is deprecated"
+  )
   private def newOutputWriter(): Unit = {
     recordsInFile = 0
     releaseResources()
@@ -178,7 +181,7 @@ class GpuDynamicPartitionDataWriter(
   private val isPartitioned = description.partitionColumns.nonEmpty
 
   /** Flag saying whether or not the data to be written out is bucketed. */
-  private val isBucketed = description.bucketIdExpression.isDefined
+  private val isBucketed = description.bucketSpec.isDefined
 
   if (isBucketed) {
     throw new UnsupportedOperationException("Bucketing is not supported on the GPU yet.")
@@ -245,6 +248,9 @@ class GpuDynamicPartitionDataWriter(
     row => proj(row).getString(0)
   }
 
+  @scala.annotation.nowarn(
+    "msg=method newTaskTempFile.* in class FileCommitProtocol is deprecated"
+  )
   private def newOutputWriter(partDir: String): Unit = {
     recordsInFile = 0
     releaseResources()
@@ -396,6 +402,16 @@ class GpuDynamicPartitionDataWriter(
 }
 
 /**
+ * Bucketing specification for all the write tasks.
+ * This is the GPU version of `org.apache.spark.sql.execution.datasources.WriterBucketSpec`
+ * @param bucketIdExpression Expression to calculate bucket id based on bucket column(s).
+ * @param bucketFileNamePrefix Prefix of output file name based on bucket id.
+ */
+case class GpuWriterBucketSpec(
+  bucketIdExpression: Expression,
+  bucketFileNamePrefix: Int => String)
+
+/**
  * A shared job description for all the GPU write tasks.
  * This is the GPU version of `org.apache.spark.sql.execution.datasources.WriteJobDescription`.
  */
@@ -406,7 +422,7 @@ class GpuWriteJobDescription(
     val allColumns: Seq[Attribute],
     val dataColumns: Seq[Attribute],
     val partitionColumns: Seq[Attribute],
-    val bucketIdExpression: Option[Expression],
+    val bucketSpec: Option[GpuWriterBucketSpec],
     val path: String,
     val customPartitionLocations: Map[TablePartitionSpec, String],
     val maxRecordsPerFile: Long,
