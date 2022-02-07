@@ -1,10 +1,11 @@
-10a11,20
+11a12,22
 > 
 >   def convertFileFormat(format: FileFormat): FileFormat = {
 >     format match {
 >       case _: CSVFileFormat => new GpuReadCSVFileFormat
 >       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
 >       case _: ParquetFileFormat => new GpuReadParquetFileFormat
+>       case _: JsonFileFormat => new GpuReadJsonFileFormat
 >       case f =>
 >         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
 >     }

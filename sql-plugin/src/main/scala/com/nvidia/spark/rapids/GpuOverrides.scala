@@ -492,11 +492,6 @@ object GpuOverrides extends Logging {
     listeners.clear()
   }
 
-  def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
-    val s = strLit.toString
-    !regexList.exists(pattern => s.contains(pattern))
-  }
-
   private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
     part match {
       case _: GpuPartitioning => part
@@ -3762,7 +3757,10 @@ object GpuOverrides extends Logging {
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all,
         Map("partitionSpec" ->
-            InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))),
+            InputCheck(
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
+            TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),

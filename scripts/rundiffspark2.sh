@@ -481,5 +481,15 @@ sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../sql-plugin/src/main/sca
 diff $tmp_dir/GpuFileSourceScanExec_new.out $tmp_dir/GpuFileSourceScanExec_old.out > $tmp_dir/GpuFileSourceScanExec.newdiff || true
 diff -c spark2diffs/GpuFileSourceScanExec.diff $tmp_dir/GpuFileSourceScanExec.newdiff
 
+sed -n '/object GpuReadJsonFileFormat/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuReadJsonFileFormat.scala > $tmp_dir/GpuReadJsonFileFormat_new.out
+sed -n '/object GpuReadJsonFileFormat/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuReadJsonFileFormat.scala > $tmp_dir/GpuReadJsonFileFormat_old.out
+diff $tmp_dir/GpuReadJsonFileFormat_new.out $tmp_dir/GpuReadJsonFileFormat_old.out > $tmp_dir/GpuReadJsonFileFormat.newdiff || true
+diff -c spark2diffs/GpuReadJsonFileFormat.diff $tmp_dir/GpuReadJsonFileFormat.newdiff
+
+sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuJsonScan.scala > $tmp_dir/GpuJsonScan_new.out
+sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuJsonScan.scala > $tmp_dir/GpuJsonScan_old.out
+diff $tmp_dir/GpuJsonScan_new.out $tmp_dir/GpuJsonScan_old.out > $tmp_dir/GpuJsonScan.newdiff || true
+diff -c spark2diffs/GpuJsonScan.diff $tmp_dir/GpuJsonScan.newdiff
+
 echo "Done running Diffs of spark2.x files"
 rm -r $tmp_dir

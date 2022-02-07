@@ -4,8 +4,8 @@ This is a set of integration tests for the RAPIDS Plugin for Apache Spark. These
 are intended to be able to be run against any Spark-compatible cluster/release to help
 verify that the plugin is doing the right thing in as many cases as possible.
 
-There are two sets of tests here. The pyspark tests are described here. The scala tests
-are described [here](../tests/README.md)
+There are two sets of tests. The PySpark tests are described on this page. The scala tests are
+described [here](../tests/README.md). 
 
 ## Dependencies
 

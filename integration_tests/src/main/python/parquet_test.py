@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -685,3 +685,46 @@ def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp
         assert_gpu_and_cpu_are_equal_collect(
                 lambda spark : spark.read.parquet(data_path).filter(filter_str),
                 all_confs)
+
+
+conf_for_parquet_aggregate_pushdown = {
+    "spark.sql.parquet.aggregatePushdown": "true", 
+    "spark.sql.sources.useV1SourceList": ""
+}
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on Parquet is a new feature of Spark 330')
+def test_parquet_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
+    """
+    No aggregation will be pushed down in this test, so we should not fallback to CPU
+    """
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_parquet_scan(spark):
+        spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").parquet(data_path)
+        df = spark.read.parquet(data_path).selectExpr("Max(p)")
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(
+        do_parquet_scan,
+        conf_for_parquet_aggregate_pushdown
+    )
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on Parquet is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_parquet_scan_with_aggregation_pushdown_fallback(spark_tmp_path):
+    """
+    The aggregation will be pushed down in this test, so we should fallback to CPU
+    """
+    data_path = spark_tmp_path + "/pushdown.parquet"
+
+    def do_parquet_scan(spark):
+        spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").parquet(data_path)
+        df = spark.read.parquet(data_path).selectExpr("count(p)")
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_parquet_scan,
+        exist_classes= "BatchScanExec",
+        non_exist_classes= "GpuBatchScanExec",
+        conf = conf_for_parquet_aggregate_pushdown)
