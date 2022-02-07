@@ -258,8 +258,8 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
       PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
                     awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2 * 1024))}')
     fi
-    # parallelism > 8 could slow down the whole process, so we have a limitation for it
-    [[ ${PARALLELISM} -gt 8 ]] && PARALLELISM=8
+    # parallelism > 7 could slow down the whole process, so we have a limitation for it
+    [[ ${PARALLELISM} -gt 7 ]] && PARALLELISM=7
     MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
     export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
     --conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"
