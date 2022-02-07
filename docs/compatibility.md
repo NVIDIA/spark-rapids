@@ -489,13 +489,21 @@ these formats when unquoted, will produce `null` on the CPU and may produce vali
 Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
 Spark will treat them as invalid inputs and will just return `null`.
 
-### json options
+### JSON options
 
-Below are some of the options that are supported by the plugin with minor differences when compared to Spark:
+Spark supports passing options to the JSON parser when reading a dataset.  In most cases if the RAPIDS Accelerator 
+sees one of these options that it does not support it will fall back to the CPU. In some cases we do not. The 
+following options are documented below.
 
-- `allowNumericLeadingZeros`  - Allows leading zeros in numbers (e.g. 00012). Spark throws exception when the option 
-is set as false whereas plugin always strips off the leading zeros.
-- `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters. This matches with Spark's behavior.
+- `allowNumericLeadingZeros`  - Allows leading zeros in numbers (e.g. 00012). By default this is set to false. 
+When it is false Spark throws an exception if it encounters this type of number. The RAPIDS Accelerator 
+strips off leading zeros from all numbers and this config has no impact on it.
+
+- `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters (ASCII characters with 
+value less than 32, including tab and line feed characters) or not. By default this is set to false. If the schema 
+is provided while reading JSON file, then this flag has no impact on the RAPIDS Accelerator as it always allows 
+unquoted control characters but Spark reads these entries incorrectly as null. However, if the schema is not provided
+and when the option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown.
 
 ## Regular Expressions
 
