@@ -119,6 +119,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support single repetition both inside and outside of capture groups") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4487
+    val patterns = Seq("(3?)+", "(3?)*", "(3*)+")
+    patterns.foreach(pattern => 
+      assertUnsupported(pattern, replace = false, "nothing to repeat"))
+  }
+
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
     patterns.foreach(pattern => {

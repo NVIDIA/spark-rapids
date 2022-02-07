@@ -610,6 +610,22 @@ class CudfRegexTranspiler(replace: Boolean) {
           // example: "a*+"
           throw new RegexUnsupportedException(nothingToRepeat)
 
+        case (RegexGroup(capture, term), SimpleQuantifier(ch)) if "+*".contains(ch) =>
+          // example: "(3?)+"
+          def isSimpleRepetition(e: RegexAST):Boolean = {
+            e match {
+              case RegexRepetition(term, quantifier) =>
+                term.isInstanceOf[RegexCharacterClassComponent]
+              case RegexSequence(parts) if parts.length == 1 => 
+                isSimpleRepetition(parts.last)
+              case _ => false
+            }
+          }
+          val tr = rewrite(term)
+          if (isSimpleRepetition(tr)) {
+              throw new RegexUnsupportedException(nothingToRepeat)
+          }
+          RegexRepetition(RegexGroup(capture, tr), quantifier)
         case _ =>
           RegexRepetition(rewrite(base), quantifier)
 
