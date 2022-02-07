@@ -24,7 +24,6 @@ import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcFile, O
 import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 
-// [301, 320) ORC shims
 trait OrcShims301until320Base {
 
   // read data to buffer
