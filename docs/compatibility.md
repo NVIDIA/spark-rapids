@@ -109,63 +109,31 @@ a few operations that we cannot support to the same degree as Spark can on the C
 
 ### Decimal Sum Aggregation
 
-When Apache Spark does a sum aggregation on decimal values it will store the result in a value
-with a precision that is the input precision + 10, but with a maximum precision of 38. The table
-below shows the number of rows/values in an aggregation before an overflow is possible,
-and the number of rows/values in the aggregation before an overflow might not be detected.
-The numbers are for Spark 3.1.0 and above after a number of fixes were put in place, please see
+A number of fixes for overflow detection went into Spark 3.1.0. Please see
 [SPARK-28067](https://issues.apache.org/jira/browse/SPARK-28067) and
-[SPARK-32018](https://issues.apache.org/jira/browse/SPARK-32018) for more information. 
-Please also note that these are for the worst case situations, meaning all the values in the sum 
-were either the largest or smallest values possible to be stored in the input type. In the common
-case, where the numbers are smaller, or vary between positive and negative values, many more
-rows/values can be processed without any issues.
+[SPARK-32018](https://issues.apache.org/jira/browse/SPARK-32018) for more detailed information.
+Some of these fixes we were able to back port, but some of them require Spark 3.1.0 or above to
+fully be able to detect overflow in all cases. As such on versions of Spark older than 3.1.0 for
+large decimal values there is the possibility of data corruption in some corner cases. 
+This is true for both the CPU and GPU implementations, but there are fewer of these cases for the 
+GPU. If this concerns you, you should upgrade to Spark 3.1.0 or above. 
 
-|Input Precision|Number of values before overflow is possible|Maximum number of values for guaranteed overflow detection (Spark CPU)|Maximum number of values for guaranteed overflow detection (RAPIDS GPU)|
-|---------------|------------------------------|------------|-------------|
-|1              |11,111,111,111                |2,049,638,219,301,061,290 |Same as CPU |
-|2              |10,101,010,101                |186,330,738,118,278,299 |Same as CPU |
-|3              |10,010,010,010                |18,465,199,272,982,534 |Same as CPU |
-|4              |10,001,000,100                |1,844,848,892,260,181 |Same as CPU |
-|5              |10,000,100,001                |184,459,285,329,948 |Same as CPU |
-|6              |10,000,010,000                |18,436,762,510,472 |Same as CPU |
-|7              |10,000,001,000                |1,834,674,590,838 |Same as CPU |
-|8              |10,000,000,100                |174,467,442,481 |Same as CPU |
-|9              |10,000,000,010                |Unlimited   |Unlimited |
-|10 - 19        |10,000,000,000                |Unlimited   |Unlimited |
-|20             |10,000,000,000                |Unlimited   |3,402,823,659,209,384,634 |
-|21             |10,000,000,000                |Unlimited   |340,282,356,920,938,463 |
-|22             |10,000,000,000                |Unlimited   |34,028,226,692,093,846 |
-|23             |10,000,000,000                |Unlimited   |3,402,813,669,209,384 |
-|24             |10,000,000,000                |Unlimited   |340,272,366,920,938 |
-|25             |10,000,000,000                |Unlimited   |34,018,236,692,093 |
-|26             |10,000,000,000                |Unlimited   |3,392,823,669,209 |
-|27             |10,000,000,000                |Unlimited   |330,282,366,920 |
-|28             |10,000,000,000                |Unlimited   |24,028,236,692 |
-|29             |1,000,000,000                 |Unlimited   |Falls back to CPU |
-|30             |100,000,000                   |Unlimited   |Falls back to CPU |
-|31             |10,000,000                    |Unlimited   |Falls back to CPU |
-|32             |1,000,000                     |Unlimited   |Falls back to CPU |
-|33             |100,000                       |Unlimited   |Falls back to CPU |
-|34             |10,00                         |Unlimited   |Falls back to CPU |
-|35             |1,000                         |Unlimited   |Falls back to CPU |
-|36             |100                           |Unlimited   |Falls back to CPU |
-|37             |10                            |Unlimited   |Falls back to CPU |
-|38             |1                             |Unlimited   |Falls back to CPU |
+When Apache Spark does a sum aggregation on decimal values it will store the result in a value
+with a precision that is the input precision + 10, but with a maximum precision of 38.
+For an input precision of 9 and above, Spark will do the aggregations as a Java `BigDecimal`
+value which is slow, but guarantees that any overflow can be detected because it can work with
+effectively unlimited precision. For inputs with a precision of 8 or below Spark will internally do
+the calculations as a long value, 64-bits. When the precision is 8, you would need at least 
+174,467,442,482 values/rows contributing to a single aggregation result before the overflow is no
+longer detected. Even then all the values would need to be either the largest or the smallest value
+possible to be stored in the type for the overflow to cause data corruption.
 
-For an input precision of 9 and above, Spark will do the aggregations as a `BigDecimal` 
-value which is slow, but guarantees that any overflow can be detected. For inputs with a 
-precision of 8 or below Spark will internally do the calculations as a long value, 64-bits.
-When the precision is 8, you would need at least 174-billion values/rows contributing to a
-single aggregation result, and even then all the values would need to be either the largest
-or the smallest value possible to be stored in the type before the overflow is no longer detected.
-
-For the RAPIDS Accelerator we only have access to at most a 128-bit value to store the results
-in and still detect overflow. Because of this we cannot guarantee overflow detection in all
-cases. In some cases we can guarantee unlimited overflow detection because of the maximum number of
-values that RAPIDS will aggregate in a single batch. But even in the worst cast for a decimal value
-with a precision of 28 the user would still have to aggregate so many values that it overflows 2.4
-times over before we are no longer able to detect it.
+For the RAPIDS Accelerator we don't have direct access to unlimited precision for our calculations
+like the CPU does. For input values with a precision of 8 and below we follow Spark and process the
+data the same way, as a 64-bit value. For larger values we will do extra calculations looking at the
+higher order digits to be able to detect overflow in all cases. But because of this you may see
+some performance differences depending on the input precision used. The differences will show up
+when going from an input precision of 8 to 9 and again when going from an input precision of 28 to 29.
 
 ### Decimal Average
 
@@ -175,8 +143,7 @@ have. It also inherits some issues from Spark itself. See
 https://issues.apache.org/jira/browse/SPARK-37024 for a detailed description of some issues
 with average in Spark.
 
-In order to be able to guarantee overflow detection on the sum with at least 100-billion values
-and to be able to guarantee doing the divide with half up rounding at the end we only support
+In order to be able to guarantee doing the divide with half up rounding at the end we only support
 average on input values with a precision of 23 or below. This is 38 - 10 for the sum guarantees
 and then 5 less to be able to shift the left-hand side of the divide enough to get a correct
 answer that can be rounded to the result that Spark would produce.
@@ -467,6 +434,54 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
 
+## JSON
+
+The JSON format read is a very experimental feature which is expected to have some issues, so we disable 
+it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
+`spark.rapids.sql.format.json.read.enabled`.
+
+Currently, the GPU accelerated JSON reader doesn't support column pruning, which will likely make 
+this difficult to use or even test. The user must specify the full schema or just let Spark infer 
+the schema from the JSON file. eg,
+
+We have a `people.json` file with below content
+
+``` console
+{"name":"Michael"}
+{"name":"Andy", "age":30}
+{"name":"Justin", "age":19}
+```
+
+Both below ways will work
+
+- Inferring the schema
+
+  ``` scala
+  val df = spark.read.json("people.json")
+  ```
+
+- Specifying the full schema
+
+  ``` scala
+  val schema = StructType(Seq(StructField("name", StringType), StructField("age", IntegerType)))
+  val df = spark.read.schema(schema).json("people.json")
+  ```
+
+While the below code will not work in the current version,
+
+``` scala
+val schema = StructType(Seq(StructField("name", StringType)))
+val df = spark.read.schema(schema).json("people.json")
+```
+
+### JSON supporting types
+
+The nested types(array, map and struct) are not supported yet in current version.
+
+### JSON Floating Point
+
+Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
+
 ## LIKE
 
 If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
@@ -479,6 +494,7 @@ The following Apache Spark regular expression functions and expressions are supp
 
 - `RLIKE`
 - `regexp`
+- `regexp_extract`
 - `regexp_like`
 - `regexp_replace`
 
@@ -490,28 +506,29 @@ These operations can be enabled on the GPU with the following configuration sett
 
 - `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
 - `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
+- `spark.rapids.sql.expression.RegExpExtract=true` for `regexp_extract`
 
 Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
 CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
 
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
+- Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
+- Line anchor `$`
+- String anchor `\Z`
+- String anchor `\z` is not supported by `regexp_replace`
+- Non-digit character class `\D`
+- Non-word character class `\W`
+- Word and non-word boundaries, `\b` and `\B`
+- Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
-- Word and non-word boundaries, `\b` and `\B`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
-  with a choice (`^|a`) or when used anywhere in `regexp_replace` patterns.
-
-In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
-
-- `$` does not match the end of a string if the string ends with a line-terminator 
-  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
-- Character classes for negative matches have different behavior between CPU and GPU for multiline
-  strings. The pattern `[^a]` will match line-terminators on CPU but not on GPU.
+- Hex and octal digits
+- `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
@@ -727,7 +744,8 @@ This configuration setting is ignored when using Spark versions prior to 3.1.0.
 ### Float to String
 
 The GPU will use different precision than Java's toString method when converting floating-point data
-types to strings and this can produce results that differ from the default behavior in Spark.
+types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
+`E`. As a result the computed string can differ from the default behavior in Spark.
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.
@@ -817,7 +835,7 @@ The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.sql.expression.ApproximatePercentile=true`.
+`spark.rapids.sql.incompatibleOps.enabled=true`.
 
 There is also a known issue ([issue #4060](https://github.com/NVIDIA/spark-rapids/issues/4060)) where
 incorrect results are produced intermittently.
@@ -871,3 +889,4 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
+

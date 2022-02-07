@@ -17,8 +17,8 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, DType, GatherMap, HostMemoryBuffer, NvtxColor}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuMetric, NvtxWithMetrics}
+import ai.rapids.cudf.NvtxColor
+import com.nvidia.spark.rapids.{Arm, GatherUtils, GpuMetric, NvtxWithMetrics}
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.random.PoissonSampler
@@ -37,52 +37,35 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
     } else {
       batchIterator.map { columnarBatch =>
         withResource(new NvtxWithMetrics("Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
-          numOutputBatches += 1
           withResource(columnarBatch) { cb =>
             // collect sampled row idx
             // samples idx in batch one by one, so it's same with CPU version
             val sampledRows = sample(cb.numRows())
 
-            val intBytes = DType.INT32.getSizeInBytes()
-            val totalBytes = sampledRows.length * intBytes
-            withResource(HostMemoryBuffer.allocate(totalBytes)) { hostBuffer =>
-              // copy row idx to host buffer
-              for (idx <- 0 until sampledRows.length) {
-                hostBuffer.setInt(idx * intBytes, sampledRows(idx))
-              }
-
-              // generate gather map and send to GPU to gather
-              withResource(DeviceMemoryBuffer.allocate(totalBytes)) { deviceBuffer =>
-                deviceBuffer.copyFromHostBuffer(0, hostBuffer, 0, totalBytes)
-                withResource(new GatherMap(deviceBuffer).toColumnView(0, sampledRows.length)) {
-                  gatherCv =>
-                    val colTypes = GpuColumnVector.extractTypes(cb)
-                    withResource(GpuColumnVector.from(cb)) { table =>
-                      withResource(table.gather(gatherCv)) { gatheredTable =>
-                        GpuColumnVector.from(gatheredTable, colTypes)
-                      }
-                    }
-                }
-              }
-            }
+            numOutputBatches += 1
+            numOutputRows += sampledRows.length
+            GatherUtils.gather(cb, sampledRows)
           }
         }
       }
     }
   }
 
-  // collect the sampled row idx
+  // collect the sampled row indexes, Note one row can be sampled multiple times
   private def sample(numRows: Int): ArrayBuffer[Int] = {
     val buf = new ArrayBuffer[Int]
-    for (rowIdx <- 0 until numRows) {
+    var rowIdx = 0
+    while (rowIdx < numRows) {
       // invoke PoissonSampler sample
       val rowCount = super.sample()
       if (rowCount > 0) {
-        numOutputRows += rowCount
-        for (_ <- 0 until rowCount) {
+        var i = 0
+        while (i < rowCount) {
           buf += rowIdx
+          i = i + 1
         }
       }
+      rowIdx += 1
     }
     buf
   }

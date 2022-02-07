@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
+from spark_session import is_databricks91_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
@@ -39,9 +40,6 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pandas as pd
 from typing import Iterator, Tuple
-
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
@@ -215,7 +213,31 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 
 # ======= Test flat map group in Pandas =======
-@ignore_order
+
+# separate the tests into before and after db 91. To verify
+# the new "zero-conf-conversion" feature introduced from db 9.1.
+@pytest.mark.skipif(not is_databricks91_or_later(), reason="zero-conf is supported only from db9.1")
+@ignore_order(local=True)
+@pytest.mark.parametrize('zero_enabled', [False, True])
+@pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
+def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
+    def pandas_add(data):
+        data.sum = data.b + data.a
+        return data
+
+    conf_with_zero = arrow_udf_conf.copy()
+    conf_with_zero.update({
+        'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.enabled': zero_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen)\
+                    .groupBy('a')\
+                    .applyInPandas(pandas_add, schema="a long, b long"),
+            conf=conf_with_zero)
+
+
+@pytest.mark.skipif(is_databricks91_or_later(), reason="This is tested by other tests from db9.1")
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_group_apply_udf(data_gen):
     def pandas_add(data):
@@ -229,7 +251,7 @@ def test_group_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
-@ignore_order
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):

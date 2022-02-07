@@ -1,0 +1,5 @@
+4c4,5
+<         (cast, conf, p, r) => new CastExprMeta[Cast](cast, false, conf, p, r,
+---
+>         (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+>           SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,

@@ -134,7 +134,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-21.12.0-tests.jar,rapids-4-spark-udf-examples_2.12-21.12.0.jar,rapids-4-spark-integration-tests_2.12-21.12.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-22.02.0-tests.jar,rapids-4-spark-udf-examples_2.12-22.02.0.jar,rapids-4-spark-integration-tests_2.12-22.02.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -157,7 +157,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-21.12.0.jar,rapids-4-spark-udf-examples_2.12-21.12.0.jar,cudf-21.12.2-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.02.0.jar,rapids-4-spark-udf-examples_2.12-22.02.0.jar,cudf-22.02.0-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -205,7 +205,7 @@ to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_buil
 the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path.
 
 When running the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) under YARN or Kubernetes, the `$SCRIPTPATH` in the python options
-`--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the clould paths.
+`--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the cloud paths.
 Basically, you need first to upload the test resources onto the cloud path `resource-path`, then transfer the test resources onto the working directory
 `root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
 to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
@@ -256,7 +256,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-21.12.0.jar,rapids-4-spark-udf-examples_2.12-21.12.0.jar,cudf-21.12.2-cuda11.jar,rapids-4-spark-tests_2.12-21.12.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-21.12.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-21.12.0.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.02.0.jar,rapids-4-spark-udf-examples_2.12-22.02.0.jar,cudf-22.02.0-cuda11.jar,rapids-4-spark-tests_2.12-22.02.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-22.02.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-22.02.0.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests
@@ -448,7 +448,7 @@ Refer to the "Floating Point" section of [compatibility.md](../docs/compatibilit
 ### 8. Special values in timestamp columns
 Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
 
-Apache Spark supports dates/timetamps between `0001-01-01 00:00:00.000000` and `9999-12-31 23:59:59.999999`, but at 
+Apache Spark supports dates/timestamps between `0001-01-01 00:00:00.000000` and `9999-12-31 23:59:59.999999`, but at 
 values close to the minimum value, the format used in Apache Spark causes rounding errors. To avoid such problems,
 it is recommended that the minimum value used in a test not actually equal `0001-01-01`. For instance, `0001-01-03` is
 acceptable.

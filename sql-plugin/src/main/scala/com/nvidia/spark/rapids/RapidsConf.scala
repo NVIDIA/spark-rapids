@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -304,6 +304,12 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
+  val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
+    .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
+      "Use 0 to disable the pool.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.GiB.toBytes(1))
+
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -355,10 +361,11 @@ object RapidsConf {
       .createWithDefault(ByteUnit.MiB.toBytes(640))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
-    .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
-        "before spilling to local disk")
+    .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
+        "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
+        "memory pools.")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.GiB.toBytes(1))
+    .createWithDefault(-1)
 
   val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
     .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
@@ -398,8 +405,7 @@ object RapidsConf {
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), as " +
-      "\"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS).")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -506,6 +512,21 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val SQL_MODE = conf("spark.rapids.sql.mode")
+    .doc("Set the mode for the Rapids Accelerator. The supported modes are explainOnly and " +
+         "executeOnGPU. This config can not be changed at runtime, you must restart the " +
+         "application for it to take affect. The default mode is executeOnGPU, which means " +
+         "the RAPIDS Accelerator plugin convert the Spark operations and execute them on the " +
+         "GPU when possible. The explainOnly mode allows running queries on the CPU and the " +
+         "RAPIDS Accelerator will evaluate the queries as if it was going to run on the GPU. " +
+         "The explanations of what would have run on the GPU and why are output in log " +
+         "messages. When using explainOnly mode, the default explain output is ALL, this can " +
+         "be changed by setting spark.rapids.sql.explain. See that config for more details.")
+    .stringConf
+    .transform(_.toLowerCase(java.util.Locale.ROOT))
+    .checkValues(Set("explainonly", "executeongpu"))
+    .createWithDefault("executeongpu")
+
   val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
     .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
     .booleanConf
@@ -605,18 +626,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_DECIMAL = conf("spark.rapids.sql.castStringToDecimal.enabled")
-    .doc("When set to true, enables casting from strings to decimal type on the GPU. Currently " +
-      "string to decimal type on the GPU might produce results which slightly differed from the " +
-      "correct results when the string represents any number exceeding the max precision that " +
-      "CAST_STRING_TO_FLOAT can keep. For instance, the GPU returns 99999999999999987 given " +
-      "input string \"99999999999999999\". The cause of divergence is that we can not cast " +
-      "strings containing scientific notation to decimal directly. So, we have to cast strings " +
-      "to floats firstly. Then, cast floats to decimals. The first step may lead to precision " +
-      "loss.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
     .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
       "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
@@ -641,14 +650,6 @@ object RapidsConf {
         "\"12300\", which spark produces \"1.23E+4\".")
       .booleanConf
       .createWithDefault(false)
-
-  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
-    .doc("The GPU-enabled version of the `CreateMap` expression (`map` SQL function) does not " +
-      "detect duplicate keys in all cases and does not guarantee which key wins if there are " +
-      "duplicates. When this config is set to true, `CreateMap` will be enabled to run on the " +
-      "GPU even when there might be duplicate keys.")
-    .booleanConf
-    .createWithDefault(false)
 
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
@@ -918,6 +919,17 @@ object RapidsConf {
           "point numbers and can be more lenient on parsing inf and -inf values")
       .booleanConf
       .createWithDefault(false)
+
+  val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
+    .doc("When set to true enables all json input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
+    .doc("When set to true enables json input acceleration")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1327,6 +1339,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = false)
 
+  val ENABLE_FAST_SAMPLE = conf("spark.rapids.sql.fast.sample")
+    .doc("Option to turn on fast sample. If enable it is inconsistent with CPU sample " +
+      "because of GPU sample algorithm is inconsistent with CPU.")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1357,7 +1375,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.12.0.jar,cudf-21.12.2-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0.jar,cudf-22.02.0-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1457,6 +1475,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
+  lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
+
+  lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_MODE).equals("explainonly")
+
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
@@ -1470,6 +1492,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
+
+  lazy val pageablePoolSize: Long = get(PAGEABLE_POOL_SIZE)
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
@@ -1563,8 +1587,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
-  lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
-
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
@@ -1588,8 +1610,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
-
-  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
@@ -1640,6 +1660,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
+
+  lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
+
+  lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
@@ -1742,6 +1766,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
+
+  lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

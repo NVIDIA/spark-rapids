@@ -22,14 +22,14 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>21.12.0</version>
+        <version>22.02.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shims_2.12</artifactId>
     <packaging>pom</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shims</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
-    <version>21.12.0</version>
+    <version>22.02.0</version>
 
     <profiles>
         <!-- maven CLI and CI builds one at a time -->
@@ -84,6 +84,10 @@
         <profile>
             <id>release321</id>
             <modules><module>spark321</module></modules>
+        </profile>
+        <profile>
+            <id>release322</id>
+            <modules><module>spark322</module></modules>
         </profile>
     </profiles>
 

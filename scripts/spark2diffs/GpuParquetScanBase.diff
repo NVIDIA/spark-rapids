@@ -1,0 +1,41 @@
+1a2,27
+>   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
+>     val scan = scanMeta.wrapped
+>     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
+>     tagSupport(scan.sparkSession, schema, scanMeta)
+>   }
+> 
+>   def throwIfNeeded(
+>       table: Table,
+>       isCorrectedInt96Rebase: Boolean,
+>       isCorrectedDateTimeRebase: Boolean,
+>       hasInt96Timestamps: Boolean): Unit = {
+>     (0 until table.getNumberOfColumns).foreach { i =>
+>       val col = table.getColumn(i)
+>       // if col is a day
+>       if (!isCorrectedDateTimeRebase && RebaseHelper.isDateRebaseNeededInRead(col)) {
+>         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+>       }
+>       // if col is a time
+>       else if (hasInt96Timestamps && !isCorrectedInt96Rebase ||
+>           !hasInt96Timestamps && !isCorrectedDateTimeRebase) {
+>         if (RebaseHelper.isTimeRebaseNeededInRead(col)) {
+>           throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+>         }
+>       }
+>     }
+>   }
+6c32
+<       meta: RapidsMeta[_, _]): Unit = {
+---
+>       meta: RapidsMeta[_, _, _]): Unit = {
+59,65d84
+<     // Spark 2.x doesn't have the rebase mode because the changes of calendar type weren't made
+<     // so just skip the checks, since this is just explain only it would depend on how
+<     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
+<     // for us.
+< 
+<     // Spark 2.x doesn't support the rebase mode
+<     /*
+95d113
+<     */

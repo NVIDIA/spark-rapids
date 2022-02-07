@@ -16,7 +16,7 @@
 
 cmake_minimum_required(VERSION 3.20.1 FATAL_ERROR)
 
-file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-21.12/RAPIDS.cmake
+file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-22.02/RAPIDS.cmake
      ${CMAKE_BINARY_DIR}/RAPIDS.cmake)
 include(${CMAKE_BINARY_DIR}/RAPIDS.cmake)
 
@@ -32,7 +32,7 @@ if(DEFINED GPU_ARCHS)
 endif()
 rapids_cuda_init_architectures(UDFEXAMPLESJNI)
 
-project(UDFEXAMPLESJNI VERSION 21.12.0 LANGUAGES C CXX CUDA)
+project(UDFEXAMPLESJNI VERSION 22.02.0 LANGUAGES C CXX CUDA)
 
 option(PER_THREAD_DEFAULT_STREAM "Build with per-thread default stream" OFF)
 option(BUILD_UDF_BENCHMARKS "Build the benchmarks" OFF)
@@ -84,10 +84,10 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -w --expt-extended-lambda --expt-relax
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
 rapids_cpm_init()
-rapids_cpm_find(cudf 21.12.00
+rapids_cpm_find(cudf 22.02.00
         CPM_ARGS
         GIT_REPOSITORY  https://github.com/rapidsai/cudf.git
-        GIT_TAG         branch-21.12
+        GIT_TAG         branch-22.02
         GIT_SHALLOW     TRUE
         SOURCE_SUBDIR   cpp
         OPTIONS         "BUILD_TESTS OFF"

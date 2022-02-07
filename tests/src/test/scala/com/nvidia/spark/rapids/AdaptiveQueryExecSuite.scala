@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange,
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
@@ -74,9 +75,9 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuShuffledHashJoinBase] = {
+  private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuShuffledHashJoinExec] = {
     collect(plan) {
-      case j: GpuShuffledHashJoinBase => j
+      case j: GpuShuffledHashJoinExec => j
     }
   }
 
@@ -196,7 +197,7 @@ class AdaptiveQueryExecSuite
 
       // assert that both inputs to the SHJ are coalesced
       val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
-        _.isInstanceOf[GpuShuffledHashJoinBase]).get
+        _.isInstanceOf[GpuShuffledHashJoinExec]).get
       assert(shj.children.length == 2)
       assert(shj.children.forall {
         case GpuShuffleCoalesceExec(_, _) => true
@@ -329,14 +330,21 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[AdaptiveSparkPlanExec])
           .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      val transition = adaptiveSparkPlanExec
+      if (ShimLoader.getSparkShims.supportsColumnarAdaptivePlans) {
+        // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
+        // support columnar adaptive plans
+        assert(adaptiveSparkPlanExec
           .executedPlan
-          .asInstanceOf[GpuColumnarToRowExec]
+          .isInstanceOf[GpuFileSourceScanExec])
+      } else {
+        val transition = adaptiveSparkPlanExec
+            .executedPlan
+            .asInstanceOf[GpuColumnarToRowExec]
 
-      // although the plan contains a GpuColumnarToRowExec, we bypass it in
-      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
-      assert(transition.metrics("numOutputRows").value === 0)
-
+        // although the plan contains a GpuColumnarToRowExec, we bypass it in
+        // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+        assert(transition.metrics("numOutputRows").value === 0)
+      }
     }, conf)
   }
 
@@ -377,6 +385,31 @@ class AdaptiveQueryExecSuite
 
     }, conf)
   }
+
+  // repro case for https://github.com/NVIDIA/spark-rapids/issues/4351
+  test("Write parquet from AQE shuffle with limit") {
+    logError("Write parquet from AQE shuffle with limit")
+
+    val conf = new SparkConf()
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+        .write
+        .mode(SaveMode.Overwrite)
+        .parquet(path)
+
+      val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
+      spark.read.parquet(path)
+        .limit(100)
+        .write.mode(SaveMode.Overwrite)
+        .parquet(outputPath)
+    }, conf)
+  }
+
 
   test("Exchange reuse") {
     logError("Exchange reuse")
@@ -604,7 +637,7 @@ class AdaptiveQueryExecSuite
   }
 
   def checkSkewJoin(
-      joins: Seq[GpuShuffledHashJoinBase],
+      joins: Seq[GpuShuffledHashJoinExec],
       leftSkewNum: Int,
       rightSkewNum: Int): Unit = {
     assert(joins.size == 1 && joins.head.isSkewJoin)

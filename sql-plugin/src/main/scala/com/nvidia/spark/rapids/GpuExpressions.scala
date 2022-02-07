@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.shims.v2.{ShimBinaryExpression, ShimExpression, S
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
-import org.apache.spark.sql.types.{DataType, StringType}
+import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -64,15 +64,14 @@ object GpuExpressionsUtils extends Arm {
    * should cover all the cases for GPU pipelines.
    *
    * @param any the input value. It will be closed if it is a closeable after the call done.
-   * @param numRows the expected row number of the output column, used when 'any' is a Scalar.
-   * @param dType the data type of the output column, used when 'any' is a Scalar.
+   * @param numRows the expected row number of the output column, used when 'any' is a GpuScalar.
    * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
    *         memory leak.
    */
-  def resolveColumnVector(any: Any, numRows: Int, dType: DataType): GpuColumnVector = {
+  def resolveColumnVector(any: Any, numRows: Int): GpuColumnVector = {
     withResourceIfAllowed(any) {
       case c: GpuColumnVector => c.incRefCount()
-      case s: GpuScalar => GpuColumnVector.from(s, numRows, dType)
+      case s: GpuScalar => GpuColumnVector.from(s, numRows, s.dataType)
       case other =>
         throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
           s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
@@ -91,7 +90,7 @@ object GpuExpressionsUtils extends Arm {
    *         memory leak.
    */
   def columnarEvalToColumn(expr: Expression, batch: ColumnarBatch): GpuColumnVector =
-    resolveColumnVector(expr.columnarEval(batch), batch.numRows, expr.dataType)
+    resolveColumnVector(expr.columnarEval(batch), batch.numRows)
 
   /**
    * Extract the GpuLiteral
@@ -161,6 +160,13 @@ trait GpuExpression extends Expression with Arm {
    */
   def convertToAst(numFirstTableColumns: Int): ast.AstExpression =
     throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
+
+  /** Could evaluating this expression cause side-effects, such as throwing an exception? */
+  def hasSideEffects: Boolean =
+    children.exists {
+      case c: GpuExpression => c.hasSideEffects
+      case _ => false // This path should never really happen
+    }
 }
 
 abstract class GpuLeafExpression extends GpuExpression with ShimExpression {
@@ -265,27 +271,11 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
 
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
-object CudfBinaryExpression {
-  lazy val opToAstMap: Map[BinaryOp, ast.BinaryOperator] = Map(
-    BinaryOp.ADD -> ast.BinaryOperator.ADD,
-    BinaryOp.BITWISE_AND -> ast.BinaryOperator.BITWISE_AND,
-    BinaryOp.BITWISE_OR -> ast.BinaryOperator.BITWISE_OR,
-    BinaryOp.BITWISE_XOR -> ast.BinaryOperator.BITWISE_XOR,
-    BinaryOp.GREATER -> ast.BinaryOperator.GREATER,
-    BinaryOp.GREATER_EQUAL -> ast.BinaryOperator.GREATER_EQUAL,
-    BinaryOp.LESS -> ast.BinaryOperator.LESS,
-    BinaryOp.LESS_EQUAL -> ast.BinaryOperator.LESS_EQUAL,
-    BinaryOp.LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
-    BinaryOp.LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
-    BinaryOp.MUL -> ast.BinaryOperator.MUL,
-    BinaryOp.POW -> ast.BinaryOperator.POW,
-    BinaryOp.SUB -> ast.BinaryOperator.SUB)
-}
-
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
   def outputTypeOverride: DType = null
   def castOutputAtEnd: Boolean = false
+  def astOperator: Option[ast.BinaryOperator] = None
 
   def outputType(l: BinaryOperable, r: BinaryOperable): DType = {
     val over = outputTypeOverride
@@ -333,7 +323,7 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
-    val astOp = CudfBinaryExpression.opToAstMap.getOrElse(binaryOp,
+    val astOp = astOperator.getOrElse(
       throw new IllegalStateException(s"$this is not supported by AST"))
     assert(left.dataType == right.dataType)
     new ast.BinaryOperation(astOp,

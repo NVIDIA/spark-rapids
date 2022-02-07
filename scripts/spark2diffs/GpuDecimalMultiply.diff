@@ -1,0 +1,12 @@
+1c1
+< object GpuDecimalMultiply {
+---
+> object GpuDecimalMultiply extends Arm {
+68c68
+<       GpuOverrides.DECIMAL128_MAX_PRECISION)
+---
+>       DType.DECIMAL128_MAX_PRECISION)
+85c85
+<       math.min(outputType.scale + 1, GpuOverrides.DECIMAL128_MAX_PRECISION))
+---
+>       math.min(outputType.scale + 1, DType.DECIMAL128_MAX_PRECISION))

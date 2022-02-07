@@ -1,0 +1,13 @@
+4c4
+<     parent: Option[RapidsMeta[_,_]],
+---
+>     parent: Option[RapidsMeta[_,_,_]],
+47,49d46
+<               // Spark 2.x different - no days, just months and microseconds
+<               // could remove this catch but leaving for now
+<               /*
+53,54d49
+<               */
+<               ci.microseconds
+119a115
+> 

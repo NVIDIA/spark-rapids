@@ -1,0 +1,12 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2021, NVIDIA CORPORATION.
+19c19
+< import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
+---
+> import com.nvidia.spark.rapids.{TypeEnum, TypeSig, TypeSigUtilBase}
+24c24
+< object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtilBase {
+---
+> object TypeSigUtil extends TypeSigUtilBase {

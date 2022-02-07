@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RLike, StringSplit, SubstringIndex}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -744,32 +744,78 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   }
 }
 
+object GpuRegExpUtils {
+
+  /**
+   * Determine if a string contains back-references such as `$1` but ignoring
+   * if preceded by escape character.
+   */
+  def containsBackrefs(s: String): Boolean = {
+    var i = 0
+    while (i < s.length) {
+      if (s.charAt(i) == '\\') {
+        i += 2
+      } else {
+        if (s.charAt(i) == '$'  && i+1 < s.length) {
+          if (s.charAt(i+1).isDigit) {
+            return true
+          }
+        }
+        i += 1
+      }
+    }
+    false
+  }
+
+  /**
+   * We need to remove escape characters in the regexp_replace
+   * replacement string before passing to cuDF.
+   */
+  def unescapeReplaceString(s: String): String = {
+    val b = new StringBuilder
+    var i = 0
+    while (i < s.length) {
+      if (s.charAt(i) == '\\' && i+1 < s.length) {
+        i += 1
+      }
+      b.append(s.charAt(i))
+      i += 1
+    }
+    b.toString
+  }
+
+}
+
 class GpuRLikeMeta(
     expr: RLike,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
 
+    private var pattern: Option[String] = None
+
     override def tagExprForGpu(): Unit = {
       expr.right match {
-        case Literal(str: UTF8String, _) =>
+        case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            new CudfRegexTranspiler(replace = false).transpile(str.toString)
+            pattern = Some(new CudfRegexTranspiler(replace = false).transpile(str.toString))
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
           }
         case _ =>
-          willNotWorkOnGpu(s"RLike with non-literal pattern is not supported on GPU")
+          willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
       }
     }
 
-    override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-      GpuRLike(lhs, rhs)
+    override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+      GpuRLike(lhs, rhs, pattern.getOrElse(
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+    }
 }
 
-case class GpuRLike(left: Expression, right: Expression)
+case class GpuRLike(left: Expression, right: Expression, pattern: String)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
 
   override def toString: String = s"$left gpurlike $right"
@@ -783,20 +829,7 @@ case class GpuRLike(left: Expression, right: Expression)
       "Cannot have a scalar as left side operand in RLike")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val pattern = if (rhs.isValid) {
-      rhs.getValue.asInstanceOf[UTF8String].toString
-    } else {
-      throw new IllegalStateException("Really should not be here, " +
-        "Cannot have an invalid scalar value as right side operand in RLike")
-    }
-    try {
-      val cudfRegex = new CudfRegexTranspiler(replace = false).transpile(pattern)
-      lhs.getBase.containsRe(cudfRegex)
-    } catch {
-      case _: RegexUnsupportedException =>
-        throw new IllegalStateException("Really should not be here, " +
-          "regular expression should have been verified during tagging")
-    }
+    lhs.getBase.containsRe(pattern)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -810,24 +843,62 @@ case class GpuRLike(left: Expression, right: Expression)
   override def dataType: DataType = BooleanType
 }
 
-object GpuRegExpReplaceMeta {
-  def isSupportedRegExpReplacePattern(pattern: String): Boolean = {
-    try {
-      new CudfRegexTranspiler(replace = true).transpile(pattern)
-      true
-    } catch {
-      case _: RegexUnsupportedException => false
+abstract class GpuRegExpTernaryBase extends GpuTernaryExpression {
+
+  override def dataType: DataType = StringType
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
+      val2: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, first.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
     }
   }
+
 }
 
 case class GpuRegExpReplace(
     srcExpr: Expression,
     searchExpr: Expression,
-    replaceExpr: Expression)
-  extends GpuTernaryExpression with ImplicitCastInputTypes {
-
-  override def dataType: DataType = srcExpr.dataType
+    replaceExpr: Expression,
+    cudfRegexPattern: String,
+    cudfReplacementString: String)
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes {
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
@@ -835,74 +906,148 @@ case class GpuRegExpReplace(
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
 
-  def this(srcExpr: Expression, searchExpr: Expression) = {
-    this(srcExpr, searchExpr, GpuLiteral("", StringType))
+  def this(srcExpr: Expression, searchExpr: Expression, cudfRegexPattern: String,
+      cudfReplacementString: String) = {
+    this(srcExpr, searchExpr, GpuLiteral("", StringType), cudfRegexPattern, cudfReplacementString)
   }
-
-  override def doColumnar(
-      strExpr: GpuColumnVector,
-      searchExpr: GpuColumnVector,
-      replaceExpr: GpuColumnVector): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-
-  override def doColumnar(
-      strExpr: GpuScalar,
-      searchExpr: GpuColumnVector,
-      replaceExpr: GpuColumnVector): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-
-  override def doColumnar(
-      strExpr: GpuScalar,
-      searchExpr: GpuScalar,
-      replaceExpr: GpuColumnVector): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-
-  override def doColumnar(
-      strExpr: GpuScalar,
-      searchExpr: GpuColumnVector,
-      replaceExpr: GpuScalar): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-
-  override def doColumnar(
-      strExpr: GpuColumnVector,
-      searchExpr: GpuScalar,
-      replaceExpr: GpuColumnVector): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
+    withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+      strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+    }
+  }
 
-    searchExpr.getValue match {
-      case null =>
-        // Return original string if search string is null
-        strExpr.getBase.asStrings()
-      case pattern: UTF8String =>
+}
+
+class GpuRegExpExtractMeta(
+    expr: RegExpExtract,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends TernaryExprMeta[RegExpExtract](expr, conf, parent, rule) {
+
+  private var pattern: Option[String] = None
+  private var numGroups = 0
+
+  override def tagExprForGpu(): Unit = {
+
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+    }
+
+    expr.regexp match {
+      case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
-          val cudfRegex = new CudfRegexTranspiler(replace = true).transpile(pattern.toString)
-          strExpr.getBase.replaceRegex(cudfRegex, replaceExpr.getBase)
+          val javaRegexpPattern = str.toString
+          // verify that we support this regex and can transpile it to cuDF format
+          val cudfRegexPattern = new CudfRegexTranspiler(replace = false)
+            .transpile(javaRegexpPattern)
+          pattern = Some(cudfRegexPattern)
+          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
         } catch {
-          case _: RegexUnsupportedException =>
-            throw new IllegalStateException("Really should not be here, " +
-              "regular expression should have been verified during tagging")
+          case e: RegexUnsupportedException =>
+            willNotWorkOnGpu(e.getMessage)
         }
+      case _ =>
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
+    }
 
+    expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        if (idx < 0) {
+          willNotWorkOnGpu("the specified group index cannot be less than zero")
+        }
+        if (idx > numGroups) {
+          willNotWorkOnGpu(
+            s"regex group count is $numGroups, but the specified group index is $idx")
+        }
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
     }
   }
 
-  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
-      val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
-      doColumnar(val0Col, val1, val2)
-    }
+  override def convertToGpu(
+      str: Expression,
+      regexp: Expression,
+      idx: Expression): GpuExpression = {
+    val cudfPattern = pattern.getOrElse(
+      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
+    GpuRegExpExtract(str, regexp, idx, cudfPattern)
   }
+}
+
+case class GpuRegExpExtract(
+    subject: Expression,
+    regexp: Expression,
+    idx: Expression,
+    cudfRegexPattern: String)
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
+  override def first: Expression = subject
+  override def second: Expression = regexp
+  override def third: Expression = idx
+
+  override def prettyName: String = "regexp_extract"
 
   override def doColumnar(
-      strExpr: GpuColumnVector,
-      searchExpr: GpuColumnVector,
-      replaceExpr: GpuScalar): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+      str: GpuColumnVector,
+      regexp: GpuScalar,
+      idx: GpuScalar): ColumnVector = {
+
+    val groupIndex = idx.getValue.asInstanceOf[Int]
+
+    // There are some differences in behavior between cuDF and Java so we have
+    // to handle those cases here.
+    //
+    // Given the pattern `^([a-z]*)([0-9]*)([a-z]*)$` the following table
+    // shows the value that would be extracted for group index 2 given a range
+    // of inputs. The behavior is mostly consistent except for the case where
+    // the input is non-null and does not match the pattern.
+    //
+    // | Input  | Java  | cuDF  |
+    // |--------|-------|-------|
+    // | ''     | ''    | ''    |
+    // | NULL   | NULL  | NULL  |
+    // | 'a1a'  | '1'   | '1'   |
+    // | '1a1'  | ''    | NULL  |
+
+    if (groupIndex == 0) {
+      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+          withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
+            withResource(str.getBase.isNull) { isNull =>
+              withResource(matches.ifElse(str.getBase, emptyString)) {
+                isNull.ifElse(nullString, _)
+              }
+            }
+          }
+        }
+      }
+    } else {
+      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+          withResource(str.getBase.extractRe(cudfRegexPattern)) { extract =>
+            withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
+              withResource(str.getBase.isNull) { isNull =>
+                withResource(matches.ifElse(extract.getColumn(groupIndex - 1), emptyString)) {
+                  isNull.ifElse(nullString, _)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
 }
 
 class SubstringIndexMeta(

@@ -26,9 +26,6 @@ from spark_session import with_cpu_session
 from marks import approximate_float, ignore_order, incompat, qarun
 from data_gen import copy_and_update
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
-
 def num_stringDf(spark):
     print("### CREATE DATAFRAME 1  ####")
     schema = StructType([StructField("strF", StringType()),

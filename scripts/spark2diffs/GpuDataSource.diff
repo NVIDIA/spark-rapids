@@ -1,0 +1,29 @@
+7c7
+<     val parquet = classOf[ParquetFileFormat].getCanonicalName
+---
+>     val parquet = classOf[GpuParquetFileFormat].getCanonicalName
+47a48,62
+>   def lookupDataSourceWithFallback(className: String, conf: SQLConf): Class[_] = {
+>     val cls = GpuDataSource.lookupDataSource(className, conf)
+>     // `providingClass` is used for resolving data source relation for catalog tables.
+>     // As now catalog for data source V2 is under development, here we fall back all the
+>     // [[FileDataSourceV2]] to [[FileFormat]] to guarantee the current catalog works.
+>     // [[FileDataSourceV2]] will still be used if we call the load()/save() method in
+>     // [[DataFrameReader]]/[[DataFrameWriter]], since they use method `lookupDataSource`
+>     // instead of `providingClass`.
+>     val fallbackCls = ConstructorUtils.invokeConstructor(cls) match {
+>       case f: FileDataSourceV2 => f.fallbackFileFormat
+>       case _ => cls
+>     }
+>     // convert to GPU version
+>     fallbackCls
+>   }
+54c69
+<         classOf[OrcFileFormat].getCanonicalName
+---
+>         classOf[OrcDataSourceV2].getCanonicalName
+141a157,160
+> 
+>   /**
+>    * The key in the "options" map for deciding whether or not to glob paths before use.
+>    */

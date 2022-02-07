@@ -1,0 +1,118 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+21a22
+> import ai.rapids.cudf.DType
+24d24
+< import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
+168c168
+<     private val maxAllowedDecimalPrecision: Int = GpuOverrides.DECIMAL64_MAX_PRECISION,
+---
+>     private val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
+270c270
+<       meta: RapidsMeta[_, _],
+---
+>       meta: RapidsMeta[_, _, _],
+562c562
+<   val DECIMAL_64: TypeSig = decimal(GpuOverrides.DECIMAL64_MAX_PRECISION)
+---
+>   val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
+569c569
+<   val DECIMAL_128: TypeSig = decimal(GpuOverrides.DECIMAL128_MAX_PRECISION)
+---
+>   val DECIMAL_128: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
+703c703
+<   def tag(meta: RapidsMeta[_, _]): Unit
+---
+>   def tag(meta: RapidsMeta[_, _, _]): Unit
+716c716
+<     meta: RapidsMeta[_, _],
+---
+>     meta: RapidsMeta[_, _, _],
+773c773
+<   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
+777c777
+<   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
+---
+>   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+835c835
+<   def tag(meta: RapidsMeta[_, _],
+---
+>   def tag(meta: RapidsMeta[_, _, _],
+846c846
+<   override def tag(meta: RapidsMeta[_, _]): Unit =
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit =
+872c872
+<   def tag(meta: RapidsMeta[_, _],
+---
+>   def tag(meta: RapidsMeta[_, _, _],
+893c893
+<   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
+968c968
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1020c1020
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1063c1063
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1113c1113
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1159c1159
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1195c1195
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1345c1345
+<   override def tag(meta: RapidsMeta[_, _]): Unit = {
+---
+>   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+1355c1355
+<   private[this] def tagBase(meta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
+---
+>   private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+1690,1698d1689
+<   def getSparkVersion: String = {
+<     // hack for databricks, try to find something more reliable?
+<     if (SPARK_BUILD_USER.equals("Databricks")) {
+<       SPARK_VERSION + "-databricks"
+<     } else {
+<       SPARK_VERSION
+<     }
+<   }
+< 
+1713c1704
+<     println(s"against version ${getSparkVersion} of Spark. Most of this should still")
+---
+>     println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
+1721c1712
+<     println(s"supports a precision up to ${GpuOverrides.DECIMAL64_MAX_PRECISION} digits. Note that")
+---
+>     println(s"supports a precision up to ${DType.DECIMAL64_MAX_PRECISION} digits. Note that")
+1823c1814
+<         val allData = allSupportedTypes.toList.map { t =>
+---
+>         val allData = allSupportedTypes.map { t =>
+1906c1897
+<         val allData = allSupportedTypes.toList.map { t =>
+---
+>         val allData = allSupportedTypes.map { t =>
+2010c2001
+<         val allData = allSupportedTypes.toList.map { t =>
+---
+>         val allData = allSupportedTypes.map { t =>
