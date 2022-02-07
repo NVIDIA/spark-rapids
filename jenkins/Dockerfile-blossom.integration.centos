@@ -26,10 +26,16 @@
 ARG CUDA_VER=11.0
 ARG CENTOS_VER=7
 FROM nvidia/cuda:${CUDA_VER}-runtime-centos${CENTOS_VER}
+ARG CENTOS_VER
 ARG CUDA_VER
 ARG CUDF_VER
 ARG URM_URL
 
+# centOS 8 went EOL, use vault.centos.org to avoid "No URLs in mirrorlist"
+RUN if [ "$CENTOS_VER" == "8" ]; then\
+      sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-* &&\
+      sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*;\
+    fi
 # Install jdk-8, jdk-11, maven, docker image
 RUN yum update -y && \
     yum install epel-release -y && \
