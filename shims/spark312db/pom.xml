@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shims_2.12</artifactId>
-        <version>22.02.0-SNAPSHOT</version>
+        <version>22.02.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shims-spark312db_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Databricks 9.1 Shim</name>
     <description>The RAPIDS SQL plugin for Databricks 9.1 Shim</description>
-    <version>22.02.0-SNAPSHOT</version>
+    <version>22.02.0</version>
     <properties>
         <!-- don't move to the parent module shims due to conflicting tmp files -->
         <target.classifier/>
