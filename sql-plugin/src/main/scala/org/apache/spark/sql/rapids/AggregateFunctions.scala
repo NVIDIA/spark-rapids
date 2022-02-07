@@ -842,8 +842,6 @@ abstract class GpuSum(
 
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum)
 
-  override lazy val postUpdate: Seq[Expression] = postUpdateAttr
-
   // output of GpuSum
   protected lazy val sum: AttributeReference = AttributeReference("sum", resultType)()
 
@@ -853,9 +851,7 @@ abstract class GpuSum(
 
   protected lazy val mergeSum: CudfAggregate = new CudfSum(resultType)
 
-  override lazy val mergeAggregates: Seq[CudfAggregate] =Seq(mergeSum)
-
-  override lazy val postMerge: Seq[Expression] = postMergeAttr
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeSum)
 
   override lazy val evaluateExpression: Expression = sum
 
@@ -911,8 +907,7 @@ case class GpuBasicSum(
     child: Expression,
     resultType: DataType,
     failOnErrorOverride: Boolean)
-    extends GpuSum(child, resultType, failOnErrorOverride) {
-}
+    extends GpuSum(child, resultType, failOnErrorOverride)
 
 abstract class GpuDecimalSum(
     child: Expression,
