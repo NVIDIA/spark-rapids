@@ -799,7 +799,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            pattern = Some(new CudfRegexTranspiler(replace = false).transpile(str.toString))
+            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString))
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -946,7 +946,7 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val cudfRegexPattern = new CudfRegexTranspiler(replace = false)
+          val cudfRegexPattern = new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern)
           pattern = Some(cudfRegexPattern)
           numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
@@ -1338,7 +1338,7 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
     val pattern = regex.getValue.asInstanceOf[UTF8String].toString
     val isRegExp = RegexParser.isRegExpString(pattern)
     val cudfPattern = if (isRegExp) {
-      new CudfRegexTranspiler(replace = false).transpile(pattern)
+      new CudfRegexTranspiler(RegexSplitMode).transpile(pattern)
     } else {
       pattern
     }
