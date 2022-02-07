@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-01-28
+Generated on 2022-02-07
 
 ## Release 22.02
 
@@ -45,6 +45,10 @@ Generated on 2022-01-28
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#4675](https://github.com/NVIDIA/spark-rapids/issues/4675)|[BUG] Jenkins integration build timed out at 10 hours|
+|[#4665](https://github.com/NVIDIA/spark-rapids/issues/4665)|[BUG] Spark321Shims.getParquetFilters failed with NoSuchMethodError|
+|[#4635](https://github.com/NVIDIA/spark-rapids/issues/4635)|[BUG] nvidia-smi wrapper script ignores ENABLE_NON_MIG_GPUS=1 on a heterogeneous multi-GPU machine|
+|[#4500](https://github.com/NVIDIA/spark-rapids/issues/4500)|[BUG] Build failures against Spark 3.2.1 rc1 and make 3.2.1 non snapshot|
 |[#4631](https://github.com/NVIDIA/spark-rapids/issues/4631)|[BUG] Release build with mvn option `-P source-javadoc` FAILED|
 |[#4625](https://github.com/NVIDIA/spark-rapids/issues/4625)|[BUG] NDS query 5 fails with AdaptiveSparkPlanExec assertion|
 |[#4632](https://github.com/NVIDIA/spark-rapids/issues/4632)|[BUG] Build failing for Spark 3.3.0 due to deprecated method warnings|
@@ -113,6 +117,15 @@ Generated on 2022-01-28
 ### PRs
 |||
 |:---|:---|
+|[#4700](https://github.com/NVIDIA/spark-rapids/pull/4700)|Update cudfjni version to released 22.02.0|
+|[#4701](https://github.com/NVIDIA/spark-rapids/pull/4701)|Decrease nighlty tests upper limitation to 7 [skip ci]|
+|[#4639](https://github.com/NVIDIA/spark-rapids/pull/4639)|Update changelog for 22.02 and archive info of some older releases [skip ci]|
+|[#4572](https://github.com/NVIDIA/spark-rapids/pull/4572)|Add download page for 22.02 [skip ci]|
+|[#4672](https://github.com/NVIDIA/spark-rapids/pull/4672)|Revert "Disable 311cdh build due to missing dependency (#4659)"|
+|[#4662](https://github.com/NVIDIA/spark-rapids/pull/4662)|Update the deploy script [skip ci]|
+|[#4657](https://github.com/NVIDIA/spark-rapids/pull/4657)|Upmerge spark2 directory to the latest 22.02 changes|
+|[#4659](https://github.com/NVIDIA/spark-rapids/pull/4659)|Disable 311cdh build by default because of a missing dependency|
+|[#4508](https://github.com/NVIDIA/spark-rapids/pull/4508)|Fix Spark 3.2.1 build failures and make it non-snapshot|
 |[#4652](https://github.com/NVIDIA/spark-rapids/pull/4652)|Remove non-deterministic test order in nightly [skip ci]|
 |[#4643](https://github.com/NVIDIA/spark-rapids/pull/4643)|Add profile release301 when mvn help:evaluate|
 |[#4630](https://github.com/NVIDIA/spark-rapids/pull/4630)|Fix the incomplete capture of SubqueryBroadcast |
