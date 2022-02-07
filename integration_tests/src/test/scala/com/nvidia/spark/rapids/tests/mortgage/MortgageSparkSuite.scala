@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,21 @@
 package com.nvidia.spark.rapids.tests.mortgage
 
 import com.nvidia.spark.rapids.ShimLoader
-import org.scalatest.{BeforeAndAfterAll, FunSuite}
+import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 
-class MortgageSparkSuite extends FunSuite with BeforeAndAfterAll {
+class MortgageSparkSuite extends FunSuite {
 
   /**
    * This is intentionally a def rather than a val so that scalatest uses the correct value (from
    * this class or the derived class) when registering tests.
+   *
+   * @note You are likely to see device/host leaks from this test when using the
+   *       RAPIDS Shuffle Manager. The reason for that is a race between cuDF's MemoryCleaner
+   *       and the SparkContext shutdown. Because of this, shuffle buffers cached may not get
+   *       cleaned (on shuffle unregister) when the MemoryCleaner exits.
    */
   def adaptiveQueryEnabled = false
 
@@ -61,11 +66,6 @@ class MortgageSparkSuite extends FunSuite with BeforeAndAfterAll {
       println("RAPIDS SHUFFLE MANAGER INACTIVE")
     }
     builder.getOrCreate()
-  }
-
-  // Close the session to avoid hanging after all cases are completed
-  override def afterAll() = {
-    session.close()
   }
 
   test("extract mortgage data") {
