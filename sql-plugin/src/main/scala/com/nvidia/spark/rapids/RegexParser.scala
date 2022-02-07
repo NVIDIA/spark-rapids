@@ -623,7 +623,8 @@ class CudfRegexTranspiler(replace: Boolean) {
           }
           val tr = rewrite(term)
           if (isSimpleRepetition(tr)) {
-              throw new RegexUnsupportedException(nothingToRepeat)
+            // perhaps we could rewrite it here
+            throw new RegexUnsupportedException(nothingToRepeat)
           }
           RegexRepetition(RegexGroup(capture, tr), quantifier)
         case _ =>
