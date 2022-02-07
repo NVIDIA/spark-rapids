@@ -1455,6 +1455,20 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
     }
   }
 
+  private def toMapFromColumns(keys: ColumnVector,
+                               vals: ColumnVector,
+                               templateLists : ColumnVector) : GpuColumnVector = {
+    withResource(ColumnVector.makeStruct(keys, vals)) {
+      // Make a lists column from the new structs column, which will have the same shape
+      // as the previous lists of strings column.
+      structsCol =>
+        withResource(GpuListUtils.replaceListDataColumnAsView(templateLists, structsCol)) {
+          listsOfStructs =>
+            GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+        }
+    }
+  }
+
   private def toMap(str: GpuColumnVector,
                     pairDelim: GpuScalar,
                     keyValueDelim: GpuScalar): GpuColumnVector = {
@@ -1465,13 +1479,30 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
         withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keysValuesTable =>
           // Zip the key-value pairs into structs.
-          withResource(ColumnVector.makeStruct(keysValuesTable.getColumn(0),
-            keysValuesTable.getColumn(1))) { structsCol =>
-            // Make a lists column from the new structs column, which will have the same shape as
-            // the previous lists of strings column.
-            withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
-              listsOfStructs =>
-                GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+          // If the output from stringSplit has only one column, such case means all the values
+          // are null.
+          if(keysValuesTable.getNumberOfColumns < 2) {
+            withResource(GpuColumnVector.columnVectorFromNull(
+              keysValuesTable.getRowCount.asInstanceOf[Int], StringType)) { allNullsCol =>
+              withResource(ColumnVector.makeStruct(keysValuesTable.getColumn(0), allNullsCol)) {
+                // Make a lists column from the new structs column, which will have the same shape
+                // as the previous lists of strings column.
+                structsCol =>
+                withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
+                  listsOfStructs =>
+                    GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+                }
+              }
+            }
+          } else {
+            withResource(ColumnVector.makeStruct(keysValuesTable.getColumn(0),
+              keysValuesTable.getColumn(1))) { structsCol =>
+              // Make a lists column from the new structs column, which will have the same shape
+              // as the previous lists of strings column.
+              withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
+                listsOfStructs =>
+                  GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+              }
             }
           }
         }
