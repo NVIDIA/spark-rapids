@@ -183,9 +183,8 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.isValid && !exist.getBoolean) {
-            throw new NoSuchElementException(
-              s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +
-                s"does not exist in any one of the rows in the map column")
+            RapidsErrorUtils.throwInvalidElementAtIndexError(
+              rhs.getValue.asInstanceOf[UTF8String].toString)
           }
         }
       }

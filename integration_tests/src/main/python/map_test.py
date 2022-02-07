@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
     assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat, allow_non_gpu
-from spark_session import is_before_spark_311
+from spark_session import is_before_spark_311, is_before_spark_330
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 import pyspark.sql.functions as f
@@ -158,12 +158,13 @@ def test_str_to_map_expr_fixed_pattern_input():
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value_ansi_fail(data_gen):
+    message = "org.apache.spark.SparkNoSuchElementException" if not is_before_spark_330() else "java.util.NoSuchElementException"
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'a["NOT_FOUND"]').collect(),
                 conf={'spark.sql.ansi.enabled':True,
                       'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
-                error_message='java.util.NoSuchElementException')
+                error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
@@ -189,12 +190,13 @@ def test_simple_element_at_map(data_gen):
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_map_element_at_ansi_fail(data_gen):
+    message = "org.apache.spark.SparkNoSuchElementException" if not is_before_spark_330() else "java.util.NoSuchElementException"
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'element_at(a, "NOT_FOUND")').collect(),
                 conf={'spark.sql.ansi.enabled':True,
                       'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
-                error_message='java.util.NoSuchElementException')
+                error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
