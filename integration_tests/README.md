@@ -71,7 +71,7 @@ For full details on `pyenv` and instructions, see [pyenv github page](https://gi
 
 #### Installing specific version of Maven
 
-All package managers like `brew` and `apt` offers maven. However, it may lag behind some
+All package managers like `brew` and `apt` offer maven. However, it may lag behind some
 versions. In that case, you can install the latest binary from the [Maven download page](https://maven.apache.org/download.cgi).
 For manual installation, you need to setup your environment:
 
@@ -80,8 +80,6 @@ For manual installation, you need to setup your environment:
   export M2=${M2_HOME}/bin
   export PATH=$M2:$PATH
   ```
-
-</details>
 
 ### Dependencies
 
