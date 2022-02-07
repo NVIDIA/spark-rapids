@@ -1462,7 +1462,7 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
     withResource(str.getBase.stringSplitRecord(pairDelim.getBase)) { listsOfStrings =>
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
-        // Split the key-value strings into pairs of strings of key-value (using maxSplit = 1).
+        // Split the key-value strings into pairs of strings of key-value (using limit = 2).
         withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keysValuesTable =>
           // Zip the key-value pairs into structs.
           withResource(ColumnVector.makeStruct(keysValuesTable.getColumn(0),
