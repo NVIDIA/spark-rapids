@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -87,11 +87,19 @@ then
     PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks9.jar
     PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks9.jar
     PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks9.jar
+    ORC_CORE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.12.jar
+    ORC_SHIM_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.12.jar
+    ORC_MAPREDUCE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.12.jar
 else
     PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks6.jar
     PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks6.jar
     PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks6.jar
+    ORC_CORE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.10.jar
+    ORC_SHIM_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.10.jar
+    ORC_MAPREDUCE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.10.jar
 fi
+
+PROTOBUF_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 PARQUETFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
 
 NETWORKCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--network-common--network-common-hive-2.3__hadoop-2.7_2.12_deploy.jar
@@ -360,6 +368,38 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$HADOOPMAPRED \
    -DgroupId=org.apache.hadoop \
    -DartifactId=hadoop-mapreduce-client \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORC_CORE_JAR \
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-core \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORC_SHIM_JAR \
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-shims \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORC_MAPREDUCE_JAR \
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-mapreduce \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$PROTOBUF_JAR \
+   -DgroupId=com.google.protobuf \
+   -DartifactId=protobuf-java \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
