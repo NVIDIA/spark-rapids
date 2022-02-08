@@ -489,6 +489,17 @@ these formats when unquoted, will produce `null` on the CPU and may produce vali
 Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
 Spark will treat them as invalid inputs and will just return `null`.
 
+### JSON Schema discovery
+
+Spark SQL can automatically infer the schema of a JSON dataset if schema is not provided explicitly. In certain 
+cases it cannot infer the schema correctly. For example if JSON dataset has values such as 00012 which is read 
+with default options then those are marked as corrupt entries with a dedicated column name specified by 
+`columnNameOfCorruptRecord`. An exception is thrown if there is column with name`columnNameOfCorruptRecord` in the
+dataframe. 
+However if the schema is provided with default options while reading for such entries they show up as nulls 
+because the values are technically corrupt.
+
+
 ### JSON options
 
 Spark supports passing options to the JSON parser when reading a dataset.  In most cases if the RAPIDS Accelerator 
@@ -502,8 +513,9 @@ strips off leading zeros from all numbers and this config has no impact on it.
 - `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters (ASCII characters with 
 value less than 32, including tab and line feed characters) or not. By default this is set to false. If the schema 
 is provided while reading JSON file, then this flag has no impact on the RAPIDS Accelerator as it always allows 
-unquoted control characters but Spark reads these entries incorrectly as null. However, if the schema is not provided
-and when the option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown.
+unquoted control characters but Spark reads these entries incorrectly as null as discussed in `JSON Schema discovery`
+section. However, if the schema is not provided and when the option is false, then RAPIDS Accelerator's behavior is 
+same as Spark where an exception is thrown.
 
 ## Regular Expressions
 
