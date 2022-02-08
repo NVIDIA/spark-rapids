@@ -1320,6 +1320,7 @@ class GpuStringSplitMeta(
     extractLit(expr.limit) match {
       case Some(Literal(n: Int, _)) =>
         if (n == 0 || n == 1) {
+          // https://github.com/NVIDIA/spark-rapids/issues/4720
           willNotWorkOnGpu("limit of 0 or 1 is not supported")
         }
       case _ =>
