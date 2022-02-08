@@ -18,6 +18,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gp
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from pyspark.sql.functions import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 def read_parquet_df(data_path):
@@ -728,3 +729,24 @@ def test_parquet_scan_with_aggregation_pushdown_fallback(spark_tmp_path):
         exist_classes= "BatchScanExec",
         non_exist_classes= "GpuBatchScanExec",
         conf = conf_for_parquet_aggregate_pushdown)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@pytest.mark.parametrize('metadata_column', ["file_path", "file_name", "file_size", "file_modification_time"])
+def test_parquet_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column):
+    data_path = spark_tmp_path + "/hidden_metadata.parquet"
+    with_cpu_session(lambda spark : spark.range(10) \
+                     .selectExpr("id", "id % 3 as p") \
+                     .write \
+                     .partitionBy("p") \
+                     .mode("overwrite") \
+                     .parquet(data_path))
+
+    def do_parquet_scan(spark):
+        df = spark.read.parquet(data_path).selectExpr("id", "_metadata.{}".format(metadata_column))
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_parquet_scan,
+        exist_classes= "FileSourceScanExec",
+        non_exist_classes= "GpuBatchScanExec")

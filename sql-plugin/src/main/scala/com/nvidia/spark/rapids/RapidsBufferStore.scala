@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,11 +70,17 @@ abstract class RapidsBufferStore(
       }
     }
 
-    def freeAll(): Unit = synchronized {
-      val values = buffers.values().toArray(new Array[RapidsBufferBase](0))
+    def freeAll(): Unit = {
+      val values = synchronized {
+        val buffs = buffers.values().toArray(new Array[RapidsBufferBase](0))
+        buffers.clear()
+        spillable.clear()
+        buffs
+      }
+      // We need to release the `RapidsBufferStore` lock to prevent a lock order inversion
+      // deadlock: (1) `RapidsBufferBase.free`     calls  (2) `RapidsBufferStore.remove` and
+      //           (1) `RapidsBufferStore.freeAll` calls  (2) `RapidsBufferBase.free`.
       values.foreach(_.free())
-      buffers.clear()
-      spillable.clear()
     }
 
     def nextSpillableBuffer(): RapidsBufferBase = synchronized {
