@@ -799,7 +799,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            pattern = Some(new CudfRegexTranspiler(replace = false).transpile(str.toString))
+            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString))
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -946,7 +946,7 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val cudfRegexPattern = new CudfRegexTranspiler(replace = false)
+          val cudfRegexPattern = new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern)
           pattern = Some(cudfRegexPattern)
           numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
@@ -1289,6 +1289,9 @@ class GpuStringSplitMeta(
     extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
+  private var pattern: String = _
+  private var isRegExp = false
+
   override def tagExprForGpu(): Unit = {
     val regexp = extractLit(expr.regex)
     if (regexp.isEmpty) {
@@ -1296,26 +1299,40 @@ class GpuStringSplitMeta(
     } else {
       val str = regexp.get.value.asInstanceOf[UTF8String]
       if (str != null) {
-        if ((str.numChars() > 0) && RegexParser.isRegExpString(str.toString)) {
-          willNotWorkOnGpu("regular expressions are not supported yet")
+        isRegExp = RegexParser.isRegExpString(str.toString)
+        if (isRegExp) {
+          try {
+            pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString)
+          } catch {
+            case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
+          }
+        } else {
+          pattern = str.toString
         }
       } else {
         willNotWorkOnGpu("null regex is not supported yet")
       }
     }
-    if (!isLit(expr.limit)) {
-      willNotWorkOnGpu("only literal limit is supported")
+    extractLit(expr.limit) match {
+      case Some(Literal(n: Int, _)) =>
+        if (n == 0 || n == 1) {
+          // https://github.com/NVIDIA/spark-rapids/issues/4720
+          willNotWorkOnGpu("limit of 0 or 1 is not supported")
+        }
+      case _ =>
+        willNotWorkOnGpu("only literal limit is supported")
     }
   }
   override def convertToGpu(
       str: Expression,
       regexp: Expression,
       limit: Expression): GpuExpression =
-    GpuStringSplit(str, regexp, limit)
+    GpuStringSplit(str, regexp, limit, isRegExp, pattern)
 }
 
-case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
-    extends GpuTernaryExpression with ImplicitCastInputTypes {
+case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
+    isRegExp: Boolean, pattern: String)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = ArrayType(StringType)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
@@ -1323,14 +1340,12 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
   override def second: Expression = regex
   override def third: Expression = limit
 
-  def this(exp: Expression, regex: Expression) = this(exp, regex, GpuLiteral(-1, IntegerType))
-
   override def prettyName: String = "split"
 
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
     val intLimit = limit.getValue.asInstanceOf[Int]
-    str.getBase.stringSplitRecord(regex.getBase, intLimit)
+    str.getBase.stringSplitRecord(pattern, intLimit, isRegExp)
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,

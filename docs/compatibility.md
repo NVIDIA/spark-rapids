@@ -518,6 +518,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Line anchor `$`
 - String anchor `\Z`
 - String anchor `\z` is not supported by `regexp_replace`
+- Line and string anchors are not supported by `string_split`
 - Non-digit character class `\D`
 - Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
