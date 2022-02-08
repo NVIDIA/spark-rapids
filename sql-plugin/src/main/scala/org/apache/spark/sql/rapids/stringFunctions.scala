@@ -1298,9 +1298,9 @@ class GpuStringSplitMeta(
       if (str != null) {
         if (RegexParser.isRegExpString(str.toString)) {
           willNotWorkOnGpu("regular expressions are not supported yet")
-        }
-        if (str.numChars() == 0) {
-          willNotWorkOnGpu("An empty regex is not supported yet")
+          if (str.numChars() == 0) {
+            willNotWorkOnGpu("An empty regex is not supported yet")
+          }
         }
       } else {
         willNotWorkOnGpu("null regex is not supported yet")
@@ -1395,19 +1395,18 @@ class GpuStringToMapMeta(
   }
 
   private def tagForGpuIfNotRegex(delimExpr: Expression) : Unit = {
-    extractLit(delimExpr).foreach { delim =>
-      val str = delim.value.asInstanceOf[UTF8String]
-      if (str != null){
-        //
-        // Currently, we don't support regex. However, we can't check for regex very accurately.
-        // As such, just treat the delimiter string as a literal string without regex.
-        // In the future, we can re-enable regex check when it is improved.
-        //
-        // if(!canRegexpBeTreatedLikeARegularString(str)) {
-        //   willNotWorkOnGpu("str_to_map does not support regular expression delimiter(s)")
-        // }
-        if (str.numChars() == 0) {
-          willNotWorkOnGpu("delimiter is empty")
+    val delim = extractLit(delimExpr)
+    if (delim.isEmpty) {
+      willNotWorkOnGpu("only literal delimiter values are supported")
+    } else {
+      val utf8Str = delim.get.value.asInstanceOf[UTF8String]
+      if (utf8Str != null) {
+        val str =  utf8Str.toString
+        if ((str != ":") && RegexParser.isRegExpString(str)) {
+          willNotWorkOnGpu("regular expressions are not supported yet")
+          if (utf8Str.numChars() == 0) {
+            willNotWorkOnGpu("An empty regex delimiter is not supported yet")
+          }
         }
       } else {
         willNotWorkOnGpu("delimiter is null")
