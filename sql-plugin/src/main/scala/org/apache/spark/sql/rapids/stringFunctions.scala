@@ -1296,11 +1296,8 @@ class GpuStringSplitMeta(
     } else {
       val str = regexp.get.value.asInstanceOf[UTF8String]
       if (str != null) {
-        if (RegexParser.isRegExpString(str.toString)) {
+        if ((str.numChars() > 0) && RegexParser.isRegExpString(str.toString)) {
           willNotWorkOnGpu("regular expressions are not supported yet")
-          if (str.numChars() == 0) {
-            willNotWorkOnGpu("An empty regex is not supported yet")
-          }
         }
       } else {
         willNotWorkOnGpu("null regex is not supported yet")
@@ -1402,11 +1399,8 @@ class GpuStringToMapMeta(
       val utf8Str = delim.get.value.asInstanceOf[UTF8String]
       if (utf8Str != null) {
         val str =  utf8Str.toString
-        if ((str != ":") && RegexParser.isRegExpString(str)) {
+        if ((utf8Str.numChars() > 0) && (str != ":") && RegexParser.isRegExpString(str)) {
           willNotWorkOnGpu("regular expressions are not supported yet")
-          if (utf8Str.numChars() == 0) {
-            willNotWorkOnGpu("An empty regex delimiter is not supported yet")
-          }
         }
       } else {
         willNotWorkOnGpu("delimiter is null")
