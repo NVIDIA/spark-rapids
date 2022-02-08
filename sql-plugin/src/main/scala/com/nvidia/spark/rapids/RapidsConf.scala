@@ -471,6 +471,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE =
+    conf("spark.rapids.sql.shuffledHashJoin.optimizeShuffle")
+      .doc("Enable or disable an optimization where shuffled build side batches are kept " +
+        "on the host while the first stream batch is loaded onto the GPU. The optimization " +
+        "increases off-heap host memory usage to avoid holding onto the GPU semaphore while " +
+        "waiting for stream side IO.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
           "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
@@ -1483,6 +1493,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
+
+  lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
 

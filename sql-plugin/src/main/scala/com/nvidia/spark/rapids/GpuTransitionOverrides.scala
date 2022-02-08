@@ -237,6 +237,28 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(optimizeCoalesce))
   }
 
+  /**
+   * Removes `GpuCoalesceBatches(GpuShuffleCoalesceExec(build side))` for the build side
+   * for the shuffled hash join. The coalesce logic has been moved to the
+   * `GpuShuffleCoalesceExec` class, and is handled differently to prevent holding onto the
+   * GPU semaphore for stream IO.
+   */
+  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = plan match {
+    case x@GpuShuffledHashJoinExec(
+         _, _, _, buildSide, _,
+        left: GpuShuffleCoalesceExec,
+        GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_) if buildSide == GpuBuildRight =>
+      x.withNewChildren(
+        Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
+    case x@GpuShuffledHashJoinExec(
+         _, _, _, buildSide, _,
+        GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
+        right: GpuShuffleCoalesceExec, _) if buildSide == GpuBuildLeft =>
+      x.withNewChildren(
+        Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
+    case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
+  }
+
   private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal],
       disableUntilInput: Boolean): Seq[SparkPlan] = {
     plans.zip(goals).map {
@@ -550,6 +572,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
         updatedPlan = fixupHostColumnarTransitions(updatedPlan)
         updatedPlan = optimizeCoalesce(updatedPlan)
+        if (rapidsConf.shuffledHashJoinOptimizeShuffle) {
+          updatedPlan = shuffledHashJoinOptimizeShuffle(updatedPlan)
+        }
         if (rapidsConf.exportColumnarRdd) {
           updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
         }
