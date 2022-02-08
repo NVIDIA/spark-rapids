@@ -164,6 +164,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Atanh"></a>spark.rapids.sql.expression.Atanh|`atanh`|Inverse hyperbolic tangent|true|None|
 <a name="sql.expression.AttributeReference"></a>spark.rapids.sql.expression.AttributeReference| |References an input column|true|None|
 <a name="sql.expression.BRound"></a>spark.rapids.sql.expression.BRound|`bround`|Round an expression to d decimal places using HALF_EVEN rounding mode|true|None|
+<a name="sql.expression.BitLength"></a>spark.rapids.sql.expression.BitLength|`bit_length`|The bit length of string data|true|None|
 <a name="sql.expression.BitwiseAnd"></a>spark.rapids.sql.expression.BitwiseAnd|`&`|Returns the bitwise AND of the operands|true|None|
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
 <a name="sql.expression.BitwiseOr"></a>spark.rapids.sql.expression.BitwiseOr|`\|`|Returns the bitwise OR of the operands|true|None|
@@ -255,6 +256,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
 <a name="sql.expression.NamedLambdaVariable"></a>spark.rapids.sql.expression.NamedLambdaVariable| |A parameter to a higher order SQL function|true|None|
 <a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|`!`, `not`|Boolean not operator|true|None|
+<a name="sql.expression.OctetLength"></a>spark.rapids.sql.expression.OctetLength|`octet_length`|The byte length of string data|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|`pmod`|Pmod|true|None|
 <a name="sql.expression.PosExplode"></a>spark.rapids.sql.expression.PosExplode|`posexplode_outer`, `posexplode`|Given an input array produces a sequence of rows for each value in the array|true|None|
