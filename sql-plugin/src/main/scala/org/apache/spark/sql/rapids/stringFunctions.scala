@@ -1289,6 +1289,9 @@ class GpuStringSplitMeta(
     extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
+  private var pattern: String = _
+  private var isRegExp = false
+
   override def tagExprForGpu(): Unit = {
     val regexp = extractLit(expr.regex)
     if (regexp.isEmpty) {
@@ -1298,6 +1301,17 @@ class GpuStringSplitMeta(
       if (str != null) {
         if (str.numChars() == 0) {
           willNotWorkOnGpu("An empty regex is not supported yet")
+        }
+        isRegExp = RegexParser.isRegExpString(str.toString)
+        if (isRegExp) {
+          try {
+            pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString)
+          } catch {
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
+          }
+        } else {
+          pattern = str.toString
         }
       } else {
         willNotWorkOnGpu("null regex is not supported yet")
@@ -1316,11 +1330,12 @@ class GpuStringSplitMeta(
       str: Expression,
       regexp: Expression,
       limit: Expression): GpuExpression =
-    GpuStringSplit(str, regexp, limit)
+    GpuStringSplit(str, regexp, limit, isRegExp, pattern)
 }
 
-case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
-    extends GpuTernaryExpression with ImplicitCastInputTypes {
+case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
+    isRegExp: Boolean, pattern: String)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = ArrayType(StringType)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
@@ -1328,25 +1343,12 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
   override def second: Expression = regex
   override def third: Expression = limit
 
-  def this(exp: Expression, regex: Expression) = this(exp, regex, GpuLiteral(-1, IntegerType))
-
   override def prettyName: String = "split"
 
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
     val intLimit = limit.getValue.asInstanceOf[Int]
-    val pattern = regex.getValue.asInstanceOf[UTF8String].toString
-    val isRegExp = RegexParser.isRegExpString(pattern)
-    val cudfPattern = if (isRegExp) {
-      new CudfRegexTranspiler(RegexSplitMode).transpile(pattern)
-    } else {
-      pattern
-    }
-    str.getBase.stringSplitRecord(
-      cudfPattern,
-      // TODO this parameter has different meaning between Java and cuDF (limit vs maxSplit)
-      intLimit,
-      isRegExp)
+    str.getBase.stringSplitRecord(pattern, intLimit, isRegExp)
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
