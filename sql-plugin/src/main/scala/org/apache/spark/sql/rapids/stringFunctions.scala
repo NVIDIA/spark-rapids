@@ -1346,7 +1346,7 @@ class GpuStringSplitMeta(
 case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
     extends GpuTernaryExpression with ImplicitCastInputTypes {
 
-  override def dataType: DataType = ArrayType(StringType)
+  override def dataType: DataType = ArrayType(StringType, containsNull = false)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = str
   override def second: Expression = regex
