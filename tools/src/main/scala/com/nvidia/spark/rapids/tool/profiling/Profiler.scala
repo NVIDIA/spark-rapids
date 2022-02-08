@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
 import org.apache.hadoop.conf.Configuration
 
