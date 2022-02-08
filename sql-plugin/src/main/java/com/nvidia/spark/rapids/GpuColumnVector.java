@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -152,11 +152,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
             || DType.TIMESTAMP_SECONDS.equals(type)
             || DType.TIMESTAMP_MICROSECONDS.equals(type)
             || DType.TIMESTAMP_MILLISECONDS.equals(type)
-            || DType.TIMESTAMP_NANOSECONDS.equals(type)
-            || DType.UINT8.equals(type)
-            || DType.UINT16.equals(type)
-            || DType.UINT32.equals(type)
-            || DType.UINT64.equals(type)) {
+            || DType.TIMESTAMP_NANOSECONDS.equals(type)) {
       debugInteger(hostCol, type);
    } else if (DType.BOOL8.equals(type)) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
@@ -490,10 +486,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       // So, we don't have to handle decimal-supportable problem at here.
       DecimalType dt = (DecimalType) type;
       return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
-    } else if (type instanceof GpuUnsignedIntegerType) {
-      return DType.UINT32;
-    } else if (type instanceof GpuUnsignedLongType) {
-      return DType.UINT64;
     }
     return null;
   }

@@ -575,7 +575,7 @@ case class GpuExtractChunk32(
     replaceNullsWithZero: Boolean) extends GpuExpression with ShimExpression {
   override def nullable: Boolean = true
 
-  override def dataType: DataType = if (chunkIdx < 3) GpuUnsignedIntegerType else IntegerType
+  override def dataType: DataType = LongType
 
   override def sql: String = data.sql
 
@@ -596,7 +596,12 @@ case class GpuExtractChunk32(
       } else {
         chunkCol
       }
-      GpuColumnVector.from(replacedCol, dataType)
+      // TODO: This is a workaround for a libcudf sort-aggregation bug, see
+      // https://github.com/rapidsai/cudf/issues/10246. Ideally we should not need to pay the time
+      // and memory to upcast here since we should be able to get the upcast from libcudf for free.
+      withResource(replacedCol) { replacedCol =>
+        GpuColumnVector.from(replacedCol.castTo(DType.INT64), dataType)
+      }
     }
   }
 
