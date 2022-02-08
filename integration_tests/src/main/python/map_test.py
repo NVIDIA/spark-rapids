@@ -156,26 +156,47 @@ def test_str_to_map_expr_fixed_pattern_input():
             'str_to_map(a, ",", ":") as m3'))
 
 def test_str_to_map_expr_fixed_delimiters():
-    data_gen = [('a', StringGen(pattern='.{0,100}', nullable=True)
-                 .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}'))]
+    data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
+                 .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}', weight=100))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
             'str_to_map(a, ",") as m2',
             'str_to_map(a, ",", ":") as m3'),
-            conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+        conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
+def test_str_to_map_expr_random_delimiters():
+    data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True))]
+    delim_gen = StringGen(pattern='[0-9a-z:,]', nullable=False)
+    (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m1',
+            'str_to_map(a, {}) as m2'.format(pair_delim),
+            'str_to_map(a, {}, {}) as m3'.format(pair_delim, keyval_delim)),
+        conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
+def test_str_to_map_expr_no_map_values():
+    # Test input strings that do not contain delimiters.
+    data_gen = [('a', StringGen(pattern='[0-9:,].{0,10}', nullable=True))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m1',
+            'str_to_map(a, ",") as m2',
+            'str_to_map(a, ",", ":") as m3'),
+        conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
 
 def test_str_to_map_debug():
     # Test pattern "key1:val1,key2:val2".
     # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
     # key start with a letter [a-zA-Z].
     def doit(spark):
-        data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
-                                    nullable=True))]
+        data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
+                     .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}', weight=100))]
         df = gen_df(spark, data_gen)
         print("MY STUFF", df.collect())
         return df.selectExpr('str_to_map(a) as m1')
-    assert_gpu_and_cpu_are_equal_collect(doit)
+    assert_gpu_and_cpu_are_equal_collect(doit, conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
     # assert_gpu_and_cpu_are_equal_collect(
     #     lambda spark : gen_df(spark, data_gen).selectExpr(
     #         'str_to_map(a) as m1'))
