@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.optimizer.CombineAggregateForScalarSubquery
+import org.apache.spark.sql.catalyst.optimizer.CombineScalarSubquery
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
 
@@ -28,13 +29,16 @@ import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
 class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     extensions.injectColumnar(columnarOverrides)
+    extensions.injectOptimizerRule(optimizerOverrides)
     extensions.injectQueryStagePrepRule(queryStagePrepOverrides)
-
-    extensions.injectOptimizerRule(CombineAggregateForScalarSubquery.build)
   }
 
   private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {
     ShimLoader.newColumnarOverrideRules()
+  }
+
+  private def optimizerOverrides(sparkSession: SparkSession): Rule[LogicalPlan] = {
+    CombineScalarSubquery(sparkSession)
   }
 
   private def queryStagePrepOverrides(sparkSession: SparkSession): Rule[SparkPlan] = {

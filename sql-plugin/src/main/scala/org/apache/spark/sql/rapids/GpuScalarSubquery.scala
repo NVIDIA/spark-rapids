@@ -73,8 +73,8 @@ case class GpuScalarSubquery(
 
 case class GpuSharedScalarSubquery(
     plan: BaseSubqueryExec,
-    exprId: ExprId,
-    ordinal: Int)
+    ordinal: Int,
+    exprId: ExprId)
   extends ExecSubqueryExpression with GpuExpression with ShimExpression {
 
   override def dataType: DataType = plan.schema.fields(ordinal).dataType
@@ -104,8 +104,8 @@ case class GpuSharedScalarSubquery(
   override lazy val canonicalized: Expression = {
     GpuSharedScalarSubquery(
       plan.canonicalized.asInstanceOf[BaseSubqueryExec],
-      ExprId(0),
-      ordinal)
+      ordinal,
+      ExprId(0))
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -113,4 +113,3 @@ case class GpuSharedScalarSubquery(
     GpuScalar(result, dataType)
   }
 }
-

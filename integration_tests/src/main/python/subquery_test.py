@@ -38,10 +38,17 @@ def test_scalar_subquery(data_gen):
 
 @ignore_order(True)
 @approximate_float
-@pytest.mark.parametrize('q_index', range(4), ids=idfn)
+@pytest.mark.parametrize('q_index', range(1), ids=idfn)
 @pytest.mark.parametrize('data_gen', [gens], ids=idfn)
 def test_combine_aggregate_for_scalar_subquery(q_index, data_gen, spark_tmp_table_factory):
     queries = [
+        """
+SELECT SUM(i) FROM {0}
+WHERE l > (SELECT MIN(l + l2 + i) FROM {0} WHERE l > 0)
+AND l2 < (SELECT MAX(i) + MAX(i2) FROM {0} WHERE l > 0)
+AND i2 > (SELECT COUNT(IF(i % 2 == 0, 1, NULL)) FROM {0} WHERE l < 0)
+AND i > (SELECT COUNT(IF(i2 % 2 == 0, 1, NULL)) FROM {0} WHERE l < 0)
+        """,
         """
             select l, i, f,
                     (select count(s) from {0}) as c,
@@ -82,9 +89,11 @@ def test_combine_aggregate_for_scalar_subquery(q_index, data_gen, spark_tmp_tabl
             .write.format('parquet').mode('overwrite').saveAsTable(t))
 
     def query_exec(spark):
-        return spark.sql(queries[q_index].format(t))
+        df = spark.sql(queries[q_index].format(t))
+        df.explain(True)
+        return df
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         query_exec,
-        exist_classes='ReusedSubqueryExec',
+        # exist_classes='ReusedSubqueryExec',
         conf={'spark.rapids.sql.combineAggregate.enabled': 'true'})

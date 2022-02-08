@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
-import org.apache.spark.sql.catalyst.optimizer.{CombineAggregateForScalarSubquery, NormalizeNaNAndZero}
+import org.apache.spark.sql.catalyst.optimizer.{NormalizeNaNAndZero, PlanSharedScalarSubqueries, SharedScalarSubqueryExec}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -3331,16 +3331,21 @@ object GpuOverrides extends Logging {
         Nil, None),
       (a, conf, p, r) =>
         new ExprMeta[org.apache.spark.sql.execution.ScalarSubquery](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression = {
-            a.getTagValue(CombineAggregateForScalarSubquery.ORDINAL_TAG) match {
-              case Some(ord) =>
-                GpuSharedScalarSubquery(a.plan, a.exprId, ord)
-              case None =>
-                GpuScalarSubquery(a.plan, a.exprId)
-            }
-          }
+          override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
         }
-    ),
+      ),
+    expr[SharedScalarSubqueryExec](
+      "Subquery that will return only one row and one column",
+      ExprChecks.projectOnly(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
+        Nil, None),
+      (a, conf, p, r) =>
+        new ExprMeta[SharedScalarSubqueryExec](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression =
+            GpuSharedScalarSubquery(a.plan, a.ordinal, a.exprId)
+        }
+      ),
     expr[CreateMap](
       desc = "Create a map",
       CreateMapCheck,
@@ -4029,19 +4034,28 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // gets called once for each query stage (where a query stage is an `Exchange`).
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
+
+    // A tricky way to enforce the rule, so as to transform logical SharedScalarSubqueries
+    // into executable counterparts.
+    val p = if (conf.isCombineSubqueryEnabled) {
+      PlanSharedScalarSubqueries(plan)
+    } else {
+      plan
+    }
+
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = updateForAdaptivePlan(plan, conf)
+        val updatedPlan = updateForAdaptivePlan(p, conf)
         applyOverrides(updatedPlan, conf)
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
-      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      val updatedPlan = updateForAdaptivePlan(p, conf)
       GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
-      plan
+      p
     } else {
-      plan
+      p
     }
   }(sparkPlan)
 

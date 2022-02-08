@@ -714,7 +714,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_COMBINE_AGGREGATE = conf("spark.rapids.sql.combineAggregate.enabled")
+  val ENABLE_COMBINE_SUBQUERY = conf("spark.rapids.sql.combineAggregate.enabled")
       .doc("When set to true, combines compatible reduction-based scalar subqueries " +
            "in order to reduce job numbers")
       .booleanConf
@@ -1774,6 +1774,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val isCombineSubqueryEnabled: Boolean = get(ENABLE_COMBINE_SUBQUERY)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
