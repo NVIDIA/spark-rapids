@@ -1289,7 +1289,7 @@ class GpuStringSplitMeta(
     extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private var pattern: String = _
+  private var pattern: Option[String] = None
   private var isRegExp = false
 
   override def tagExprForGpu(): Unit = {
@@ -1305,13 +1305,13 @@ class GpuStringSplitMeta(
         isRegExp = RegexParser.isRegExpString(str.toString)
         if (isRegExp) {
           try {
-            pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString)
+            pattern = Some(new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString))
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
           }
         } else {
-          pattern = str.toString
+          pattern = Some(str.toString)
         }
       } else {
         willNotWorkOnGpu("null regex is not supported yet")
@@ -1330,8 +1330,10 @@ class GpuStringSplitMeta(
   override def convertToGpu(
       str: Expression,
       regexp: Expression,
-      limit: Expression): GpuExpression =
-    GpuStringSplit(str, regexp, limit, isRegExp, pattern)
+      limit: Expression): GpuExpression = {
+    GpuStringSplit(str, regexp, limit, isRegExp, pattern.getOrElse(
+      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+  }
 }
 
 case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
