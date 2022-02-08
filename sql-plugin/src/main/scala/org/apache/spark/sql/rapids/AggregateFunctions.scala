@@ -852,8 +852,6 @@ abstract class GpuSum(
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = sum :: Nil
 
-  override lazy val preMerge: Seq[Expression] = aggBufferAttributes
-
   protected lazy val mergeSum: CudfAggregate = new CudfSum(resultType)
 
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeSum)
