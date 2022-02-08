@@ -1467,12 +1467,14 @@ case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim:
                     pairDelim: GpuScalar,
                     keyValueDelim: GpuScalar): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
-    withResource(str.getBase.stringSplitRecord(pairDelim.getBase)) { listsOfStrings =>
+    withResource(str.getBase.stringSplitRecord(pairDelim.getValue.asInstanceOf[String])) {
+      listsOfStrings =>
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
         // TODO: change 1 to 2 below when the new JNI merged.
-        withResource(stringsCol.stringSplit(keyValueDelim.getBase, 1)) { keysValuesTable =>
+        withResource(stringsCol.stringSplit(keyValueDelim.getValue.asInstanceOf[String], 1)) {
+          keysValuesTable =>
           assert(keysValuesTable.getNumberOfColumns <= 2)
           val keys = keysValuesTable.getColumn(0)
 
