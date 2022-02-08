@@ -167,7 +167,7 @@ def test_str_to_map_expr_fixed_delimiters():
 
 def test_str_to_map_expr_random_delimiters():
     data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True))]
-    delim_gen = StringGen(pattern='[0-9a-z:,]', nullable=False)
+    delim_gen = StringGen(pattern='[0-9a-z :,]{0,1}', nullable=False)
     (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen).selectExpr(
