@@ -76,8 +76,13 @@ def test_split_re_negative_limit():
         .with_special_case('boo:and:foo')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, ":", -1)',
-            'split(a, "o", -2)'))
+            'split(a, "[:]", -1)',
+            'split(a, "[o:]", -1)',
+            'split(a, "[^:]", -1)',
+            'split(a, "[^o]", -1)',
+            'split(a, "[o]{1,2}", -1)',
+            'split(a, "[bf]", -1)',
+            'split(a, "[o]", -2)'))
 
 # https://github.com/NVIDIA/spark-rapids/issues/4720
 @allow_non_gpu('ProjectExec', 'StringSplit')
@@ -86,8 +91,9 @@ def test_split_re_zero_limit_fallback():
         .with_special_case('boo:and:foo')
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, ":", 0)',
-            'split(a, "o", 0)'),
+            'split(a, "[:]", 0)',
+            'split(a, "[o:]", 0)',
+            'split(a, "[o]", 0)'),
             exist_classes= "ProjectExec",
             non_exist_classes= "GpuProjectExec")
 
@@ -98,8 +104,9 @@ def test_split_re_one_limit_fallback():
         .with_special_case('boo:and:foo')
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, ":", 1)',
-            'split(a, "o", 1)'),
+            'split(a, "[:]", 1)',
+            'split(a, "[o:]", 1)',
+            'split(a, "[o]", 1)'),
         exist_classes= "ProjectExec",
         non_exist_classes= "GpuProjectExec")
 
@@ -108,18 +115,26 @@ def test_split_re_positive_limit():
         .with_special_case('boo:and:foo')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, ":", 2)',
-            'split(a, ":", 5)',
-            'split(a, "o", 2)',
-            'split(a, "o", 5)'))
+            'split(a, "[:]", 2)',
+            'split(a, "[o:]", 5)',
+            'split(a, "[^:]", 2)',
+            'split(a, "[^o]", 55)',
+            'split(a, "[o]{1,2}", 999)',
+            'split(a, "[bf]", 2)',
+            'split(a, "[o]", 5)'))
 
 def test_split_re_no_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
         .with_special_case('boo:and:foo')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, ":")',
-            'split(a, "o")'))
+            'split(a, "[:]")',
+            'split(a, "[o:]")',
+            'split(a, "[^:]")',
+            'split(a, "[^o]")',
+            'split(a, "[o]{1,2}")',
+            'split(a, "[bf]")',
+            'split(a, "[o]")'))
 
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
