@@ -164,8 +164,8 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
         val inputRefs = mutable.ListBuffer.empty[Map[ExprId, Int]]
         prj.projectList.foreach { e =>
           prjExpressions += e
-          // Collects all attributeReferences.
-          // Then, finds and binds their ordinals in the base plan's output.
+          // Collect all attributeReferences.
+          // Then, find and bind their ordinals in the base plan's output.
           inputRefs += e.collectLeaves().collect {
             case ar: AttributeReference =>
                ar.exprId -> baseOutput.indexOf(ar.exprId)
@@ -190,6 +190,7 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
   }
 
   private def mergeCombineBlocks(blocks: Seq[CombineBlock]): FusedAggregate = {
+    // Simply choose the first block's base as the global base
     val basePlan = blocks.head.basePlan
     val baseOutput = basePlan.output
 
@@ -201,6 +202,8 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
     blocks.foreach { blk =>
       scalars += blk.scalar
 
+      // Merge project expressions which are semantically equal. And rebase distinct
+      // project expressions to the global base.
       val boundProjects = blk.projects.zipWithIndex.map { case (p, i) =>
         val singlePrj = Project(p :: Nil, blk.basePlan).canonicalized
         prjMap.getOrElseUpdate(singlePrj, {
@@ -215,6 +218,7 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
         })
       }
 
+      // Rebase aggregate expressions
       val oldPrjExprIds = blk.projects.map(_.exprId)
       aggBuffer += blk.aggregate.transform {
         case ar: AttributeReference =>
@@ -225,6 +229,7 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
 
     val fusedProject = Project(prjBuffer.toList, basePlan)
     val fusedAggregate = Aggregate(Nil, aggBuffer.toList, fusedProject)
+
     FusedAggregate(fusedAggregate, scalars.toList)
   }
 
@@ -235,6 +240,8 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
 
     val builder = mutable.Map.empty[LogicalPlan, mutable.ListBuffer[CombineBlock]]
 
+    // Collect combination candidates from scalar sub-queries. Assign these candidates into
+    // groups according to the canonicalized base plan.
     plan.transformAllExpressionsWithPruning(_.containsPattern(SCALAR_SUBQUERY)) {
       case s @ expressions.ScalarSubquery(agg: Aggregate, _, _, _)
         if agg.groupingExpressions.isEmpty && agg.aggregateExpressions.length == 1 =>
@@ -246,6 +253,8 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
         s
     }
 
+    // Combine plans which share the same base to form fused aggregates. And create links between
+    // scalar sub-queries and fused aggregates.
     val fusedAggregates = builder.filter(_._2.length > 1)
         .flatMap { case (_, blocks) =>
           val fusedAgg = mergeCombineBlocks(blocks.toList)
@@ -254,6 +263,8 @@ case class CombineScalarSubquery(ss: SparkSession) extends Rule[LogicalPlan] {
           }
         }.toMap
 
+    // Replace scalar sub-queries, which share base with other queries, with sharedScalarSubquery
+    // of fused aggregate.
     if (fusedAggregates.isEmpty) {
       plan
     } else {
