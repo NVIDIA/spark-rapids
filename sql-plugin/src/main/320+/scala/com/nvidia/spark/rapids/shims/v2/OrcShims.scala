@@ -72,7 +72,10 @@ object OrcShims {
   // create ORC out stream
   def newOrcOutStream(name: String, bufferSize: Int, codec: CompressionCodec,
       receiver: PhysicalWriter.OutputReceiver): OutStream = {
-    val options = new StreamOptions(bufferSize).withCodec(codec, codec.getDefaultOptions)
+    val options = new StreamOptions(bufferSize)
+    if (codec != null) {
+      options.withCodec(codec, codec.getDefaultOptions)
+    }
     new OutStream(name, options, receiver)
   }
 
