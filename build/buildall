@@ -244,8 +244,8 @@ time (
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   # This used to resume from dist. However, without including aggregator in the build
-  # the build does not properly initialize spark.version proprty via buildver profiles
-  # in the root pom, and we get a missing spark301 dependency even if for --profile=312,321
+  # the build does not properly initialize spark.version property via buildver profiles
+  # in the root pom, and we get a missing spark301 dependency even for --profile=312,321
   # where the build does not require it. Moving it to aggregator resolves this issue with
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
