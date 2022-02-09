@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -58,6 +58,32 @@ case class GpuLength(child: Expression) extends GpuUnaryExpression with ExpectsI
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     input.getBase.getCharLengths()
+}
+
+case class GpuBitLength(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+  override def toString: String = s"bit_length($child)"
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    withResource(input.getBase.getByteCount) { byteCnt =>
+      // bit count = byte count * 8
+      withResource(GpuScalar.from(3, IntegerType)) { factor =>
+        byteCnt.binaryOp(BinaryOp.SHIFT_LEFT, factor, DType.INT32)
+      }
+    }
+  }
+}
+
+case class GpuOctetLength(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+  override def toString: String = s"octet_length($child)"
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.getByteCount
 }
 
 case class GpuStringLocate(substr: Expression, col: Expression, start: Expression)
@@ -1320,7 +1346,7 @@ class GpuStringSplitMeta(
 case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
     extends GpuTernaryExpression with ImplicitCastInputTypes {
 
-  override def dataType: DataType = ArrayType(StringType)
+  override def dataType: DataType = ArrayType(StringType, containsNull = false)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = str
   override def second: Expression = regex

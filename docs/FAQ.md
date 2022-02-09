@@ -336,6 +336,20 @@ the I/O and starting the initial processing can suffer.  But if you have a lot o
 cannot be done on the GPU, like complex UDFs, the more tasks you have the more CPU processing you
 can throw at it.
 
+### How are `spark.executor.cores`, `spark.task.resource.gpu.amount`, and `spark.rapids.sql.concurrentGpuTasks` related?
+
+The `spark.executor.cores` and `spark.task.resource.gpu.amount` configuration settings are inputs
+to the Spark task scheduler and control the maximum number of tasks that can be run concurrently
+on an executor, regardless of whether they are running CPU or GPU code at any point in time. See
+the [Number of Tasks per Executor](tuning-guide.md#number-of-tasks-per-executor) section in the
+tuning guide for more details.
+
+The `spark.rapids.sql.concurrentGpuTasks` configuration setting is specific to the RAPIDS
+Accelerator and further limits the number of concurrent tasks that are _actively_ running code on
+the GPU or using GPU memory at any point in time. See the
+[Number of Concurrent Tasks per GPU](tuning-guide.md#number-of-concurrent-tasks-per-gpu) section
+of the tuning guide for more details.
+
 ### Why are multiple GPUs per executor not supported?
 
 The RAPIDS Accelerator only supports a single GPU per executor because that was a limitation of
