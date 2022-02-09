@@ -498,7 +498,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                   case _ => false
                 },
                 (dataType, cv) => {
-                  //TODO: why do we have to copy to a vector
                   dataType match {
                     case d: DecimalType =>
                       withResource(cv.bitCastTo(DecimalUtil.createCudfDecimal(d))) {
@@ -1419,6 +1418,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
     hadoopConf.setBoolean(SQLConf.PARQUET_BINARY_AS_STRING.key, false)
     hadoopConf.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
+    hadoopConf.setBoolean(SQLConf.CASE_SENSITIVE.key, false)
 
     hadoopConf.set(ShimLoader.getSparkShims.parquetRebaseWriteKey,
       LegacyBehaviorPolicy.CORRECTED.toString)
