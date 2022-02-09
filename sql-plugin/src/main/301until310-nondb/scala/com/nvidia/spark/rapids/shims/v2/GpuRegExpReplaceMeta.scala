@@ -33,6 +33,10 @@ class GpuRegExpReplaceMeta(
   private var replacement: Option[String] = None
 
   override def tagExprForGpu(): Unit = {
+    if (!conf.isRegExpEnabled) {
+      willNotWorkOnGpu(s"Regular expression support is disabled. " +
+        s"Set ${RapidsConf.ENABLE_REGEXP.key}=true to enable it")
+    }
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {

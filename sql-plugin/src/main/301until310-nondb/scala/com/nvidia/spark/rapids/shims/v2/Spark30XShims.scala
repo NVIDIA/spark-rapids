@@ -297,14 +297,12 @@ abstract class Spark30XShims extends Spark301until320Shims with Logging {
           override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
         }),
       GpuOverrides.expr[RegExpReplace](
-        "RegExpReplace support for string literal input patterns",
+        "RegExpReplace",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
-        "the implementation is not 100% compatible. " +
-          "See the compatibility guide for more information."),
+        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
       GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }

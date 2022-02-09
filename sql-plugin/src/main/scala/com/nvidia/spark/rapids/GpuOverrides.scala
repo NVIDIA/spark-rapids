@@ -3054,9 +3054,7 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("str", TypeSig.STRING, TypeSig.STRING),
         ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
-      (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
-      "the implementation is not 100% compatible. " +
-        "See the compatibility guide for more information."),
+      (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)),
     expr[RegExpExtract](
       "RegExpExtract",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
@@ -3064,10 +3062,7 @@ object GpuOverrides extends Logging {
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
             TypeSig.lit(TypeEnum.INT)))),
-      (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r))
-      .disabledByDefault(
-      "the implementation is not 100% compatible. " +
-        "See the compatibility guide for more information."),
+      (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r)),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
