@@ -478,12 +478,13 @@ class CudfRegexTranspiler(replace: Boolean) {
 
       case RegexOctalChar(digits) =>
         val octal = if (digits.charAt(0) == '0' && digits.length == 4) {
-          digits.substring(0)
+          digits.substring(1)
         } else  {
           digits
         }
         if (Integer.parseInt(octal, 8) >= 128) {
-          throw new RegexUnsupportedException("cuDF does not support octal digits 0o177 < n <= 0o377")
+          throw new RegexUnsupportedException(
+            "cuDF does not support octal digits 0o177 < n <= 0o377")
         }
         RegexOctalChar(octal)
 
