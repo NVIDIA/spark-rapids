@@ -697,6 +697,11 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_EXISTENCE_JOIN = conf("spark.rapids.sql.join.existence.enabled")
+      .doc("When set to true existence joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_PROJECT_AST = conf("spark.rapids.sql.projectAstEnabled")
       .doc("Enable project operations to use cudf AST expressions when possible.")
       .internal()
@@ -1595,6 +1600,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val areLeftSemiJoinsEnabled: Boolean = get(ENABLE_LEFT_SEMI_JOIN)
 
   lazy val areLeftAntiJoinsEnabled: Boolean = get(ENABLE_LEFT_ANTI_JOIN)
+
+  lazy val areExistenceJoinsEnabled: Boolean = get(ENABLE_EXISTENCE_JOIN)
 
   lazy val isCastDecimalToFloatEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_FLOAT)
 

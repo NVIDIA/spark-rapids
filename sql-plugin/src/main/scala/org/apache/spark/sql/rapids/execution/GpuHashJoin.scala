@@ -50,6 +50,9 @@ object JoinTypeChecks {
       case LeftAnti if !conf.areLeftAntiJoinsEnabled =>
         meta.willNotWorkOnGpu("left anti joins have been disabled. To enable set " +
             s"${RapidsConf.ENABLE_LEFT_ANTI_JOIN.key} to true")
+      case ExistenceJoin(_) if !conf.areExistenceJoinsEnabled =>
+        meta.willNotWorkOnGpu("existence joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_EXISTENCE_JOIN.key} to true")
       case _ => // not disabled
     }
   }
@@ -117,6 +120,8 @@ object GpuHashJoin extends Arm {
         if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
           meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
         }
+      case ExistenceJoin(_) =>
+        // TODO enabling existence join
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
@@ -246,7 +251,7 @@ abstract class BaseHashJoinIterator(
       joinTime = joinTime) {
   // We can cache this because the build side is not changing
   private lazy val streamMagnificationFactor = joinType match {
-    case _: InnerLike | LeftOuter | RightOuter =>
+    case _: InnerLike | LeftOuter | RightOuter | ExistenceJoin(_) =>
       withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
         guessStreamMagnificationFactor(builtKeys)
       }
@@ -259,7 +264,7 @@ abstract class BaseHashJoinIterator(
     // TODO: Replace this estimate with exact join row counts using the corresponding cudf APIs
     //       being added in https://github.com/rapidsai/cudf/issues/9053.
     joinType match {
-      case _: InnerLike | LeftOuter | RightOuter =>
+      case _: InnerLike | LeftOuter | RightOuter | ExistenceJoin(_) =>
         Math.ceil(cb.numRows() * streamMagnificationFactor).toLong
       case _ => cb.numRows()
     }
@@ -507,6 +512,47 @@ class ConditionalHashJoinIterator(
   }
 }
 
+
+/**
+ * An iterator that does a hash join against a stream of batches.
+ */
+class ExistenceHashJoinIterator(
+    built: LazySpillableColumnarBatch,
+    val boundBuiltKeys: Seq[Expression],
+    private val stream: Iterator[LazySpillableColumnarBatch],
+    val boundStreamKeys: Seq[Expression],
+    val streamAttributes: Seq[Attribute],
+    val targetSize: Long,
+    val joinType: JoinType,
+    val buildSide: GpuBuildSide,
+    val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
+    private val spillCallback: SpillCallback,
+    opTime: GpuMetric,
+    private val joinTime: GpuMetric)
+    extends BaseHashJoinIterator(
+      built,
+      boundBuiltKeys,
+      stream,
+      boundStreamKeys,
+      streamAttributes,
+      targetSize,
+      joinType,
+      buildSide,
+      spillCallback,
+      opTime = opTime,
+      joinTime = joinTime) {
+  override protected def joinGathererLeftRight(
+      leftKeys: Table,
+      leftData: LazySpillableColumnarBatch,
+      rightKeys: Table,
+      rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
+      val maps = leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+      makeGatherer(maps, leftData, rightData, joinType)
+    }
+  }
+}
+
 trait GpuHashJoin extends GpuExec {
   def left: SparkPlan
   def right: SparkPlan
@@ -664,6 +710,10 @@ trait GpuHashJoin extends GpuExec {
       new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
         boundStreamKeys, streamedPlan.output, compiledCondition,
         realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+    } else if (joinType.isInstanceOf[ExistenceJoin]) {
+      new ExistenceHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
+        boundStreamKeys, streamedPlan.output, realTarget, joinType, buildSide,
+        compareNullsEqual, spillCallback, opTime, joinTime)
     } else {
       new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,

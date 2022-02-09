@@ -818,4 +818,3 @@ def test_existence_join(allowFallback, spark_tmp_table_factory):
         ).format(leftTable, rightTable))
         return res
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r".+Join ExistenceJoin\(exists#[0-9]+\).+")
-
