@@ -15,6 +15,11 @@
  */
 package com.nvidia.spark.rapids
 
+import scala.concurrent._
+import scala.concurrent.duration._
+import ExecutionContext.Implicits.global
+import scala.language.postfixOps
+
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
@@ -121,7 +126,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
     // see https://github.com/NVIDIA/spark-rapids/issues/4487
-    val patterns = Seq("(3?)+", "(3?)*", "(3*)+")
+    val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
     patterns.foreach(pattern => 
       assertUnsupported(pattern, replace = false, "nothing to repeat"))
   }
@@ -411,10 +416,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val cpu = cpuContains(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler(replace = false).transpile(javaPattern)
       val gpu = try {
-        gpuContains(cudfPattern, input)
+        val result = Future {
+          gpuContains(cudfPattern, input)
+        }
+        Await.result(result, 1 second)
       } catch {
         case e: CudfException =>
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
+        case e: java.util.concurrent.TimeoutException =>
+          fail(s"cuDF timed out regexp_find: " +
+            s"javaPattern=${toReadableString(javaPattern)}, " +
+            s"cudfPattern=${toReadableString(cudfPattern)}"
+          )
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -434,10 +447,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val cpu = cpuReplace(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler(replace = true).transpile(javaPattern)
       val gpu = try {
-        gpuReplace(cudfPattern, input)
+        val result = Future {
+          gpuReplace(cudfPattern, input)
+        }
+        Await.result(result, 10 second)
       } catch {
         case e: CudfException =>
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
+        case e: java.util.concurrent.TimeoutException =>
+          fail(s"cuDF timed out regexp_replace: " +
+            s"javaPattern=${toReadableString(javaPattern)}, " +
+            s"cudfPattern=${toReadableString(cudfPattern)}"
+          )
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
