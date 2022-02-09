@@ -489,6 +489,30 @@ these formats when unquoted, will produce `null` on the CPU and may produce vali
 Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
 Spark will treat them as invalid inputs and will just return `null`.
 
+### JSON Schema discovery
+
+Spark SQL can automatically infer the schema of a JSON dataset if schema is not provided explicitly. The CPU 
+handles schema discovery and there is no GPU acceleration of this. By default Spark will read/parse the entire
+dataset to determine the schema. This means that some options/errors which are ignored by the GPU may still
+result in an exception if used with schema discovery.
+
+### JSON options
+
+Spark supports passing options to the JSON parser when reading a dataset.  In most cases if the RAPIDS Accelerator 
+sees one of these options that it does not support it will fall back to the CPU. In some cases we do not. The 
+following options are documented below.
+
+- `allowNumericLeadingZeros`  - Allows leading zeros in numbers (e.g. 00012). By default this is set to false. 
+When it is false Spark throws an exception if it encounters this type of number. The RAPIDS Accelerator 
+strips off leading zeros from all numbers and this config has no impact on it.
+
+- `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters (ASCII characters with 
+value less than 32, including tab and line feed characters) or not. By default this is set to false. If the schema 
+is provided while reading JSON file, then this flag has no impact on the RAPIDS Accelerator as it always allows 
+unquoted control characters but Spark reads these entries incorrectly as null. However, if the schema is not provided 
+and when the option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown 
+as discussed in `JSON Schema discovery` section.
+
 ## Regular Expressions
 
 The following Apache Spark regular expression functions and expressions are supported on the GPU:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,16 +163,14 @@ object ParquetDumper extends Arm {
       toClose: ArrayBuffer[ColumnView]): T = {
     val dType = cv.getType
     if (dType.isDecimalType) {
-      if (dType.getTypeId == DType.DTypeEnum.DECIMAL32) {
-        builder.withDecimalColumn(getTypeName(dType) + cIndex.inc(),
-          DType.DECIMAL32_MAX_PRECISION, true)
-      } else if (dType.getTypeId == DType.DTypeEnum.DECIMAL64) {
-        builder.withDecimalColumn(getTypeName(dType) + cIndex.inc(),
-          DType.DECIMAL64_MAX_PRECISION, true)
-      } else {
-        // TODO for decimal 128 or other decimal
-        throw new UnsupportedOperationException("not support " + dType.getTypeId)
+      val precision = dType.getTypeId match {
+        case DType.DTypeEnum.DECIMAL32 => DType.DECIMAL32_MAX_PRECISION
+        case DType.DTypeEnum.DECIMAL64 => DType.DECIMAL64_MAX_PRECISION
+        case DType.DTypeEnum.DECIMAL128 => DType.DECIMAL128_MAX_PRECISION
+        case _ =>
+          throw new UnsupportedOperationException("unsupported type " + dType.getTypeId)
       }
+      builder.withDecimalColumn(getTypeName(dType) + cIndex.inc(), precision, true)
     } else if (dType == DType.STRUCT) {
       val subBuilder = structBuilder("c_struct" + cIndex.inc(), true)
       for (i <- 0 until cv.getNumChildren) {
