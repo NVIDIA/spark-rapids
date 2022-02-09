@@ -528,7 +528,9 @@ Here are some examples of regular expression patterns that are not supported on 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Hex and octal digits
+- Octal digits in the range `\0200` to `\0377`
+- Character classes with octal digits, such as `[\02]` or `[\024]`
+- Hex digits
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
