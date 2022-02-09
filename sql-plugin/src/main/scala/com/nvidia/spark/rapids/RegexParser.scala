@@ -747,8 +747,6 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
 
 sealed trait RegexCharacterClassComponent extends RegexAST
 
-// TODO: Consider merging some of these subclasses to handling escaping
-
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\x$a"
