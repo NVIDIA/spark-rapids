@@ -1,9 +1,9 @@
 ---
 layout: page
-title: Spark Profiling tool
+title: Profiling tool
 nav_order: 9
 ---
-# Spark Profiling tool
+# Profiling tool
 
 The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
 which can be used for debugging and profiling Apache Spark applications.
@@ -31,7 +31,7 @@ more information.
 The Profiling tool requires the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, 
 you can download the Spark distribution to any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.12.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/22.02.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar). 
 
@@ -321,22 +321,39 @@ be a part of multiple stages and only one of the stages will be selected. `Excha
 left out of the sections associated with a stage because they cover at least 2 stages and possibly
 more. In other cases we may not be able to determine what stage something was a part of. In those
 cases we mark it as `UNKNOWN STAGE`. This is because we rely on metrics to link a node to a stage.
-If a stage hs no metrics, like if the query crashed early, we cannot establish that link.
+If a stage has no metrics, like if the query crashed early, we cannot establish that link.
 
 - Generate timeline for application (--generate-timeline option):
 
 The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
 named `timeline.svg`.  Most web browsers can display this file.  It is a
-timeline view similar Apache Spark's 
+timeline view similar to Apache Spark's
 [event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
 
 This displays several data sections.
 
-1. **Tasks** This shows all tasks in the application divided by executor.  Please note that this
+1. **Tasks** This shows all tasks in the application divided by executor. Please note that this
    tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
-   The tasks are labeled with the time it took for them to run, but there is no breakdown about
-   different aspects of each task, like there is in Spark's timeline.
-2. **STAGES** This shows the stages times reported by Spark. It starts with when the stage was 
+   The tasks are labeled with the time it took for them to run. There is a breakdown of some metrics
+   per task in the lower half of the task block with different colors used to designate different
+   metrics.
+   1. Yellow is the deserialization time for the task as reported by Spark. This works for both CPU
+   and GPU tasks.
+   2. White is the read time for a task. This is a combination of the "buffer time" GPU SQL metric
+   and the shuffle read time as reported by Spark. The shuffle time works for both CPU and GPU
+   tasks, but "buffer time" only is reported for GPU accelerated file reads.
+   3. Red is the semaphore wait time. This is the amount of time a task spent waiting to get access
+   to the GPU. This only shows up on GPU tasks when DEBUG metrics are enabled. It does not apply to
+   CPU tasks, as they don't go through the Semaphore.
+   4. Green is the "op time" SQL metric along with a few other metrics that also indicate the amount
+   of time the GPU was being used to process data. This is GPU specific.
+   5. Blue is the write time for a task. This is the "write time" SQL metric used when writing out
+   results as files using GPU acceleration, or it is the shuffle write time as reported by Spark.
+   The shuffle metrics work for both CPU and GPU tasks, but the "write time" metrics is GPU specific.
+   6. Anything else is time that is not accounted for by these metrics. Typically, this is time
+   spent on the CPU, but could also include semaphore wait time as DEBUG metrics are not on by
+   default.
+2. **STAGES** This shows the stages times reported by Spark. It starts with when the stage was
    scheduled and ends when Spark considered the stage done.
 3. **STAGE RANGES** This shows the time from the start of the first task to the end of the last
    task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
@@ -464,7 +481,7 @@ Failed jobs:
 ## Profiling tool options
   
 ```bash
-RAPIDS Accelerator for Apache Spark Profiling tool
+Profiling tool for the RAPIDS Accelerator and Apache Spark
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
