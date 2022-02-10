@@ -976,8 +976,8 @@ object RapidsConf {
 
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
-      "can cause out of memory issues. Setting this config to false will make these operations " +
-      "fall back to CPU.")
+      "can cause out of memory issues. Setting this config to false will make any operation " +
+      "using regular expressions fall back to CPU.")
     .booleanConf
     .createWithDefault(true)
 
