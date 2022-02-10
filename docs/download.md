@@ -617,4 +617,4 @@ Software Requirements:
   
     Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
-    Python 3.x, Scala 2.12, Java 8
+    Python 3.x, Scala 2.12, Java 8 
