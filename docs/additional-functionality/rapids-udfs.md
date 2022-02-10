@@ -183,7 +183,7 @@ The GPU support for Pandas UDF is an experimental feature, and may change at any
 ---
 
 GPU support for Pandas UDF is built on Apache Spark's [Pandas UDF(user defined
-function)](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#pandas-udfs-a-k-a-vectorized-udfs),
+function)](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#pandas-udfs-a-k-a-vectorized-udfs),
 and has two features:
 
 - **GPU Assignment(Scheduling) in Python Process**: Let the Python process share the same GPU with
@@ -234,12 +234,12 @@ accelerated at present:
 
   | Spark Execution Plan|Data Transfer Accelerated|Use Case|
   |----------------------|----------|--------|
-  |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)|
-  |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#map)|
-  | WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
-  | FlatMapGroupsInPandasExec|no|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#grouped-map)|
-  | AggregateInPandasExec|no|[Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
-  |FlatMapCoGroupsInPandasExec|no|[Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#co-grouped-map)|
+  |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)|
+  |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#map)|
+  | WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
+  | FlatMapGroupsInPandasExec|no|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#grouped-map)|
+  | AggregateInPandasExec|no|[Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
+  |FlatMapCoGroupsInPandasExec|no|[Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#co-grouped-map)|
 
 
 ### Other Configuration
@@ -319,6 +319,5 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     Task_2_Process_1 acquired the semaphore, but neither of them are going to proceed becasue both
     of them are waiting for their second semaphore.
 
-To find details on the above Python configuration settings, please see the 
-[RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md). 
-Search 'pandas' for a quick navigation jump.
+To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
+Apache Spark Configuration Guide](../configs.md). Search 'pandas' for a quick navigation jump.
