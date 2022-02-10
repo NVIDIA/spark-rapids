@@ -522,6 +522,7 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_extract`
 - `regexp_like`
 - `regexp_replace`
+- `string_split`
 
 Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors. To 
 disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
