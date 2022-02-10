@@ -337,7 +337,7 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 
 Not all metrics are enabled by default. The configuration setting `spark.rapids.sql.metrics.level` can be set
 to `DEBUG`, `MODERATE`, or `ESSENTIAL`, with `MODERATE` being the default value. More information about this
-configuration option is available in the [configuration](configs.md#sql.metrics.level) documentation.
+configuration option is available in the [`configuration`](configs.md#sql.metrics.level) documentation.
 
 Output row and batch counts show up for operators where the number of output rows or batches are
 expected to change. For example a filter operation would show the number of rows that passed the
