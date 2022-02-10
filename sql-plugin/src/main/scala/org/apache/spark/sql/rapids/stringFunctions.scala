@@ -810,6 +810,13 @@ object GpuRegExpUtils {
     b.toString
   }
 
+  def tagForRegExpEnabled(meta: ExprMeta[_]): Unit = {
+    if (!meta.conf.isRegExpEnabled) {
+      meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
+        s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
+    }
+  }
+
 }
 
 class GpuRLikeMeta(
@@ -821,6 +828,7 @@ class GpuRLikeMeta(
     private var pattern: Option[String] = None
 
     override def tagExprForGpu(): Unit = {
+      GpuRegExpUtils.tagForRegExpEnabled(this)
       expr.right match {
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
@@ -959,6 +967,7 @@ class GpuRegExpExtractMeta(
   private var numGroups = 0
 
   override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
 
     def countGroups(regexp: RegexAST): Int = {
       regexp match {

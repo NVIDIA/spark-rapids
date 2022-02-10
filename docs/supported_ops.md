@@ -9849,8 +9849,8 @@ are limited.
 <tr>
 <td rowSpan="3">RLike</td>
 <td rowSpan="3">`rlike`</td>
-<td rowSpan="3">RLike</td>
-<td rowSpan="3">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
+<td rowSpan="3">Regular expression version of Like</td>
+<td rowSpan="3">None</td>
 <td rowSpan="3">project</td>
 <td>str</td>
 <td> </td>
@@ -10037,8 +10037,8 @@ are limited.
 <tr>
 <td rowSpan="4">RegExpExtract</td>
 <td rowSpan="4">`regexp_extract`</td>
-<td rowSpan="4">RegExpExtract</td>
-<td rowSpan="4">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
+<td rowSpan="4">Extract a specific group identified by a regular expression</td>
+<td rowSpan="4">None</td>
 <td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>
@@ -10126,8 +10126,8 @@ are limited.
 <tr>
 <td rowSpan="4">RegExpReplace</td>
 <td rowSpan="4">`regexp_replace`</td>
-<td rowSpan="4">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="4">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
+<td rowSpan="4">String replace using a regular expression pattern</td>
+<td rowSpan="4">None</td>
 <td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>

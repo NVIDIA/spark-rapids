@@ -974,6 +974,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
+    .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
+      "can cause out of memory issues. Setting this config to false will make any operation " +
+      "using regular expressions fall back to CPU.")
+    .booleanConf
+    .createWithDefault(true)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -1783,6 +1790,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
