@@ -351,7 +351,7 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
           override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
         }),
       GpuOverrides.expr[RegExpReplace](
-        "RegExpReplace",
+        "String replace using a regular expression pattern",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),

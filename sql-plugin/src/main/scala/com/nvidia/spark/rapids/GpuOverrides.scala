@@ -3050,13 +3050,13 @@ object GpuOverrides extends Logging {
           GpuLike(lhs, rhs, a.escapeChar)
       }),
     expr[RLike](
-      "RLike",
+      "Regular expression version of Like",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("str", TypeSig.STRING, TypeSig.STRING),
         ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)),
     expr[RegExpExtract](
-      "RegExpExtract",
+      "Extract a specific group identified by a regular expression",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
