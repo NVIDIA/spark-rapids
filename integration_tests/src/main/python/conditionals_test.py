@@ -206,8 +206,7 @@ def test_conditional_with_side_effects_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
-            conf = {'spark.sql.ansi.enabled':True,
-                    'spark.rapids.sql.expression.RLike': True})
+            conf = {'spark.sql.ansi.enabled':True})
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
 def test_conditional_with_side_effects_case_when(data_gen):
@@ -217,5 +216,4 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
                 WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
                 ELSE -1 END'),
-                conf = {'spark.sql.ansi.enabled':True,
-                        'spark.rapids.sql.expression.RLike': True})
+                conf = {'spark.sql.ansi.enabled':True})

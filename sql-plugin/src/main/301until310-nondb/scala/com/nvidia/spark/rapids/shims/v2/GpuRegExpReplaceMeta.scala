@@ -33,6 +33,7 @@ class GpuRegExpReplaceMeta(
   private var replacement: Option[String] = None
 
   override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {

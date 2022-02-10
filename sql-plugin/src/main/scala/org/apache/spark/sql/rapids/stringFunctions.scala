@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -58,6 +58,32 @@ case class GpuLength(child: Expression) extends GpuUnaryExpression with ExpectsI
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     input.getBase.getCharLengths()
+}
+
+case class GpuBitLength(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+  override def toString: String = s"bit_length($child)"
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    withResource(input.getBase.getByteCount) { byteCnt =>
+      // bit count = byte count * 8
+      withResource(GpuScalar.from(3, IntegerType)) { factor =>
+        byteCnt.binaryOp(BinaryOp.SHIFT_LEFT, factor, DType.INT32)
+      }
+    }
+  }
+}
+
+case class GpuOctetLength(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+  override def toString: String = s"octet_length($child)"
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.getByteCount
 }
 
 case class GpuStringLocate(substr: Expression, col: Expression, start: Expression)
@@ -784,6 +810,13 @@ object GpuRegExpUtils {
     b.toString
   }
 
+  def tagForRegExpEnabled(meta: ExprMeta[_]): Unit = {
+    if (!meta.conf.isRegExpEnabled) {
+      meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
+        s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
+    }
+  }
+
 }
 
 class GpuRLikeMeta(
@@ -795,6 +828,7 @@ class GpuRLikeMeta(
     private var pattern: Option[String] = None
 
     override def tagExprForGpu(): Unit = {
+      GpuRegExpUtils.tagForRegExpEnabled(this)
       expr.right match {
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
@@ -933,6 +967,7 @@ class GpuRegExpExtractMeta(
   private var numGroups = 0
 
   override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
 
     def countGroups(regexp: RegexAST): Int = {
       regexp match {
@@ -1289,7 +1324,7 @@ class GpuStringSplitMeta(
     extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private var pattern: String = _
+  private var pattern: Option[String] = None
   private var isRegExp = false
 
   override def tagExprForGpu(): Unit = {
@@ -1302,12 +1337,12 @@ class GpuStringSplitMeta(
         isRegExp = RegexParser.isRegExpString(str.toString)
         if (isRegExp) {
           try {
-            pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString)
+            pattern = Some(new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString))
           } catch {
             case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
           }
         } else {
-          pattern = str.toString
+          pattern = Some(str.toString)
         }
       } else {
         willNotWorkOnGpu("null regex is not supported yet")
@@ -1326,15 +1361,17 @@ class GpuStringSplitMeta(
   override def convertToGpu(
       str: Expression,
       regexp: Expression,
-      limit: Expression): GpuExpression =
-    GpuStringSplit(str, regexp, limit, isRegExp, pattern)
+      limit: Expression): GpuExpression = {
+    GpuStringSplit(str, regexp, limit, isRegExp, pattern.getOrElse(
+      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+  }
 }
 
 case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
     isRegExp: Boolean, pattern: String)
   extends GpuTernaryExpression with ImplicitCastInputTypes {
 
-  override def dataType: DataType = ArrayType(StringType)
+  override def dataType: DataType = ArrayType(StringType, containsNull = false)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = str
   override def second: Expression = regex
