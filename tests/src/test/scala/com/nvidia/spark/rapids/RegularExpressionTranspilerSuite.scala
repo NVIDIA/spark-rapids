@@ -137,14 +137,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support octal digits 0o177 < n <= 0o377") {
     val patterns = Seq(raw"\0200", raw"\0377")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, replace = false,
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support octal digits 0o177 < n <= 0o377"))
   }
 
   test("cuDF does not support octal digits in character classes") {
     val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, replace = false,
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support octal digits in character classes"
       )
     )
