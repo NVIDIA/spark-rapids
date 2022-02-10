@@ -87,7 +87,7 @@ To use notebooks with a Dataproc cluster, click on the cluster name under the Da
 and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the JupyterLab or
 Jupyter link to start to use sample [Mortgage ETL on GPU Jupyter
 Notebook](../demo/GCP/Mortgage-ETL-GPU.ipynb) to process full 17 years [Mortgage
-data](https://rapidsai.github.io/demos/datasets/mortgage-data).
+data](https://docs.rapids.ai/datasets/mortgage-data).
 
 ![Dataproc Web Interfaces](../img/GCP/dataproc-service.png)
 
