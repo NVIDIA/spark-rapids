@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
+import java.io.{IOException, OutputStream}
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
@@ -302,7 +302,8 @@ private case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[Bloc
     partValues: InternalRow, schema: MessageType, isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean, hasInt96Timestamps: Boolean)
 
-private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) extends Arm {
+private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) extends Arm
+    with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -314,7 +315,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val isCorrectedRebase = "CORRECTED" == rebaseMode
   val int96RebaseMode = ShimLoader.getSparkShims.int96ParquetRebaseRead(sqlConf)
   private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
-
+  private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -336,9 +337,20 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
 
     val filePath = new Path(new URI(file.filePath))
-    //noinspection ScalaDeprecation
-    val footer = ParquetFileReader.readFooter(conf, filePath,
-      ParquetMetadataConverter.range(file.start, file.start + file.length))
+
+    var footer: ParquetMetadata = null
+    try {
+      //noinspection ScalaDeprecation
+      footer = ParquetFileReader.readFooter(conf, filePath,
+        ParquetMetadataConverter.range(file.start, file.start + file.length))
+    } catch {
+      case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+        logWarning(
+          s"Skipped the rest of the content in the corrupted file: $filePath", e)
+        return ParquetFileInfoWithBlockMeta(filePath, Seq.empty, file.partitionValues,
+          null, false, false, false)
+    }
+
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
       val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
