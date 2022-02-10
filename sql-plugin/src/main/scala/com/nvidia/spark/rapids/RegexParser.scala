@@ -284,7 +284,7 @@ class RegexParser(pattern: String) {
           case 'x' =>
             consumeExpected(ch)
             parseHexDigit
-          case _ if Character.isDigit(ch) =>
+          case '0' =>
             parseOctalDigit
           case other =>
             throw new RegexUnsupportedException(
@@ -337,7 +337,12 @@ class RegexParser(pattern: String) {
       if (pos + 1 < pattern.length && isOctalDigit(pattern.charAt(pos + 1))) {
         if (pos + 2 < pattern.length && isOctalDigit(pattern.charAt(pos + 2))
             && pattern.charAt(pos) <= '3') {
-          parseOctalDigits(3)
+          if (pos + 3 < pattern.length && isOctalDigit(pattern.charAt(pos + 3))
+              && pattern.charAt(pos+1) <= '3' && pattern.charAt(pos) == '0') {
+            parseOctalDigits(4)
+          } else {
+            parseOctalDigits(3)
+          }
         } else {
           parseOctalDigits(2)
         }
@@ -471,10 +476,17 @@ class CudfRegexTranspiler(replace: Boolean) {
           regex
       }
 
-      case RegexOctalChar(_) =>
-        // see https://github.com/NVIDIA/spark-rapids/issues/4288
-        throw new RegexUnsupportedException(
-          s"cuDF does not support octal digits consistently with Spark")
+      case RegexOctalChar(digits) =>
+        val octal = if (digits.charAt(0) == '0' && digits.length == 4) {
+          digits.substring(1)
+        } else  {
+          digits
+        }
+        if (Integer.parseInt(octal, 8) >= 128) {
+          throw new RegexUnsupportedException(
+            "cuDF does not support octal digits 0o177 < n <= 0o377")
+        }
+        RegexOctalChar(octal)
 
       case RegexHexDigit(_) =>
         // see https://github.com/NVIDIA/spark-rapids/issues/4486
@@ -519,6 +531,11 @@ class CudfRegexTranspiler(replace: Boolean) {
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
+          case RegexEscaped(ch) if ch == '0' =>
+            // examples
+            // - "[\02] should match the character with code point 2"
+            throw new RegexUnsupportedException(
+              "cuDF does not support octal digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
