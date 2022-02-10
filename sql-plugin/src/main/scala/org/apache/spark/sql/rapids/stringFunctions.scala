@@ -810,6 +810,13 @@ object GpuRegExpUtils {
     b.toString
   }
 
+  def tagForRegExpEnabled(meta: ExprMeta[_]): Unit = {
+    if (!meta.conf.isRegExpEnabled) {
+      meta.willNotWorkOnGpu(s"Regular expression support is disabled. " +
+        s"Set ${RapidsConf.ENABLE_REGEXP.key}=true to enable it")
+    }
+  }
+
 }
 
 class GpuRLikeMeta(
@@ -821,10 +828,7 @@ class GpuRLikeMeta(
     private var pattern: Option[String] = None
 
     override def tagExprForGpu(): Unit = {
-      if (!conf.isRegExpEnabled) {
-        willNotWorkOnGpu(s"Regular expression support is disabled. " +
-          s"Set ${RapidsConf.ENABLE_REGEXP.key}=true to enable it")
-      }
+      GpuRegExpUtils.tagForRegExpEnabled(this)
       expr.right match {
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
