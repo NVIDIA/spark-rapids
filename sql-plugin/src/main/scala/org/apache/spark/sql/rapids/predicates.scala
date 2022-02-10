@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPredicateHelper {
   protected def splitConjunctivePredicates(condition: Expression): Seq[Expression] = {
@@ -66,6 +67,66 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
 
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_AND
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_AND)
+
+  protected def filterBatch(
+      tbl: Table,
+      pred: ColumnVector,
+      colTypes: Array[DataType]): ColumnarBatch = {
+    withResource(tbl.filter(pred)) { filteredData =>
+      GpuColumnVector.from(filteredData, colTypes)
+    }
+  }
+
+  private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+    val leftExpr = left.asInstanceOf[GpuExpression]
+    val rightExpr = right.asInstanceOf[GpuExpression]
+    val colTypes = GpuColumnVector.extractTypes(batch)
+    
+    withResource(GpuColumnVector.from(batch)) { tbl =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
+        // get the inverse of leftBool
+        withResource(lhsBool.getBase.unaryOp(UnaryOp.NOT)) { leftInverted =>
+          // TODO: verify the best way to create FALSE_EXPR
+          // TODO: How to evaluate RHS? on filtered batch or all batches?
+          val cView = withResourceIfAllowed(lhsBool) { lhs =>
+            withResource(GpuExpressionsUtils.columnarEvalToColumn(rightExpr, batch)) { rhsBool =>
+              withResourceIfAllowed(rightExpr.columnarEval(batch)) { rhs =>
+                (lhs, rhs) match {
+                  case (l: GpuColumnVector, r: GpuColumnVector) =>
+                    GpuColumnVector.from(doColumnar(l, r), dataType)
+                  case (l: GpuScalar, r: GpuColumnVector) =>
+                    GpuColumnVector.from(doColumnar(l, r), dataType)
+                  case (l: GpuColumnVector, r: GpuScalar) =>
+                    GpuColumnVector.from(doColumnar(l, r), dataType)
+                  case (l: GpuScalar, r: GpuScalar) =>
+                    GpuColumnVector.from(doColumnar(batch.numRows(), l, r), dataType)
+                  case (l, r) =>
+                    throw new UnsupportedOperationException(s"Unsupported data '($l: " +
+                      s"${l.getClass}, $r: ${r.getClass})' for GPU binary expression.")
+                }
+              }
+            }
+          }
+          val flaseExpr = withResource(GpuScalar.from(false, BooleanType)) { falseScalar =>
+            GpuColumnVector.from(falseScalar, lhsBool.getRowCount.toInt, dataType)
+          }
+          val finalReturn = leftInverted.ifElse(flaseExpr.getBase, cView.getBase)
+          GpuColumnVector.from(finalReturn, dataType)
+        }
+      }
+    }
+  }
+
+  // TODO: Is this right place? or overriding the doColumnar?
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val rightExpr = right.asInstanceOf[GpuExpression]
+
+    if (rightExpr.hasSideEffects) {
+      columnarEvalWithSideEffects(batch)
+    } else {
+      super.columnarEval(batch)
+    }
+  }
 }
 
 case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
