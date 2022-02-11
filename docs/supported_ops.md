@@ -18,9 +18,6 @@ The `Decimal` type in Spark supports a precision up to 38 digits (128-bits).
 The RAPIDS Accelerator supports 128-bit starting from version 21.12 and decimals are enabled by default.
 Please check  [Decimal Support](compatibility.md#decimal-support) for more details.
 
-Prior to 21.12 decimals are disabled by default in the plugin, because it is supported by a relatively
-small number of operations presently. This can result in a lot of data movement to and
-from the GPU, slowing down processing in some cases.
 `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
 
 ```
