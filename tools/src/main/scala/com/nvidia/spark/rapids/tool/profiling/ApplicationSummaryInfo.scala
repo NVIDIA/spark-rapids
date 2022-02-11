@@ -33,4 +33,5 @@ case class ApplicationSummaryInfo(
     val failedJobs: Seq[FailedJobsProfileResults],
     val removedBMs: Seq[BlockManagerRemovedProfileResult],
     val removedExecutors: Seq[ExecutorsRemovedProfileResult],
-    val unsupportedOps: Seq[UnsupportedOpsProfileResult])
+    val unsupportedOps: Seq[UnsupportedOpsProfileResult],
+    val sparkProps: Seq[RapidsPropertyProfileResult])
