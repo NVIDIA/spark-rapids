@@ -950,6 +950,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("") {
+    val lhs = ColumnVector.fromBooleans(true, false, false)
+    val rhs = ColumnVector.fromBooleans(true, false, false)
+    val expected = ColumnVector.fromBooleans(true, false, false)
+
+
+  }
+
   test("CAST string to float - sanitize step") {
     val testPairs = Seq(
       ("\tinf", "inf"),

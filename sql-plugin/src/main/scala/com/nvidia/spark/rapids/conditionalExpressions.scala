@@ -121,6 +121,10 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     // predicate boolean array results in the two T values mapping to
     // indices 0 and 1, respectively.
 
+    // [F, null, T, F, T]
+    // [0, 0, 0, 1, 1]
+    [ 0, 1 ]
+
     val prefixSumExclusive = withResource(boolToInt(predicate)) { boolsAsInts =>
       boolsAsInts.scan(
         ScanAggregation.sum(),
