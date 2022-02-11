@@ -20,8 +20,10 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 @pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
-def test_and(data_gen):
+def test_and(data_gen, ansi_enabled):
+    ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
@@ -29,18 +31,22 @@ def test_and(data_gen):
                 f.lit(False) & f.col('b'),
                 f.lit(None).cast(data_type) & f.col('a'),
                 f.col('b') & f.lit(None).cast(data_type),
-                f.col('a') & f.col('b')))
+                f.col('a') & f.col('b')),
+                conf=ansi_conf)
 
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 @pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
-def test_or(data_gen):
+def test_or(data_gen, ansi_enabled):
     data_type = data_gen.data_type
+    ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') | f.lit(True),
                 f.lit(False) | f.col('b'),
                 f.lit(None).cast(data_type) | f.col('a'),
                 f.col('b') | f.lit(None).cast(data_type),
-                f.col('a') | f.col('b')))
+                f.col('a') | f.col('b')),
+                conf=ansi_conf)
 
 @pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
 def test_not(data_gen):
@@ -49,7 +55,7 @@ def test_not(data_gen):
 
 def _get_arithmetic_overflow_df(spark, expr, lhsBool):
     return spark.createDataFrame(
-        [(lhsBool, INT_MAX)],
+        [(lhsBool, INT_MAX), (True, 1), (True, -5)],
         ['a', 'b']
     ).selectExpr(expr)
 
@@ -59,8 +65,8 @@ def _get_arithmetic_overflow_expr(op) :
 # AND/OR on the CPU in Spark will process the LHS unconditionally. But they will only
 # process the RHS if they cannot figure out the result from just the LHS.
 # Tests the GPU short-circuits the predicates without throwing Exception in ANSI mode.
-@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
-@pytest.mark.parametrize('lhs_predicate', [False, True])
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+@pytest.mark.parametrize('lhs_predicate', [True, False])
 @pytest.mark.parametrize('expr', _get_arithmetic_overflow_expr('AND'))
 def test_and_with_side_effect(expr, ansi_enabled, lhs_predicate):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
@@ -77,6 +83,7 @@ def test_and_with_side_effect(expr, ansi_enabled, lhs_predicate):
 # AND/OR on the CPU in Spark will process the LHS unconditionally. But they will only
 # process the RHS if they cannot figure out the result from just the LHS.
 # Tests the GPU short-circuits the predicates without throwing Exception in ANSI mode.
+@pytest.mark.skip
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 @pytest.mark.parametrize('lhs_predicate', [False, True])
 @pytest.mark.parametrize('expr', _get_arithmetic_overflow_expr('OR'))

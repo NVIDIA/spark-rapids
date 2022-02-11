@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPredicateHelper {
@@ -77,47 +77,106 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
     }
   }
 
-  private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
-    val leftExpr = left.asInstanceOf[GpuExpression]
-    val rightExpr = right.asInstanceOf[GpuExpression]
-    val colTypes = GpuColumnVector.extractTypes(batch)
-    
-    withResource(GpuColumnVector.from(batch)) { tbl =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
-        // get the inverse of leftBool
-        withResource(lhsBool.getBase.unaryOp(UnaryOp.NOT)) { leftInverted =>
-          // TODO: verify the best way to create FALSE_EXPR
-          // TODO: How to evaluate RHS? on filtered batch or all batches?
-          val cView = withResourceIfAllowed(lhsBool) { lhs =>
-            withResource(GpuExpressionsUtils.columnarEvalToColumn(rightExpr, batch)) { rhsBool =>
-              withResourceIfAllowed(rightExpr.columnarEval(batch)) { rhs =>
-                (lhs, rhs) match {
-                  case (l: GpuColumnVector, r: GpuColumnVector) =>
-                    GpuColumnVector.from(doColumnar(l, r), dataType)
-                  case (l: GpuScalar, r: GpuColumnVector) =>
-                    GpuColumnVector.from(doColumnar(l, r), dataType)
-                  case (l: GpuColumnVector, r: GpuScalar) =>
-                    GpuColumnVector.from(doColumnar(l, r), dataType)
-                  case (l: GpuScalar, r: GpuScalar) =>
-                    GpuColumnVector.from(doColumnar(batch.numRows(), l, r), dataType)
-                  case (l, r) =>
-                    throw new UnsupportedOperationException(s"Unsupported data '($l: " +
-                      s"${l.getClass}, $r: ${r.getClass})' for GPU binary expression.")
-                }
-              }
-            }
-          }
-          val flaseExpr = withResource(GpuScalar.from(false, BooleanType)) { falseScalar =>
-            GpuColumnVector.from(falseScalar, lhsBool.getRowCount.toInt, dataType)
-          }
-          val finalReturn = leftInverted.ifElse(flaseExpr.getBase, cView.getBase)
-          GpuColumnVector.from(finalReturn, dataType)
+  private def boolToInt(cv: ColumnVector): ColumnVector = {
+    withResource(GpuScalar.from(1, IntegerType)) { one =>
+      withResource(GpuScalar.from(0, IntegerType)) { zero =>
+        cv.ifElse(one, zero)
+      }
+    }
+  }
+
+  protected def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
+    // convert the predicate boolean column to numeric where 1 = true
+    // and 0 (or null) = false and then use `scan` with `sum` to convert to
+    // indices.
+    //
+    // For example, if the predicate evaluates to [F, null, T, F, T] then this
+    // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
+    // will perform an exclusive sum on these values and
+    // produce [0, 0, 0, 1, 1]. Combining this with the original
+    // predicate boolean array results in the two T values mapping to
+    // indices 0 and 1, respectively.
+
+    val prefixSumExclusive = withResource(boolToInt(predicate)) { boolsAsInts =>
+      boolsAsInts.scan(
+        ScanAggregation.sum(),
+        ScanType.EXCLUSIVE,
+        NullPolicy.INCLUDE)
+    }
+    val gatherMap = withResource(prefixSumExclusive) { prefixSumExclusive =>
+      // for the entries in the gather map that do not represent valid
+      // values to be gathered, we change the value to -MAX_INT which
+      // will be treated as null values in the gather algorithm
+      withResource(Scalar.fromInt(Int.MinValue)) {
+        outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
+      }
+    }
+    withResource(gatherMap) { _ =>
+      withResource(new Table(t.getBase)) { tbl =>
+        withResource(tbl.gather(gatherMap)) { gatherTbl =>
+          gatherTbl.getColumn(0).incRefCount()
         }
       }
     }
   }
 
-  // TODO: Is this right place? or overriding the doColumnar?
+  protected def isAllFalse(col: GpuColumnVector): Boolean = {
+    assert(BooleanType == col.dataType())
+    if (col.getRowCount == col.numNulls()) {
+      // all nulls, and null values are false values here
+      return true
+    }
+    withResource(col.getBase.any()) { anyTrue =>
+      // null values are considered false values in this context
+      !anyTrue.getBoolean
+    }
+  }
+
+  /**
+   * When computing logical expressions on the CPU, the true and false
+   * expressions are evaluated lazily, meaning that the RHS expression
+   * of logical-AND is not evaluated when LHS is False. For logical-OR,
+   * RHS is not evaluated when LHS is True.
+   * This is important in the case where the expressions can have
+   * side-effects, such as throwing exceptions for invalid inputs.
+   *
+   * This method performs lazy evaluation on the GPU by first filtering
+   * the input batch a  where the LHS predicate is True.
+   * The RHS predicate is evaluated against these batches and then the
+   * results are combined back into a single batch using the gather
+   * algorithm.
+   */
+  private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+    val leftExpr = left.asInstanceOf[GpuExpression]
+    val rightExpr = right.asInstanceOf[GpuExpression]
+    val colTypes = GpuColumnVector.extractTypes(batch)
+
+    withResource(GpuColumnVector.from(batch)) { tbl =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
+        if (isAllFalse(lhsBool)) {
+          withResource(GpuScalar.from(false, dataType)) { falseScalar =>
+            GpuColumnVector.from(falseScalar, lhsBool.getRowCount.toInt, BooleanType)
+          }
+        } else {
+          val rEval = withResource(filterBatch(tbl, lhsBool.getBase, colTypes)) { leftTrueBatch =>
+            rightExpr.columnarEval(leftTrueBatch)
+          }
+          val finalRet = withResourceIfAllowed(rEval) { _ =>
+            (lhsBool, rEval) match {
+              case (t: GpuColumnVector, f: GpuColumnVector) =>
+                withResource(gather(t.getBase, f)) { combinedVector =>
+                  t.getBase.and(combinedVector)
+                }
+              case (t: GpuColumnVector, f: GpuScalar) =>
+                t.getBase.and(f.getBase)         
+            }
+          }
+          GpuColumnVector.from(finalRet, dataType)
+        }
+      }
+    }
+  }
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     val rightExpr = right.asInstanceOf[GpuExpression]
 
