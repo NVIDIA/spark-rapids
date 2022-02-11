@@ -437,8 +437,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(exit == 0)
         assert(appSum.size == 1)
         val probApp = appSum.head
-        assert(probApp.potentialProblems.contains("UDF") &&
-          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.potentialProblems.contains("UDF"))
         assert(probApp.sqlDataFrameDuration == probApp.sqlDurationForProblematic)
       }
     }
@@ -476,8 +475,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(exit == 0)
         assert(appSum.size == 1)
         val probApp = appSum.head
-        assert(probApp.potentialProblems.contains("UDF") &&
-          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.potentialProblems.contains("UDF"))
         assert(probApp.sqlDurationForProblematic > 0)
         assert(probApp.sqlDataFrameDuration > probApp.sqlDurationForProblematic)
       }
