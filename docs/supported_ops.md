@@ -16,7 +16,7 @@ apply to other versions of Spark, but there may be slight changes.
 ## `Decimal`
 The `Decimal` type in Spark supports a precision up to 38 digits (128-bits). 
 The RAPIDS Accelerator supports 128-bit starting from version 21.12 and decimals are enabled by default.
-Please check  [Decimal Support](compatibility.md#decimal-support) for more details.
+Please check [Decimal Support](compatibility.md#decimal-support) for more details.
 
 `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
 
