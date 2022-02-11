@@ -30,8 +30,8 @@ This article describes the tools we provide and how to do gap analysis and workl
 ### How to use
 
 If you have Spark event logs from prior runs of the applications on Spark 2.x or 3.x, you can use
-the [Qualification tool](../spark-qualification-tool.md) and [Profiling
-tool](../spark-profiling-tool.md) to analyze them.  The qualification tool outputs the score, rank
+the [Qualification tool](../spark-qualification-tool.md) and 
+[Profiling tool](../spark-profiling-tool.md) to analyze them.  The qualification tool outputs the score, rank
 and some of the potentially not-supported features for each Spark application.  For example, the CSV
 output can print `Unsupported Read File Formats and Types`, `Unsupported Write Data Format` and
 `Potential Problems` which are the indication of some not-supported features.  Its output can help
@@ -119,8 +119,8 @@ the driver logs with `spark.rapids.sql.explain=all`.
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
-you should first understand the risk and applicability of that parameter based on [configs
-doc](../configs.md) and then enable that parameter and try the tool again.
+you should first understand the risk and applicability of that parameter based on 
+[configs doc](../configs.md) and then enable that parameter and try the tool again.
 
 Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is
 pretty accurate.
@@ -213,8 +213,8 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
-you should first understand the risk and applicability of that parameter based on [configs
-doc](../configs.md) and then enable that parameter and try the tool again.
+you should first understand the risk and applicability of that parameter based on 
+[configs doc](../configs.md) and then enable that parameter and try the tool again.
 
 Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is
 pretty accurate.
