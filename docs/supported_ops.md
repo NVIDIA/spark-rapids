@@ -21,7 +21,7 @@ Please check  [Decimal Support](compatibility.md#decimal-support) for more detai
 Prior to 21.12 decimals are disabled by default in the plugin, because it is supported by a relatively
 small number of operations presently. This can result in a lot of data movement to and
 from the GPU, slowing down processing in some cases.
-Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
+`Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
 
 ```
  * In particular, if we have expressions e1 and e2 with precision/scale p1/s1 and p2/s2
