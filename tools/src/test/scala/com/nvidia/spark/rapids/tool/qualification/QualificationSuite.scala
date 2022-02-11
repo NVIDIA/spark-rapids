@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -401,13 +401,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  // this event log has both decimal and non-decimal so comes out partial
-  // it has both reading decimal, multiplication and join on decimal
-  test("test decimal problematic") {
-    val logFiles = Array(s"$logDir/decimal_part_eventlog.zstd")
-    runQualificationTest(logFiles, "decimal_part_expectation.csv")
-  }
-
   test("test jdbc problematic") {
     val logFiles = Array(s"$logDir/jdbc_eventlog.zstd")
     runQualificationTest(logFiles, "jdbc_expectation.csv")
@@ -420,7 +413,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     dfGen.write.parquet(dir)
   }
 
-  test("test decimal generate udf same") {
+  test("test generate udf same") {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { eventLogDir =>
         val tmpParquet = s"$outpath/decparquet"
@@ -444,14 +437,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(exit == 0)
         assert(appSum.size == 1)
         val probApp = appSum.head
-        assert(probApp.potentialProblems.contains("UDF") &&
-          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.potentialProblems.contains("UDF"))
         assert(probApp.sqlDataFrameDuration == probApp.sqlDurationForProblematic)
       }
     }
   }
 
-  test("test decimal generate udf different sql ops") {
+  test("test generate udf different sql ops") {
     TrampolineUtil.withTempDir { outpath =>
 
       TrampolineUtil.withTempDir { eventLogDir =>
@@ -483,8 +475,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(exit == 0)
         assert(appSum.size == 1)
         val probApp = appSum.head
-        assert(probApp.potentialProblems.contains("UDF") &&
-          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.potentialProblems.contains("UDF"))
         assert(probApp.sqlDurationForProblematic > 0)
         assert(probApp.sqlDataFrameDuration > probApp.sqlDurationForProblematic)
       }
@@ -503,7 +494,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "read_dsv2_expectation.csv")
   }
 
-  test("test dsv1 complex and decimal") {
+  test("test dsv1 complex") {
     val logFiles = Array(s"$logDir/complex_dec_eventlog.zstd")
     runQualificationTest(logFiles, "complex_dec_expectation.csv")
   }

@@ -406,8 +406,8 @@ SQL Duration and Executor CPU Time Percent
 +--------+-------------------+-----+------------+--------------------------+------------+---------------------------+-------------------------+
 |appIndex|App ID             |sqlID|SQL Duration|Contains Dataset or RDD Op|App Duration|Potential Problems         |Executor CPU Time Percent|
 +--------+-------------------+-----+------------+--------------------------+------------+---------------------------+-------------------------+
-|1       |local-1626104300434|0    |1260        |false                     |131104      |DECIMAL:NESTED COMPLEX TYPE|92.65                    |
-|1       |local-1626104300434|1    |259         |false                     |131104      |DECIMAL:NESTED COMPLEX TYPE|76.79                    |
+|1       |local-1626104300434|0    |1260        |false                     |131104      |NESTED COMPLEX TYPE        |92.65                    |
+|1       |local-1626104300434|1    |259         |false                     |131104      |NESTED COMPLEX TYPE        |76.79                    |
 ```
 
 - Shuffle Skew Check: 
