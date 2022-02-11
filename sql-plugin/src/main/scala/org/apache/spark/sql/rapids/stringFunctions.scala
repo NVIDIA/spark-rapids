@@ -1443,76 +1443,87 @@ class GpuStringToMapMeta(
     }
   }
 
-  private def tagForGpuIfNotRegex(delimExpr: Expression) : Unit = {
+  private def checkDelimiter(delimExpr: Expression) : (Option[String], Boolean) = {
+    var pattern : String = ""
+    var isRegExp : Boolean = false
+
     val delim = extractLit(delimExpr)
     if (delim.isEmpty) {
-      willNotWorkOnGpu("only literal delimiter values are supported")
+      willNotWorkOnGpu("only literal delimiter patterns are supported")
     } else {
       val utf8Str = delim.get.value.asInstanceOf[UTF8String]
       if (utf8Str != null) {
-        val str =  utf8Str.toString
-        if ((utf8Str.numChars() > 0) && (str != ":") && RegexParser.isRegExpString(str)) {
-          willNotWorkOnGpu("regular expressions are not supported yet")
+        val str = utf8Str.toString
+        isRegExp = RegexParser.isRegExpString(str)
+        if (isRegExp) {
+          try {
+            pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str)
+          } catch {
+            case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
+          }
+        } else {
+          pattern = str
         }
       } else {
-        willNotWorkOnGpu("delimiter is null")
+        willNotWorkOnGpu("delimiter pattern is null")
       }
     }
+
+    (Some(pattern), isRegExp)
   }
 
   override def tagExprForGpu(): Unit = {
     tagForGpuIfNotFoldable(expr.children)
-    tagForGpuIfNotRegex(expr.pairDelim)
-    tagForGpuIfNotRegex(expr.keyValueDelim)
+    pairDelimInfo = checkDelimiter(expr.pairDelim)
+    keyValueDelimInfo = checkDelimiter(expr.keyValueDelim)
   }
 
-  override def convertToGpu(str: Expression,
-                            pairDelim: Expression,
-                            keyValueDelim: Expression): GpuExpression =
-    GpuStringToMap(str, pairDelim, keyValueDelim)
+  private var pairDelimInfo: (Option[String], Boolean) = (None, false)
+  private var keyValueDelimInfo: (Option[String], Boolean) = (None, false)
+
+  override def convertToGpu(strExpr: Expression,
+                            pairDelimExpr: Expression,
+                            keyValueDelimExpr: Expression): GpuExpression =
+    GpuStringToMap(strExpr, pairDelimExpr, keyValueDelimExpr,
+      pairDelimInfo._1.getOrElse("Expression has not been tagged with cuDF regex pattern"),
+      pairDelimInfo._2,
+      keyValueDelimInfo._1.getOrElse("Expression has not been tagged with cuDF regex pattern"),
+      keyValueDelimInfo._2)
 }
 
-case class GpuStringToMap(str: Expression, pairDelim: Expression, keyValueDelim: Expression)
-    extends GpuExpression with ExpectsInputTypes with NullIntolerant {
+case class GpuStringToMap(strExpr: Expression,
+                          pairDelimExpr: Expression,
+                          keyValueDelimExpr: Expression,
+                          pairDelim: String, isPairDelimRegExp: Boolean,
+                          keyValueDelim: String, isKeyValueDelimRegExp: Boolean)
+    extends GpuExpression with ExpectsInputTypes {
   override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
-  override def children: Seq[Expression] = Seq(str, pairDelim, keyValueDelim)
+  override def children: Seq[Expression] = Seq(strExpr, pairDelimExpr, keyValueDelimExpr)
   override def nullable: Boolean = children.head.nullable
   override def foldable: Boolean = children.forall(_.foldable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(str.columnarEval(batch)) { strVal =>
-      withResourceIfAllowed(pairDelim.columnarEval(batch)) { pairDelimVal =>
-        withResourceIfAllowed(keyValueDelim.columnarEval(batch)) { keyValueDelimVal =>
-          (strVal, pairDelimVal, keyValueDelimVal) match {
-            case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) => toMap(v0, v1, v2)
-            case (v0: GpuScalar, v1: GpuScalar, v2: GpuScalar) =>
-              withResource(GpuColumnVector.from(v0, batch.numRows, v0.dataType)) {
-                v0Col => toMap(v0Col, v1, v2)
-              }
-            case (v0, v1, v2) =>
-              throw new UnsupportedOperationException(s"Unsupported data '($v0: ${v0.getClass}," +
-                s" $v1: ${v1.getClass}, $v2: ${v2.getClass})' for GpuStringToMap.")
-          }
+    withResourceIfAllowed(strExpr.columnarEval(batch)) {
+      case strsCol: GpuColumnVector => toMap(strsCol)
+      case str: GpuScalar =>
+        withResource(GpuColumnVector.from(str, batch.numRows, str.dataType)) {
+          strsCol => toMap(strsCol)
         }
-      }
+      case v =>
+        throw new UnsupportedOperationException(s"Unsupported data '($v: ${v.getClass} " +
+          "for GpuStringToMap.")
     }
   }
 
-  private def toMap(str: GpuColumnVector,
-                    pairDelim: GpuScalar,
-                    keyValueDelim: GpuScalar): GpuColumnVector = {
+  private def toMap(str: GpuColumnVector): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
-    withResource(str.getBase.stringSplitRecord(pairDelim.getValue.asInstanceOf[String])) {
-      listsOfStrings =>
+    withResource(str.getBase.stringSplitRecord(pairDelim)) { listsOfStrings =>
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
-        // TODO: change 1 to 2 below when the new JNI merged.
-        withResource(stringsCol.stringSplit(keyValueDelim.getValue.asInstanceOf[String], 1)) {
-          keysValuesTable =>
-          assert(keysValuesTable.getNumberOfColumns <= 2)
+        withResource(stringsCol.stringSplit(keyValueDelim, 2)) { keysValuesTable =>
           val keys = keysValuesTable.getColumn(0)
 
           def toMapFromValues(values: ColumnVector): GpuColumnVector = {
