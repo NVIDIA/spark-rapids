@@ -407,8 +407,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Job Information", app.jobInfo)
       profileOutputWriter.write("Spark Rapids parameters set explicitly", app.rapidsProps,
         Some("Spark Rapids parameters"))
-      profileOutputWriter.write("Spark properties", app.sparkProps,
-        Some("Spark properties"))
+      profileOutputWriter.write("Spark Properties", app.sparkProps,
+        Some("Spark Properties"))
       profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", app.rapidsJar,
         Some("Rapids 4 Spark Jars"))
       profileOutputWriter.write("SQL Plan Metrics for Application", app.sqlMetrics,
