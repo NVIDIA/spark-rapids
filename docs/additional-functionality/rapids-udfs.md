@@ -141,19 +141,19 @@ in the [udf-examples](../../udf-examples) project.
 
 - [URLDecode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
 decodes URL-encoded strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/legacy)
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 - [URLEncode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
 URL-encodes strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/legacy)
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 
 ### Spark Java UDF Examples
 
 - [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLDecode.java)
 decodes URL-encoded strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/legacy)
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 - [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
 URL-encodes strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/legacy)
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 - [CosineSimilarity](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/CosineSimilarity.java)
 computes the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity)
 between two float vectors using [native code](../../udf-examples/src/main/cpp/src)
@@ -162,11 +162,11 @@ between two float vectors using [native code](../../udf-examples/src/main/cpp/sr
 
 - [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
 implements a Hive simple UDF using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/legacy)
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 to decode URL-encoded strings
 - [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
 implements a Hive generic UDF using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/legacy)
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 to URL-encode strings
 - [StringWordCount](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
 implements a Hive simple UDF using
