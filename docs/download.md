@@ -619,7 +619,8 @@ account the scenario where input data can be stored across many small files.  By
 CPU threads v0.2 delivers up to 6x performance improvement over the previous release for small
 Parquet file reads.
 
-The RAPIDS Accelerator introduces a beta feature that accelerates [Spark shuffle for GPUs](get-started/getting-started-on-prem.md#enabling-rapids-shuffle-manager).  Accelerated
+The RAPIDS Accelerator introduces a beta feature that accelerates 
+[Spark shuffle for GPUs](get-started/getting-started-on-prem.md#enabling-rapids-shuffle-manager).  Accelerated
 shuffle makes use of high bandwidth transfers between GPUs (NVLink or p2p over PCIe) and leverages
 RDMA (RoCE or Infiniband) for remote transfers. 
 
