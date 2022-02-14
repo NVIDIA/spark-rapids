@@ -61,10 +61,11 @@ def test_not(data_gen):
 @pytest.mark.parametrize('lhs_predicate', [True, False])
 def test_logical_with_side_effect(ansi_enabled, logic_op, lhs_predicate):
     def do_it(spark, lhs_operand, op):
+        schema = StructType([StructField("a", BooleanType()), StructField("b", IntegerType())])
         return spark.createDataFrame(
             [(lhs_operand, INT_MAX), (True, 1), (True, -5)],
-            ['a', 'b']
-        ).selectExpr('a {} (CAST(b as INT) + 2) > 0'.format(op))
+            schema=schema
+        ).selectExpr('a {} (b + 2) > 0'.format(op))
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
     bypass_op_map = {'AND': False, 'OR': True}
     expect_error = ansi_enabled == 'true' and bypass_op_map[logic_op] != lhs_predicate
