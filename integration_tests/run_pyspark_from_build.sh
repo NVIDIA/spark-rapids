@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -210,9 +210,9 @@ else
         # when running tests in parallel, we allocate less than the default minAllocFraction per test
         # so we need to override this setting here
         export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
-        python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
+        exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
-        "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
+        exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
