@@ -117,6 +117,8 @@ Generated on 2022-02-14
 ### PRs
 |||
 |:---|:---|
+|[#4771](https://github.com/NVIDIA/spark-rapids/pull/4771)|revert cudf api links from legacy to stable[skip ci]|
+|[#4767](https://github.com/NVIDIA/spark-rapids/pull/4767)|Update 22.02 changelog to latest [skip ci]|
 |[#4750](https://github.com/NVIDIA/spark-rapids/pull/4750)|Updated doc for decimal support|
 |[#4757](https://github.com/NVIDIA/spark-rapids/pull/4757)|Update qualification tool to remove DECIMAL 128 as potential problem|
 |[#4755](https://github.com/NVIDIA/spark-rapids/pull/4755)|Fix databricks doc for limitations.[skip ci]|
