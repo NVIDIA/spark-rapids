@@ -150,7 +150,7 @@ def test_str_to_map_expr_fixed_pattern_input():
     data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
                                 nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen).selectExpr(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
             'str_to_map(a, ",") as m2',
             'str_to_map(a, ",", ":") as m3'))
@@ -159,32 +159,33 @@ def test_str_to_map_expr_fixed_delimiters():
     data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
                  .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}', weight=100))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen).selectExpr(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
             'str_to_map(a, ",") as m2',
             'str_to_map(a, ",", ":") as m3'),
-        conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 def test_str_to_map_expr_random_delimiters():
     data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True))]
-    delim_gen = StringGen(pattern='[0-9a-z :,]{0,1}', nullable=False)
-    (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
+    delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
+    (pair_delim, keyval_delim) = ('', '')
+    while pair_delim == keyval_delim:
+        gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen).selectExpr(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
             'str_to_map(a, {}) as m2'.format(pair_delim),
             'str_to_map(a, {}, {}) as m3'.format(pair_delim, keyval_delim)),
-        conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 def test_str_to_map_expr_no_map_values():
     # Test input strings that do not contain delimiters.
-    data_gen = [('a', StringGen(pattern='[0-9:,].{0,10}', nullable=True))]
+    data_gen = [('a', StringGen(pattern='[0-9a-z:,].{0,100}', nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen).selectExpr(
-            'str_to_map(a) as m1',
-            'str_to_map(a, ",") as m2',
-            'str_to_map(a, ",", ":") as m3'),
-        conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a, "$") as m2',  # input doesn't contain pair delimiter
+            'str_to_map(a, ",", "$") as m3'),  # input doesn't contain key-value delimiter
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 def test_str_to_map_debug():
     # Test pattern "key1:val1,key2:val2".
