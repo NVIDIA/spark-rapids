@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-02-07
+Generated on 2022-02-14
 
 ## Release 22.02
 
@@ -117,6 +117,11 @@ Generated on 2022-02-07
 ### PRs
 |||
 |:---|:---|
+|[#4750](https://github.com/NVIDIA/spark-rapids/pull/4750)|Updated doc for decimal support|
+|[#4757](https://github.com/NVIDIA/spark-rapids/pull/4757)|Update qualification tool to remove DECIMAL 128 as potential problem|
+|[#4755](https://github.com/NVIDIA/spark-rapids/pull/4755)|Fix databricks doc for limitations.[skip ci]|
+|[#4751](https://github.com/NVIDIA/spark-rapids/pull/4751)|Fix broken hyperlinks in documentation [skip ci]|
+|[#4706](https://github.com/NVIDIA/spark-rapids/pull/4706)|Update 22.02 changelog to latest [skip ci]|
 |[#4700](https://github.com/NVIDIA/spark-rapids/pull/4700)|Update cudfjni version to released 22.02.0|
 |[#4701](https://github.com/NVIDIA/spark-rapids/pull/4701)|Decrease nighlty tests upper limitation to 7 [skip ci]|
 |[#4639](https://github.com/NVIDIA/spark-rapids/pull/4639)|Update changelog for 22.02 and archive info of some older releases [skip ci]|
