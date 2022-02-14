@@ -58,32 +58,9 @@ def test_not(data_gen):
 # Tests the GPU short-circuits the predicates without throwing Exception in ANSI mode.
 @pytest.mark.parametrize('logic_op', ['AND'])
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-@pytest.mark.parametrize('lhs_predicate', [True, False])
-def test_logical_with_side_effect(ansi_enabled, logic_op, lhs_predicate):
-    def do_it(spark, lhs_operand, op):
-        schema = StructType([StructField("a", BooleanType()), StructField("b", IntegerType())])
-        return spark.createDataFrame(
-            [(lhs_operand, INT_MAX), (True, 1), (True, -5)],
-            schema=schema
-        ).selectExpr('a {} (b + 2) > 0'.format(op))
-    ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    bypass_op_map = {'AND': False, 'OR': True}
-    expect_error = ansi_enabled == 'true' and bypass_op_map[logic_op] != lhs_predicate
-    if ansi_enabled == 'true' and expect_error:
-        assert_gpu_and_cpu_error(
-            df_fun=lambda spark: do_it(spark, lhs_predicate, logic_op).collect(),
-            conf=ansi_conf,
-            error_message="java.lang.ArithmeticException")
-    else:
-        assert_gpu_and_cpu_are_equal_collect(
-            func=lambda spark: do_it(spark, lhs_predicate, logic_op),
-            conf=ansi_conf)
-
-@pytest.mark.parametrize('logic_op', ['AND'])
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 @pytest.mark.parametrize('int_arg', [INT_MAX, 0])
 @pytest.mark.parametrize('lhs_arg', ['NULL', 'a', 'b'])
-def test_logical_with_null(ansi_enabled, lhs_arg, int_arg, logic_op):
+def test_logical_with_side_effect(ansi_enabled, lhs_arg, int_arg, logic_op):
     def do_it(spark, lhs_bool_arg, arith_arg, op):
         schema = StructType([
             StructField("a", BooleanType()),
