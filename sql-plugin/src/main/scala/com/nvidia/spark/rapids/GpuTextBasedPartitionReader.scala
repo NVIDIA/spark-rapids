@@ -199,7 +199,7 @@ abstract class GpuTextBasedPartitionReader(
             for (i <- 0 until table.getNumberOfColumns) {
               val castColumn = dataSchema.fields(i).dataType match {
                 case DataTypes.BooleanType =>
-                  GpuCast.castStringToBool(table.getColumn(i), ansiEnabled)
+                  castStringToBool(table.getColumn(i))
                 case DataTypes.FloatType =>
                   GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
                 case DataTypes.DoubleType =>
@@ -219,6 +219,8 @@ abstract class GpuTextBasedPartitionReader(
       dataBuffer.close()
     }
   }
+
+  def castStringToBool(input: ColumnVector): ColumnVector
 
   /**
    * Read the host buffer to GPU table
