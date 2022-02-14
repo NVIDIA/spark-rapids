@@ -1334,12 +1334,16 @@ class GpuStringSplitMeta(
     } else {
       val str = regexp.get.value.asInstanceOf[UTF8String]
       if (str != null) {
+        if (str.numChars() == 0) {
+          willNotWorkOnGpu("An empty regex is not supported yet")
+        }
         isRegExp = RegexParser.isRegExpString(str.toString)
         if (isRegExp) {
           try {
             pattern = Some(new CudfRegexTranspiler(RegexSplitMode).transpile(str.toString))
           } catch {
-            case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
           }
         } else {
           pattern = Some(str.toString)
