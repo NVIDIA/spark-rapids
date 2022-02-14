@@ -416,7 +416,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row.
   override val canUseCoalesceFilesReader: Boolean =
-    rapidsConf.isParquetCoalesceFileReadEnabled && !queryUsesInputFile
+    rapidsConf.isParquetCoalesceFileReadEnabled && !(queryUsesInputFile || ignoreCorruptFiles)
 
   override val canUseMultiThreadReader: Boolean = rapidsConf.isParquetMultiThreadReadEnabled
 
@@ -458,6 +458,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
             file.partitionValues, null, false, false, false)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        // If ignoreMissingFiles=true, this case will never be reached. But it's ok
+        // to leave this branch here.
         case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
