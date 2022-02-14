@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, RegexUnsupportedException, TernaryExprMeta}
+import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, RegexReplaceMode, RegexUnsupportedException, TernaryExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpUtils, GpuStringReplace}
@@ -40,7 +40,7 @@ class GpuRegExpReplaceMeta(
           // use GpuStringReplace
         } else {
           try {
-            pattern = Some(new CudfRegexTranspiler(replace = true).transpile(s.toString))
+            pattern = Some(new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString))
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
