@@ -53,48 +53,27 @@ def test_not(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
                 lambda spark : unary_op_df(spark, data_gen).selectExpr('!a'))
 
-def _get_arithmetic_overflow_df(spark, expr, lhsBool):
-    return spark.createDataFrame(
-        [(lhsBool, INT_MAX), (True, 1), (True, -5)],
-        ['a', 'b']
-    ).selectExpr(expr)
-
-def _get_arithmetic_overflow_expr(op) :
-    return ['a {} (CAST(b as INT) + 2) > 0'.format(op)]
-
 # AND/OR on the CPU in Spark will process the LHS unconditionally. But they will only
 # process the RHS if they cannot figure out the result from just the LHS.
 # Tests the GPU short-circuits the predicates without throwing Exception in ANSI mode.
+@pytest.mark.parametrize('logic_op', ['AND'])
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 @pytest.mark.parametrize('lhs_predicate', [True, False])
-@pytest.mark.parametrize('expr', _get_arithmetic_overflow_expr('AND'))
-def test_and_with_side_effect(expr, ansi_enabled, lhs_predicate):
+def test_logical_with_side_effect(ansi_enabled, logic_op, lhs_predicate):
+    def do_it(spark, lhs_operand, op):
+        return spark.createDataFrame(
+            [(lhs_operand, INT_MAX), (True, 1), (True, -5)],
+            ['a', 'b']
+        ).selectExpr('a {} (CAST(b as INT) + 2) > 0'.format(op))
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    if ansi_enabled == 'true' and lhs_predicate:
+    bypass_op_map = {'AND': False, 'OR': True}
+    expect_error = ansi_enabled == 'true' and bypass_op_map[logic_op] != lhs_predicate
+    if ansi_enabled == 'true' and expect_error:
         assert_gpu_and_cpu_error(
-            df_fun=lambda spark: _get_arithmetic_overflow_df(spark, expr, lhs_predicate).collect(),
+            df_fun=lambda spark: do_it(spark, lhs_predicate, logic_op).collect(),
             conf=ansi_conf,
             error_message="java.lang.ArithmeticException")
     else:
         assert_gpu_and_cpu_are_equal_collect(
-            func=lambda spark: _get_arithmetic_overflow_df(spark, expr, lhs_predicate),
-            conf=ansi_conf)
-
-# AND/OR on the CPU in Spark will process the LHS unconditionally. But they will only
-# process the RHS if they cannot figure out the result from just the LHS.
-# Tests the GPU short-circuits the predicates without throwing Exception in ANSI mode.
-@pytest.mark.skip
-@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
-@pytest.mark.parametrize('lhs_predicate', [False, True])
-@pytest.mark.parametrize('expr', _get_arithmetic_overflow_expr('OR'))
-def test_or_with_side_effect(expr, ansi_enabled, lhs_predicate):
-    ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    if ansi_enabled == 'true' and (not(lhs_predicate)):
-        assert_gpu_and_cpu_error(
-            df_fun=lambda spark: _get_arithmetic_overflow_df(spark, expr, lhs_predicate).collect(),
-            conf=ansi_conf,
-            error_message="java.lang.ArithmeticException")
-    else:
-        assert_gpu_and_cpu_are_equal_collect(
-            func=lambda spark: _get_arithmetic_overflow_df(spark, expr, lhs_predicate),
+            func=lambda spark: do_it(spark, lhs_predicate, logic_op),
             conf=ansi_conf)
