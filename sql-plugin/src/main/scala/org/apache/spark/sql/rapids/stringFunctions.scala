@@ -1429,30 +1429,31 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
     throw new IllegalStateException("This is not supported yet")
 }
 
-class GpuStringToMapMeta(
-    expr: StringToMap,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends TernaryExprMeta[StringToMap](expr, conf, parent, rule) {
+class GpuStringToMapMeta(expr: StringToMap,
+                         conf: RapidsConf,
+                         parent: Option[RapidsMeta[_, _, _]],
+                         rule: DataFromReplacementRule)
+  extends TernaryExprMeta[StringToMap](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private def tagForGpuIfNotFoldable(children: Seq[Expression]) : Unit = {
+  private def checkFoldable(children: Seq[Expression]): Unit = {
     if (children.forall(_.foldable)) {
       willNotWorkOnGpu("result can be compile-time evaluated")
     }
   }
 
-  private def checkDelimiter(delimExpr: Expression) : (Option[String], Boolean) = {
-    var pattern : String = ""
-    var isRegExp : Boolean = false
+  private def checkRegExp(delimExpr: Expression): Option[(String, Boolean)] = {
+    var pattern: String = ""
+    var isRegExp: Boolean = false
 
     val delim = extractLit(delimExpr)
     if (delim.isEmpty) {
       willNotWorkOnGpu("only literal delimiter patterns are supported")
     } else {
       val utf8Str = delim.get.value.asInstanceOf[UTF8String]
-      if (utf8Str != null) {
+      if (utf8Str == null) {
+        willNotWorkOnGpu("delimiter pattern is null")
+      } else {
         val str = utf8Str.toString
         isRegExp = RegexParser.isRegExpString(str)
         if (isRegExp) {
@@ -1464,31 +1465,33 @@ class GpuStringToMapMeta(
         } else {
           pattern = str
         }
-      } else {
-        willNotWorkOnGpu("delimiter pattern is null")
       }
     }
 
-    (Some(pattern), isRegExp)
+    // Return the cudf transpiled regex pattern, and a boolean flag indicating whether the input
+    // delimiter is really a regex patter or just a literal string.
+    Some((pattern, isRegExp))
   }
+
+  private var pairDelimInfo: Option[(String, Boolean)] = None
+  private var keyValueDelimInfo: Option[(String, Boolean)] = None
 
   override def tagExprForGpu(): Unit = {
-    tagForGpuIfNotFoldable(expr.children)
-    pairDelimInfo = checkDelimiter(expr.pairDelim)
-    keyValueDelimInfo = checkDelimiter(expr.keyValueDelim)
+    checkFoldable(expr.children)
+    pairDelimInfo = checkRegExp(expr.pairDelim)
+    keyValueDelimInfo = checkRegExp(expr.keyValueDelim)
   }
-
-  private var pairDelimInfo: (Option[String], Boolean) = (None, false)
-  private var keyValueDelimInfo: (Option[String], Boolean) = (None, false)
 
   override def convertToGpu(strExpr: Expression,
                             pairDelimExpr: Expression,
-                            keyValueDelimExpr: Expression): GpuExpression =
+                            keyValueDelimExpr: Expression): GpuExpression = {
+    val errStr = "Delimiter expression has not been tagged with cuDF regex pattern"
+    val pairDelim: (String, Boolean) = pairDelimInfo.getOrElse(errStr)
+    val keyValueDelim: (String, Boolean) = keyValueDelimInfo.getOrElse(errStr)
+
     GpuStringToMap(strExpr, pairDelimExpr, keyValueDelimExpr,
-      pairDelimInfo._1.getOrElse("Expression has not been tagged with cuDF regex pattern"),
-      pairDelimInfo._2,
-      keyValueDelimInfo._1.getOrElse("Expression has not been tagged with cuDF regex pattern"),
-      keyValueDelimInfo._2)
+      pairDelim._1, pairDelim._2, keyValueDelim._1, keyValueDelim._2)
+  }
 }
 
 case class GpuStringToMap(strExpr: Expression,
@@ -1496,7 +1499,7 @@ case class GpuStringToMap(strExpr: Expression,
                           keyValueDelimExpr: Expression,
                           pairDelim: String, isPairDelimRegExp: Boolean,
                           keyValueDelim: String, isKeyValueDelimRegExp: Boolean)
-    extends GpuExpression with ExpectsInputTypes {
+  extends GpuExpression with ExpectsInputTypes {
   override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
@@ -1519,33 +1522,37 @@ case class GpuStringToMap(strExpr: Expression,
 
   private def toMap(str: GpuColumnVector): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
-    withResource(str.getBase.stringSplitRecord(pairDelim)) { listsOfStrings =>
+    withResource(str.getBase.stringSplitRecord(pairDelim, isPairDelimRegExp)) { listsOfStrings =>
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
-        withResource(stringsCol.stringSplit(keyValueDelim, 2)) { keysValuesTable =>
+        withResource(stringsCol.stringSplit(keyValueDelim, 2, isKeyValueDelimRegExp)) {
+          keysValuesTable =>
+
+          // (guarantee by `cudf::strings::split` implementation).
+          // This code is safe, because the `keysValuesTable` always has at least one column
           val keys = keysValuesTable.getColumn(0)
 
-          def toMapFromValues(values: ColumnVector): GpuColumnVector = {
-            // Zip the key-value pairs into structs.
-            withResource(ColumnVector.makeStruct(keys, values)) { structsCol =>
-              // Make a lists column from the new structs column, which will have the same shape
-              // as the previous lists of strings column.
-              withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
-                listsOfStructs =>
-                  GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
+          // If the output from stringSplit has only one column (the map keys), we set all the
+          // output values to nulls.
+          val values =
+            if (keysValuesTable.getNumberOfColumns < 2) {
+              withResource(GpuColumnVector.columnVectorFromNull(
+              keysValuesTable.getRowCount.asInstanceOf[Int], StringType)) {
+                values => values
               }
+            } else {
+              keysValuesTable.getColumn(1)
             }
-          }
 
-          // If the output from stringSplit has only one column, we have all the values are nulls.
-          if(keysValuesTable.getNumberOfColumns < 2) {
-            withResource(GpuColumnVector.columnVectorFromNull(
-                keysValuesTable.getRowCount.asInstanceOf[Int], StringType)) {
-              values => toMapFromValues(values)
+          // Zip the key-value pairs into structs.
+          withResource(ColumnVector.makeStruct(keys, values)) { structsCol =>
+            // Make a lists column from the new structs column, which will have the same shape
+            // as the previous lists of strings column.
+            withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
+              listsOfStructs =>
+                GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
             }
-          } else {
-            toMapFromValues(keysValuesTable.getColumn(1))
           }
         }
       }
