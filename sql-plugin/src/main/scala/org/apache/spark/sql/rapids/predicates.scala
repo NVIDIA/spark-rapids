@@ -122,13 +122,11 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
 
   protected def isAllFalse(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
-    if (col.getRowCount == col.numNulls()) {
-      // all nulls, and null values are false values here
-      return true
+    if (col.numNulls() > 0) {
+      return false
     }
-    withResource(col.getBase.any()) { anyTrue =>
-      // null values are considered false values in this context
-      !anyTrue.getBoolean
+    withResource(col.getBase.all()) { allFalse =>
+      !allFalse.getBoolean
     }
   }
 
@@ -158,20 +156,26 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
             GpuColumnVector.from(falseScalar, lhsBool.getRowCount.toInt, BooleanType)
           }
         } else {
-          val rEval = withResource(filterBatch(tbl, lhsBool.getBase, colTypes)) { leftTrueBatch =>
-            rightExpr.columnarEval(leftTrueBatch)
+          // replace nulll values
+          val lhsNoNulls = withResource(Scalar.fromBool(true)) { trueScalar =>
+            lhsBool.getBase.replaceNulls(trueScalar)
           }
-          val finalRet = withResourceIfAllowed(rEval) { _ =>
-            (lhsBool, rEval) match {
-              case (t: GpuColumnVector, f: GpuColumnVector) =>
-                withResource(gather(t.getBase, f)) { combinedVector =>
-                  t.getBase.and(combinedVector)
-                }
-              case (t: GpuColumnVector, f: GpuScalar) =>
-                t.getBase.and(f.getBase)         
+          withResource(lhsNoNulls) { _ =>
+            val rEval = withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
+              rightExpr.columnarEval(leftTrueBatch)
             }
+            val finalRet = withResourceIfAllowed(rEval) { _ =>
+              (rEval) match {
+                case (f: GpuColumnVector) =>
+                  withResource(gather(lhsNoNulls, f)) { combinedVector =>
+                    doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType))
+                  }
+                case (f: GpuScalar) =>
+                  doColumnar(lhsBool, f)
+              }
+            }
+            GpuColumnVector.from(finalRet, dataType)
           }
-          GpuColumnVector.from(finalRet, dataType)
         }
       }
     }

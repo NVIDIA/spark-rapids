@@ -78,3 +78,31 @@ def test_logical_with_side_effect(ansi_enabled, logic_op, lhs_predicate):
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: do_it(spark, lhs_predicate, logic_op),
             conf=ansi_conf)
+
+@pytest.mark.parametrize('logic_op', ['AND'])
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+@pytest.mark.parametrize('int_arg', [INT_MAX, 0])
+@pytest.mark.parametrize('lhs_arg', ['NULL', 'a', 'b'])
+def test_logical_with_null(ansi_enabled, lhs_arg, int_arg, logic_op):
+    def do_it(spark, lhs_bool_arg, arith_arg, op):
+        schema = StructType([
+            StructField("a", BooleanType()),
+            StructField("b", BooleanType()),
+            StructField("c", IntegerType())])
+        return spark.createDataFrame(
+            [(False, True, arith_arg), (False, True, 1), (False, True, -5)],
+            schema=schema
+        ).selectExpr('{} {} (c + 2) > 0'.format(lhs_bool_arg, op))
+    ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
+    bypass_map = {'AND': 'a', 'OR': 'b'}
+    expect_error = int_arg == INT_MAX and (lhs_arg == 'NULL' or bypass_map[logic_op] != lhs_arg)
+    
+    if ansi_enabled == 'true' and expect_error:
+        assert_gpu_and_cpu_error(
+            df_fun=lambda spark: do_it(spark, lhs_arg, int_arg, logic_op).collect(),
+            conf=ansi_conf,
+            error_message="java.lang.ArithmeticException")
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            func=lambda spark: do_it(spark, lhs_arg, int_arg, logic_op),
+            conf=ansi_conf)
