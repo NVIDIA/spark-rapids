@@ -234,23 +234,23 @@ def std_input_path(request):
         yield path
 
 @pytest.fixture
-def spark_tmp_path(request):
+def spark_tmp_path(request, worker_id):
     debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
-    pid_dir = f'{ret}/{os.getpid()}'
-    ret = f'{pid_dir}/{random.randrange(0, 1<<31)}/'
+    pid = os.getpid()
+    hostname = os.uname()[1]
+    ret = f'{ret}/{hostname}-{worker_id}-{pid}-{random.randrange(0, 1<<31)}/'
     # Make sure it is there and accessible
     sc = get_spark_i_know_what_i_am_doing().sparkContext
     config = sc._jsc.hadoopConfiguration()
-    pid_path = sc._jvm.org.apache.hadoop.fs.Path(pid_dir)
-    ret_path = sc._jvm.org.apache.hadoop.fs.Path(ret)
+    path = sc._jvm.org.apache.hadoop.fs.Path(ret)
     fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
-    fs.mkdirs(ret_path)
+    fs.mkdirs(path)
     yield ret
     if not debug:
-        fs.delete(pid_path)
+        fs.delete(path)
 
 class TmpTableFactory:
   def __init__(self, base_id):
