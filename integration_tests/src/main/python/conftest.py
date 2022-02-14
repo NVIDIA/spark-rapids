@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import pytest
 import random
 from spark_init_internal import get_spark_i_know_what_i_am_doing
@@ -238,16 +239,18 @@ def spark_tmp_path(request):
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
-    ret = ret + '/' + str(random.randint(0, 1000000)) + '/'
+    pid_dir = f'{ret}/{os.getpid()}'
+    ret = f'{pid_dir}/{random.randrange(0, 1<<31)}/'
     # Make sure it is there and accessible
     sc = get_spark_i_know_what_i_am_doing().sparkContext
     config = sc._jsc.hadoopConfiguration()
-    path = sc._jvm.org.apache.hadoop.fs.Path(ret)
+    pid_path = sc._jvm.org.apache.hadoop.fs.Path(pid_dir)
+    ret_path = sc._jvm.org.apache.hadoop.fs.Path(ret)
     fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
-    fs.mkdirs(path)
+    fs.mkdirs(ret_path)
     yield ret
     if not debug:
-        fs.delete(path)
+        fs.delete(pid_path)
 
 class TmpTableFactory:
   def __init__(self, base_id):
