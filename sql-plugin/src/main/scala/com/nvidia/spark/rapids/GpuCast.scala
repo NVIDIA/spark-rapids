@@ -849,7 +849,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def castStringToBool(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
+  def castStringToBool(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
     val trueStrings = Seq("t", "true", "y", "yes", "1")
     val falseStrings = Seq("f", "false", "n", "no", "0")
     val boolStrings = trueStrings ++ falseStrings
