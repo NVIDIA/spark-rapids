@@ -145,15 +145,6 @@ abstract class AppBase(
     }
   }
 
-  def getJdbcInPlan(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
-    val childRes = planInfo.children.flatMap(getJdbcInPlan(_))
-    if (planInfo.simpleString != null && planInfo.simpleString.contains("Scan JDBCRelation")) {
-      childRes :+ planInfo
-    } else {
-      childRes
-    }
-  }
-
   // strip off the struct<> part that Spark adds to the ReadSchema
   private def formatSchemaStr(schema: String): String = {
     schema.stripPrefix("struct<").stripSuffix(">")
@@ -176,17 +167,13 @@ abstract class AppBase(
     }
   }
 
-  protected def checkJdbcScan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
-    val allJdbcScan = getJdbcInPlan(planInfo)
-    if (allJdbcScan.nonEmpty) {
-      dataSourceInfo += DataSourceCase(sqlID, "JDBC", "unknown", "unknown", "")
-    }
-  }
-
   // This will find scans for DataSource V2, if the schema is very large it
   // will likely be incomplete and have ... at the end.
   protected def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode): Unit = {
-    if (node.name.equals("BatchScan")) {
+    if (node.name.equals("BatchScan") ||
+        node.name.contains("GpuScan") ||
+        node.name.contains("GpuBatchScan") ||
+        node.name.contains("JDBCRelation")) {
       val schemaTag = "ReadSchema: "
       val schema = if (node.desc.contains(schemaTag)) {
         val index = node.desc.indexOf(schemaTag)
@@ -197,7 +184,8 @@ abstract class AppBase(
             val schemaOnly = subStr.substring(0, endIndex)
             formatSchemaStr(schemaOnly)
           } else {
-            ""
+            // if we can't another field after, just assume the entire thing is schema like with the GpuScan
+            formatSchemaStr(subStr)
           }
         } else {
           ""
@@ -212,6 +200,13 @@ abstract class AppBase(
         val endIndex = subStr.indexOf(", ")
         val location = subStr.substring(0, endIndex)
         location
+      } else if (node.name.contains("JDBCRelation")) {
+        // see if we can report table or query
+        val JDBCPattern = raw".*JDBCRelation\((.*)\).*".r
+        node.name match {
+          case JDBCPattern(tableName) => tableName
+          case _ => "unknown"
+        }
       } else {
         "unknown"
       }
@@ -232,6 +227,8 @@ abstract class AppBase(
         val endIndex = subStr.indexOf(", ")
         val format = subStr.substring(0, endIndex)
         format
+      } else if (node.name.contains("JDBCRelation")) {
+        "JDBC"
       } else {
         "unknown"
       }
