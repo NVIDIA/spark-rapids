@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.OrcOutputStripe
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation}
+import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl.{BufferChunk, BufferChunkList, DataReaderProperties, InStream, OrcCodecPool, OutStream, ReaderImpl, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.impl.reader.StripePlanner
@@ -119,5 +119,12 @@ object OrcShims {
     }
     result
 
+  }
+
+  /**
+   * Compare if the two TypeDescriptions are equal by ignoring attribute
+   */
+  def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
+    lhs.equals(rhs, false)
   }
 }
