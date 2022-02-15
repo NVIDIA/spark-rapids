@@ -1224,7 +1224,7 @@ private case class GpuOrcFileFilterHandler(
           newUnion
         // Primitive types should be equal to each other.
         case _ =>
-          if (fileSchema != readSchema) {
+          if (!OrcShims.typeDescriptionEqual(fileSchema, readSchema)) {
             throw new QueryExecutionException("Incompatible schemas for ORC file" +
               s" at ${partFile.filePath}\n" +
               s" file schema: $fileSchema\n" +
