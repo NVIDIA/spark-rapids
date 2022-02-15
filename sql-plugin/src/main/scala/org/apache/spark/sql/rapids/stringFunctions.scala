@@ -1360,7 +1360,7 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
     Some((pattern, isRegExp))
   }
 
-  def throwUncheckedDelimiter() =
+  def throwUncheckedDelimiterException() =
     throw new IllegalStateException("Delimiter expression has not been checked for regex pattern")
 }
 
@@ -1392,7 +1392,7 @@ class GpuStringSplitMeta(
       str: Expression,
       regexp: Expression,
       limit: Expression): GpuExpression = {
-    val delim: (String, Boolean) = delimInfo.getOrElse(throwUncheckedDelimiter())
+    val delim: (String, Boolean) = delimInfo.getOrElse(throwUncheckedDelimiterException())
     GpuStringSplit(str, regexp, limit, delim._1, delim._2)
   }
 }
@@ -1483,8 +1483,9 @@ class GpuStringToMapMeta(expr: StringToMap,
   override def convertToGpu(strExpr: Expression,
                             pairDelimExpr: Expression,
                             keyValueDelimExpr: Expression): GpuExpression = {
-    val pairDelim: (String, Boolean) = pairDelimInfo.getOrElse(throwUncheckedDelimiter())
-    val keyValueDelim: (String, Boolean) = keyValueDelimInfo.getOrElse(throwUncheckedDelimiter())
+    val pairDelim: (String, Boolean) = pairDelimInfo.getOrElse(throwUncheckedDelimiterException())
+    val keyValueDelim: (String, Boolean) = keyValueDelimInfo.getOrElse(
+      throwUncheckedDelimiterException())
 
     GpuStringToMap(strExpr, pairDelimExpr, keyValueDelimExpr, pairDelim._1, pairDelim._2,
       keyValueDelim._1, keyValueDelim._2)
