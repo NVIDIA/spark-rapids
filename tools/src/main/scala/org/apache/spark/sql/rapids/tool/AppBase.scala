@@ -184,7 +184,8 @@ abstract class AppBase(
             val schemaOnly = subStr.substring(0, endIndex)
             formatSchemaStr(schemaOnly)
           } else {
-            // if we can't another field after, just assume the entire thing is schema like with the GpuScan
+            // if there isn't another field after, just assume the entire thing is schema
+            // like with the GpuScan
             formatSchemaStr(subStr)
           }
         } else {
@@ -226,7 +227,11 @@ abstract class AppBase(
         val subStr = node.desc.substring(index + formatTag.size)
         val endIndex = subStr.indexOf(", ")
         val format = subStr.substring(0, endIndex)
-        format
+        if (node.name.startsWith("Gpu")) {
+          s"${format}(GPU)"
+        } else {
+          format
+        }
       } else if (node.name.contains("JDBCRelation")) {
         "JDBC"
       } else {

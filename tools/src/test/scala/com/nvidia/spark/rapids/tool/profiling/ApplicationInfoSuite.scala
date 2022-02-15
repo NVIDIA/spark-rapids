@@ -216,6 +216,40 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test read GPU datasourcev1") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-gpu-dsv1.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(hadoopConf,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
+      assert(dsRes.size == 5)
+      val allFormats = dsRes.map { r =>
+        r.format
+      }.toSet
+      val expectedFormats = Set("Text", "CSV(GPU)", "Parquet(GPU)", "ORC(GPU)", "JSON(GPU)")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = dsRes.map { r =>
+        r.schema
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = dsRes.filter { r =>
+        r.sqlID == 4
+      }
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      assert(parquetRow.schema.contains("loan_id"))
+    }
+  }
+
   test("test read datasourcev1") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -306,7 +340,13 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dsRes = collect.getDataSourceInfo
       val format = dsRes.map(r => r.format).toSet.mkString
       val expectedFormat = "JDBC"
+      val location = dsRes.map(r => r.location).toSet.mkString
+      val expectedLocation = "TBLS"
       assert(format.equals(expectedFormat))
+      assert(location.equals(expectedLocation))
+      dsRes.foreach { r =>
+        assert(r.schema.contains("bigint"))
+      }
     }
   }
 
