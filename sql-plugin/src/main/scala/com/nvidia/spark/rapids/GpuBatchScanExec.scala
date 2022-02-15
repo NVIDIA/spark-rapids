@@ -411,16 +411,4 @@ class CSVPartitionReader(
       }
     }
   }
-
-  override def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
-    // TODO this is still a work-in-progress and does not cover some edge cases yet
-    withResource(input.isInteger(intType)) { isInt =>
-      withResource(input.castTo(intType)) { asInt =>
-        withResource(Scalar.fromNull(intType)) { nullValue =>
-          isInt.ifElse(asInt, nullValue)
-        }
-      }
-    }
-  }
-
 }

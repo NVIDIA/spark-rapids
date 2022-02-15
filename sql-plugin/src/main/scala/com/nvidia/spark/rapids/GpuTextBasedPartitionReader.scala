@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ListBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -232,7 +232,15 @@ abstract class GpuTextBasedPartitionReader(
 
   def castStringToBool(input: ColumnVector): ColumnVector
 
-  def castStringToInt(input: ColumnVector, intType: DType): ColumnVector
+  def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
+    withResource(input.isInteger(intType)) { isInt =>
+      withResource(input.castTo(intType)) { asInt =>
+        withResource(Scalar.fromNull(intType)) { nullValue =>
+          isInt.ifElse(asInt, nullValue)
+        }
+      }
+    }
+  }
 
   /**
    * Read the host buffer to GPU table
