@@ -209,7 +209,8 @@ def test_str_to_map_expr_with_all_regex_delimiters():
             'str_to_map(a, "[,]") as m1',
             'str_to_map(a, "[,]", "[:]") as m2',
             'str_to_map(a, "[,b]", "[:f]") as m3',
-            'str_to_map(a, "[,]", "[:]{1,10}") as m4'
+            'str_to_map(a, "[,]", "[:]{1,10}") as m4',
+            'str_to_map(a, "[,]{1,10}", "[:]{1,10}") as m5'
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
