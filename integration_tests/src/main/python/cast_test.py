@@ -236,6 +236,17 @@ def test_cast_array_with_unsupported_element_to_string_fallback(data_gen, legacy
     )
 
 
+basic_map_gens_for_cast_to_string = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, DateGen, TimestampGen]] + [simple_string_to_string_map_gen]
+
+@pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('legacy', ['true', 'false'])
+def test_cast_map_to_string(data_gen, legacy):
+    _assert_cast_to_string_equal(
+        data_gen, 
+        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true', 
+        "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+
+
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_gens_for_cast_to_string)])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_struct_to_string(data_gen, legacy):

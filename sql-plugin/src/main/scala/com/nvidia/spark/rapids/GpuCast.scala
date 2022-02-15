@@ -139,6 +139,10 @@ final class CastExprMeta[INPUT <: CastBase](
         recursiveTagExprForGpuCheck(keyFrom, keyTo, depth + 1)
         recursiveTagExprForGpuCheck(valueFrom, valueTo, depth + 1)
 
+      case (MapType(keyFrom, valueFrom, _), StringType) =>
+        recursiveTagExprForGpuCheck(keyFrom, StringType, depth + 1)
+        recursiveTagExprForGpuCheck(valueFrom, StringType, depth + 1)
+
       case _ =>
     }
   }
@@ -541,6 +545,9 @@ object GpuCast extends Arm {
       case (from: MapType, to: MapType) =>
         castMapToMap(from, to, input, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
 
+      case (from: MapType, _: StringType) =>
+        castMapToString(input, from, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -775,20 +782,18 @@ object GpuCast extends Arm {
       }
     }
   }
-/*
-  private def castMapToString(
-    input: ColumnView,
-    from: MapType,
-    ansiMode: Boolean,
-    legacyCastToString: Boolean,
-    stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
+
+  private def castMapToString(
+      input: ColumnView,
+      from: MapType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     val numRows = input.getRowCount.toInt
     val (arrowStr, emptyStr, spaceStr) = ("->", "", " ")
-    val (leftStr, rightStr, sepStr, nullStr) =
-      if (legacyCastToString) ("[", "]", ", ", "")
-      else ("{", "}", ", ", "null")
+    val (leftStr, rightStr, sepStr, nullStr) = if (legacyCastToString) ("[", "]", ", ", "") else ("{", "}", ", ", "null")
 
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
@@ -805,37 +810,42 @@ object GpuCast extends Arm {
     }
 
     withResource(
-      Seq(leftStr, rightStr, arrowStr, emptyStr, nullStr, spaceStr, sepStr).safeMap(Scalar.fromString)
-    ) { case Seq(leftScalar, rightScalar, arrowScalar, emptyScalar, nullScalar, spaceScalar, sepScalar) =>
+      Seq(leftStr, rightStr, arrowStr, emptyStr, nullStr, spaceStr).safeMap(Scalar.fromString)
+    ) { case Seq(leftScalar, rightScalar, arrowScalar, emptyScalar, nullScalar, spaceScalar) =>
       val strElements = withResource(Seq(strKey, strValue)) { case Seq(strKey, strValue) =>
         val numElements = strKey.getRowCount.toInt
         withResource(Seq(spaceScalar, arrowScalar).safeMap(ColumnVector.fromScalar(_, numElements))
         ) {case Seq(spaceCol, arrowCol) =>
-          val spaceBetweenSeqAndVal =
-            if (legacyCastToString) spaceCol.mergeAndSetValidity(BinaryOp.BITWISE_AND, strValue)
-            else spaceCol
-
-          ColumnVector.stringConcatenate(
-            emptyScalar, nullScalar, Array(strKey, spaceCol, arrowCol, spaceBetweenSeqAndVal, strValue))
+          if (legacyCastToString) {
+            withResource(
+              spaceCol.mergeAndSetValidity(BinaryOp.BITWISE_AND, strValue)) {spaceBetweenSepAndVal =>
+              ColumnVector.stringConcatenate(
+                emptyScalar, nullScalar, Array(strKey, spaceCol, arrowCol, spaceBetweenSepAndVal, strValue))
+            }
+          } else {
+            ColumnVector.stringConcatenate(
+              emptyScalar, nullScalar, Array(strKey, spaceCol, arrowCol, spaceCol, strValue))
+          }
         }
       }
 
       withResource(strElements) {strElements =>
-        withResource(input.replaceListChild(strElements)) {strList =>
-          withResource(
-            Seq(leftScalar, rightScalar, sepScalar).safeMap(ColumnVector.fromScalar(_, numRows))
-          ) {case Seq(leftCol, rightCol, sepCol) =>
-            withResource(strList.stringConcatenateListElements(sepCol)) { withoutBrackets =>
-              ColumnVector.stringConcatenate(
-                emptyScalar, nullScalar, Array(leftCol, withoutBrackets, rightCol))
+        withResource(input.replaceListChild(strElements)) {strArrayCol =>
+          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
+            withResource(
+              Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+            ) {case Seq(leftCol, rightCol) =>
+              withResource(ColumnVector.stringConcatenate(
+                emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))) {
+                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+              }
             }
           }
         }
       }
     }
-
   }
-*/
+
 
 
   private def castStructToString(
