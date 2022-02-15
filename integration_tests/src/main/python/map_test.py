@@ -170,7 +170,7 @@ def test_str_to_map_expr_random_delimiters():
     delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
     (pair_delim, keyval_delim) = ('', '')
     while pair_delim == keyval_delim:
-        gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
+        (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
@@ -180,11 +180,12 @@ def test_str_to_map_expr_random_delimiters():
 
 def test_str_to_map_expr_no_map_values():
     # Test input strings that do not contain delimiters.
-    data_gen = [('a', StringGen(pattern='[0-9a-z:,].{0,100}', nullable=True))]
+    data_gen = [('a', StringGen(pattern='[0-9:,]{0,100}', nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
-            'str_to_map(a, "$") as m2',  # input doesn't contain pair delimiter
-            'str_to_map(a, ",", "$") as m3'),  # input doesn't contain key-value delimiter
+            'str_to_map(a, "A", ":") as m1',  # input doesn't contain pair delimiter
+            'str_to_map(a, ",", "A") as m2',  # input doesn't contain key-value delimiter
+            'str_to_map(a, "A", "A") as m3'),  # input doesn't contain any delimiter
         conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 def test_str_to_map_debug():
@@ -192,11 +193,12 @@ def test_str_to_map_debug():
     # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
     # key start with a letter [a-zA-Z].
     def doit(spark):
-        data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
-                     .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}', weight=100))]
+        data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True))]
         df = gen_df(spark, data_gen)
         print("MY STUFF", df.collect())
-        return df.selectExpr('str_to_map(a) as m1')
+        return df.selectExpr(
+            'str_to_map(a, "T", ":") as m1'
+        )
     assert_gpu_and_cpu_are_equal_collect(doit, conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
     # assert_gpu_and_cpu_are_equal_collect(
     #     lambda spark : gen_df(spark, data_gen).selectExpr(
