@@ -793,7 +793,7 @@ object GpuCast extends Arm {
 
     val numRows = input.getRowCount.toInt
     val (arrowStr, emptyStr, spaceStr) = ("->", "", " ")
-    val (leftStr, rightStr, sepStr, nullStr) = if (legacyCastToString) ("[", "]", ", ", "") else ("{", "}", ", ", "null")
+    val (leftStr, rightStr, nullStr) = if (legacyCastToString) ("[", "]", "") else ("{", "}", "null")
 
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
