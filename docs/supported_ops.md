@@ -17067,7 +17067,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>the map's key and value must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17471,7 +17471,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>the map's key and value must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
