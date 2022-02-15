@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,22 +133,27 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
     }
   }
 
-  // Print Rapids related Spark Properties
+  // Print RAPIDS related or all Spark Properties
   // This table is inverse of the other tables where the row keys are
   // property keys and the columns are the application values. So
   // column1 would be all the key values for app index 1.
-  def getRapidsProperties: Seq[RapidsPropertyProfileResult] = {
+  def getProperties(rapidsOnly: Boolean): Seq[RapidsPropertyProfileResult] = {
     val outputHeaders = ArrayBuffer("propertyName")
     val props = HashMap[String, ArrayBuffer[String]]()
     var numApps = 0
     apps.foreach { app =>
       numApps += 1
       outputHeaders += s"appIndex_${app.index}"
-      val rapidsRelated = app.sparkProperties.filterKeys { key =>
-        key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
-          key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.service.enabled")
+      val propsToKeep = if (rapidsOnly) {
+        app.sparkProperties.filterKeys { key =>
+          key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
+            key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.service.enabled")
+        }
+      } else {
+        // remove the rapids related ones
+        app.sparkProperties.filterKeys(key => !(key.contains("spark.rapids")))
       }
-      CollectInformation.addNewProps(rapidsRelated, props, numApps)
+      CollectInformation.addNewProps(propsToKeep, props, numApps)
     }
     val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
     if (allRows.size > 0) {

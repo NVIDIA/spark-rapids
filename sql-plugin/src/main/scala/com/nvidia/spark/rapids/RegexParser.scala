@@ -433,6 +433,11 @@ object RegexParser {
   }
 }
 
+sealed trait RegexMode
+object RegexFindMode extends RegexMode
+object RegexReplaceMode extends RegexMode
+object RegexSplitMode extends RegexMode
+
 /**
  * Transpile Java/Spark regular expression to a format that cuDF supports, or throw an exception
  * if this is not possible.
@@ -440,7 +445,7 @@ object RegexParser {
  * @param replace True if performing a replacement (regexp_replace), false
  *                if matching only (rlike)
  */
-class CudfRegexTranspiler(replace: Boolean) {
+class CudfRegexTranspiler(mode: RegexMode) {
 
   // cuDF throws a "nothing to repeat" exception for many of the edge cases that are
   // rejected by the transpiler
@@ -472,6 +477,8 @@ class CudfRegexTranspiler(replace: Boolean) {
         case '$' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4533
           throw new RegexUnsupportedException("line anchor $ is not supported")
+        case '^' if mode == RegexSplitMode =>
+          throw new RegexUnsupportedException("line anchor ^ is not supported in split mode")
         case _ =>
           regex
       }
@@ -506,8 +513,14 @@ class CudfRegexTranspiler(replace: Boolean) {
         case 's' | 'S' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4528
           throw new RegexUnsupportedException("whitespace classes are not supported")
+        case 'A' if mode == RegexSplitMode =>
+          throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
+        case 'Z' if mode == RegexSplitMode =>
+          throw new RegexUnsupportedException("string anchor \\Z is not supported in split mode")
+        case 'z' if mode == RegexSplitMode =>
+          throw new RegexUnsupportedException("string anchor \\z is not supported in split mode")
         case 'z' =>
-          if (replace) {
+          if (mode == RegexReplaceMode) {
             // see https://github.com/NVIDIA/spark-rapids/issues/4425
             throw new RegexUnsupportedException(
               "string anchor \\z is not supported in replace mode")
@@ -607,7 +620,7 @@ class CudfRegexTranspiler(replace: Boolean) {
         RegexSequence(parts.map(rewrite))
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
-        case (_, SimpleQuantifier(ch)) if replace && "?*".contains(ch) =>
+        case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
           // cuDF: XXXX] b[
