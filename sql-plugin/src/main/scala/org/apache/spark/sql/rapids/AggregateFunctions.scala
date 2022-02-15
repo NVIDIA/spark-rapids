@@ -1785,11 +1785,13 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   // The postMerge step needs to extract 3 columns (n, avg, m2) from the structs column
   // output from the merge step. Note that the first one is casted to Double to match with Spark.
   //
-  // In the future, when rewriting CudfMergeM2, we will need to ouput it in Double type.
+  // In the future, when rewriting CudfMergeM2, we will need to output it in Double type.
   override lazy val postMerge: Seq[Expression] = Seq(
     GpuCast(GpuGetStructField(mergeM2.attr, 0), DoubleType),
-    GpuCast(GpuGetStructField(mergeM2.attr, 1), DoubleType),
-    GpuCast(GpuGetStructField(mergeM2.attr, 2), DoubleType))
+    GpuCoalesce(Seq(GpuCast(GpuGetStructField(mergeM2.attr, 1), DoubleType),
+      GpuLiteral(0.0, DoubleType))),
+    GpuCoalesce(Seq(GpuCast(GpuGetStructField(mergeM2.attr, 2), DoubleType),
+      GpuLiteral(0.0, DoubleType))))
 }
 
 case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean)
