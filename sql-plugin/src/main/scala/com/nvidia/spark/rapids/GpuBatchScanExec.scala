@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -423,4 +423,28 @@ class CSVPartitionReader(
    * @return the file format short name
    */
   override def getFileFormatShortName: String = "CSV"
+
+  /**
+   * CSV supports "true" and "false" (case-insensitive) as valid boolean values.
+   */
+  override def castStringToBool(input: ColumnVector): ColumnVector = {
+    withResource(input.strip()) { stripped =>
+      withResource(stripped.lower()) { lower =>
+        withResource(Scalar.fromString("true")) { t =>
+          withResource(Scalar.fromString("false")) { f =>
+            withResource(lower.equalTo(t)) { isTrue =>
+              withResource(lower.equalTo(f)) { isFalse =>
+                withResource(isTrue.or(isFalse)) { isValidBool =>
+                  withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+                    isValidBool.ifElse(isTrue, nullBool)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
 }
