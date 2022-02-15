@@ -42,11 +42,28 @@ trait GpuCVPredicateHelper extends GpuColumnVectorHelper {
    */
   override protected def isAllFalse(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
-    if (col.numNulls() > 0) {
+    if (col.hasNull) {
       return false
     }
     withResource(col.getBase.all()) { allFalse =>
       !allFalse.getBoolean
+    }
+  }
+
+  /**
+   * Overrides the default behavior in which null values are considered false.
+   */
+  override protected def isAllTrue(col: GpuColumnVector): Boolean = {
+    assert(BooleanType == col.dataType())
+    if (col.getRowCount == 0) {
+      return true
+    }
+    if (col.hasNull) {
+      return false
+    }
+    withResource(col.getBase.all()) { allTrue =>
+      // Guaranteed there is at least one row and no nulls so result must be valid
+      allTrue.getBoolean
     }
   }
 }
@@ -73,8 +90,13 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
   }
 }
 
-abstract class GpuPredicateWithSideEffect extends CudfBinaryOperator with Predicate with GpuCVPredicateHelper {
+abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator
+  with Predicate with GpuCVPredicateHelper {
+  
+  override def inputType: AbstractDataType = BooleanType
+
   def columnarEvalWithSideEffects(batch: ColumnarBatch): Any
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     val rightExpr = right.asInstanceOf[GpuExpression]
 
@@ -86,9 +108,8 @@ abstract class GpuPredicateWithSideEffect extends CudfBinaryOperator with Predic
   }
 }
 
-case class GpuAnd(left: Expression, right: Expression) extends GpuPredicateWithSideEffect {
-  override def inputType: AbstractDataType = BooleanType
-
+case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryPredicateWithSideEffect {
+  
   override def symbol: String = "&&"
 
   override def sqlOperator: String = "AND"
@@ -149,8 +170,7 @@ case class GpuAnd(left: Expression, right: Expression) extends GpuPredicateWithS
   }
 }
 
-case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
-  override def inputType: AbstractDataType = BooleanType
+case class GpuOr(left: Expression, right: Expression) extends CudfBinaryPredicateWithSideEffect {
 
   override def symbol: String = "||"
 
@@ -158,6 +178,47 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
 
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_OR
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_OR)
+
+  override def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+    val leftExpr = left.asInstanceOf[GpuExpression]
+    val rightExpr = right.asInstanceOf[GpuExpression]
+    val colTypes = GpuColumnVector.extractTypes(batch)
+
+    withResource(GpuColumnVector.from(batch)) { tbl =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
+        if (isAllTrue(lhsBool)) {
+          withResource(GpuScalar.from(true, dataType)) { trueScalar =>
+            GpuColumnVector.from(trueScalar, lhsBool.getRowCount.toInt, BooleanType)
+          }
+        } else {
+          // Invert the lhs.
+          withResource(lhsBool.getBase.unaryOp(UnaryOp.NOT)) { lhsInverted =>
+            // Replace nulll values
+            val lhsNoNulls = withResource(Scalar.fromBool(true)) { trueScalar =>
+              lhsInverted.replaceNulls(trueScalar)
+            }
+            // filter batch based on the inverse of the LHS
+            withResource(lhsNoNulls) { _ =>
+              val rEval = withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftInverseBatch =>
+                rightExpr.columnarEval(leftInverseBatch)
+              }
+              val finalRet = withResourceIfAllowed(rEval) { _ =>
+                (rEval) match {
+                  case (f: GpuColumnVector) =>
+                    withResource(gather(lhsNoNulls, f)) { combinedVector =>
+                      doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType))
+                    }
+                  case (t: GpuColumnVector, f: GpuScalar) =>
+                    doColumnar(lhsBool, f)
+                }
+              }
+              GpuColumnVector.from(finalRet, dataType)
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {

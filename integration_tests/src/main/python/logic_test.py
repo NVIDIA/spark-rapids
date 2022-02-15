@@ -56,7 +56,7 @@ def test_not(data_gen):
 # AND/OR on the CPU in Spark will process the LHS unconditionally. But they will only
 # process the RHS if they cannot figure out the result from just the LHS.
 # Tests the GPU short-circuits the predicates without throwing Exception in ANSI mode.
-@pytest.mark.parametrize('logic_op', ['AND'])
+@pytest.mark.parametrize('logic_op', ['AND', 'OR'])
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 @pytest.mark.parametrize('int_arg', [INT_MAX, 0])
 @pytest.mark.parametrize('lhs_arg', ['NULL', 'a', 'b'])
