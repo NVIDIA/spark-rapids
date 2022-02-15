@@ -1244,7 +1244,7 @@ class MultiFileCloudParquetPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics) with ParquetPartitionReaderBase {
+    execMetrics, ignoreCorruptFiles) with ParquetPartitionReaderBase {
 
   case class HostMemoryBuffersWithMetaData(
       override val partitionedFile: PartitionedFile,
