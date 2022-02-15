@@ -56,15 +56,6 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-@pytest.mark.parametrize('data_gen,to_type', [
-    # maps are not supported for casting to a String, but structs are, so we need to verify this
-    (StructGen([('structF1', StructGen([('structF11', MapGen(ByteGen(nullable=False), byte_gen))]))]), StringType())])
-def test_cast_nested_fallback(data_gen, to_type):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)),
-            'Cast')
-
 def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
