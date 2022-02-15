@@ -34,7 +34,7 @@ _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                       }
 
 _no_nans_float_smallbatch_conf = copy_and_update(_no_nans_float_conf,
-        {'spark.rapids.sql.batchSizeBytes' : '1000'})
+        {'spark.rapids.sql.batchSizeBytes' : '250'})
 
 _no_nans_float_conf_partial = copy_and_update(_no_nans_float_conf,
         {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
@@ -339,7 +339,7 @@ def test_hash_reduction_sum_count_action(data_gen):
 # Make sure that we can do computation in the group by columns
 @ignore_order
 def test_computation_in_grpby_columns():
-    conf = {'spark.rapids.sql.batchSizeBytes' : '1000'}
+    conf = {'spark.rapids.sql.batchSizeBytes' : '250'}
     data_gen = [
             ('a', RepeatSeqGen(StringGen('a{1,20}'), length=50)),
             ('b', short_gen)]

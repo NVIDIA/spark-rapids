@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -282,11 +282,9 @@ private[python] class BatchGroupedIterator private(
       // Grouping expression is not empty, so returns the first batch in the queue.
       // If the queue is empty, tries to read and split the next batch from input.
       if (batchesQueue.isEmpty) {
-        val batch = input.next()
-
         // Splits the batch per grouping expressions
-        val groupTables = withResource(batch) { b =>
-          withResource(GpuColumnVector.from(b)) { table =>
+        val groupTables = withResource(input.next()) { batch =>
+          withResource(GpuColumnVector.from(batch)) { table =>
             // In Spark, the rows in a batch are already sorted by grouping keys in
             // the order of `Ascending & NullsFirst` for Pandas UDF plans. This is ensured by
             // overriding the 'requiredChildOrdering' in each plan.
@@ -300,22 +298,23 @@ private[python] class BatchGroupedIterator private(
                  .contiguousSplitGroups()
           }
         }
+        withResource(groupTables) { tables =>
+          // Convert to `SpillableColumnarBatch` and puts them in the queue.
+          val inputTypes = inputAttributes.map(_.dataType).toArray
 
-        // Convert to `SpillableColumnarBatch` and puts them in the queue.
-        val inputTypes = inputAttributes.map(_.dataType).toArray
-        val groupBatches = withResource(groupTables) { tables =>
           // safe map to avoid memory leaks on failure
-          tables.safeMap( t =>
-            SpillableColumnarBatch(
+          tables.foreach { t =>
+            batchesQueue.enqueue(SpillableColumnarBatch(
               GpuColumnVectorFromBuffer.from(t, inputTypes),
               SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              spillCallback)
-          )
+              spillCallback))
+          }
         }
-        batchesQueue.enqueue(groupBatches: _*)
       }
 
-      batchesQueue.dequeue().getColumnarBatch()
+      withResource(batchesQueue.dequeue()) { spillableBatch =>
+        spillableBatch.getColumnarBatch()
+      }
     }
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,17 +128,10 @@ abstract class AppBase(
     }
   }
 
-  // Decimal support on the GPU is limited to less than 18 digits and decimals
-  // are configured off by default for now. It would be nice to have this
-  // based off of what plugin supports at some point.
-  private val decimalKeyWords = Map(".*promote_precision\\(.*" -> "DECIMAL",
-    ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL",
-    ".*DecimalType\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")
-
   private val UDFKeywords = Map(".*UDF.*" -> "UDF")
 
   protected def findPotentialIssues(desc: String): Set[String] =  {
-    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
+    val potentialIssuesRegexs = UDFKeywords
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
     issues.values.toSet
   }

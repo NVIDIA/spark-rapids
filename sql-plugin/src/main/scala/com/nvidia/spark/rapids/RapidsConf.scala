@@ -471,6 +471,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE =
+    conf("spark.rapids.sql.shuffledHashJoin.optimizeShuffle")
+      .doc("Enable or disable an optimization where shuffled build side batches are kept " +
+        "on the host while the first stream batch is loaded onto the GPU. The optimization " +
+        "increases off-heap host memory usage to avoid holding onto the GPU semaphore while " +
+        "waiting for stream side IO.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
           "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
@@ -961,6 +971,13 @@ object RapidsConf {
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
       "the different results. When set to false disables the range window acceleration for the " +
       "long type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
+    .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
+      "can cause out of memory issues. Setting this config to false will make any operation " +
+      "using regular expressions fall back to CPU.")
     .booleanConf
     .createWithDefault(true)
 
@@ -1484,6 +1501,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
+  lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
+
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
@@ -1771,6 +1790,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 

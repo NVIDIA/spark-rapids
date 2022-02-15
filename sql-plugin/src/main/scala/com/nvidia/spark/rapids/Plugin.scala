@@ -21,7 +21,9 @@ import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.{Map => MutableMap}
 import scala.util.Try
+import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
@@ -391,25 +393,33 @@ object ExecutionPlanCaptureCallback {
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
+  private def containsExpression(exp: Expression, className: String,
+    regexMap: MutableMap[String, Regex] // regex memoization
+  ): Boolean = exp.find {
     case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
-    case e: ExecSubqueryExpression => containsPlan(e.plan, className)
+    case e: ExecSubqueryExpression => containsPlan(e.plan, className, regexMap)
     case _ => false
   }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+  private def containsPlan(plan: SparkPlan, className: String,
+    regexMap: MutableMap[String, Regex] = MutableMap.empty // regex memoization
+  ): Boolean = plan.find {
     case p if PlanUtils.sameClass(p, className) =>
       true
     case p: AdaptiveSparkPlanExec =>
-      containsPlan(p.executedPlan, className)
+      containsPlan(p.executedPlan, className, regexMap)
     case p: QueryStageExec =>
-      containsPlan(p.plan, className)
+      containsPlan(p.plan, className, regexMap)
     case p: ReusedSubqueryExec =>
-      containsPlan(p.child, className)
+      containsPlan(p.child, className, regexMap)
     case p: ReusedExchangeExec =>
-      containsPlan(p.child, className)
-    case p =>
-      p.expressions.exists(containsExpression(_, className))
+      containsPlan(p.child, className, regexMap)
+    case p if p.expressions.exists(containsExpression(_, className, regexMap)) =>
+      true
+    case p: SparkPlan =>
+      regexMap.getOrElseUpdate(className, className.r)
+        .findFirstIn(p.simpleStringWithNodeId())
+        .nonEmpty
   }.nonEmpty
 }
 

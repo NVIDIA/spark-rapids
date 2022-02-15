@@ -36,6 +36,7 @@ import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
+import com.nvidia.spark.rapids.shims.v2.OrcShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -55,10 +56,10 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
+import org.apache.spark.sql.execution.datasources.rapids.OrcFiltersWrapper
 import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FilePartitionReaderFactory}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
@@ -319,13 +320,13 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
 
     withResource(OrcTools.buildDataReader(ctx)) { dataReader =>
       val start = System.nanoTime()
-      val bufferChunks = dataReader.readFileData(inputDataRanges, 0, false)
+      val bufferChunks = OrcShims.readFileData(dataReader, inputDataRanges)
       val mid = System.nanoTime()
       var current = bufferChunks
       while (current != null) {
         out.write(current.getData)
         if (dataReader.isTrackingDiskRanges && current.isInstanceOf[BufferChunk]) {
-          dataReader.releaseBuffer(current.asInstanceOf[BufferChunk].getChunk)
+          dataReader.releaseBuffer(current.getData)
         }
         current = current.next
       }
@@ -740,17 +741,18 @@ private object OrcTools extends Arm {
       }
       val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
       val file = filePath.getFileSystem(conf).open(filePath)
+
+      val typeCount = org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size
       //noinspection ScalaDeprecation
-      RecordReaderUtils.createDefaultDataReader(DataReaderProperties.builder()
-        .withBufferSize(compressionSize)
-        .withCompression(compressionKind)
-        .withFileSystem(fs)
-        .withPath(filePath)
-        .withFile(file) // explicitly specify the FSDataInputStream
-        .withTypeCount(org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size)
-        .withZeroCopy(zeroCopy)
-        .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-        .build())
+      val reader = RecordReaderUtils.createDefaultDataReader(
+        OrcShims.newDataReaderPropertiesBuilder(compressionSize, compressionKind, typeCount)
+          .withFileSystem(fs)
+          .withPath(filePath)
+          .withZeroCopy(zeroCopy)
+          .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
+          .build())
+      reader.open() // 311cdh needs to initialize the internal FSDataInputStream file variable.
+      reader
     }
   }
 
@@ -783,8 +785,8 @@ private case class GpuOrcFileFilterHandler(
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 
     // After getting the necessary information from ORC reader, we must close the ORC reader
-    withResource(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
-      val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
+    OrcShims.withReader(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
+    val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
         readDataSchema, orcReader)
       if (resultedColPruneInfo.isEmpty) {
         // Be careful when the OrcPartitionReaderContext is null, we should change
@@ -822,7 +824,7 @@ private case class GpuOrcFileFilterHandler(
     val readerOpts = OrcInputFormat.buildOptions(
       conf, orcReader, partFile.start, partFile.length)
     // create the search argument if we have pushed filters
-    OrcFilters.createFilter(fullSchema, pushedFilters).foreach { f =>
+    OrcFiltersWrapper.createFilter(fullSchema, pushedFilters).foreach { f =>
       readerOpts.searchArgument(f, fullSchema.fieldNames)
     }
     readerOpts
@@ -882,7 +884,7 @@ private case class GpuOrcFileFilterHandler(
                 if (matchedOrcFields.size > 1) {
                   // Need to fail if there is ambiguity, i.e. more than one field is matched.
                   val matchedOrcFieldsString = matchedOrcFields.mkString("[", ", ", "]")
-                  reader.close()
+                  OrcShims.closeReader(reader)
                   throw new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """
                     + s"$matchedOrcFieldsString in case-insensitive mode")
                 } else {
@@ -1088,29 +1090,10 @@ private case class GpuOrcFileFilterHandler(
       val fileIncluded = calcOrcFileIncluded(evolution)
       val (columnMapping, idMapping) = columnRemap(fileIncluded, evolution.getFileSchema,
         updatedReadSchema, isCaseSensitive)
-      val result = new ArrayBuffer[OrcOutputStripe](stripes.length)
-      stripes.foreach { stripe =>
-        val stripeFooter = dataReader.readStripeFooter(stripe)
-        val needStripe = if (sargApp != null) {
-          // An ORC schema is a single struct type describing the schema fields
-          val orcFileSchema = evolution.getFileType(0)
-          val orcIndex = dataReader.readRowIndex(stripe, orcFileSchema, stripeFooter,
-            ignoreNonUtf8BloomFilter, fileIncluded, null, sargColumns,
-            writerVersion, null, null)
-          val rowGroups = sargApp.pickRowGroups(stripe, orcIndex.getRowGroupIndex,
-            orcIndex.getBloomFilterKinds, stripeFooter.getColumnsList, orcIndex.getBloomFilterIndex,
-            true)
-          rowGroups != SargApplier.READ_NO_RGS
-        } else {
-          true
-        }
-
-        if (needStripe) {
-          result.append(buildOutputStripe(stripe, stripeFooter, columnMapping, idMapping))
-        }
-      }
-
-      result
+      OrcShims.filterStripes(stripes, conf, orcReader, dataReader,
+        buildOutputStripe, evolution,
+        sargApp, sargColumns, ignoreNonUtf8BloomFilter,
+        writerVersion, fileIncluded, columnMapping, idMapping)
     }
 
     /**
@@ -1552,8 +1535,8 @@ trait OrcCodecWritingHelper extends Arm {
           // note that this buffer is just for writing meta-data
           OrcConf.BUFFER_SIZE.getDefaultValue.asInstanceOf[Int]
         }
-        withResource(new OutStream(getClass.getSimpleName, orcBufferSize, codec,
-            outReceiver)) { codecStream =>
+        withResource(OrcShims.newOrcOutStream(
+          getClass.getSimpleName, orcBufferSize, codec, outReceiver)) { codecStream =>
           val protoWriter = CodedOutputStream.newInstance(codecStream)
           block(outChannel, protoWriter, codecStream)
         }

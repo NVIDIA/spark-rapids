@@ -318,8 +318,7 @@ Its summary report outputs the following information:
 2. Application duration
 3. SQL/DF duration 
 4. Problematic Duration, which indicates potential issues for acceleration.
-   Some of the potential issues include unsupported data formats such as Decimal 128-bit 
-   or User Defined Function (UDF) or any Dataset APIs. 
+   Some of the potential issues include User Defined Function (UDF) or any Dataset APIs.
 
 Note: the duration(s) reported are in milli-seconds.
 Sample output in text:
@@ -335,13 +334,11 @@ In the above example, two application event logs were analyzed. “app-202105071
 than the “app-20210507174503-1704” because the score(in the csv output) for “app-20210507174503-2538”   
 is higher than  “app-20210507174503-1704”. 
 Here the `Problematic Duration` is zero but please keep in mind that we are only able to detect certain issues. 
-This currently includes some UDFs, some decimal operations and nested complex types.
+This currently includes some UDFs and nested complex types.
 The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 
 Please refer to [supported_ops.md](./supported_ops.md) 
 for more details on UDF.
-For decimals, the tool tries to parse for decimal operations but it may not capture all of the decimal operations
-if they aren’t in the event logs.
 
 The second output is a more detailed output.
 Here is a sample output requesting csv style output:
@@ -358,7 +355,7 @@ Here is a brief description of each of column that is in the CSV:
 2. App ID: Spark Application ID.
 3. Score :  A score calculated based on SQL Dataframe Task Duration and gets negatively affected for any unsupported operators.
    Please refer to [Qualification tool score algorithm](#Qualification-tool-score-algorithm) for more details.
-4. Potential Problems : Some UDFs, some decimal operations and nested complex types.
+4. Potential Problems : Some UDFs and nested complex types.
 5. SQL DF Duration: Time duration that includes only SQL/Dataframe queries.
 6. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
 7. App Duration: Total Application time.
