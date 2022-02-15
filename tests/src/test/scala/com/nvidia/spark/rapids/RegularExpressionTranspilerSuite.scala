@@ -15,10 +15,6 @@
  */
 package com.nvidia.spark.rapids
 
-import scala.concurrent._
-import scala.concurrent.duration._
-import ExecutionContext.Implicits.global
-import scala.language.postfixOps
 
 import java.util.regex.Pattern
 
@@ -128,9 +124,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // see https://github.com/NVIDIA/spark-rapids/issues/4487
     val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
     patterns.foreach(pattern => 
-      assertUnsupported(pattern, replace = false, "nothing to repeat"))
+      assertUnsupported(pattern, RegexReplaceMode, "nothing to repeat"))
   }
 
+  test("cuDF doesn't support \\A (escaped string anchors) in some repetitions") {
+    val patterns = Seq(raw"(\A)+", raw"(\A){2,}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+    )
+  }
+  
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
     patterns.foreach(pattern => {
@@ -478,18 +481,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val cpu = cpuContains(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler(RegexFindMode).transpile(javaPattern)
       val gpu = try {
-        val result = Future {
-          gpuContains(cudfPattern, input)
-        }
-        Await.result(result, 1 second)
+        gpuContains(cudfPattern, input)
       } catch {
         case e: CudfException =>
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
-        case e: java.util.concurrent.TimeoutException =>
-          fail(s"cuDF timed out regexp_find: " +
-            s"javaPattern=${toReadableString(javaPattern)}, " +
-            s"cudfPattern=${toReadableString(cudfPattern)}"
-          )
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -509,18 +504,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val cpu = cpuReplace(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler(RegexReplaceMode).transpile(javaPattern)
       val gpu = try {
-        val result = Future {
-          gpuReplace(cudfPattern, input)
-        }
-        Await.result(result, 10 second)
+        gpuReplace(cudfPattern, input)
       } catch {
         case e: CudfException =>
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
-        case e: java.util.concurrent.TimeoutException =>
-          fail(s"cuDF timed out regexp_replace: " +
-            s"javaPattern=${toReadableString(javaPattern)}, " +
-            s"cudfPattern=${toReadableString(cudfPattern)}"
-          )
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -656,12 +643,12 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
         () => predefinedCharacterClass,
         () => group(depth),
         () => boundaryMatch,
-        () => sequence(depth))
+        () => sequence(depth),
+        () => repetition(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4487
       val generators = if (skipKnownIssues) {
         baseGenerators
       } else {
         baseGenerators ++ Seq(
-          () => repetition(depth), // https://github.com/NVIDIA/spark-rapids/issues/4487
           () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
       }
       generators(rr.nextInt(generators.length))()

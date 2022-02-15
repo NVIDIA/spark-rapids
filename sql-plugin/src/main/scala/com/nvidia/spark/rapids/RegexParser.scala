@@ -467,6 +467,39 @@ class CudfRegexTranspiler(mode: RegexMode) {
     cudfRegex.toRegexString
   }
 
+  private def isSomeRepetition(f: ListBuffer[RegexAST] => Boolean)(e: RegexAST): Boolean = {
+    e match {
+      case RegexRepetition(_, _) => true
+      case RegexGroup(_, term) => isRepetition(term)
+      case RegexSequence(parts) if f(parts) => isRepetition(parts.last)
+      case _ => false
+    }
+  }
+
+  private def isRepetition = isSomeRepetition(_.nonEmpty)(_)
+  private def isNestedRepetition = isSomeRepetition(_.length == 1)(_)
+
+  private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
+    e match {
+      case RegexEscaped(ch) if ch != 'd' && ch != 'w' => // example: "\B?"
+        false
+
+      case RegexChar(a) if "$^".contains(a) =>
+        // example: "$*"
+        false
+
+      case RegexRepetition(_, _) =>
+        // example: "a*+"
+        false
+
+      case RegexSequence(parts) =>
+        parts.forall(x => isSupportedRepetitionBase(x))
+
+      case _ => true
+    }
+  }
+
+
   private def rewrite(regex: RegexAST): RegexAST = {
     regex match {
 
@@ -628,37 +661,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'w' =>
-          // example: "\B?"
+        case (RegexGroup(_, term), SimpleQuantifier(ch))
+            if "+*".contains(ch) && (!isSupportedRepetitionBase(term) ||
+              isNestedRepetition(term)) =>
           throw new RegexUnsupportedException(nothingToRepeat)
-
-        case (RegexChar(a), _) if "$^".contains(a) =>
-          // example: "$*"
+        case (RegexGroup(_, term), QuantifierVariableLength(_,None))
+            if !isSupportedRepetitionBase(term) || isNestedRepetition(term) =>
+            // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
-
-        case (RegexRepetition(_, _), _) =>
-          // example: "a*+"
-          throw new RegexUnsupportedException(nothingToRepeat)
-
-        case (RegexGroup(capture, term), SimpleQuantifier(ch)) if "+*".contains(ch) =>
-          // example: "(3?)+"
-          def isSimpleRepetition(e: RegexAST):Boolean = {
-            e match {
-              case RegexRepetition(term, quantifier) =>
-                term.isInstanceOf[RegexCharacterClassComponent]
-              case RegexSequence(parts) if parts.length == 1 => 
-                isSimpleRepetition(parts.last)
-              case _ => false
-            }
-          }
-          val tr = rewrite(term)
-          if (isSimpleRepetition(tr)) {
-            // perhaps we could rewrite it here
-            throw new RegexUnsupportedException(nothingToRepeat)
-          }
-          RegexRepetition(RegexGroup(capture, tr), quantifier)
-        case _ =>
+        case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base), quantifier)
+        case _ =>
+          throw new RegexUnsupportedException(nothingToRepeat)
 
       }
 
@@ -667,14 +681,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val rr = rewrite(r)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
-        def isRepetition(e: RegexAST): Boolean = {
-          e match {
-            case RegexRepetition(_, _) => true
-            case RegexGroup(_, term) => isRepetition(term)
-            case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
-            case _ => false
-          }
-        }
         if (isRepetition(ll) || isRepetition(rr)) {
           throw new RegexUnsupportedException(nothingToRepeat)
         }
