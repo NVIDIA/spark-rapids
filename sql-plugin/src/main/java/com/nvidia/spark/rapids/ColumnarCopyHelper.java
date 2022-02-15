@@ -22,6 +22,9 @@ import org.apache.spark.sql.vectorized.ColumnVector;
 
 /**
  * A helper class which efficiently transfers different types of host columnar data into cuDF.
+ * It is written in Java for two reasons:
+ * 1. Scala for-loop is slower (Scala while-loop is identical to Java loop)
+ * 2. Both ColumnBuilder and ColumnVector are Java classes
  */
 public class ColumnarCopyHelper {
 
@@ -33,116 +36,133 @@ public class ColumnarCopyHelper {
 
   public static void booleanCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getBoolean(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getBoolean(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getBoolean(i));
       }
-      b.append(cv.getBoolean(i));
     }
   }
 
   public static void byteCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getByte(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getByte(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getByte(i));
       }
-      b.append(cv.getByte(i));
     }
   }
 
   public static void shortCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getShort(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getShort(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getShort(i));
       }
-      b.append(cv.getShort(i));
     }
   }
 
   public static void intCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getInt(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getInt(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getInt(i));
       }
-      b.append(cv.getInt(i));
     }
   }
 
   public static void longCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getLong(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getLong(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getLong(i));
       }
-      b.append(cv.getLong(i));
     }
   }
 
   public static void floatCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getFloat(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getFloat(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getFloat(i));
       }
-      b.append(cv.getFloat(i));
     }
   }
 
   public static void doubleCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.append(cv.getDouble(i));
+      for (int i = 0; i < rows; i++) {
+        b.append(cv.getDouble(i));
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getDouble(i));
       }
-      b.append(cv.getDouble(i));
     }
   }
 
   public static void stringCopy(ColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
-      for (int i = 0; i < rows; i++) b.appendUTF8String(cv.getUTF8String(i).getBytes());
+      for (int i = 0; i < rows; i++) {
+        b.appendUTF8String(cv.getUTF8String(i).getBytes());
+      }
       return;
     }
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.appendUTF8String(cv.getUTF8String(i).getBytes());
       }
-      b.appendUTF8String(cv.getUTF8String(i).getBytes());
     }
   }
 
+  // TODO: https://github.com/NVIDIA/spark-rapids/issues/4784
   public static void decimal32Copy(ColumnVector cv, ColumnBuilder b, int rows,
       int precision, int scale) {
     if (!cv.hasNull()) {
@@ -154,9 +174,9 @@ public class ColumnarCopyHelper {
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append((int) cv.getDecimal(i, precision, scale).toUnscaledLong());
       }
-      b.append((int) cv.getDecimal(i, precision, scale).toUnscaledLong());
     }
   }
 
@@ -171,9 +191,9 @@ public class ColumnarCopyHelper {
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getDecimal(i, precision, scale).toUnscaledLong());
       }
-      b.append(cv.getDecimal(i, precision, scale).toUnscaledLong());
     }
   }
 
@@ -188,9 +208,9 @@ public class ColumnarCopyHelper {
     for (int i = 0; i < rows; i++) {
       if (cv.isNullAt(i)) {
         b.appendNull();
-        continue;
+      } else {
+        b.append(cv.getDecimal(i, precision, scale).toJavaBigDecimal());
       }
-      b.append(cv.getDecimal(i, precision, scale).toJavaBigDecimal());
     }
   }
 }

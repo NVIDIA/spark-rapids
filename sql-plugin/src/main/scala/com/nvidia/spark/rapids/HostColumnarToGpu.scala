@@ -155,7 +155,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputBatches: GpuMetric,
     streamTime: GpuMetric,
     concatTime: GpuMetric,
-    bufferTime: GpuMetric,
+    copyBufTime: GpuMetric,
     semTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
@@ -225,7 +225,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
-    withResource(new MetricRange(bufferTime)) { _ =>
+    withResource(new MetricRange(copyBufTime)) { _ =>
       val rows = batch.numRows()
       for (i <- 0 until batch.numCols()) {
         batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
@@ -291,9 +291,9 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
-    BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
+    COPY_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_BUFFER_TIME),
     PEAK_DEVICE_MEMORY -> createMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  ) ++ semaphoreMetrics
+    ) ++ semaphoreMetrics
 
   override def output: Seq[Attribute] = child.output
 
@@ -322,7 +322,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
-    val bufferTime = gpuLongMetric(BUFFER_TIME)
+    val copyBufTime = gpuLongMetric(COPY_BUFFER_TIME)
     val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
@@ -336,7 +336,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-        streamTime, concatTime, bufferTime, semTime, opTime,
+        streamTime, concatTime, copyBufTime, semTime, opTime,
         peakDevMemory, "HostColumnarToGpu", confUseArrow)
     }
   }
