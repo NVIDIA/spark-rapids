@@ -167,21 +167,26 @@ def test_cast_long_to_decimal_overflow():
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 # casting these types to string should be passed
-basic_gens_for_cast_to_string = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, null_gen, timestamp_gen] + decimal_gens_no_neg
+basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
+basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens_no_neg
+basic_map_gens_for_cast_to_string = [
+    MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
+    MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
+
 # casting these types to string is not exact match, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [float_gen, double_gen, decimal_gen_neg_scale]
-# casting these types to string is not supported, marked as xfail when testing
+# casting these types to string is not supported, fallback to CPU
 not_support_gens_for_cast_to_string = [MapGen(ByteGen(False), ByteGen())]
 
-single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
+single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_array_struct_gens_for_cast_to_string]
 nested_array_gens_for_cast_to_string = [
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
-    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(null_gen, max_length=10), max_length=10),
+    ArrayGen(MapGen(ByteGen(nullable=False), DateGen()), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', date_gen]]))
     ]
 
-all_gens_for_cast_to_string = single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string
+all_array_gens_for_cast_to_string = single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string
 
 def _assert_cast_to_string_equal (data_gen, conf):
     """
@@ -202,7 +207,7 @@ def _assert_cast_to_string_fallback (data_gen, conf):
         conf
     )
 
-@pytest.mark.parametrize('data_gen', all_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -236,8 +241,6 @@ def test_cast_array_with_unsupported_element_to_string_fallback(data_gen, legacy
     )
 
 
-basic_map_gens_for_cast_to_string = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, DateGen, TimestampGen]] + [simple_string_to_string_map_gen]
-
 @pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_map_to_string(data_gen, legacy):
@@ -247,7 +250,7 @@ def test_cast_map_to_string(data_gen, legacy):
         "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
-@pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_gens_for_cast_to_string)])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
