@@ -174,7 +174,10 @@ basic_map_gens_for_cast_to_string = [
     MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
 
 # casting these types to string is not exact match, marked as xfail when testing
-not_matched_gens_for_cast_to_string = [float_gen, double_gen, decimal_gen_neg_scale]
+
+not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]
+not_matched_struct_array_gens_for_cast_to_string = [f() for f in not_matched_gens_for_cast_to_string] + [decimal_gen_neg_scale]
+not_matched_map_gens_for_cast_to_string = [MapGen(f(nullable = False), f()) for f in not_matched_gens_for_cast_to_string] + [MapGen(DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen())]
 
 single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_array_struct_gens_for_cast_to_string]
 nested_array_gens_for_cast_to_string = [
@@ -205,7 +208,7 @@ def test_cast_array_to_string(data_gen, legacy):
         "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_gens_for_cast_to_string], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @pytest.mark.xfail(reason='casting this type to string is not exact match')
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
@@ -225,6 +228,19 @@ def test_cast_map_to_string(data_gen, legacy):
         data_gen, 
         {"spark.rapids.sql.castDecimalToString.enabled"    : 'true', 
         "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+
+
+@pytest.mark.parametrize('data_gen', not_matched_map_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.xfail(reason='casting this type to string is not exact match')
+def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
+    _assert_cast_to_string_equal(
+        data_gen,
+        {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
+         "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
+         "spark.rapids.sql.castFloatToString.enabled"       : "true", 
+         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+    )
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
@@ -270,7 +286,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
         {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
     )
 
-@pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_gens_for_cast_to_string], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @pytest.mark.xfail(reason='casting this type to string is not an exact match')
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
