@@ -107,7 +107,7 @@ case class GpuCreateMap(
       }
 
       withResource(Range(0, columns.length, 2)
-        .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))) { structsCols =>
+        .safeMap(i => ColumnView.makeStructView(columns(i), columns(i + 1)))) { structsCols =>
         withResource(ColumnVector.makeList(numRows, DType.STRUCT, structsCols: _*)) {
           listsOfStructs => GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, listsOfStructs)
         }

@@ -1533,7 +1533,7 @@ case class GpuStringToMap(strExpr: Expression,
             val keys = keysValuesTable.getColumn(0)
 
             // Zip the key-value pairs into structs.
-            withResource(ColumnVector.makeStruct(keys, values)) { structsCol =>
+            withResource(ColumnView.makeStructView(keys, values)) { structsCol =>
               // Make a lists column from the new structs column, which will have the same shape
               // as the previous lists of strings column.
               withResource(GpuListUtils.replaceListDataColumnAsView(listsOfStrings, structsCol)) {
