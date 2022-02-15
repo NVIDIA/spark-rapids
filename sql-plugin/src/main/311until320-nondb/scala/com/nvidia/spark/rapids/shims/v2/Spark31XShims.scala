@@ -207,7 +207,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
       }),
     GpuOverrides.expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
+      "String replace using a regular expression pattern",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
@@ -215,9 +215,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
           ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
             .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
             TypeSig.lit(TypeEnum.INT)))),
-      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
-      "the implementation is not 100% compatible. " +
-        "See the compatibility guide for more information."),
+      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",

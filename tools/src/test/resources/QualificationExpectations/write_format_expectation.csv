@@ -1,2 +1,2 @@
-App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,ReadFileFormat Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types
-Spark shell,local-1629442299891,920.0,DECIMAL,1992,920,19554,91.72,false,1992,"",20,100.0,"",CSV;JSON,"",""
+App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types
+Spark shell,local-1629442299891,920.0,"",1992,920,19554,91.72,false,0,"",20,100.0,"",CSV;JSON,"",""

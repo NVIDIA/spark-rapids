@@ -522,19 +522,13 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_extract`
 - `regexp_like`
 - `regexp_replace`
+- `string_split`
 
-These operations are disabled by default because of known incompatibilities between the Java regular expression 
-engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 
-kernels can potentially have high memory overhead.
+Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors. To 
+disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
-These operations can be enabled on the GPU with the following configuration settings:
-
-- `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
-- `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
-- `spark.rapids.sql.expression.RegExpExtract=true` for `regexp_extract`
-
-Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
-CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
+There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
+that a pattern is either unsupported or would produce incorrect results on the GPU.
 
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
@@ -542,6 +536,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Line anchor `$`
 - String anchor `\Z`
 - String anchor `\z` is not supported by `regexp_replace`
+- Line and string anchors are not supported by `string_split`
 - Non-digit character class `\D`
 - Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
@@ -552,7 +547,9 @@ Here are some examples of regular expression patterns that are not supported on 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Hex and octal digits
+- Octal digits in the range `\0200` to `\0377`
+- Character classes with octal digits, such as `[\02]` or `[\024]`
+- Hex digits
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
