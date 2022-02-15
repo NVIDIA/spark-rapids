@@ -2114,13 +2114,6 @@ object SupportedOpsForTools {
         val readOps = types.map { t =>
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
             t.toString match {
-              case "BOOLEAN" => conf.isCsvBoolReadEnabled
-              case "BYTE" => conf.isCsvByteReadEnabled
-              case "SHORT" => conf.isCsvShortReadEnabled
-              case "INT" => conf.isCsvIntReadEnabled
-              case "LONG" => conf.isCsvLongReadEnabled
-              case "FLOAT" => conf.isCsvFloatReadEnabled
-              case "DOUBLE" => conf.isCsvDoubleReadEnabled
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
               case "DATE" => conf.isCsvDateReadEnabled
               case _ => true

@@ -354,4 +354,14 @@ class JsonPartitionReader(
     }
   }
 
+  override def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
+    withResource(input.isInteger(intType)) { isInt =>
+      withResource(input.castTo(intType)) { asInt =>
+        withResource(Scalar.fromNull(intType)) { nullValue =>
+          isInt.ifElse(asInt, nullValue)
+        }
+      }
+    }
+  }
+
 }

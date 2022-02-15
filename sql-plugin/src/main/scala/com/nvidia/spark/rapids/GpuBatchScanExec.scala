@@ -222,41 +222,6 @@ object GpuCSVScan {
       }
     }
 
-    if (!meta.conf.isCsvBoolReadEnabled && readSchema.map(_.dataType).contains(BooleanType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading boolean. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BOOLS} to true.")
-    }
-
-    if (!meta.conf.isCsvByteReadEnabled && readSchema.map(_.dataType).contains(ByteType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading bytes. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BYTES} to true.")
-    }
-
-    if (!meta.conf.isCsvShortReadEnabled && readSchema.map(_.dataType).contains(ShortType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading shorts. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_SHORTS} to true.")
-    }
-
-    if (!meta.conf.isCsvIntReadEnabled && readSchema.map(_.dataType).contains(IntegerType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading integers. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_INTEGERS} to true.")
-    }
-
-    if (!meta.conf.isCsvLongReadEnabled && readSchema.map(_.dataType).contains(LongType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading longs. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_LONGS} to true.")
-    }
-
-    if (!meta.conf.isCsvFloatReadEnabled && readSchema.map(_.dataType).contains(FloatType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
-    }
-
-    if (!meta.conf.isCsvDoubleReadEnabled && readSchema.map(_.dataType).contains(DoubleType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading doubles. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
-    }
-
     if (readSchema.map(_.dataType).contains(TimestampType)) {
       if (!meta.conf.isCsvTimestampReadEnabled) {
         meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
@@ -442,6 +407,17 @@ class CSVPartitionReader(
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  override def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
+    // TODO this is still a work-in-progress and does not cover some edge cases yet
+    withResource(input.isInteger(intType)) { isInt =>
+      withResource(input.castTo(intType)) { asInt =>
+        withResource(Scalar.fromNull(intType)) { nullValue =>
+          isInt.ifElse(asInt, nullValue)
         }
       }
     }
