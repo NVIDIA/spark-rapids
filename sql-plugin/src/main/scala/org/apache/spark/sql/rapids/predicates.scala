@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType, IntegerType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPredicateHelper {
@@ -32,6 +32,21 @@ trait GpuPredicateHelper {
       case GpuAnd(cond1, cond2) =>
         splitConjunctivePredicates(cond1) ++ splitConjunctivePredicates(cond2)
       case other => other :: Nil
+    }
+  }
+}
+
+trait GpuCVPredicateHelper extends GpuColumnVectorHelper {
+  /**
+   * Overrides the default behavior in which null values are considered false.
+   */
+  override protected def isAllFalse(col: GpuColumnVector): Boolean = {
+    assert(BooleanType == col.dataType())
+    if (col.numNulls() > 0) {
+      return false
+    }
+    withResource(col.getBase.all()) { allFalse =>
+      !allFalse.getBoolean
     }
   }
 }
@@ -58,7 +73,20 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
   }
 }
 
-case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
+abstract class GpuPredicateWithSideEffect extends CudfBinaryOperator with Predicate with GpuCVPredicateHelper {
+  def columnarEvalWithSideEffects(batch: ColumnarBatch): Any
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val rightExpr = right.asInstanceOf[GpuExpression]
+
+    if (rightExpr.hasSideEffects) {
+      columnarEvalWithSideEffects(batch)
+    } else {
+      super.columnarEval(batch)
+    }
+  }
+}
+
+case class GpuAnd(left: Expression, right: Expression) extends GpuPredicateWithSideEffect {
   override def inputType: AbstractDataType = BooleanType
 
   override def symbol: String = "&&"
@@ -68,67 +96,6 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_AND
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_AND)
 
-  protected def filterBatch(
-      tbl: Table,
-      pred: ColumnVector,
-      colTypes: Array[DataType]): ColumnarBatch = {
-    withResource(tbl.filter(pred)) { filteredData =>
-      GpuColumnVector.from(filteredData, colTypes)
-    }
-  }
-
-  private def boolToInt(cv: ColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(1, IntegerType)) { one =>
-      withResource(GpuScalar.from(0, IntegerType)) { zero =>
-        cv.ifElse(one, zero)
-      }
-    }
-  }
-
-  protected def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
-    // convert the predicate boolean column to numeric where 1 = true
-    // and 0 (or null) = false and then use `scan` with `sum` to convert to
-    // indices.
-    //
-    // For example, if the predicate evaluates to [F, null, T, F, T] then this
-    // gets translated first to [0, 0, 1, 0, 1] and then the scan operation
-    // will perform an exclusive sum on these values and
-    // produce [0, 0, 0, 1, 1]. Combining this with the original
-    // predicate boolean array results in the two T values mapping to
-    // indices 0 and 1, respectively.
-
-    val prefixSumExclusive = withResource(boolToInt(predicate)) { boolsAsInts =>
-      boolsAsInts.scan(
-        ScanAggregation.sum(),
-        ScanType.EXCLUSIVE,
-        NullPolicy.INCLUDE)
-    }
-    val gatherMap = withResource(prefixSumExclusive) { prefixSumExclusive =>
-      // for the entries in the gather map that do not represent valid
-      // values to be gathered, we change the value to -MAX_INT which
-      // will be treated as null values in the gather algorithm
-      withResource(Scalar.fromInt(Int.MinValue)) {
-        outOfBoundsFlag => predicate.ifElse(prefixSumExclusive, outOfBoundsFlag)
-      }
-    }
-    withResource(gatherMap) { _ =>
-      withResource(new Table(t.getBase)) { tbl =>
-        withResource(tbl.gather(gatherMap)) { gatherTbl =>
-          gatherTbl.getColumn(0).incRefCount()
-        }
-      }
-    }
-  }
-
-  protected def isAllFalse(col: GpuColumnVector): Boolean = {
-    assert(BooleanType == col.dataType())
-    if (col.numNulls() > 0) {
-      return false
-    }
-    withResource(col.getBase.all()) { allFalse =>
-      !allFalse.getBoolean
-    }
-  }
 
   /**
    * When computing logical expressions on the CPU, the true and false
@@ -144,7 +111,7 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
    * results are combined back into a single batch using the gather
    * algorithm.
    */
-  private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+  override def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
     val leftExpr = left.asInstanceOf[GpuExpression]
     val rightExpr = right.asInstanceOf[GpuExpression]
     val colTypes = GpuColumnVector.extractTypes(batch)
@@ -178,16 +145,6 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
           }
         }
       }
-    }
-  }
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    val rightExpr = right.asInstanceOf[GpuExpression]
-
-    if (rightExpr.hasSideEffects) {
-      columnarEvalWithSideEffects(batch)
-    } else {
-      super.columnarEval(batch)
     }
   }
 }

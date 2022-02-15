@@ -25,36 +25,8 @@ import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, 
 import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
-  with ShimExpression {
 
-  protected def computeIfElse(
-      batch: ColumnarBatch,
-      predExpr: Expression,
-      trueExpr: Expression,
-      falseValue: Any): GpuColumnVector = {
-    withResourceIfAllowed(falseValue) { falseRet =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
-        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
-          val finalRet = (trueRet, falseRet) match {
-            case (t: GpuColumnVector, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuColumnVector, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t, f) =>
-              throw new IllegalStateException(s"Unexpected inputs" +
-                s" ($t: ${t.getClass}, $f: ${f.getClass})")
-          }
-          GpuColumnVector.from(finalRet, dataType)
-        }
-      }
-    }
-  }
-
+trait GpuColumnVectorHelper extends Arm {
   protected def isAllTrue(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
     if (col.getRowCount == 0) {
@@ -139,6 +111,37 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
       withResource(new Table(t.getBase)) { tbl =>
         withResource(tbl.gather(gatherMap)) { gatherTbl =>
           gatherTbl.getColumn(0).incRefCount()
+        }
+      }
+    }
+  }
+}
+
+trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
+  with ShimExpression with GpuColumnVectorHelper {
+
+  protected def computeIfElse(
+      batch: ColumnarBatch,
+      predExpr: Expression,
+      trueExpr: Expression,
+      falseValue: Any): GpuColumnVector = {
+    withResourceIfAllowed(falseValue) { falseRet =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
+          val finalRet = (trueRet, falseRet) match {
+            case (t: GpuColumnVector, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuColumnVector, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t, f) =>
+              throw new IllegalStateException(s"Unexpected inputs" +
+                s" ($t: ${t.getClass}, $f: ${f.getClass})")
+          }
+          GpuColumnVector.from(finalRet, dataType)
         }
       }
     }
