@@ -120,6 +120,7 @@ Run `--help` for more information.
 - Executors information
 - Job, stage and SQL ID information
 - Rapids related parameters
+- Spark Properties
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
 - Compare Mode: Matching SQL IDs Across Applications
