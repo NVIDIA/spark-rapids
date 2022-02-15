@@ -21,8 +21,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   private val conf = new SparkConf()
-    .set("spark.rapids.sql.expression.RegExpReplace", "true")
-    .set("spark.rapids.sql.expression.RegExpExtract", "true")
 
   testGpuFallback(
     "String regexp_replace replace str columnar fall back",

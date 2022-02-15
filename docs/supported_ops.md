@@ -14,14 +14,12 @@ apply to other versions of Spark, but there may be slight changes.
 
 # General limitations
 ## `Decimal`
-The `Decimal` type in Spark supports a precision
-up to 38 digits (128-bits). The RAPIDS Accelerator in most cases stores values up to
-64-bits and will support 128-bit in the future. As such the accelerator currently only
-supports a precision up to 18 digits. Note that
-decimals are disabled by default in the plugin, because it is supported by a relatively
-small number of operations presently. This can result in a lot of data movement to and
-from the GPU, slowing down processing in some cases.
-Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
+The `Decimal` type in Spark supports a precision up to 38 digits (128-bits). 
+The RAPIDS Accelerator supports 128-bit starting from version 21.12 and decimals are 
+enabled by default.
+Please check [Decimal Support](compatibility.md#decimal-support) for more details.
+
+`Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
 
 ```
  * In particular, if we have expressions e1 and e2 with precision/scale p1/s1 and p2/s2
@@ -9849,8 +9847,8 @@ are limited.
 <tr>
 <td rowSpan="3">RLike</td>
 <td rowSpan="3">`rlike`</td>
-<td rowSpan="3">RLike</td>
-<td rowSpan="3">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
+<td rowSpan="3">Regular expression version of Like</td>
+<td rowSpan="3">None</td>
 <td rowSpan="3">project</td>
 <td>str</td>
 <td> </td>
@@ -10037,8 +10035,8 @@ are limited.
 <tr>
 <td rowSpan="4">RegExpExtract</td>
 <td rowSpan="4">`regexp_extract`</td>
-<td rowSpan="4">RegExpExtract</td>
-<td rowSpan="4">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
+<td rowSpan="4">Extract a specific group identified by a regular expression</td>
+<td rowSpan="4">None</td>
 <td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>
@@ -10126,8 +10124,8 @@ are limited.
 <tr>
 <td rowSpan="4">RegExpReplace</td>
 <td rowSpan="4">`regexp_replace`</td>
-<td rowSpan="4">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="4">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
+<td rowSpan="4">String replace using a regular expression pattern</td>
+<td rowSpan="4">None</td>
 <td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>
