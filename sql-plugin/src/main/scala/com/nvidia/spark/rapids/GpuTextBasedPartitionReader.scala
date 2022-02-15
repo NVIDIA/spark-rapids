@@ -167,7 +167,7 @@ abstract class GpuTextBasedPartitionReader(
         }
 
         // read boolean and numeric columns as strings in cuDF
-        val dataSchemaWithStrings = StructType(newReadDataSchema.fields
+        val dataSchemaWithStrings = StructType(dataSchema.fields
           .map(f => {
             f.dataType match {
               case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
