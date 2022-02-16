@@ -269,7 +269,7 @@ class ApplicationInfo(
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
-        checkGraphNodeForBatchScan(sqlID, node)
+        checkGraphNodeForReads(sqlID, node)
         if (isDataSetOrRDDPlan(node.desc)) {
           sqlIdToInfo.get(sqlID).foreach { sql =>
             sqlIDToDataSetOrRDDCase += sqlID

@@ -183,7 +183,7 @@ abstract class AppBase(
 
   // This will find scans for DataSource V2, if the schema is very large it
   // will likely be incomplete and have ... at the end.
-  protected def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode): Unit = {
+  protected def checkGraphNodeForReads(sqlID: Long, node: SparkPlanGraphNode): Unit = {
     if (node.name.equals("BatchScan") ||
         node.name.contains("GpuScan") ||
         node.name.contains("GpuBatchScan") ||
