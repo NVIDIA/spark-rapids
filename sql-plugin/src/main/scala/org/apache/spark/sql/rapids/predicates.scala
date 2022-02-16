@@ -42,11 +42,11 @@ trait GpuCVPredicateHelper extends GpuColumnVectorHelper {
    */
   override protected def isAllFalse(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
-    if (col.hasNull) {
+    if (col.getRowCount == 0 || col.hasNull) {
       return false
     }
-    withResource(col.getBase.all()) { allFalse =>
-      !allFalse.getBoolean
+    withResource(col.getBase.any()) { anyTrue =>
+      !anyTrue.getBoolean
     }
   }
 
@@ -64,6 +64,21 @@ trait GpuCVPredicateHelper extends GpuColumnVectorHelper {
     withResource(col.getBase.all()) { allTrue =>
       // Guaranteed there is at least one row and no nulls so result must be valid
       allTrue.getBoolean
+    }
+  }
+
+  def replaceNulls(cv: ColumnVector, bool: Boolean) : ColumnVector = {
+    if (!cv.hasNulls) {
+      return cv.incRefCount()
+    }
+    withResource(Scalar.fromBool(bool)) { booleanScalar =>
+      cv.replaceNulls(booleanScalar)
+    }
+  }
+
+  def shortCircuitWithBool(gpuCV: GpuColumnVector, bool: Boolean) : GpuColumnVector = {
+    withResource(GpuScalar.from(bool, BooleanType)) { boolScalar =>
+      GpuColumnVector.from(boolScalar, gpuCV.getRowCount.toInt, BooleanType)
     }
   }
 }
@@ -140,25 +155,20 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryPredica
     withResource(GpuColumnVector.from(batch)) { tbl =>
       withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
         if (isAllFalse(lhsBool)) {
-          withResource(GpuScalar.from(false, dataType)) { falseScalar =>
-            GpuColumnVector.from(falseScalar, lhsBool.getRowCount.toInt, BooleanType)
-          }
+          shortCircuitWithBool(lhsBool, false)
         } else {
-          // replace nulll values
-          val lhsNoNulls = withResource(Scalar.fromBool(true)) { trueScalar =>
-            lhsBool.getBase.replaceNulls(trueScalar)
-          }
-          withResource(lhsNoNulls) { _ =>
+          // replace nulll values (if any) with true
+          withResource(replaceNulls(lhsBool.getBase, true)) { lhsNoNulls =>
             val rEval = withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
               rightExpr.columnarEval(leftTrueBatch)
             }
             val finalRet = withResourceIfAllowed(rEval) { _ =>
-              (rEval) match {
-                case (f: GpuColumnVector) =>
+              rEval match {
+                case f: GpuColumnVector =>
                   withResource(gather(lhsNoNulls, f)) { combinedVector =>
                     doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType))
                   }
-                case (f: GpuScalar) =>
+                case f: GpuScalar =>
                   doColumnar(lhsBool, f)
               }
             }
@@ -185,30 +195,26 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryPredicat
     val colTypes = GpuColumnVector.extractTypes(batch)
 
     withResource(GpuColumnVector.from(batch)) { tbl =>
+      
       withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
         if (isAllTrue(lhsBool)) {
-          withResource(GpuScalar.from(true, dataType)) { trueScalar =>
-            GpuColumnVector.from(trueScalar, lhsBool.getRowCount.toInt, BooleanType)
-          }
+          shortCircuitWithBool(lhsBool, true)
         } else {
           // Invert the lhs.
           withResource(lhsBool.getBase.unaryOp(UnaryOp.NOT)) { lhsInverted =>
-            // Replace nulll values
-            val lhsNoNulls = withResource(Scalar.fromBool(true)) { trueScalar =>
-              lhsInverted.replaceNulls(trueScalar)
-            }
-            // filter batch based on the inverse of the LHS
-            withResource(lhsNoNulls) { _ =>
+            // Replace null values (if any) with true
+            withResource(replaceNulls(lhsInverted, true)) { lhsNoNulls => 
+              // filter batch based on the inverse of the LHS
               val rEval = withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftInverseBatch =>
                 rightExpr.columnarEval(leftInverseBatch)
               }
               val finalRet = withResourceIfAllowed(rEval) { _ =>
-                (rEval) match {
-                  case (f: GpuColumnVector) =>
+                rEval match {
+                  case f: GpuColumnVector =>
                     withResource(gather(lhsNoNulls, f)) { combinedVector =>
                       doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType))
                     }
-                  case (t: GpuColumnVector, f: GpuScalar) =>
+                  case f: GpuScalar =>
                     doColumnar(lhsBool, f)
                 }
               }
