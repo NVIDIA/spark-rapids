@@ -787,8 +787,8 @@ object GpuCast extends Arm {
           keyColumn, from.keyType, StringType, ansiMode,
           legacyCastToString, stringToDateAnsiModeEnabled)
       }
-      val strValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-        closeOnExcept(strKey) {_ =>
+      val strValue = closeOnExcept(strKey) {_ =>
+        withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
           doCast(
             valueColumn, from.valueType, StringType, ansiMode,
             legacyCastToString, stringToDateAnsiModeEnabled)
