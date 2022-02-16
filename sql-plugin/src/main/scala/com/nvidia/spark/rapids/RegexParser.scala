@@ -495,6 +495,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexSequence(parts) =>
         parts.forall(x => isSupportedRepetitionBase(x))
 
+      case RegexGroup(_, term) =>
+        isSupportedRepetitionBase(term)
+
       case _ => true
     }
   }
@@ -662,13 +665,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
             "regexp_replace on GPU does not support repetition with ? or *")
 
         case (RegexGroup(_, term), SimpleQuantifier(ch))
-            if "+*".contains(ch) && (!isSupportedRepetitionBase(term) ||
-              isNestedRepetition(term)) =>
+            if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, term), QuantifierVariableLength(_,None))
-            if !isSupportedRepetitionBase(term) || isNestedRepetition(term) =>
+            if !isSupportedRepetitionBase(term) =>
             // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
+        case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
+          RegexRepetition(rewrite(base), quantifier)
         case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base), quantifier)
         case _ =>
@@ -690,8 +694,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
         def endsWithLineAnchor(e: RegexAST): Boolean = {
           e match {
             case RegexSequence(parts) if parts.nonEmpty =>
-              isBeginOrEndLineAnchor(parts.last)
-            case _ => false
+              endsWithLineAnchor(parts.last)
+            case RegexEscaped('A') => true
+            case _ => isBeginOrEndLineAnchor(e)
           }
         }
         if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {

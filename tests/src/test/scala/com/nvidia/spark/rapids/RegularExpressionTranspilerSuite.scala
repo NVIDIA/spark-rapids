@@ -43,7 +43,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "a^|b",
       "w$|b",
       "\n[^\r\n]x*|^3x",
-      "]*\\wWW$|zb"
+      "]*\\wWW$|zb",
+      "(\\A|\\05)?"
     )
     // data is not relevant because we are checking for compilation errors
     val inputs = Seq("a")
@@ -124,16 +125,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // see https://github.com/NVIDIA/spark-rapids/issues/4487
     val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
     patterns.foreach(pattern => 
-      assertUnsupported(pattern, RegexReplaceMode, "nothing to repeat"))
+      assertUnsupported(pattern, RegexFindMode, "nothing to repeat"))
   }
 
-  test("cuDF doesn't support \\A (escaped string anchors) in some repetitions") {
-    val patterns = Seq(raw"(\A)+", raw"(\A){2,}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
-    )
-  }
-  
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
     patterns.foreach(pattern => {
@@ -184,6 +178,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\Atest", "test\\z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
+  }
+
+  test("string anchor \\A will fall back to CPU in some repetitions") {
+    val patterns = Seq(raw"(\A)+", raw"(\A)*", raw"(\A){2,}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+    )
   }
 
   test("string anchor \\Z fall back to CPU") {
