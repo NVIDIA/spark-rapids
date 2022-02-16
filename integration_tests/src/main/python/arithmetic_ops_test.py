@@ -236,7 +236,7 @@ def test_int_division_mixed(lhs, rhs):
                 'a DIV b'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_128_gens, ids=idfn)
 def test_mod(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -245,9 +245,10 @@ def test_mod(data_gen):
                 f.lit(-12).cast(data_type) % f.col('b'),
                 f.lit(None).cast(data_type) % f.col('a'),
                 f.col('b') % f.lit(None).cast(data_type),
-                f.col('a') % f.col('b')))
+                f.col('a') % f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_pmod(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
