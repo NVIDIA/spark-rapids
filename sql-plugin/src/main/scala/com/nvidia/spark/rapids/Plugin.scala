@@ -417,9 +417,9 @@ object ExecutionPlanCaptureCallback {
     case p if p.expressions.exists(containsExpression(_, className, regexMap)) =>
       true
     case p: SparkPlan =>
-      val sparkPlanForRegex = p.verboseStringWithSuffix(100)
+      val sparkPlanStringForRegex = p.verboseStringWithSuffix(1000)
       regexMap.getOrElseUpdate(className, className.r)
-        .findFirstIn(sparkPlanForRegex)
+        .findFirstIn(sparkPlanStringForRegex)
         .nonEmpty
   }.nonEmpty
 }
