@@ -561,7 +561,7 @@ class JoinGathererImpl(
         }
       }.getOrElse {
         withResource(gatherView.binaryOp(BinaryOp.GREATER,
-          Scalar.fromInt(Integer.MIN_VALUE), DType.BOOL8)) { existenceColumn =>
+          Scalar.fromInt(Int.MinValue), DType.BOOL8)) { existenceColumn =>
             withResource(new Table(existenceColumn)) { existenceTable =>
               GpuColumnVector.from(existenceTable, Array[DataType](BooleanType))
             }
