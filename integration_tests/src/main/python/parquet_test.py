@@ -20,6 +20,8 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from src.main.python.conftest import is_databricks_runtime
+
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -755,6 +757,7 @@ def test_parquet_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_col
 @ignore_order
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
 def test_parquet_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_list):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/first'
     with_cpu_session(lambda spark : spark.range(1).toDF("a").write.parquet(first_data_path))
