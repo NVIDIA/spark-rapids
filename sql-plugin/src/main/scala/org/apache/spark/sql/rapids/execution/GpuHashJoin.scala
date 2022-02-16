@@ -514,6 +514,7 @@ class ConditionalHashJoinIterator(
     }
   }
 }
+
 trait GpuHashJoin extends GpuExec {
   def left: SparkPlan
   def right: SparkPlan
