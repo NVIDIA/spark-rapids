@@ -269,7 +269,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val allFormats = dsRes.map { r =>
         r.format
       }.toSet
-      val expectedFormats = Set("Text", "gpucsv(GPU)", "gpujson(GPU)", "gpuparquet(GPU)", "gpuorc(GPU)")
+      val expectedFormats =
+        Set("Text", "gpucsv(GPU)", "gpujson(GPU)", "gpuparquet(GPU)", "gpuorc(GPU)")
       assert(allFormats.equals(expectedFormats))
       val allSchema = dsRes.map { r =>
         r.schema
