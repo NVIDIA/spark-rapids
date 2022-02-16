@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
+import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
@@ -408,14 +408,15 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val numThreads = rapidsConf.parquetMultiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-
+  private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
+  private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row.
   override val canUseCoalesceFilesReader: Boolean =
-    rapidsConf.isParquetCoalesceFileReadEnabled && !queryUsesInputFile
+    rapidsConf.isParquetCoalesceFileReadEnabled && !(queryUsesInputFile || ignoreCorruptFiles)
 
   override val canUseMultiThreadReader: Boolean = rapidsConf.isParquetMultiThreadReadEnabled
 
@@ -432,7 +433,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     new MultiFileCloudParquetPartitionReader(conf, files,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics, partitionSchema,
-      numThreads, maxNumFileProcessed, filterHandler, filters)
+      numThreads, maxNumFileProcessed, filterHandler, filters,
+      ignoreMissingFiles, ignoreCorruptFiles)
   }
 
   /**
@@ -447,7 +449,23 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     files.map { file =>
-      val singleFileInfo = filterHandler.filterBlocks(file, conf, filters, readDataSchema)
+      val singleFileInfo = try {
+        filterHandler.filterBlocks(file, conf, filters, readDataSchema)
+      } catch {
+        case e: FileNotFoundException if ignoreMissingFiles =>
+          logWarning(s"Skipped missing file: ${file.filePath}", e)
+          ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
+            file.partitionValues, null, false, false, false)
+        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+        case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        // If ignoreMissingFiles=true, this case will never be reached. But it's ok
+        // to leave this branch here.
+        case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(
+            s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
+          ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
+            file.partitionValues, null, false, false, false)
+      }
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         ParquetSingleDataBlockMeta(
           singleFileInfo.filePath,
@@ -460,7 +478,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
-      partitionSchema, numThreads)
+      partitionSchema, numThreads, ignoreMissingFiles, ignoreCorruptFiles)
   }
 
   /**
@@ -991,6 +1009,8 @@ private case class ParquetSingleDataBlockMeta(
  * @param execMetrics metrics
  * @param partitionSchema Schema of partitions.
  * @param numThreads the size of the threadpool
+ * @param ignoreMissingFiles Whether to ignore missing files
+ * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class MultiFileParquetPartitionReader(
     override val conf: Configuration,
@@ -1003,7 +1023,9 @@ class MultiFileParquetPartitionReader(
     maxReadBatchSizeBytes: Long,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
-    numThreads: Int)
+    numThreads: Int,
+    ignoreMissingFiles: Boolean,
+    ignoreCorruptFiles: Boolean)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
   with ParquetPartitionReaderBase {
@@ -1046,6 +1068,18 @@ class MultiFileParquetPartitionReader(
         }
         val bytesRead = fileSystemBytesRead() - startBytesRead
         (res, bytesRead)
+      } catch {
+        case e: FileNotFoundException if ignoreMissingFiles =>
+          logWarning(s"Skipped missing file: ${file.toString}", e)
+          (Seq.empty, 0)
+        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+        case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(
+            s"Skipped the rest of the content in the corrupted file: ${file.toString}", e)
+          // It leave the empty hole for the re-composed parquet file if we skip
+          // the corrupted file. But it should be ok since there is no meta pointing to that "hole"
+          (Seq.empty, 0)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
@@ -1190,6 +1224,8 @@ class MultiFileParquetPartitionReader(
  *                            processed on the GPU. This affects the amount of host memory used.
  * @param filterHandler GpuParquetFileFilterHandler used to filter the parquet blocks
  * @param filters filters passed into the filterHandler
+ * @param ignoreMissingFiles Whether to ignore missing files
+ * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -1204,9 +1240,11 @@ class MultiFileCloudParquetPartitionReader(
     numThreads: Int,
     maxNumFileProcessed: Int,
     filterHandler: GpuParquetFileFilterHandler,
-    filters: Array[Filter])
+    filters: Array[Filter],
+    ignoreMissingFiles: Boolean,
+    ignoreCorruptFiles: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics) with ParquetPartitionReaderBase {
+    execMetrics, ignoreCorruptFiles) with ParquetPartitionReaderBase {
 
   case class HostMemoryBuffersWithMetaData(
       override val partitionedFile: PartitionedFile,
@@ -1238,6 +1276,16 @@ class MultiFileCloudParquetPartitionReader(
       TrampolineUtil.setTaskContext(taskContext)
       try {
         doRead()
+      } catch {
+        case e: FileNotFoundException if ignoreMissingFiles =>
+          logWarning(s"Skipped missing file: ${file.filePath}", e)
+          HostMemoryBuffersWithMetaData(file, Array((null, 0)), 0, false, false, false, null)
+        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+        case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(
+            s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
+          HostMemoryBuffersWithMetaData(file, Array((null, 0)), 0, false, false, false, null)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
@@ -1360,7 +1408,6 @@ class MultiFileCloudParquetPartitionReader(
       case _ => throw new RuntimeException("Wrong HostMemoryBuffersWithMetaData")
     }
   }
-
 
   private def readBufferToTable(
       isCorrectRebaseMode: Boolean,
