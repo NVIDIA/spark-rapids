@@ -250,6 +250,40 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test read GPU datasourcev2") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-gpu-dsv2.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(hadoopConf,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
+      assert(dsRes.size == 5)
+      val allFormats = dsRes.map { r =>
+        r.format
+      }.toSet
+      val expectedFormats = Set("Text", "gpucsv(GPU)", "gpujson(GPU)", "gpuparquet(GPU)", "gpuorc(GPU)")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = dsRes.map { r =>
+        r.schema
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = dsRes.filter { r =>
+        r.sqlID == 3
+      }
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      assert(parquetRow.schema.contains("loan_id"))
+    }
+  }
+
   test("test read datasourcev1") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
