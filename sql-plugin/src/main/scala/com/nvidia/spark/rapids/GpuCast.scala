@@ -780,6 +780,7 @@ object GpuCast extends Arm {
     val (leftStr, rightStr, nullStr) =
       if (legacyCastToString) ("[", "]", "") else ("{", "}", "null")
 
+    // cast the key column and value column to string columns
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
         doCast(
@@ -787,13 +788,17 @@ object GpuCast extends Arm {
           legacyCastToString, stringToDateAnsiModeEnabled)
       }
       val strValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-        doCast(
-          valueColumn, from.valueType, StringType, ansiMode,
-          legacyCastToString, stringToDateAnsiModeEnabled)
+        closeOnExcept(strKey) {_ =>
+          doCast(
+            valueColumn, from.valueType, StringType, ansiMode,
+            legacyCastToString, stringToDateAnsiModeEnabled)
+        }
       }
       (strKey, strValue)
     }
 
+    // concatenate the key-value pairs to string
+    // Example: ("key", "value") -> "key -> value"
     withResource(
       Seq(leftStr, rightStr, arrowStr, emptyStr, nullStr, spaceStr).safeMap(Scalar.fromString)
     ) { case Seq(leftScalar, rightScalar, arrowScalar, emptyScalar, nullScalar, spaceScalar) =>
@@ -816,6 +821,7 @@ object GpuCast extends Arm {
         }
       }
 
+      // concatenate elements
       withResource(strElements) {strElements =>
         withResource(input.replaceListChild(strElements)) {strArrayCol =>
           withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
