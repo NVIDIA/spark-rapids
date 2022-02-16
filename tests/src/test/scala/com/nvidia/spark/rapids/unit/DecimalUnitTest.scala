@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -200,7 +200,7 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
-          HostColumnarToGpu.columnarCopy(hostCV, builder, false, cv.getRowCount.toInt)
+          HostColumnarToGpu.columnarCopy(hostCV, builder, cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
             val expected = hostCV.getBase
             assertResult(expected.getType)(actual.getType)
@@ -224,7 +224,7 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
-          HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
+          HostColumnarToGpu.columnarCopy(hostCV, builder, cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
             val expected = hostCV.getBase
             assertResult(DType.create(DType.DTypeEnum.DECIMAL64, expected.getType.getScale)
