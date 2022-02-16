@@ -356,7 +356,7 @@ def test_computation_in_grpby_columns():
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+        conf = conf)
 
 @pytest.mark.skipif(is_before_spark_311(), reason="SUM overflows for CPU were fixed in Spark 3.1.1")
 @shuffle_test
@@ -368,7 +368,7 @@ def test_hash_grpby_sum(data_gen, conf):
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+        conf = conf)
 
 @approximate_float
 @ignore_order
@@ -378,7 +378,7 @@ def test_hash_grpby_sum_full_decimal(data_gen, conf):
 def test_hash_reduction_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+        conf = conf)
 
 @pytest.mark.skipif(is_before_spark_311(), reason="SUM overflows for CPU were fixed in Spark 3.1.1")
 @approximate_float
@@ -389,7 +389,7 @@ def test_hash_reduction_sum(data_gen, conf):
 def test_hash_reduction_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+        conf = conf)
 
 @approximate_float
 @ignore_order
@@ -426,8 +426,7 @@ def test_hash_avg_nulls_partial_only(data_gen):
 @pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 def test_intersectAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)),
-        conf=allow_negative_scale_of_decimal_conf)
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
 
 @approximate_float
 @ignore_order
@@ -435,8 +434,7 @@ def test_intersectAll(data_gen):
 @pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')),
-        conf=allow_negative_scale_of_decimal_conf)
+        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')))
 
 @approximate_float
 @ignore_order(local=True)
@@ -449,7 +447,7 @@ def test_hash_grpby_pivot(data_gen, conf):
             .groupby('a')
             .pivot('b')
             .agg(f.sum('c')),
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
+        conf = conf)
 
 @approximate_float
 @ignore_order(local=True)
@@ -599,8 +597,7 @@ _gen_data_for_collect_set_op = [[
 @pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
 def test_decimal128_count_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr('count(a)'),
-            conf = allow_negative_scale_of_decimal_conf)
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('count(a)'))
 
 # very simple test for just a count on decimals 128 values until we can support more with them
 @ignore_order(local=True)
@@ -609,16 +606,14 @@ def test_decimal128_count_group_by(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, byte_gen, data_gen)
             .groupby('a')
-            .agg(f.count('b')),
-            conf = allow_negative_scale_of_decimal_conf)
+            .agg(f.count('b')))
 
 # very simple test for just a min/max on decimals 128 values until we can support more with them
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
 def test_decimal128_min_max_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr('min(a)', 'max(a)'),
-            conf = allow_negative_scale_of_decimal_conf)
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('min(a)', 'max(a)'))
 
 # very simple test for just a min/max on decimals 128 values until we can support more with them
 @ignore_order(local=True)
@@ -627,8 +622,7 @@ def test_decimal128_min_max_group_by(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, byte_gen, data_gen)
             .groupby('a')
-            .agg(f.min('b'), f.max('b')),
-            conf = allow_negative_scale_of_decimal_conf)
+            .agg(f.min('b'), f.max('b')))
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
@@ -640,7 +634,7 @@ def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
             .groupby('a')
             .agg(f.collect_list('b')),
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower(),
-            'spark.sql.shuffle.partitons': '1'})
+            'spark.sql.shuffle.partitions': '1'})
 
 @approximate_float
 @ignore_order(local=True)
@@ -1048,8 +1042,7 @@ def test_first_last_reductions_decimal_types(data_gen):
         # Coalesce and sort are to make sure that first and last, which are non-deterministic
         # become deterministic
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
-            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
-        conf=allow_negative_scale_of_decimal_conf)
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'))
 
 @pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
 def test_first_last_reductions_nested_types(data_gen):
@@ -1057,8 +1050,7 @@ def test_first_last_reductions_nested_types(data_gen):
         # Coalesce and sort are to make sure that first and last, which are non-deterministic
         # become deterministic
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
-            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'),
-        conf=allow_negative_scale_of_decimal_conf)
+            'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'))
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
@@ -1124,8 +1116,7 @@ def test_groupby_first_last(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
-        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
-        conf=allow_negative_scale_of_decimal_conf)
+        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)))
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)

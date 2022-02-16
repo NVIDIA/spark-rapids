@@ -20,7 +20,6 @@ from pyspark.context import SparkContext
 from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-import pytest
 import random
 from spark_session import is_tz_utc
 import sre_yield
@@ -956,8 +955,7 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
-allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
-
+ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 
 def copy_and_update(conf, *more_confs):

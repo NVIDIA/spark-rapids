@@ -95,8 +95,7 @@ def test_cast_string_timestamp_fallback():
 def test_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
-            conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
-                {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
+            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
 
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(7, 1),
@@ -115,8 +114,7 @@ def test_cast_decimal_to(data_gen, to_type):
     DecimalType(1, -1)], ids=meta_idfn('to:'))
 def test_cast_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
-            conf = allow_negative_scale_of_decimal_conf)
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('to_type', [
@@ -136,26 +134,22 @@ def test_cast_integral_to_decimal(data_gen, to_type):
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, byte_gen).select(
-            f.col('a').cast(DecimalType(2, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+            f.col('a').cast(DecimalType(2, -1))))
 
 def test_cast_short_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, short_gen).select(
-            f.col('a').cast(DecimalType(4, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+            f.col('a').cast(DecimalType(4, -1))))
 
 def test_cast_int_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, int_gen).select(
-            f.col('a').cast(DecimalType(9, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+            f.col('a').cast(DecimalType(9, -1))))
 
 def test_cast_long_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, long_gen).select(
-            f.col('a').cast(DecimalType(18, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+            f.col('a').cast(DecimalType(18, -1))))
 
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
@@ -204,8 +198,7 @@ def test_cast_array_to_string(data_gen, legacy):
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
-         "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
+        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
          "spark.rapids.sql.castFloatToString.enabled"       : "true", 
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
@@ -216,7 +209,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true', 
+        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true',
         "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
@@ -226,9 +219,8 @@ def test_cast_map_to_string(data_gen, legacy):
 def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
-         "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
-         "spark.rapids.sql.castFloatToString.enabled"       : "true", 
+        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
+         "spark.rapids.sql.castFloatToString.enabled"       : "true",
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -282,8 +274,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
-          "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
+        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
          "spark.rapids.sql.castFloatToString.enabled"       : "true", 
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
@@ -297,4 +288,4 @@ def is_neg_dec_scale_bug_version():
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
-            f.col('a').cast(DecimalType(8, -3))), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+            f.col('a').cast(DecimalType(8, -3))))
