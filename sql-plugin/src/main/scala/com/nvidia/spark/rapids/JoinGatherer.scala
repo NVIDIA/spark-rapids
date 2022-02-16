@@ -136,11 +136,10 @@ trait JoinGatherer extends LazySpillable with Arm {
 
 object JoinGatherer extends Arm {
   def apply(gatherMap: LazySpillableGatherMap,
-      inputData: LazySpillableColumnarBatch,
-      outOfBoundsPolicy: OutOfBoundsPolicy,
-      gatherExistenceColumn: Boolean = false
+      inputData: Option[LazySpillableColumnarBatch],
+      outOfBoundsPolicy: OutOfBoundsPolicy
     ): JoinGatherer = {
-      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy, gatherExistenceColumn)
+      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
     }
 
   def apply(leftMap: LazySpillableGatherMap,
@@ -149,9 +148,25 @@ object JoinGatherer extends Arm {
       rightData: LazySpillableColumnarBatch,
       outOfBoundsPolicyLeft: OutOfBoundsPolicy,
       outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
-    val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
-    val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight, true)
+    val left = JoinGatherer(leftMap, Some(leftData), outOfBoundsPolicyLeft)
+    val right = JoinGatherer(rightMap, Some(rightData), outOfBoundsPolicyRight)
     MultiJoinGather(left, right)
+  }
+
+  // existence join gather
+  def apply(
+      leftMap: LazySpillableGatherMap,
+      leftData: LazySpillableColumnarBatch,
+      rightMap: LazySpillableGatherMap,
+      outOfBoundsPolicyLeft: OutOfBoundsPolicy): JoinGatherer = {
+    val left = JoinGatherer(leftMap, Some(leftData), outOfBoundsPolicyLeft)
+    val right = JoinGatherer(rightMap)
+    MultiJoinGather(left, right)
+  }
+
+  // existence column gather
+  def apply(map: LazySpillableGatherMap): JoinGatherer = {
+    JoinGatherer(map, None, OutOfBoundsPolicy.DONT_CHECK)
   }
 
   def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long): Int = {
@@ -499,29 +514,29 @@ object JoinGathererImpl {
  */
 class JoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
-    private val data: LazySpillableColumnarBatch,
-    boundsCheckPolicy: OutOfBoundsPolicy,
-    gatherExistenceColumn: Boolean) extends JoinGatherer {
+    private val dataOpt: Option[LazySpillableColumnarBatch],
+    boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
 
-  assert(data.numCols > 0, "data with no columns should have been filtered out already")
+  assert(dataOpt.forall(_.numCols > 0),
+    "data with no columns should have been filtered out already")
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
   private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
-    val dts = data.dataTypes
+    val dts = dataOpt.map(_.dataTypes).getOrElse(Array[DataType](BooleanType))
     val fw = JoinGathererImpl.fixedWidthRowSizeBits(dts)
     val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
     (fw, nullVal)
   }
 
   override def toString: String = {
-    s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
+    s"GATHERER $gatheredUpTo/$totalRows $gatherMap $dataOpt"
   }
 
   override def realCheapPerRowSizeEstimate: Double = {
-    val totalInputRows: Int = data.numRows
-    val totalInputSize: Long = data.deviceMemorySize
+    val totalInputRows: Long = gatherMap.getRowCount
+    val totalInputSize: Long = dataOpt.map(_.deviceMemorySize).getOrElse(totalInputRows)
     // Avoid divide by 0 here and later on
     if (totalInputRows > 0 && totalInputSize > 0) {
       totalInputSize.toDouble / totalInputRows
@@ -536,20 +551,20 @@ class JoinGathererImpl(
     val start = gatheredUpTo
     assert((start + n) <= totalRows)
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
-      if (gatherExistenceColumn) {
-        withResource(gatherView.binaryOp(BinaryOp.GREATER,
-          Scalar.fromInt(Integer.MIN_VALUE), DType.BOOL8)) { existenceColumn =>
-            withResource(new Table(existenceColumn)) { existenceTable =>
-              GpuColumnVector.from(existenceTable, Array[DataType](BooleanType))
-            }
-        }
-      } else {
+      dataOpt.map { data =>
         val batch = data.getBatch
         val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
           table.gather(gatherView, boundsCheckPolicy)
         }
         withResource(gatheredTable) { gt =>
           GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
+        }
+      }.getOrElse {
+        withResource(gatherView.binaryOp(BinaryOp.GREATER,
+          Scalar.fromInt(Integer.MIN_VALUE), DType.BOOL8)) { existenceColumn =>
+            withResource(new Table(existenceColumn)) { existenceTable =>
+              GpuColumnVector.from(existenceTable, Array[DataType](BooleanType))
+            }
         }
       }
     }
@@ -563,12 +578,14 @@ class JoinGathererImpl(
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
   override def allowSpilling(): Unit = {
-    data.allowSpilling()
+    dataOpt.foreach(_.allowSpilling())
     gatherMap.allowSpilling()
   }
 
   override def getBitSizeMap(n: Int): ColumnView = {
-    val cb = data.getBatch
+    val cb = dataOpt.getOrElse{
+      throw new UnsupportedOperationException("unsupported on exists column gather")
+    }.getBatch
     val inputBitCounts = withResource(GpuColumnVector.from(cb)) { table =>
       withResource(table.rowBitCount()) { bits =>
         bits.castTo(DType.INT64)
@@ -603,7 +620,7 @@ class JoinGathererImpl(
 
   override def close(): Unit = {
     gatherMap.close()
-    data.close()
+    dataOpt.foreach(_.close())
   }
 }
 
@@ -617,9 +634,6 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   override def gatherNext(n: Int): ColumnarBatch = {
     withResource(left.gatherNext(n)) { leftGathered =>
       withResource(right.gatherNext(n)) { rightGathered =>
-        // GpuColumnVector.debug("MultiJoinGather.leftGathered", leftGathered)
-        // GpuColumnVector.debug("MultiJoinGather.rightGathered", rightGathered)
-
         val vectors = Seq(leftGathered, rightGathered).flatMap { batch =>
           (0 until batch.numCols()).map { i =>
             val col = batch.column(i)

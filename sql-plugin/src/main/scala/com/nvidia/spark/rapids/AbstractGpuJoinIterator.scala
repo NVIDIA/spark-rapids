@@ -305,7 +305,7 @@ abstract class SplittableJoinIterator(
           // In these cases, the map and the table are both the left side, and everything in the map
           // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
-          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
+          JoinGatherer(lazyLeftMap, Some(leftData), OutOfBoundsPolicy.DONT_CHECK)
         case Some(right) =>
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
@@ -331,12 +331,13 @@ abstract class SplittableJoinIterator(
           }
           val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
           joinType match {
-            case ExistenceJoin(_) => rightData.close()
-            case _ => ()
+            case ExistenceJoin(_) =>
+              rightData.close()
+              JoinGatherer(lazyLeftMap, leftData, lazyRightMap, leftOutOfBoundsPolicy)
+            case _ =>
+              JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData, leftOutOfBoundsPolicy,
+                rightOutOfBoundsPolicy)
           }
-
-          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
-            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
         }
       if (gatherer.isDone) {
         // Nothing matched...

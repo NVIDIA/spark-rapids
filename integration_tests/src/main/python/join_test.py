@@ -802,15 +802,7 @@ def test_struct_self_join(spark_tmp_table_factory):
 # If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
 # the optimizer won't use ExistenceJoin.
 @ignore_order(local=True)
-@pytest.mark.parametrize(
-    "allowFallback", [
-        pytest.param('true',
-            marks=pytest.mark.allow_non_gpu('SortMergeJoinExec')),
-        # pytest.param('false',
-        #     marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/589"))
-    ], ids=idfn
-)
-def test_existence_join(allowFallback, spark_tmp_table_factory):
+def test_existence_join(spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
     def do_join(spark):
@@ -828,6 +820,5 @@ def test_existence_join(allowFallback, spark_tmp_table_factory):
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r"ExistenceJoin\(exists#[0-9]+\)",
         conf={
             "spark.rapids.sql.explain"                  : "ALL",
-            "spark.sql.adaptive.enabled"                : False,
-            "spark.rapids.sql.join.existence.enabled"   : True
-        })
+            "spark.sql.adaptive.enabled"                : False
+    })
