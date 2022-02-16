@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -137,8 +137,11 @@ trait JoinGatherer extends LazySpillable with Arm {
 object JoinGatherer extends Arm {
   def apply(gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
-      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
-    new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+      outOfBoundsPolicy: OutOfBoundsPolicy,
+      gatherExistenceColumn: Boolean = false
+    ): JoinGatherer = {
+      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy, gatherExistenceColumn)
+    }
 
   def apply(leftMap: LazySpillableGatherMap,
       leftData: LazySpillableColumnarBatch,
@@ -147,7 +150,7 @@ object JoinGatherer extends Arm {
       outOfBoundsPolicyLeft: OutOfBoundsPolicy,
       outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
     val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
-    val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
+    val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight, true)
     MultiJoinGather(left, right)
   }
 
@@ -497,7 +500,8 @@ object JoinGathererImpl {
 class JoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
     private val data: LazySpillableColumnarBatch,
-    boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
+    boundsCheckPolicy: OutOfBoundsPolicy,
+    gatherExistenceColumn: Boolean) extends JoinGatherer {
 
   assert(data.numCols > 0, "data with no columns should have been filtered out already")
 
@@ -532,12 +536,21 @@ class JoinGathererImpl(
     val start = gatheredUpTo
     assert((start + n) <= totalRows)
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
-      val batch = data.getBatch
-      val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
-        table.gather(gatherView, boundsCheckPolicy)
-      }
-      withResource(gatheredTable) { gt =>
-        GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
+      if (gatherExistenceColumn) {
+        withResource(gatherView.binaryOp(BinaryOp.GREATER,
+          Scalar.fromInt(Integer.MIN_VALUE), DType.BOOL8)) { existenceColumn =>
+            withResource(new Table(existenceColumn)) { existenceTable =>
+              GpuColumnVector.from(existenceTable, Array[DataType](BooleanType))
+            }
+        }
+      } else {
+        val batch = data.getBatch
+        val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
+          table.gather(gatherView, boundsCheckPolicy)
+        }
+        withResource(gatheredTable) { gt =>
+          GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
+        }
       }
     }
     gatheredUpTo += n
@@ -604,6 +617,9 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   override def gatherNext(n: Int): ColumnarBatch = {
     withResource(left.gatherNext(n)) { leftGathered =>
       withResource(right.gatherNext(n)) { rightGathered =>
+        // GpuColumnVector.debug("MultiJoinGather.leftGathered", leftGathered)
+        // GpuColumnVector.debug("MultiJoinGather.rightGathered", rightGathered)
+
         val vectors = Seq(leftGathered, rightGathered).flatMap { batch =>
           (0 until batch.numCols()).map { i =>
             val col = batch.column(i)

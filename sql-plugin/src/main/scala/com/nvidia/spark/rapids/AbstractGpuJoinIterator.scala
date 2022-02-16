@@ -23,7 +23,7 @@ import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -330,9 +330,14 @@ abstract class SplittableJoinIterator(
             case _ => OutOfBoundsPolicy.NULLIFY
           }
           val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
+          joinType match {
+            case ExistenceJoin(_) => rightData.close()
+            case _ => ()
+          }
+
           JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
             leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
-      }
+        }
       if (gatherer.isDone) {
         // Nothing matched...
         gatherer.close()
