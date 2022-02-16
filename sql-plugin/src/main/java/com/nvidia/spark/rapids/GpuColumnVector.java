@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -387,7 +387,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
-      HostColumnarToGpu.columnarCopy(cv, builder(colNum), nullable, rows);
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), rows);
     }
 
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
