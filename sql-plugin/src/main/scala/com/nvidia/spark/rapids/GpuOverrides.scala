@@ -809,11 +809,11 @@ object GpuOverrides extends Logging {
       sparkSig = TypeSig.cpuAtomics)),
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-        TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-          TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-          TypeSig.UDT).nested())),
+          TypeSig.UDT + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested())),
     (OrcFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_128 +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
@@ -1474,10 +1474,12 @@ object GpuOverrides extends Logging {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
+            TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
+              TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -3536,7 +3538,7 @@ object GpuOverrides extends Logging {
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
       ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
-          TypeSig.MAP).nested(),
+          TypeSig.MAP + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
         TypeSig.all),
       (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
         override def convertToGpu(): GpuExec =
@@ -3548,7 +3550,8 @@ object GpuOverrides extends Logging {
           TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
           TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
           TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
-          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
+          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
+          TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =

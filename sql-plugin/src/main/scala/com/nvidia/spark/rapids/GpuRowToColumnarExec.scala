@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -93,7 +93,7 @@ private[rapids] object GpuRowToColumnConverter {
     getConverterForType(field.dataType, field.nullable)
 
   private[rapids] def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
-    (dataType, nullable) match {
+    val basicMatches: PartialFunction[(DataType, Boolean), TypeConverter] = {
       case (BooleanType, true) => BooleanConverter
       case (BooleanType, false) => NotNullBooleanConverter
       case (ByteType, true) => ByteConverter
@@ -138,9 +138,24 @@ private[rapids] object GpuRowToColumnConverter {
           getConverterForType(v, vcn))
       case (NullType, true) =>
         NullConverter
+    }
+
+    val unknownMatch: PartialFunction[(DataType, Boolean), TypeConverter] = {
       case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
+
+    // get shim matches
+    val shimMatches = GpuTypeShims.getConverterForType
+
+    // combine multiple partial matches
+    val combinedMatches = if(shimMatches.nonEmpty) {
+      basicMatches orElse shimMatches.get orElse unknownMatch
+    } else {
+      basicMatches orElse unknownMatch
+    }
+
+    combinedMatches((dataType, nullable))
   }
 
   private object NullConverter extends TypeConverter {
@@ -232,7 +247,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 2 + VALIDITY
   }
 
-  private object IntConverter extends TypeConverter {
+  private[rapids] object IntConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
@@ -247,7 +262,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 4 + VALIDITY
   }
 
-  private object NotNullIntConverter extends TypeConverter {
+  private[rapids] object NotNullIntConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
@@ -284,7 +299,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 4 + VALIDITY
   }
 
-  private object LongConverter extends TypeConverter {
+  private[rapids] object LongConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
@@ -299,7 +314,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 8 + VALIDITY
   }
 
-  private object NotNullLongConverter extends TypeConverter {
+  private[rapids] object NotNullLongConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
