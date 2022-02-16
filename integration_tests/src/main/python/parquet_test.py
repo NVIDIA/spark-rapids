@@ -20,7 +20,7 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
-from src.main.python.conftest import is_databricks_runtime
+from conftest import is_databricks_runtime
 
 
 def read_parquet_df(data_path):
