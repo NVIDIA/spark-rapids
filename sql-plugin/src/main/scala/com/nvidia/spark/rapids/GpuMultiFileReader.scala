@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
@@ -295,6 +295,7 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
  *                            submitted to threadpool
  * @param filters push down filters
  * @param execMetrics the metrics
+ * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -302,7 +303,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     numThreads: Int,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
-    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics) {
+    execMetrics: Map[String, GpuMetric],
+    ignoreCorruptFiles: Boolean = false) extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
@@ -388,7 +390,15 @@ abstract class MultiFileCloudPartitionReaderBase(
           closeCurrentFileHostBuffers()
           next()
         } else {
-          batch = readBatch(currentFileHostBuffers.get)
+          val file = currentFileHostBuffers.get.partitionedFile.filePath
+          batch = try {
+            readBatch(currentFileHostBuffers.get)
+          } catch {
+            case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+              logWarning(
+                s"Skipped the corrupted file: ${file}", e)
+              None
+          }
         }
       } else {
         if (filesToRead > 0 && !isDone) {
@@ -407,7 +417,16 @@ abstract class MultiFileCloudPartitionReaderBase(
             addNextTaskIfNeeded()
             next()
           } else {
-            batch = readBatch(fileBufsAndMeta)
+            val file = fileBufsAndMeta.partitionedFile.filePath
+            batch = try {
+              readBatch(fileBufsAndMeta)
+            } catch {
+              case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+                logWarning(
+                  s"Skipped the corrupted file: ${file}", e)
+                None
+            }
+
             // the data is copied to GPU so submit another task if we were limited
             addNextTaskIfNeeded()
           }
