@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,8 +48,7 @@ def test_explode_litarray(data_gen):
                 f.explode(array_lit)))
 
 # use a small `spark.rapids.sql.batchSizeBytes` to enforce input batches splitting up during explode
-conf_to_enforce_split_input = {'spark.rapids.sql.batchSizeBytes': '8192',
-        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+conf_to_enforce_split_input = {'spark.rapids.sql.batchSizeBytes': '8192'}
 
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed

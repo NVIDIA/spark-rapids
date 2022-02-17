@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,14 +40,12 @@ nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 def test_sample(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices = 10)
-            .sample(fraction = 0.9, seed = 1),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True}
+            .sample(fraction = 0.9, seed = 1)
     )
 
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
 def test_sample_with_replacement(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices = 10).sample(
-            withReplacement =True, fraction = 0.5, seed = 1),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True}
+            withReplacement =True, fraction = 0.5, seed = 1)
     )

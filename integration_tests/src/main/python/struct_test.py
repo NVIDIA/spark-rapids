@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
-from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
 
@@ -39,7 +38,7 @@ def test_struct_get_item(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'a.first',
                 'a.second',
-                'a.third'), conf=allow_negative_scale_of_decimal_conf)
+                'a.third'))
 
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default,
@@ -50,8 +49,7 @@ def test_make_struct(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'struct(a, b)',
-                'named_struct("foo", b, "m", map("a", "b"), "n", null, "bar", 5, "other", named_struct("z", "z"),"end", a)'),
-            conf = allow_negative_scale_of_decimal_conf)
+                'named_struct("foo", b, "m", map("a", "b"), "n", null, "bar", 5, "other", named_struct("z", "z"),"end", a)'))
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),

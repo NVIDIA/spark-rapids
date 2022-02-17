@@ -22,7 +22,6 @@ from marks import ignore_order
 _explain_mode_conf = {'spark.rapids.sql.mode': 'explainOnly',
                       'spark.sql.join.preferSortMergeJoin': 'True',
                       'spark.sql.shuffle.partitions': '2',
-                      'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
                       }
 
 def create_df(spark, data_gen, left_length, right_length):
