@@ -19,6 +19,7 @@ package org.apache.spark.sql.catalyst.json.rapids
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
@@ -40,7 +41,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration;
+import org.apache.spark.util.SerializableConfiguration
 
 object GpuJsonScan {
 
@@ -287,7 +288,22 @@ class JsonPartitionReader(
       hasHeader: Boolean): Table = {
 
     val jsonOpts = buildJsonOptions(parsedOptions)
-    Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+    // cuDF does not yet support reading a subset of columns so we have
+    // to apply the read schema projection here
+    withResource(Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)) { tbl =>
+      val columns = new ListBuffer[ColumnVector]()
+      closeOnExcept(columns) { _ =>
+        for (name <- readDataSchema.fieldNames) {
+          val i = cudfSchema.getColumnNames.indexOf(name)
+          if (i == -1) {
+            throw new IllegalStateException(
+              s"read schema contains field named '$name' that is not in the data schema")
+          }
+          columns += tbl.getColumn(i)
+        }
+      }
+      new Table(columns: _*)
+    }
   }
 
   /**
