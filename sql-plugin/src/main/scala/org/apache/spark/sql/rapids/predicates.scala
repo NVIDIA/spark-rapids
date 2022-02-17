@@ -46,6 +46,7 @@ trait GpuCVPredicateHelper extends GpuColumnVectorHelper {
       return false
     }
     withResource(col.getBase.any()) { anyTrue =>
+      // Guarantee that no Nulls; hence checking that scalar valid is skipped.
       !anyTrue.getBoolean
     }
   }
@@ -115,7 +116,6 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryPredica
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_AND
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_AND)
 
-
   /**
    * When computing logical expressions on the CPU, the true and false
    * expressions are evaluated lazily, meaning that the RHS expression
@@ -140,7 +140,7 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryPredica
         if (isAllFalse(lhsBool)) {
           shortCircuitWithBool(lhsBool, false)
         } else {
-          // Replace nulll values (if any) with true.
+          // Replace null values (if any) with true.
           withResource(replaceNulls(lhsBool.getBase, true)) { lhsNoNulls =>
             val rEval = withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
               rightExpr.columnarEval(leftTrueBatch)
@@ -178,7 +178,6 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryPredicat
     val colTypes = GpuColumnVector.extractTypes(batch)
 
     withResource(GpuColumnVector.from(batch)) { tbl =>
-      
       withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
         if (isAllTrue(lhsBool)) {
           shortCircuitWithBool(lhsBool, true)
