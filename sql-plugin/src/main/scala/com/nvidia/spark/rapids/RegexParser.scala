@@ -467,17 +467,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
     cudfRegex.toRegexString
   }
 
-  private def isSomeRepetition(f: ListBuffer[RegexAST] => Boolean)(e: RegexAST): Boolean = {
+  private def isRepetition(e: RegexAST): Boolean = {
     e match {
       case RegexRepetition(_, _) => true
       case RegexGroup(_, term) => isRepetition(term)
-      case RegexSequence(parts) if f(parts) => isRepetition(parts.last)
+      case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
       case _ => false
     }
   }
-
-  private def isRepetition = isSomeRepetition(_.nonEmpty)(_)
-  private def isNestedRepetition = isSomeRepetition(_.length == 1)(_)
 
   private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
     e match {
@@ -493,7 +490,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         false
 
       case RegexSequence(parts) =>
-        parts.forall(x => isSupportedRepetitionBase(x))
+        parts.forall(isSupportedRepetitionBase)
 
       case RegexGroup(_, term) =>
         isSupportedRepetitionBase(term)
@@ -679,7 +676,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, term), QuantifierVariableLength(_,None))
             if !isSupportedRepetitionBase(term) =>
-            // specifically this variable length repetition: \A{2,}
+          // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base), quantifier)
