@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
@@ -236,23 +237,6 @@ object QualOutputWriter {
       delimiter: String,
       prettyPrint: Boolean): String = {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
-  }
-
-  // if a string contains what we are going to use for a delimiter, replace
-  // it with something else
-  private def replaceDelimiter(str: String, delimiter: String): String = {
-    if (str.contains(delimiter)) {
-      val replaceWith = if (delimiter.equals(",")) {
-        ";"
-      } else if (delimiter.equals(";")) {
-        ":"
-      } else {
-        ";"
-      }
-      str.replace(delimiter, replaceWith)
-    } else {
-      str
-    }
   }
 
   def constructAppDetailedInfo(
