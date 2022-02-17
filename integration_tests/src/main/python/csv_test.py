@@ -231,7 +231,7 @@ def read_csv_sql(data_path, schema, options = {}):
     pytest.param('floats_invalid.csv', _double_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}),
-    pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2071')),
+    pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}),
     pytest.param('ints_with_whitespace.csv', _number_as_string_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2069')),
     pytest.param('ints_with_whitespace.csv', _byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/130'))
     ], ids=idfn)

@@ -20,6 +20,8 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from conftest import is_databricks_runtime
+
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -750,3 +752,24 @@ def test_parquet_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_col
         do_parquet_scan,
         exist_classes= "FileSourceScanExec",
         non_exist_classes= "GpuBatchScanExec")
+
+
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
+def test_parquet_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_list):
+    first_data_path = spark_tmp_path + '/PARQUET_DATA/first'
+    with_cpu_session(lambda spark : spark.range(1).toDF("a").write.parquet(first_data_path))
+    second_data_path = spark_tmp_path + '/PARQUET_DATA/second'
+    with_cpu_session(lambda spark : spark.range(1, 2).toDF("a").write.parquet(second_data_path))
+    third_data_path = spark_tmp_path + '/PARQUET_DATA/third'
+    with_cpu_session(lambda spark : spark.range(2, 3).toDF("a").write.json(third_data_path))
+
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.files.ignoreCorruptFiles': "true",
+                                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(first_data_path, second_data_path, third_data_path),
+            conf=all_confs)

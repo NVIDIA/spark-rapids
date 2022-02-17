@@ -166,11 +166,11 @@ abstract class GpuTextBasedPartitionReader(
           readDataSchema
         }
 
-        // read floating-point columns as strings in cuDF
+        // read boolean and floating-point columns as strings in cuDF
         val dataSchemaWithStrings = StructType(dataSchema.fields
           .map(f => {
             f.dataType match {
-              case DataTypes.FloatType | DataTypes.DoubleType =>
+              case DataTypes.BooleanType | DataTypes.FloatType | DataTypes.DoubleType =>
                 f.copy(dataType = DataTypes.StringType)
               case _ =>
                 f
@@ -188,7 +188,7 @@ abstract class GpuTextBasedPartitionReader(
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
-        // parse floating-point columns that were read as strings
+        // parse boolean and floating-point columns that were read as strings
         val castTable = withResource(table) { _ =>
           val columns = new ListBuffer[ColumnVector]()
           // Table increases the ref counts on the columns so we have
@@ -198,6 +198,8 @@ abstract class GpuTextBasedPartitionReader(
             val ansiEnabled = false
             for (i <- 0 until table.getNumberOfColumns) {
               val castColumn = dataSchema.fields(i).dataType match {
+                case DataTypes.BooleanType =>
+                  castStringToBool(table.getColumn(i))
                 case DataTypes.FloatType =>
                   GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
                 case DataTypes.DoubleType =>
@@ -217,6 +219,8 @@ abstract class GpuTextBasedPartitionReader(
       dataBuffer.close()
     }
   }
+
+  def castStringToBool(input: ColumnVector): ColumnVector
 
   /**
    * Read the host buffer to GPU table

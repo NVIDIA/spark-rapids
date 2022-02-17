@@ -44,6 +44,7 @@ object MetricsLevel {
 object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
+  val COPY_BUFFER_TIME = "copyBufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
   val NUM_INPUT_ROWS = "numInputRows"
   val NUM_INPUT_BATCHES = "numInputBatches"
@@ -73,6 +74,7 @@ object GpuMetric extends Logging {
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
+  val DESCRIPTION_COPY_BUFFER_TIME = "copy buffer time"
   val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
   val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
   val DESCRIPTION_NUM_INPUT_BATCHES = "input columnar batches"

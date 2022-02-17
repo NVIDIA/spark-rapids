@@ -38,6 +38,9 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
     'spark.rapids.sql.format.json.read.enabled': 'true'}
 
+_bool_schema = StructType([
+    StructField('number', BooleanType())])
+
 _float_schema = StructType([
     StructField('number', FloatType())])
 
@@ -170,6 +173,8 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 
 @approximate_float
 @pytest.mark.parametrize('filename', [
+    'boolean.json',
+    pytest.param('boolean_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
     'nan_and_inf.json',
     pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
     'floats.json',
@@ -177,7 +182,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'floats_invalid.json',
     pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
 ])
-@pytest.mark.parametrize('schema', [_float_schema, _double_schema])
+@pytest.mark.parametrize('schema', [_bool_schema, _float_schema, _double_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
