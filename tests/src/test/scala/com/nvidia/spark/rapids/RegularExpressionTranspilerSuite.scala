@@ -310,6 +310,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
+  test("regexp_replace - fall back to CPU for {0} or {0,0}") {
+    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode, 
+        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+    )
+  }
+
+  test("regexp_split - fall back to CPU for {0} or {0,0}") {
+    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+    )
+  }
+
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
@@ -644,12 +660,12 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
         () => predefinedCharacterClass,
         () => group(depth),
         () => boundaryMatch,
-        () => sequence(depth),
-        () => repetition(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4487
+        () => sequence(depth))
       val generators = if (skipKnownIssues) {
         baseGenerators
       } else {
         baseGenerators ++ Seq(
+          () => repetition(depth), // https://github.com/NVIDIA/spark-rapids/issues/4487
           () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
       }
       generators(rr.nextInt(generators.length))()

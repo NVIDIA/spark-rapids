@@ -664,6 +664,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
+        case (_, QuantifierFixedLength(0)) | (_, QuantifierVariableLength(0,Some(0)))
+          if mode != RegexFindMode =>
+          throw new RegexUnsupportedException(
+            "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+
         case (RegexGroup(_, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
           throw new RegexUnsupportedException(nothingToRepeat)
