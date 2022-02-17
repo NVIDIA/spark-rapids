@@ -802,23 +802,46 @@ def test_struct_self_join(spark_tmp_table_factory):
 # If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
 # the optimizer won't use ExistenceJoin.
 @ignore_order(local=True)
-def test_existence_join(spark_tmp_table_factory):
+@pytest.mark.parametrize('numComplementsToExists', [0, 1, 2])
+@pytest.mark.parametrize('aqeEnabled', [
+    pytest.param(False),
+    pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'))
+])
+def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
     def do_join(spark):
         # create non-overlapping ranges to have a mix of exists=true and exists=false
-        spark.createDataFrame([f"left_{v}", v * 10, v * 100] for v in range(2, 10)).createOrReplaceTempView(leftTable)
-        spark.createDataFrame([f"right_{v}", v * 10, v * 100] for v in range(0, 8)).createOrReplaceTempView(rightTable)
+        # duplicate every row in the rhs to verify it does not affect
+        # the the number of the output rows, which should be equal to the number of the
+        # left-hand side rows
+        lhs_upper_bound = 10
+        lhs_data = list((f"left_{v}", v * 10, v * 100) for v in range(2, lhs_upper_bound))
+        lhs_data.append(('left_null', None, None))
+        df_left = spark.createDataFrame(lhs_data)
+        df_left.createOrReplaceTempView(leftTable)
+
+        rhs_data = list((f"right_{v}", v * 10, v * 100) for v in range(0, 8))
+        rhs_data.append(('right_null', None, None))
+        rhs_data_with_dupes=[]
+        for dupe in rhs_data:
+            rhs_data_with_dupes.extend([dupe, dupe])
+
+        df_right = spark.createDataFrame(rhs_data_with_dupes)
+        df_right.createOrReplaceTempView(rightTable)
+
+        assert df_right.count() == df_left.count() * 2
+        assert df_right.distinct().count() == df_left.count()
+
         res = spark.sql((
             "select * "
             "from {} as l "
-            "where l._1 < 0 "
+            f"where l._2 >= {10 * (lhs_upper_bound - numComplementsToExists)}"
             "   or exists (select * from {} as r where r._2 = l._2 AND r._3 = l._3)"
         ).format(leftTable, rightTable))
-        res.explain(True)
         return res
+
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r"ExistenceJoin\(exists#[0-9]+\)",
         conf={
-            "spark.rapids.sql.explain"                  : "ALL",
-            "spark.sql.adaptive.enabled"                : False
-    })
+            "spark.sql.adaptive.enabled": aqeEnabled
+        })
