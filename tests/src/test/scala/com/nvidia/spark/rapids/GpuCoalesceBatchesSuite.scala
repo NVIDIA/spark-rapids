@@ -249,6 +249,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
+      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -273,6 +274,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
+      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -312,6 +314,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
+      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -347,6 +350,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
+      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = false)
 

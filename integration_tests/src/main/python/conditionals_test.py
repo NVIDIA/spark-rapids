@@ -16,7 +16,6 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -65,8 +64,7 @@ def test_if_else_map(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
                 'IF(TRUE, b, c)',
-                'IF(a, b, c)'),
-            conf = allow_negative_scale_of_decimal_conf)
+                'IF(a, b, c)'))
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + single_array_gens_sample_with_decimal128 + decimal_128_gens, ids=idfn)
@@ -97,8 +95,7 @@ def test_case_when(data_gen):
                 f.when(f.col('_b0'), s1).when(f.lit(False), f.col('_c0')),
                 f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
-                f.when(f.lit(False), f.col('_c0'))),
-            conf = allow_negative_scale_of_decimal_conf)
+                f.when(f.lit(False), f.col('_c0'))))
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):
@@ -140,8 +137,7 @@ def test_coalesce(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
-                f.coalesce(*command_args)),
-            conf = allow_negative_scale_of_decimal_conf)
+                f.coalesce(*command_args)))
 
 def test_coalesce_constant_output():
     # Coalesce can allow a constant value as output. Technically Spark should mark this
@@ -191,7 +187,7 @@ def test_conditional_with_side_effects_col_col(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a < 2147483647, a + 1, a)'),
-            conf = {'spark.sql.ansi.enabled':True})
+            conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [IntegerGen().with_special_case(2147483647)], ids=idfn)
 def test_conditional_with_side_effects_col_scalar(data_gen):
@@ -199,14 +195,14 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a < 2147483647, a + 1, 2147483647)',
                 'IF(a >= 2147483646, 2147483647, a + 1)'),
-            conf = {'spark.sql.ansi.enabled':True})
+            conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
 def test_conditional_with_side_effects_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
-            conf = {'spark.sql.ansi.enabled':True})
+            conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
 def test_conditional_with_side_effects_case_when(data_gen):
@@ -216,4 +212,4 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
                 WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
                 ELSE -1 END'),
-                conf = {'spark.sql.ansi.enabled':True})
+                conf = ansi_enabled_conf)

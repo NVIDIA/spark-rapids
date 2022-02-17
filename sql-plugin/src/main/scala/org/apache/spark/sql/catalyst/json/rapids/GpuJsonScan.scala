@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
 
@@ -334,4 +334,24 @@ class JsonPartitionReader(
       Some(new Table(prunedColumnVectors: _*))
     }
   }
+
+  /**
+   * JSON only supports unquoted lower-case "true" and "false" as valid boolean values.
+   */
+  override def castStringToBool(input: ColumnVector): ColumnVector = {
+    withResource(Scalar.fromString("true")) { t =>
+      withResource(Scalar.fromString("false")) { f =>
+        withResource(input.equalTo(t)) { isTrue =>
+          withResource(input.equalTo(f)) { isFalse =>
+            withResource(isTrue.or(isFalse)) { isValidBool =>
+              withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+                isValidBool.ifElse(isTrue, nullBool)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
 }
