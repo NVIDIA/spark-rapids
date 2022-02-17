@@ -23,9 +23,6 @@ from marks import incompat, allow_non_gpu, ignore_order
 
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
-decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
-                DecimalGen(precision=7, scale=-2),
-                decimal_gen_same_scale_precision, decimal_gen_64bit]
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
@@ -185,8 +182,8 @@ def test_cache_diff_req_order(spark_tmp_path):
                                                       StructGen([['child0', IntegerGen()]])]])),
                                      pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
                                      pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
-                                     BooleanGen(), DateGen(), TimestampGen(), decimal_gen_default, decimal_gen_scale_precision,
-                                     decimal_gen_same_scale_precision, decimal_gen_64bit] + single_level_array_gens_no_null, ids=idfn)
+                                     BooleanGen(), DateGen(), TimestampGen(), decimal_gen_32bit, decimal_gen_64bit,
+                                     decimal_gen_128bit] + single_level_array_gens_no_null, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
