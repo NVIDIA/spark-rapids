@@ -178,12 +178,7 @@ abstract class GpuTextBasedPartitionReader(
                 f
             }
           }))
-        val cudfDataSchema = GpuColumnVector.from(dataSchemaWithStrings)
-
-//        println(s"dataSchema: ${dataSchema.fieldNames.mkString(", ")}")
-//        println(s"cudfSchema: ${cudfDataSchema.getColumnNames.mkString(", ")}")
-//        println(s"readDataSchema: ${readDataSchema.fieldNames.mkString(", ")}")
-//        println(s"newReadDataSchema: ${newReadDataSchema.fieldNames.mkString(", ")}")
+        val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -191,9 +186,8 @@ abstract class GpuTextBasedPartitionReader(
         // The buffer that is sent down
         val table = withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
           NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-          readToTable(dataBuffer, dataSize, cudfDataSchema, newReadDataSchema, isFirstChunk)
+          readToTable(dataBuffer, dataSize, cudfSchema, newReadDataSchema, isFirstChunk)
         }
-//        println(s"table has ${table.getNumberOfColumns} columns")
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
         // parse boolean and numeric columns that were read as strings
