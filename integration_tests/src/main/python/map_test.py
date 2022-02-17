@@ -173,7 +173,7 @@ def test_str_to_map_expr_random_delimiters():
             'str_to_map(a, {}, {}) as m3'.format(pair_delim, keyval_delim)
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
-def test_str_to_map_expr_no_map_values():
+def test_str_to_map_expr_input_no_delimiter():
     # Test input strings that contain either one delimiter or do not contain delimiters at all.
     data_gen = [('a', StringGen(pattern='[0-9:,]{0,100}', nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
