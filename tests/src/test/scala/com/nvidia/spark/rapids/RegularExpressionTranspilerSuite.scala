@@ -310,6 +310,24 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
+  test("regexp_replace - character class repetition - ? and * - fall back to CPU") {
+    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode,
+        "regexp_replace on GPU does not support repetition with ? or *"
+      )
+    )
+  }
+
+  test("regexp_replace - character class repetition - {0,} - fall back to CPU") {
+    val patterns = Seq(raw"[1a-zA-Z]{0,}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode,
+        "regexp_replace on GPU does not support repetition with {0,}"
+      )
+    )
+  }
+
   test("regexp_replace - fall back to CPU for {0} or {0,0}") {
     val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
     patterns.foreach(pattern =>

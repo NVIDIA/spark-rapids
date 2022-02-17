@@ -664,6 +664,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
+        case (_, QuantifierVariableLength(0,None)) if mode == RegexReplaceMode =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4468
+          throw new RegexUnsupportedException(
+            "regexp_replace on GPU does not support repetition with {0,}")
+
         case (_, QuantifierFixedLength(0)) | (_, QuantifierVariableLength(0,Some(0)))
           if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
