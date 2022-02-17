@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,21 +63,21 @@ object FloatUtils extends Arm {
     }
   }
 
-  def infinityToNulls(vec: ColumnVector): ColumnVector = {
-    def getInfinityVector: ColumnVector = {
-      if (vec.getType == DType.FLOAT64) {
-        ColumnVector.fromDoubles(Double.PositiveInfinity, Double.NegativeInfinity)
-      } else {
-        ColumnVector.fromFloats(Float.PositiveInfinity, Float.NegativeInfinity)
-      }
+  def getInfinityVector(vec: ColumnView): ColumnVector = {
+    if (vec.getType == DType.FLOAT64) {
+      ColumnVector.fromDoubles(Double.PositiveInfinity, Double.NegativeInfinity)
+    } else {
+      ColumnVector.fromFloats(Float.PositiveInfinity, Float.NegativeInfinity)
     }
+  }
 
+  def infinityToNulls(vec: ColumnVector): ColumnVector = {
     def getNullVector: ColumnVector = {
       if (vec.getType == DType.FLOAT64) ColumnVector.fromBoxedDoubles(null, null)
       else ColumnVector.fromBoxedFloats(null, null)
     }
 
-    withResource(getInfinityVector) { infinityVector =>
+    withResource(getInfinityVector(vec)) { infinityVector =>
       withResource(getNullVector) { nullVector =>
         vec.findAndReplaceAll(infinityVector, nullVector)
       }

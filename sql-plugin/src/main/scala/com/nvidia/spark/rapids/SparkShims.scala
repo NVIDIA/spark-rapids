@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URI
 import java.nio.ByteBuffer
 
+import ai.rapids.cudf.ColumnView
 import com.esotericsoftware.kryo.Kryo
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -238,6 +239,10 @@ trait SparkShims {
   def hasAliasQuoteFix: Boolean
 
   def hasCastFloatTimestampUpcast: Boolean
+
+  def throwIfNansOrInfinity(col: ColumnView): Unit = {
+    // noop
+  }
 
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
 

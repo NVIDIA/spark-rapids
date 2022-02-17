@@ -439,6 +439,9 @@ object GpuCast extends Arm {
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
+        if (ansiMode) {
+          ShimLoader.getSparkShims.throwIfNansOrInfinity(input)
+        }
         withResource(Scalar.fromInt(1000000)) { microsPerSec =>
           withResource(input.nansToNulls()) { inputWithNansToNull =>
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {

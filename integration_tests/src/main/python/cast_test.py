@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from spark_session import is_before_spark_320, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -289,3 +289,15 @@ def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
             f.col('a').cast(DecimalType(8, -3))))
+
+@pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
+@pytest.mark.parametrize('type', [DoubleType(), FloatType()])
+def test_cast_double_to_timestamp(type):
+    def fun(spark):
+        data=[float("inf"), float("-inf"), float("nan")]
+        df=spark.createDataFrame(
+            SparkContext.getOrCreate().parallelize([data]),
+            StructType([StructField('a', type)])
+        )
+        return df.select(f.col('a').cast(TimestampType())).collect()
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "org.apache.spark.SparkException")
