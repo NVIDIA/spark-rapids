@@ -56,15 +56,6 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-@pytest.mark.parametrize('data_gen,to_type', [
-    # maps are not supported for casting to a String, but structs are, so we need to verify this
-    (StructGen([('structF1', StructGen([('structF11', MapGen(ByteGen(nullable=False), byte_gen))]))]), StringType())])
-def test_cast_nested_fallback(data_gen, to_type):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)),
-            'Cast')
-
 def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
@@ -167,21 +158,26 @@ def test_cast_long_to_decimal_overflow():
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 # casting these types to string should be passed
-basic_gens_for_cast_to_string = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, null_gen, timestamp_gen] + decimal_gens_no_neg
-# casting these types to string is not exact match, marked as xfail when testing
-not_matched_gens_for_cast_to_string = [float_gen, double_gen, decimal_gen_neg_scale]
-# casting these types to string is not supported, marked as xfail when testing
-not_support_gens_for_cast_to_string = [MapGen(ByteGen(False), ByteGen())]
+basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
+basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens_no_neg
+basic_map_gens_for_cast_to_string = [
+    MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
+    MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
 
-single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
+# GPU does not match CPU to casting these types to string, marked as xfail when testing
+not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]
+not_matched_struct_array_gens_for_cast_to_string = [f() for f in not_matched_gens_for_cast_to_string] + [decimal_gen_neg_scale]
+not_matched_map_gens_for_cast_to_string = [MapGen(f(nullable = False), f()) for f in not_matched_gens_for_cast_to_string] + [MapGen(DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen())]
+
+single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_array_struct_gens_for_cast_to_string]
 nested_array_gens_for_cast_to_string = [
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
-    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(null_gen, max_length=10), max_length=10),
+    ArrayGen(MapGen(ByteGen(nullable=False), DateGen()), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', date_gen]]))
     ]
 
-all_gens_for_cast_to_string = single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string
+all_array_gens_for_cast_to_string = single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string
 
 def _assert_cast_to_string_equal (data_gen, conf):
     """
@@ -192,17 +188,8 @@ def _assert_cast_to_string_equal (data_gen, conf):
         conf
     )
 
-def _assert_cast_to_string_fallback (data_gen, conf):
-    """
-    helper function for casting to string of unsupported type
-    """
-    assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast("STRING")),
-        "Cast",
-        conf
-    )
 
-@pytest.mark.parametrize('data_gen', all_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -211,7 +198,7 @@ def test_cast_array_to_string(data_gen, legacy):
         "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_gens_for_cast_to_string], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @pytest.mark.xfail(reason='casting this type to string is not exact match')
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
@@ -224,19 +211,29 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     )
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_support_gens_for_cast_to_string], ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-def test_cast_array_with_unsupported_element_to_string_fallback(data_gen, legacy):
-    _assert_cast_to_string_fallback(
+def test_cast_map_to_string(data_gen, legacy):
+    _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
-         "spark.sql.legacy.castComplexTypesToString.enabled": legacy, 
-         "spark.sql.legacy.allowNegativeScaleOfDecimal": 'true'}
+        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true', 
+        "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+
+
+@pytest.mark.parametrize('data_gen', not_matched_map_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.xfail(reason='casting this type to string is not exact match')
+def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
+    _assert_cast_to_string_equal(
+        data_gen,
+        {"spark.sql.legacy.allowNegativeScaleOfDecimal"     : "true",
+         "spark.rapids.sql.castDecimalToString.enabled"    : 'true',
+         "spark.rapids.sql.castFloatToString.enabled"       : "true", 
+         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 
-@pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_gens_for_cast_to_string)])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -279,7 +276,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
         {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
     )
 
-@pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_gens_for_cast_to_string], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @pytest.mark.xfail(reason='casting this type to string is not an exact match')
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
@@ -291,16 +288,6 @@ def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
-@pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_support_gens_for_cast_to_string], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-def test_cast_struct_with_unsupported_element_to_string_fallback(data_gen, legacy):
-    _assert_cast_to_string_fallback(
-        data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
-         "spark.sql.legacy.castComplexTypesToString.enabled": legacy, 
-         "spark.sql.legacy.allowNegativeScaleOfDecimal": 'true'}
-    )
 
 # The bug SPARK-37451 only affects the following versions
 def is_neg_dec_scale_bug_version():
