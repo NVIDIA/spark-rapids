@@ -804,7 +804,7 @@ object GpuOverrides extends Logging {
 
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
-      cudfRead = TypeSig.commonCudfTypes,
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.cpuAtomics)),
     (ParquetFormatType, FileFormatChecks(
@@ -823,7 +823,7 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
-      cudfRead = TypeSig.commonCudfTypes,
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))

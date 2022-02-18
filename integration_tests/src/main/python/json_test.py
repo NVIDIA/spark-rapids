@@ -59,6 +59,9 @@ _float_schema = StructType([
 _double_schema = StructType([
     StructField('number', DoubleType())])
 
+_decimal_schema = StructType([
+    StructField('number', DecimalType(10, 2))])
+
 _string_schema = StructType([
     StructField('a', StringType())])
 
@@ -189,14 +192,15 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     pytest.param('boolean_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
     'ints.json',
     pytest.param('ints_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4793')),
-    'nan_and_inf.json',
-    pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
+    pytest.param('nan_and_inf.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4615, https://github.com/NVIDIA/spark-rapids/issues/4646')),
+    pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4615, https://github.com/NVIDIA/spark-rapids/issues/4646')),
     'floats.json',
     'floats_leading_zeros.json',
     'floats_invalid.json',
     pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
+    'decimals.json',
 ])
-@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, _float_schema, _double_schema])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, _float_schema, _double_schema, _decimal_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])

@@ -20,12 +20,10 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
-
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
@@ -38,7 +36,7 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, DecimalType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -367,6 +365,48 @@ class JsonPartitionReader(
           }
         }
       }
+    }
+  }
+
+  /**
+   * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
+   *
+   * Spark then has it's own rules for supporting NaN and Infinity, which are not
+   * valid numbers in JSON.
+   */
+  private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
+    // Note that this is not 100% consistent with Spark. See the following issues
+    // for more information:
+    // https://issues.apache.org/jira/browse/SPARK-38060
+    // https://github.com/NVIDIA/spark-rapids/issues/4615
+    val regex = if (parsedOptions.allowNonNumericNumbers) {
+      "^" +
+      "(?:" +
+        "(?:-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?)" +
+        "|NaN" +
+        "|(?:[\\+\\-]?INF)" +
+        "|(?:[\\-\\+]?Infinity)" +
+      ")" +
+      "$"
+    } else {
+      "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
+    }
+    withResource(input.matchesRe(regex)) { validJsonDecimal =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+        validJsonDecimal.ifElse(input, nullString)
+      }
+    }
+  }
+
+  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
+    withResource(sanitizeNumbers(input)) { sanitizedInput =>
+      super.castStringToFloat(sanitizedInput, dt)
+    }
+  }
+
+  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    withResource(sanitizeNumbers(input)) { sanitizedInput =>
+      super.castStringToDecimal(sanitizedInput, dt)
     }
   }
 
