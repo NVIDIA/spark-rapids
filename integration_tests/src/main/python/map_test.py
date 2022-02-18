@@ -20,6 +20,7 @@ from data_gen import *
 from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_311, is_before_spark_330
 from pyspark.sql.types import *
+from pyspark.sql.types import IntegralType
 
 # Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
 pytestmark = pytest.mark.premerge_ci_1
