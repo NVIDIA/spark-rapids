@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.DataOutputStream
+import java.io.{DataOutputStream, FileNotFoundException, IOException}
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
@@ -163,12 +163,14 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   private val numThreads = rapidsConf.orcMultiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
+  private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
+  private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row.
   override val canUseCoalesceFilesReader: Boolean =
-    rapidsConf.isOrcCoalesceFileReadEnabled && !queryUsesInputFile
+    rapidsConf.isOrcCoalesceFileReadEnabled && !(queryUsesInputFile || ignoreCorruptFiles)
 
   override val canUseMultiThreadReader: Boolean = rapidsConf.isOrcMultiThreadReadEnabled
 
@@ -183,7 +185,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       PartitionReader[ColumnarBatch] = {
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
-      debugDumpPrefix, filters, filterHandler, metrics)
+      debugDumpPrefix, filters, filterHandler, metrics, ignoreMissingFiles, ignoreCorruptFiles)
   }
 
   /**
@@ -1292,6 +1294,8 @@ private case class GpuOrcFileFilterHandler(
  * @param filters filters passed into the filterHandler
  * @param filterHandler used to filter the ORC stripes
  * @param execMetrics the metrics
+ * @param ignoreMissingFiles Whether to ignore missing files
+ * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class MultiFileCloudOrcPartitionReader(
     conf: Configuration,
@@ -1306,9 +1310,11 @@ class MultiFileCloudOrcPartitionReader(
     debugDumpPrefix: String,
     filters: Array[Filter],
     filterHandler: GpuOrcFileFilterHandler,
-    override val execMetrics: Map[String, GpuMetric])
+    override val execMetrics: Map[String, GpuMetric],
+    ignoreMissingFiles: Boolean,
+    ignoreCorruptFiles: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics) with MultiFileReaderFunctions with OrcPartitionReaderBase {
+    execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
   private case class HostMemoryBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
@@ -1329,6 +1335,16 @@ class MultiFileCloudOrcPartitionReader(
       TrampolineUtil.setTaskContext(taskContext)
       try {
         doRead()
+      } catch {
+        case e: FileNotFoundException if ignoreMissingFiles =>
+          logWarning(s"Skipped missing file: ${partFile.filePath}", e)
+          HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), 0, null, None)
+        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+        case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(
+            s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
+          HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), 0, null, None)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
