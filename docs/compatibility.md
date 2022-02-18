@@ -494,6 +494,13 @@ unquoted control characters but Spark reads these entries incorrectly as null. H
 and when the option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown 
 as discussed in `JSON Schema discovery` section.
 
+- `allowNonNumericNumbers` - Allows `NaN` and `Infinity` values to be parsed (note that these are not valid numeric
+values in the [JSON specification](https://json.org)). Spark has inconsistent behavior and will
+parse some variants of `NaN` and `Infinity` even when this option is disabled
+([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator supports a wider range of
+representations than Spark when this option is enabled and does not support any form of `NaN` or `Infinity` when the
+option is disabled.
+
 ## Regular Expressions
 
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
