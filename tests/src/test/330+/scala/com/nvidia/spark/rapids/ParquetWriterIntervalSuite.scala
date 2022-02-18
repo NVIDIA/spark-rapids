@@ -19,8 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.time.{Duration, Period}
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.types.{DayTimeIntervalType, IntegerType, StructField, StructType, YearMonthIntervalType}
 
 /**
@@ -28,28 +27,51 @@ import org.apache.spark.sql.types.{DayTimeIntervalType, IntegerType, StructField
  * DayTimeIntervalType and YearMonthIntervalType do not exists before 330
  */
 class ParquetWriterIntervalSuite extends SparkQueryCompareTestSuite {
-  test("ANSI interval read/write") {
-    val conf = new SparkConf().set(RapidsConf.SQL_ENABLED.key, "true")
-    // Throws an exception if plan not converted to GPU
-    conf.set("spark.rapids.sql.test.enabled", "true")
 
-    val tempFile = File.createTempFile("interval", ".parquet")
+  // CPU write a parquet, then test the reading between CPU and GPU
+  test("test ANSI interval read") {
+    val tmpFile = File.createTempFile("interval", ".parquet")
     try {
-      SparkSessionHolder.withSparkSession(conf, spark => {
-        val data = (1 to 1024)
-            .map(i => Row(i, Period.of(i, i, 0), Duration.ofDays(i).plusSeconds(i)))
-        val schema = StructType(Array(
-          StructField("i", IntegerType, false),
-          StructField("y", YearMonthIntervalType(), false),
-          StructField("d", DayTimeIntervalType(), false)))
-        val df = spark.createDataFrame(spark.sparkContext.parallelize(data, numSlices = 1), schema)
-        df.coalesce(1).write.mode("overwrite").parquet(tempFile.getAbsolutePath)
-        val readDf = spark.read.parquet(tempFile.getAbsolutePath)
-        assert(compare(readDf.collect(), df.collect()))
-      })
+      withCpuSparkSession(spark => genDf(spark).coalesce(1)
+          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
+      val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
+      val g = withGpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
+      assert(compare(g, c))
     } finally {
-      tempFile.delete()
+      tmpFile.delete()
     }
+  }
+
+  // GPU write a parquet, then test the reading between CPU and GPU
+  test("test ANSI interval write") {
+    val tmpFile = File.createTempFile("interval", ".parquet")
+    try {
+      withGpuSparkSession(spark => genDf(spark).coalesce(1)
+          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
+      val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
+      val g = withGpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
+      assert(compare(g, c))
+    } finally {
+      tmpFile.delete()
+    }
+  }
+
+  // Write 2 files with CPU and GPU separately, then read the 2 files with CPU and compare
+  testSparkWritesAreEqual(
+    "test ANSI interval read/write",
+    genDf,
+    (df, path) => df.coalesce(1).write.mode("overwrite").parquet(path),
+    (spark, path) => spark.read.parquet(path)
+  )
+
+  def genDf(spark: SparkSession): DataFrame = {
+    val data = (1 to 1024)
+        .map(i => Row(i, Period.of(i, i, 0), Duration.ofDays(i).plusSeconds(i)))
+    val schema = StructType(Array(
+      StructField("i", IntegerType, false),
+      StructField("y", YearMonthIntervalType(), false),
+      StructField("d", DayTimeIntervalType(), false)))
+    spark.createDataFrame(spark.sparkContext.parallelize(data, numSlices = 1), schema)
   }
 }
 

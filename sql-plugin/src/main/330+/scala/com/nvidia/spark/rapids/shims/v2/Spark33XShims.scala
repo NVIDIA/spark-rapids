@@ -22,10 +22,11 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, MetadataAttribute}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.json.rapids.shims.v2.Spark33XFileOptionsShims
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.{CoalesceExec, FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
@@ -153,6 +154,75 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
     }
     super.tagFileSourceScanExec(meta)
   }
+
+  // 330+ supports YEARMONTH and DAYTIME interval types
+  override def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = {
+    Map(
+      (ParquetFormatType, FileFormatChecks(
+        cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+        cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+        sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.UDT + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested())))
+  }
+
+  // 330+ supports YEARMONTH and DAYTIME interval types
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
+    val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[Coalesce](
+        "Returns the first non-null argument if exists. Otherwise, null",
+        ExprChecks.projectOnly(
+          (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
+              TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+          TypeSig.all,
+          repeatingParamCheck = Some(RepeatingParamCheck("param",
+            (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
+                TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+            TypeSig.all))),
+        (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
+          override def convertToGpu():
+          GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
+        })
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    super.getExprs ++ map
+  }
+
+  // 330+ supports YEARMONTH and DAYTIME interval types
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
+    val map: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+      GpuOverrides.exec[CoalesceExec](
+        "The backend for the dataframe coalesce method",
+        ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
+            TypeSig.MAP + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+          TypeSig.all),
+        (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
+          override def convertToGpu(): GpuExec =
+            GpuCoalesceExec(coalesce.numPartitions, childPlans.head.convertIfNeeded())
+        }),
+      GpuOverrides.exec[DataWritingCommandExec](
+        "Writing data",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128.withPsNote(
+          TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
+            TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
+            TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
+            TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
+            TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
+          override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
+            Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))
+
+          override def convertToGpu(): GpuExec =
+            GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
+              childPlans.head.convertIfNeeded())
+        })
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    super.getExecs ++ map
+  }
+
 }
 
 // Fallback to the default definition of `deterministic`

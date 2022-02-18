@@ -415,25 +415,25 @@ def test_write_empty_parquet_round_trip(spark_tmp_path,
         conf=all_confs)
 
 from spark_session import is_before_spark_330
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalTypeGen is not supported before Spark 3.3.0')
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
 def test_interval(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen = DayTimeIntervalTypeGen()
+    gen = DayTimeIntervalGen()
 
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path)
 
-# DayTimeIntervalTypeGen can not run before Spark 330, so copy test_write_round_trip to here and set date gen as DayTimeIntervalTypeGen
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalTypeGen is not supported before Spark 3.3.0')
+# DayTimeIntervalGen can not run before Spark 330, so copy test_write_round_trip to here and set date gen as DayTimeIntervalGen
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_interval_write_round_trip(spark_tmp_path, v1_enabled_list, ts_type,
                                   reader_confs):
-    gen_list = [('_c1', DayTimeIntervalTypeGen())]
+    gen_list = [('_c1', DayTimeIntervalGen())]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(reader_confs, writer_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,

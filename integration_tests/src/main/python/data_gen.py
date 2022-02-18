@@ -613,14 +613,14 @@ class NullGen(DataGen):
             return None
         self._start(rand, make_null)
 
-# DayTimeIntervalTypeGen is for Spark 3.3.0+
+# DayTimeIntervalGen is for Spark 3.3.0+
 # DayTimeIntervalType(startField, endField): Represents a day-time interval which is made up of a contiguous subset of the following fields:
 #   SECOND, seconds within minutes and possibly fractions of a second [0..59.999999],
 #   MINUTE, minutes within hours [0..59],
 #   HOUR, hours within days [0..23],
 #   DAY, days in the range [0..106751991].
 # For more details: https://spark.apache.org/docs/latest/sql-ref-datatypes.html
-class DayTimeIntervalTypeGen(DataGen):
+class DayTimeIntervalGen(DataGen):
     """Generate DayTimeIntervalType values"""
     def __init__(self, nullable=True, special_cases =[timedelta(seconds = 0)]):
         super().__init__(DayTimeIntervalType(), nullable=nullable, special_cases=special_cases)

@@ -115,6 +115,7 @@ trait SparkShims {
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+  def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()
 
   def getScalaUDFAsExpression(
     function: AnyRef,
