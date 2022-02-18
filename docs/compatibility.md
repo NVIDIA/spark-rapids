@@ -284,7 +284,6 @@ Due to inconsistencies between how CSV data is parsed CSV parsing is off by defa
 Each data type can be enabled or disabled independently using the following configs.
 
  * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
- * [spark.rapids.sql.csv.read.double.enabled](configs.md#sql.csv.read.double.enabled)
  * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
 
 If you know that your particular data type will be parsed correctly enough, you may enable each
@@ -300,14 +299,6 @@ Spark allows for stripping leading and trailing white space using various option
 default. The plugin will strip leading and trailing space for all values except strings.
 
 There are also discrepancies/issues with specific types that are detailed below.
-
-### CSV Boolean
-
-Invalid values like `BAD` show up as `true` as described by this 
-[issue](https://github.com/NVIDIA/spark-rapids/issues/2071)
-
-This is the same for all other types, but because that is the only issue with boolean parsing
-we have called it out specifically here.
 
 ### CSV Strings
 Writing strings to a CSV file in general for Spark can be problematic unless you can ensure that
@@ -376,10 +367,6 @@ Parsing floating-point values has the same limitations as [casting from string t
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
 then results in a number being returned when the CPU would have returned null.
-
-### CSV Integer
-
-Any number that overflows will not be turned into a null value.
 
 ## ORC
 
@@ -480,7 +467,7 @@ these formats when unquoted, will produce `null` on the CPU and may produce vali
 { "number": "-Infinity" }
 ```
 
-Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
+Another limitation of the GPU JSON reader is that it will parse strings containing boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
 
 ### JSON Schema discovery
