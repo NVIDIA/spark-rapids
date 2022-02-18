@@ -140,6 +140,21 @@ class RegularExpressionParserSuite extends FunSuite {
       RegexSequence(ListBuffer(RegexOctalChar("047"), RegexChar('7'))))
   }
 
+  test("repetition with group containing simple repetition") {
+    assert(parse("(3?)+") ===
+      RegexSequence(ListBuffer(RegexRepetition(RegexGroup(capture = true, 
+          RegexSequence(ListBuffer(RegexRepetition(RegexChar('3'), 
+          SimpleQuantifier('?'))))),SimpleQuantifier('+')))))
+  }
+
+  test("repetition with group containing escape character") {
+    assert(parse(raw"(\A)+") ===
+      RegexSequence(ListBuffer(RegexRepetition(RegexGroup(capture = true,
+          RegexSequence(ListBuffer(RegexEscaped('A')))),
+          SimpleQuantifier('+'))))
+    )
+  }
+
   test("group containing choice with repetition") {
     assert(parse("(\t+|a)") == RegexSequence(ListBuffer(
       RegexGroup(capture = true, RegexChoice(RegexSequence(ListBuffer(
