@@ -337,9 +337,8 @@ abstract class SplittableJoinIterator(
             case _ => OutOfBoundsPolicy.NULLIFY
           }
           val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
-
-          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData, leftOutOfBoundsPolicy,
-            rightOutOfBoundsPolicy)
+          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
+            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
       }
       if (gatherer.isDone) {
         // Nothing matched...
@@ -358,7 +357,7 @@ abstract class SplittableJoinIterator(
     existenceGatherMap: LazySpillableGatherMap
   ): JoinGatherer = {
     // cuDF executes left semijoin, the gatherer is constructed with a new
-    // gather map for lhs to gather every row from lhs
+    // gather to gather every row from lhs
     //
     // we build a new rhs with a the "exists" Boolean column that has as many rows
     // as the input from from a false-Scalar, then scatter true-Scalar using the original
