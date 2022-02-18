@@ -257,7 +257,8 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 }
 
 /**
- * This class assumes, the data is Columnar and the plugin is on
+ * This class assumes, the data is Columnar and the plugin is on. This is meant to be loaded
+ * by reflection only.
  */
 protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
 

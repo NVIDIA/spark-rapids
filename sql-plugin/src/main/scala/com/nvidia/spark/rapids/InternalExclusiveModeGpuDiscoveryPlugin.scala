@@ -27,7 +27,11 @@ import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 
-class InternalExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Logging {
+/**
+ * This class is meant to be loaded by reflection only.
+ */
+protected class InternalExclusiveModeGpuDiscoveryPlugin
+  extends ResourceDiscoveryPlugin with Logging {
   override def discoverResource(
     request: ResourceRequest,
     sparkconf: SparkConf
