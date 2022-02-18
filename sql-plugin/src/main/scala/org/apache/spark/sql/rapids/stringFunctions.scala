@@ -1497,7 +1497,7 @@ case class GpuStringToMap(strExpr: Expression,
                           keyValueDelimExpr: Expression,
                           pairDelim: String, isPairDelimRegExp: Boolean,
                           keyValueDelim: String, isKeyValueDelimRegExp: Boolean)
-  extends GpuExpression with ExpectsInputTypes {
+  extends GpuExpression with ShimExpression with ExpectsInputTypes {
   override def dataType: MapType = MapType(StringType, StringType)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, StringType)
   override def prettyName: String = "str_to_map"
