@@ -18,12 +18,13 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
+import ai.rapids.cudf.{ColumnVector, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -298,14 +299,20 @@ abstract class SplittableJoinIterator(
         None
       }
 
-      val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
+      // TODO refactor lazyLeftMap out of the way, lazy workaround
+      lazy val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
       val gatherer = rightMap match {
         case None =>
           // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
           // In these cases, the map and the table are both the left side, and everything in the map
           // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
-          JoinGatherer(lazyLeftMap, Some(leftData), OutOfBoundsPolicy.DONT_CHECK)
+          joinType match {
+            case ExistenceJoin(_) =>
+              createExistenceJoinGatherer(leftData, lazyLeftMap)
+            case _ =>
+              JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
+          }
         case Some(right) =>
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
@@ -330,15 +337,10 @@ abstract class SplittableJoinIterator(
             case _ => OutOfBoundsPolicy.NULLIFY
           }
           val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
-          joinType match {
-            case ExistenceJoin(_) =>
-              rightData.close()
-              JoinGatherer(lazyLeftMap, leftData, lazyRightMap, leftOutOfBoundsPolicy)
-            case _ =>
-              JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData, leftOutOfBoundsPolicy,
-                rightOutOfBoundsPolicy)
-          }
-        }
+
+          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData, leftOutOfBoundsPolicy,
+            rightOutOfBoundsPolicy)
+      }
       if (gatherer.isDone) {
         // Nothing matched...
         gatherer.close()
@@ -349,5 +351,39 @@ abstract class SplittableJoinIterator(
     } finally {
       maps.foreach(_.close())
     }
+  }
+
+  private def createExistenceJoinGatherer(
+    lhs: LazySpillableColumnarBatch,
+    existenceGatherMap: LazySpillableGatherMap
+  ): JoinGatherer = {
+    // cuDF executes left semijoin, the gatherer is constructed with a new
+    // gather map for lhs to gather every row from lhs
+    //
+    // we build a new rhs with a the "exists" Boolean column that has as many rows
+    // as the input from from a false-Scalar, then scatter true-Scalar using the original
+    // semijoin lhs-GatherMap labeling rows that have at least one match in the original
+    // rhs
+    //
+    val rhsExistsCB = withResource(Scalar.fromBool(false)) { falseScalar =>
+      withResource(Scalar.fromBool(true)) { trueScalar =>
+        withResource(ColumnVector.fromScalar(falseScalar, lhs.numRows)) { falseCV =>
+          withResource(new Table(falseCV)) { existsNothingTable =>
+            // auto close original gather map
+            withResource(existenceGatherMap) { egMap =>
+              val numExists = egMap.getRowCount.toInt
+              withResource(egMap.toColumnView(0, numExists)) { existsView =>
+                withResource(
+                  Table.scatter(Array(trueScalar), existsView, existsNothingTable, false)
+                ) { existsTable =>
+                  withResource(
+                    GpuColumnVector.from(existsTable, Array[DataType](BooleanType))
+                  ) { existsBatch =>
+                    LazySpillableColumnarBatch.apply(existsBatch, spillCallback, "right_data")
+                  }}}}}}}}
+
+    val lazyRightMap: LazySpillableGatherMap = LazySpillableGatherMap.identity(lhs.numRows)
+    JoinGatherer(lazyRightMap, lhs, lazyRightMap, rhsExistsCB,
+      OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.DONT_CHECK)
   }
 }

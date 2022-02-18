@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -136,11 +136,9 @@ trait JoinGatherer extends LazySpillable with Arm {
 
 object JoinGatherer extends Arm {
   def apply(gatherMap: LazySpillableGatherMap,
-      inputData: Option[LazySpillableColumnarBatch],
-      outOfBoundsPolicy: OutOfBoundsPolicy
-    ): JoinGatherer = {
-      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
-    }
+      inputData: LazySpillableColumnarBatch,
+      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
+    new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
 
   def apply(leftMap: LazySpillableGatherMap,
       leftData: LazySpillableColumnarBatch,
@@ -148,25 +146,9 @@ object JoinGatherer extends Arm {
       rightData: LazySpillableColumnarBatch,
       outOfBoundsPolicyLeft: OutOfBoundsPolicy,
       outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
-    val left = JoinGatherer(leftMap, Some(leftData), outOfBoundsPolicyLeft)
-    val right = JoinGatherer(rightMap, Some(rightData), outOfBoundsPolicyRight)
+    val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
+    val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
     MultiJoinGather(left, right)
-  }
-
-  // existence join gather
-  def apply(
-      leftMap: LazySpillableGatherMap,
-      leftData: LazySpillableColumnarBatch,
-      rightMap: LazySpillableGatherMap,
-      outOfBoundsPolicyLeft: OutOfBoundsPolicy): JoinGatherer = {
-    val left = JoinGatherer(leftMap, Some(leftData), outOfBoundsPolicyLeft)
-    val right = JoinGatherer(rightMap)
-    MultiJoinGather(left, right)
-  }
-
-  // existence column gather
-  def apply(map: LazySpillableGatherMap): JoinGatherer = {
-    JoinGatherer(map, None, OutOfBoundsPolicy.DONT_CHECK)
   }
 
   def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long): Int = {
@@ -354,6 +336,17 @@ object LazySpillableGatherMap {
 
   def rightCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
     new RightCrossGatherMap(leftCount, rightCount)
+
+  def identity(numRows: Long): LazySpillableGatherMap = new LazySpillableGatherMap {
+    override val getRowCount = numRows
+    override def toColumnView(startRow: Long, numRows: Int): ColumnView = {
+      withResource(GpuScalar.from(startRow, LongType)) { startScalar =>
+        ai.rapids.cudf.ColumnVector.sequence(startScalar, numRows)
+      }
+    }
+    override def close(): Unit = {}
+    override def allowSpilling(): Unit = {}
+  }
 }
 
 /**
@@ -514,29 +507,28 @@ object JoinGathererImpl {
  */
 class JoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
-    private val dataOpt: Option[LazySpillableColumnarBatch],
+    private val data: LazySpillableColumnarBatch,
     boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
 
-  assert(dataOpt.forall(_.numCols > 0),
-    "data with no columns should have been filtered out already")
+  assert(data.numCols > 0, "data with no columns should have been filtered out already")
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
   private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
-    val dts = dataOpt.map(_.dataTypes).getOrElse(Array[DataType](BooleanType))
+    val dts = data.dataTypes
     val fw = JoinGathererImpl.fixedWidthRowSizeBits(dts)
     val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
     (fw, nullVal)
   }
 
   override def toString: String = {
-    s"GATHERER $gatheredUpTo/$totalRows $gatherMap $dataOpt"
+    s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
   }
 
   override def realCheapPerRowSizeEstimate: Double = {
-    val totalInputRows: Long = gatherMap.getRowCount
-    val totalInputSize: Long = dataOpt.map(_.deviceMemorySize).getOrElse(totalInputRows)
+    val totalInputRows: Int = data.numRows
+    val totalInputSize: Long = data.deviceMemorySize
     // Avoid divide by 0 here and later on
     if (totalInputRows > 0 && totalInputSize > 0) {
       totalInputSize.toDouble / totalInputRows
@@ -551,21 +543,12 @@ class JoinGathererImpl(
     val start = gatheredUpTo
     assert((start + n) <= totalRows)
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
-      dataOpt.map { data =>
-        val batch = data.getBatch
-        val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
-          table.gather(gatherView, boundsCheckPolicy)
-        }
-        withResource(gatheredTable) { gt =>
-          GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
-        }
-      }.getOrElse {
-        withResource(gatherView.binaryOp(BinaryOp.GREATER,
-          Scalar.fromInt(Int.MinValue), DType.BOOL8)) { existenceColumn =>
-            withResource(new Table(existenceColumn)) { existenceTable =>
-              GpuColumnVector.from(existenceTable, Array[DataType](BooleanType))
-            }
-        }
+      val batch = data.getBatch
+      val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
+        table.gather(gatherView, boundsCheckPolicy)
+      }
+      withResource(gatheredTable) { gt =>
+        GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
       }
     }
     gatheredUpTo += n
@@ -578,14 +561,12 @@ class JoinGathererImpl(
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
   override def allowSpilling(): Unit = {
-    dataOpt.foreach(_.allowSpilling())
+    data.allowSpilling()
     gatherMap.allowSpilling()
   }
 
   override def getBitSizeMap(n: Int): ColumnView = {
-    val cb = dataOpt.getOrElse{
-      throw new UnsupportedOperationException("unsupported on exists column gather")
-    }.getBatch
+    val cb = data.getBatch
     val inputBitCounts = withResource(GpuColumnVector.from(cb)) { table =>
       withResource(table.rowBitCount()) { bits =>
         bits.castTo(DType.INT64)
@@ -620,7 +601,7 @@ class JoinGathererImpl(
 
   override def close(): Unit = {
     gatherMap.close()
-    dataOpt.foreach(_.close())
+    data.close()
   }
 }
 

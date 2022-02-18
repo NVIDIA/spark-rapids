@@ -251,7 +251,7 @@ abstract class BaseHashJoinIterator(
       joinTime = joinTime) {
   // We can cache this because the build side is not changing
   private lazy val streamMagnificationFactor = joinType match {
-    case _: InnerLike | LeftOuter | RightOuter | ExistenceJoin(_) =>
+    case _: InnerLike | LeftOuter | RightOuter =>
       withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
         guessStreamMagnificationFactor(builtKeys)
       }
@@ -264,7 +264,7 @@ abstract class BaseHashJoinIterator(
     // TODO: Replace this estimate with exact join row counts using the corresponding cudf APIs
     //       being added in https://github.com/rapidsai/cudf/issues/9053.
     joinType match {
-      case _: InnerLike | LeftOuter | RightOuter | ExistenceJoin(_) =>
+      case _: InnerLike | LeftOuter | RightOuter =>
         Math.ceil(cb.numRows() * streamMagnificationFactor).toLong
       case _ => cb.numRows()
     }
@@ -416,16 +416,17 @@ class HashJoinIterator(
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
       val maps = joinType match {
-        case LeftOuter | ExistenceJoin(_) =>
-          // existence join is implemented as a left outer join with GatherMap converted
-          // to the Boolean column "exists"
+        case LeftOuter =>
           leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
         case RightOuter =>
           // Reverse the output of the join, because we expect the right gather map to
           // always be on the right
           rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
         case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
-        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
+        case LeftSemi | ExistenceJoin(_) =>
+          // existence join is implemented as a LeftSemi join with GatherMap converted
+          // to the Boolean column "exists"
+          Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
         case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
         case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
         case _ =>
