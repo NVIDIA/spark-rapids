@@ -80,37 +80,32 @@ abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with
    * side-effects, such as throwing exceptions for invalid inputs.
    *
    * This method performs lazy evaluation on the GPU by first filtering
-   * the input batch a  where the LHS predicate is True.
+   * the input batch where the LHS predicate is True.
    * The RHS predicate is evaluated against these batches and then the
    * results are combined back into a single batch using the gather
    * algorithm.
    */
   def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
     val leftExpr = left.asInstanceOf[GpuExpression]
-    val rightExpr = right.asInstanceOf[GpuExpression]
-    val colTypes = GpuColumnVector.extractTypes(batch)
-
     withResource(GpuColumnVector.from(batch)) { tbl =>
       withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
         if (shouldShortCircuit(lhsBool)) {
           applyShortCircuit(lhsBool)
         } else {
+          val rightExpr = right.asInstanceOf[GpuExpression]
+          val colTypes = GpuColumnVector.extractTypes(batch)
           // Process the LHS. It may imply replacing null values (if any) with true.
           withResource(processLHS(lhsBool.getBase)) { lhsNoNulls =>
-            val rEval = withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
-              rightExpr.columnarEval(leftTrueBatch)
-            }
-            val finalRet = withResourceIfAllowed(rEval) { _ =>
-              rEval match {
-                case f: GpuColumnVector =>
-                  withResource(gather(lhsNoNulls, f)) { combinedVector =>
-                    doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType))
-                  }
-                case f: GpuScalar =>
-                  doColumnar(lhsBool, f)
+            withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
+              withResource(GpuExpressionsUtils.columnarEvalToColumn(rightExpr, leftTrueBatch)) {
+                rEval =>
+                  withResource(gather(lhsNoNulls, rEval)) { combinedVector =>
+                    GpuColumnVector.from(
+                      doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType)),
+                      dataType)
+                }
               }
             }
-            GpuColumnVector.from(finalRet, dataType)
           }
         }
       }

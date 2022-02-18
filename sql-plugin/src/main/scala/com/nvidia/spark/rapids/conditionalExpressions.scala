@@ -27,6 +27,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuExpressionWithSideEffectUtils extends Arm {
 
+  /**
+   * Returns true only if all rows are true. Nulls are considered false.
+   */
   def isAllTrue(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
     if (col.getRowCount == 0) {
