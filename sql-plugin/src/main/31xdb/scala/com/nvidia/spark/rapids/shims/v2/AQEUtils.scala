@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,11 @@ package com.nvidia.spark.rapids.shims.v2
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 /** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
 object AQEUtils {
   /** Return a new QueryStageExec reuse instance with updated output attributes */
   def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
-    val reusedExchange = ReusedExchangeExec(newOutput, sqse.shuffle)
-    ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan)
+    sqse.newReuseInstance(sqse.id, newOutput)
   }
 }
