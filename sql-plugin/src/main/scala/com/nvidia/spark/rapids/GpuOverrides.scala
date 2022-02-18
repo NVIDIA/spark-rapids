@@ -492,11 +492,6 @@ object GpuOverrides extends Logging {
     listeners.clear()
   }
 
-  def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
-    val s = strLit.toString
-    !regexList.exists(pattern => s.contains(pattern))
-  }
-
   private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
     part match {
       case _: GpuPartitioning => part
@@ -1832,9 +1827,9 @@ object GpuOverrides extends Logging {
       }),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
@@ -2122,9 +2117,9 @@ object GpuOverrides extends Logging {
     expr[Remainder](
       "Remainder or modulo",
       ExprChecks.binaryProject(
-        TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRemainder(lhs, rhs)
@@ -3055,24 +3050,19 @@ object GpuOverrides extends Logging {
           GpuLike(lhs, rhs, a.escapeChar)
       }),
     expr[RLike](
-      "RLike",
+      "Regular expression version of Like",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("str", TypeSig.STRING, TypeSig.STRING),
         ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
-      (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
-      "the implementation is not 100% compatible. " +
-        "See the compatibility guide for more information."),
+      (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)),
     expr[RegExpExtract](
-      "RegExpExtract",
+      "Extract a specific group identified by a regular expression",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
             TypeSig.lit(TypeEnum.INT)))),
-      (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r))
-      .disabledByDefault(
-      "the implementation is not 100% compatible. " +
-        "See the compatibility guide for more information."),
+      (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r)),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -3364,7 +3354,23 @@ object GpuOverrides extends Logging {
             TypeSig.DATE)),
         Some(RepeatingParamCheck("step", TypeSig.integral, TypeSig.integral + TypeSig.CALENDAR))),
       (a, conf, p, r) => new GpuSequenceMeta(a, conf, p, r)
-    )
+    ),
+    expr[BitLength](
+      "The bit length of string data",
+      ExprChecks.unaryProject(
+        TypeSig.INT, TypeSig.INT,
+        TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
+      (a, conf, p, r) => new UnaryExprMeta[BitLength](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuBitLength(child)
+      }),
+    expr[OctetLength](
+      "The byte length of string data",
+      ExprChecks.unaryProject(
+        TypeSig.INT, TypeSig.INT,
+        TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
+      (a, conf, p, r) => new UnaryExprMeta[OctetLength](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
@@ -3774,7 +3780,10 @@ object GpuOverrides extends Logging {
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all,
         Map("partitionSpec" ->
-            InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))),
+            InputCheck(
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
+            TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),

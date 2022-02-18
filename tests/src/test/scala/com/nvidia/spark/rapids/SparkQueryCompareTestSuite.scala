@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -151,12 +151,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def enableCsvConf(): SparkConf = {
     new SparkConf()
         .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_BYTES.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_SHORTS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_LONGS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat
@@ -1834,6 +1828,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def assumeSpark320orLater: Assertion =
     assume(VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+")
+
+  def assumePriorToSpark311: Assertion =
+    assume(!VersionUtils.isSpark311OrLater, "Spark version not before 3.1.1")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion

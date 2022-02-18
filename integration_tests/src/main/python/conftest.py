@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import pytest
 import random
 from spark_init_internal import get_spark_i_know_what_i_am_doing
@@ -238,7 +239,15 @@ def spark_tmp_path(request):
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
-    ret = ret + '/' + str(random.randint(0, 1000000)) + '/'
+    worker_id = 'main'
+    try:
+        import xdist
+        worker_id = xdist.plugin.get_xdist_worker_id(request)
+    except ImportError:
+        pass
+    pid = os.getpid()
+    hostname = os.uname()[1]
+    ret = f'{ret}/{hostname}-{worker_id}-{pid}-{random.randrange(0, 1<<31)}/'
     # Make sure it is there and accessible
     sc = get_spark_i_know_what_i_am_doing().sparkContext
     config = sc._jsc.hadoopConfiguration()

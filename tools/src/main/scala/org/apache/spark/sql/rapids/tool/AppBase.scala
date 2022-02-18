@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,17 +128,10 @@ abstract class AppBase(
     }
   }
 
-  // Decimal support on the GPU is limited to less than 18 digits and decimals
-  // are configured off by default for now. It would be nice to have this
-  // based off of what plugin supports at some point.
-  private val decimalKeyWords = Map(".*promote_precision\\(.*" -> "DECIMAL",
-    ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL",
-    ".*DecimalType\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")
-
   private val UDFKeywords = Map(".*UDF.*" -> "UDF")
 
   protected def findPotentialIssues(desc: String): Set[String] =  {
-    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
+    val potentialIssuesRegexs = UDFKeywords
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
     issues.values.toSet
   }
@@ -146,15 +139,6 @@ abstract class AppBase(
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
     if (planInfo.metadata != null && planInfo.metadata.contains("ReadSchema")) {
-      childRes :+ planInfo
-    } else {
-      childRes
-    }
-  }
-
-  def getJdbcInPlan(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
-    val childRes = planInfo.children.flatMap(getJdbcInPlan(_))
-    if (planInfo.simpleString != null && planInfo.simpleString.contains("Scan JDBCRelation")) {
       childRes :+ planInfo
     } else {
       childRes
@@ -183,62 +167,62 @@ abstract class AppBase(
     }
   }
 
-  protected def checkJdbcScan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
-    val allJdbcScan = getJdbcInPlan(planInfo)
-    if (allJdbcScan.nonEmpty) {
-      dataSourceInfo += DataSourceCase(sqlID, "JDBC", "unknown", "unknown", "")
+  // This tries to get just the field specified by tag in a string that
+  // may contain multiple fields.  It looks for a comma to delimit fields.
+  private def getFieldWithoutTag(str: String, tag: String): String = {
+    val index = str.indexOf(tag)
+    // remove the tag from the final string retruned
+    val subStr = str.substring(index + tag.size)
+    val endIndex = subStr.indexOf(", ")
+    if (endIndex != -1) {
+      subStr.substring(0, endIndex)
+    } else {
+      subStr
     }
   }
 
   // This will find scans for DataSource V2, if the schema is very large it
   // will likely be incomplete and have ... at the end.
-  protected def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode): Unit = {
-    if (node.name.equals("BatchScan")) {
+  protected def checkGraphNodeForReads(sqlID: Long, node: SparkPlanGraphNode): Unit = {
+    if (node.name.equals("BatchScan") ||
+        node.name.contains("GpuScan") ||
+        node.name.contains("GpuBatchScan") ||
+        node.name.contains("JDBCRelation")) {
       val schemaTag = "ReadSchema: "
       val schema = if (node.desc.contains(schemaTag)) {
-        val index = node.desc.indexOf(schemaTag)
-        if (index != -1) {
-          val subStr = node.desc.substring(index + schemaTag.size)
-          val endIndex = subStr.indexOf(", ")
-          if (endIndex != -1) {
-            val schemaOnly = subStr.substring(0, endIndex)
-            formatSchemaStr(schemaOnly)
-          } else {
-            ""
-          }
-        } else {
-          ""
-        }
+        formatSchemaStr(getFieldWithoutTag(node.desc, schemaTag))
       } else {
         ""
       }
-      val locationTag = "Location:"
+      val locationTag = "Location: "
       val location = if (node.desc.contains(locationTag)) {
-        val index = node.desc.indexOf(locationTag)
-        val subStr = node.desc.substring(index)
-        val endIndex = subStr.indexOf(", ")
-        val location = subStr.substring(0, endIndex)
-        location
+        getFieldWithoutTag(node.desc, locationTag)
+      } else if (node.name.contains("JDBCRelation")) {
+        // see if we can report table or query
+        val JDBCPattern = raw".*JDBCRelation\((.*)\).*".r
+        node.name match {
+          case JDBCPattern(tableName) => tableName
+          case _ => "unknown"
+        }
       } else {
         "unknown"
       }
-      val pushedFilterTag = "PushedFilters:"
+      val pushedFilterTag = "PushedFilters: "
       val pushedFilters = if (node.desc.contains(pushedFilterTag)) {
-        val index = node.desc.indexOf(pushedFilterTag)
-        val subStr = node.desc.substring(index)
-        val endIndex = subStr.indexOf("]")
-        val filters = subStr.substring(0, endIndex + 1)
-        filters
+        getFieldWithoutTag(node.desc, pushedFilterTag)
       } else {
         "unknown"
       }
       val formatTag = "Format: "
       val fileFormat = if (node.desc.contains(formatTag)) {
-        val index = node.desc.indexOf(formatTag)
-        val subStr = node.desc.substring(index + formatTag.size)
-        val endIndex = subStr.indexOf(", ")
-        val format = subStr.substring(0, endIndex)
-        format
+        val format = getFieldWithoutTag(node.desc, formatTag)
+        if (node.name.startsWith("Gpu")) {
+          s"${format}(GPU)"
+        } else {
+          format
+        }
+      } else if (node.name.contains("JDBCRelation")) {
+        "JDBC"
       } else {
         "unknown"
       }

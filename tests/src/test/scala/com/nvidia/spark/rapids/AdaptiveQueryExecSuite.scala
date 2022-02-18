@@ -177,33 +177,53 @@ class AdaptiveQueryExecSuite
       spark.sql("INSERT INTO TABLE t1 SELECT a, b FROM testData").collect()
       spark.sql("INSERT INTO TABLE t2 SELECT a, b FROM testData").collect()
 
-      val df = spark.sql(
-        "SELECT t1.a, t2.b " +
+      // This test checks that inputs to the SHJ are coalesced. We need to check both sides
+      // if we are not optimizing the build-side coalescing logic, and only the stream side
+      // if the optimization is enabled (default).
+      // See `RapidsConf.SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE` for more information.
+      Seq(true, false).foreach { shouldOptimizeHashJoinShuffle =>
+        spark.conf.set(
+          RapidsConf.SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE.key,
+          shouldOptimizeHashJoinShuffle.toString)
+        val df = spark.sql(
+          "SELECT t1.a, t2.b " +
             "FROM t1 " +
             "JOIN t2 " +
             "ON t1.a = t2.a " +
             "WHERE t2.a = 5" // filter on partition key to force dynamic partition pruning
-      )
-      df.collect()
+        )
+        df.collect()
 
-      val isAdaptiveQuery = df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec]
-      if (cmpSparkVersion(3, 2, 0) < 0) {
-        // assert that DPP did cause this to run as a non-AQE plan prior to Spark 3.2.0
-        assert(!isAdaptiveQuery)
-      } else {
-        // In 3.2.0 AQE works with DPP
-        assert(isAdaptiveQuery)
+        val isAdaptiveQuery = df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec]
+        if (cmpSparkVersion(3, 2, 0) < 0) {
+          // assert that DPP did cause this to run as a non-AQE plan prior to Spark 3.2.0
+          assert(!isAdaptiveQuery)
+        } else {
+          // In 3.2.0 AQE works with DPP
+          assert(isAdaptiveQuery)
+        }
+
+        val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
+          _.isInstanceOf[GpuShuffledHashJoinExec]).get
+          .asInstanceOf[GpuShuffledHashJoinExec]
+        assert(shj.children.length == 2)
+        val childrenToCheck = if (shouldOptimizeHashJoinShuffle) {
+          // assert that the stream side of SHJ is coalesced
+          shj.buildSide match {
+            case GpuBuildLeft => Seq(shj.right)
+            case GpuBuildRight => Seq(shj.left)
+          }
+        } else {
+          // assert that both the build and stream side of SHJ are coalesced
+          // if we are not optimizing the build side shuffle
+          shj.children
+        }
+        assert(childrenToCheck.forall {
+          case GpuShuffleCoalesceExec(_, _) => true
+          case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
+          case _ => false
+        })
       }
-
-      // assert that both inputs to the SHJ are coalesced
-      val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
-        _.isInstanceOf[GpuShuffledHashJoinExec]).get
-      assert(shj.children.length == 2)
-      assert(shj.children.forall {
-        case GpuShuffleCoalesceExec(_, _) => true
-        case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
-        case _ => false
-      })
 
     }, conf)
   }

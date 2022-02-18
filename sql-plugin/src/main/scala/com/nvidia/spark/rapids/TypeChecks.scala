@@ -1097,7 +1097,7 @@ object CaseWhenCheck extends ExprChecks {
 }
 
 /**
- * This is specific to WidowSpec, because it does not follow the typical parameter convention.
+ * This is specific to WindowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
   val check: TypeSig =
@@ -1281,7 +1281,8 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY +
       STRUCT + MAP) +
       psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
-      "desired child types")
+      "desired child types") +
+      psNote(TypeEnum.STRING, "the map's key and value must also support being cast to string")
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
@@ -1706,14 +1707,12 @@ object SupportedOpsDocs {
     println()
     println("# General limitations")
     println("## `Decimal`")
-    println("The `Decimal` type in Spark supports a precision")
-    println("up to 38 digits (128-bits). The RAPIDS Accelerator in most cases stores values up to")
-    println("64-bits and will support 128-bit in the future. As such the accelerator currently only")
-    println(s"supports a precision up to ${DType.DECIMAL64_MAX_PRECISION} digits. Note that")
-    println("decimals are disabled by default in the plugin, because it is supported by a relatively")
-    println("small number of operations presently. This can result in a lot of data movement to and")
-    println("from the GPU, slowing down processing in some cases.")
-    println("Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:")
+    println("The `Decimal` type in Spark supports a precision up to 38 digits (128-bits). ")
+    println("The RAPIDS Accelerator supports 128-bit starting from version 21.12 and decimals are ")
+    println("enabled by default.")
+    println("Please check [Decimal Support](compatibility.md#decimal-support) for more details.")
+    println()
+    println("`Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:")
     println()
     println("```")
     println(" * In particular, if we have expressions e1 and e2 with precision/scale p1/s1 and p2/s2")
@@ -2116,13 +2115,6 @@ object SupportedOpsForTools {
         val readOps = types.map { t =>
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
             t.toString match {
-              case "BOOLEAN" => conf.isCsvBoolReadEnabled
-              case "BYTE" => conf.isCsvByteReadEnabled
-              case "SHORT" => conf.isCsvShortReadEnabled
-              case "INT" => conf.isCsvIntReadEnabled
-              case "LONG" => conf.isCsvLongReadEnabled
-              case "FLOAT" => conf.isCsvFloatReadEnabled
-              case "DOUBLE" => conf.isCsvDoubleReadEnabled
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
               case "DATE" => conf.isCsvDateReadEnabled
               case _ => true

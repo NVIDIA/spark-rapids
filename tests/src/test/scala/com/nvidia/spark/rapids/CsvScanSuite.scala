@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,7 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test CSV splits with chunks", floatCsvDf,
     conf = new SparkConf()
-        .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
-        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")) {
+        .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
     frame => frame.select(col("floats"))
   }
 
@@ -40,8 +39,7 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Test CSV count chunked by rows",
       intsFromCsv,
       conf = new SparkConf()
-          .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
-          .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")) {
+          .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
     frameCount
   }
 
@@ -49,8 +47,7 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Test CSV count chunked by bytes",
       intsFromCsv,
       conf = new SparkConf()
-          .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0")
-          .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")) {
+          .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0")) {
     frameCount
   }
 
@@ -61,8 +58,7 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
     intsFromCsvInferredSchema, Seq("FileSourceScanExec", "FilterExec", "CollectLimitExec",
       "GreaterThan", "Length", "StringTrim", "LocalTableScanExec", "DeserializeToObjectExec",
       "Invoke", "AttributeReference", "Literal"),
-    conf = new SparkConf()
-        .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")) {
+    conf = new SparkConf()) {
     frame => frame.select(col("*"))
   }
 }

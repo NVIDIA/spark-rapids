@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ListBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -27,7 +28,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
-import org.apache.spark.sql.types.{StructField, StructType}
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -164,7 +165,21 @@ abstract class GpuTextBasedPartitionReader(
         } else {
           readDataSchema
         }
-        val cudfSchema = GpuColumnVector.from(dataSchema)
+
+        // read boolean and numeric columns as strings in cuDF
+        val dataSchemaWithStrings = StructType(dataSchema.fields
+          .map(f => {
+            f.dataType match {
+              case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
+                   DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
+                   DataTypes.DoubleType =>
+                f.copy(dataType = DataTypes.StringType)
+              case _ =>
+                f
+            }
+          }))
+        val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
+
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
@@ -175,10 +190,55 @@ abstract class GpuTextBasedPartitionReader(
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
-        handleResult(newReadDataSchema, table)
+        // parse boolean and numeric columns that were read as strings
+        val castTable = withResource(table) { _ =>
+          val columns = new ListBuffer[ColumnVector]()
+          // Table increases the ref counts on the columns so we have
+          // to close them after creating the table
+          withResource(columns) { _ =>
+            // ansi mode does not apply to text inputs
+            val ansiEnabled = false
+            for (i <- 0 until table.getNumberOfColumns) {
+              val castColumn = newReadDataSchema.fields(i).dataType match {
+                case DataTypes.BooleanType =>
+                  castStringToBool(table.getColumn(i))
+                case DataTypes.ByteType =>
+                  castStringToInt(table.getColumn(i), DType.INT8)
+                case DataTypes.ShortType =>
+                  castStringToInt(table.getColumn(i), DType.INT16)
+                case DataTypes.IntegerType =>
+                  castStringToInt(table.getColumn(i), DType.INT32)
+                case DataTypes.LongType =>
+                  castStringToInt(table.getColumn(i), DType.INT64)
+                case DataTypes.FloatType =>
+                  GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
+                case DataTypes.DoubleType =>
+                  GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT64)
+                case _ =>
+                  table.getColumn(i).incRefCount()
+              }
+              columns += castColumn
+            }
+            new Table(columns: _*)
+          }
+        }
+
+        handleResult(newReadDataSchema, castTable)
       }
     } finally {
       dataBuffer.close()
+    }
+  }
+
+  def castStringToBool(input: ColumnVector): ColumnVector
+
+  def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
+    withResource(input.isInteger(intType)) { isInt =>
+      withResource(input.castTo(intType)) { asInt =>
+        withResource(Scalar.fromNull(intType)) { nullValue =>
+          isInt.ifElse(asInt, nullValue)
+        }
+      }
     }
   }
 

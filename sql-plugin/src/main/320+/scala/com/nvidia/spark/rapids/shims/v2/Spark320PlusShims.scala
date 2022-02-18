@@ -309,7 +309,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
       }),
     GpuOverrides.expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
+      "String replace using a regular expression pattern",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
@@ -558,7 +558,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+          override def tagPlanForGpu(): Unit = tagFileSourceScanExec(this)
 
           override def convertToCpu(): SparkPlan = {
             wrapped.copy(partitionFilters = partitionFilters)
@@ -1051,4 +1051,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   }
 
   override def supportsColumnarAdaptivePlans: Boolean = true
+
+  def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    GpuFileSourceScanExec.tagSupport(meta)
+  }
 }

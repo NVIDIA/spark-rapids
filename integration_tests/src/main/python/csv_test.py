@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import get_non_gpu_allowed
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_before_spark_330
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -194,7 +194,7 @@ def read_csv_sql(data_path, schema, options = {}):
 @pytest.mark.parametrize('name,schema,options', [
     ('Acquisition_2007Q3.txt', _acq_schema, {'sep': '|'}),
     ('Performance_2007Q3.txt_0', _perf_schema, {'sep': '|'}),
-    pytest.param('ts.csv', _date_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1091')),
+    pytest.param('ts.csv', _date_schema, {}),
     pytest.param('date.csv', _date_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1111')),
     ('ts.csv', _ts_schema, {}),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
@@ -214,29 +214,39 @@ def read_csv_sql(data_path, schema, options = {}):
     pytest.param('trucks-missing-quotes.csv', _trucks_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/130')),
     pytest.param('trucks-null.csv', _trucks_schema, {'header': 'true', 'nullValue': 'null'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2068')),
     pytest.param('trucks-null.csv', _trucks_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
-    pytest.param('simple_int_values.csv', _byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
-    pytest.param('simple_int_values.csv', _short_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
-    pytest.param('simple_int_values.csv', _int_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
-    pytest.param('simple_int_values.csv', _long_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
+    pytest.param('simple_int_values.csv', _byte_schema, {'header': 'true'}),
+    pytest.param('simple_int_values.csv', _short_schema, {'header': 'true'}),
+    pytest.param('simple_int_values.csv', _int_schema, {'header': 'true'}),
+    pytest.param('simple_int_values.csv', _long_schema, {'header': 'true'}),
     ('simple_int_values.csv', _float_schema, {'header': 'true'}),
     ('simple_int_values.csv', _double_schema, {'header': 'true'}),
-    pytest.param('empty_int_values.csv', _empty_byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
-    pytest.param('empty_int_values.csv', _empty_short_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
-    pytest.param('empty_int_values.csv', _empty_int_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
-    pytest.param('empty_int_values.csv', _empty_long_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
-    pytest.param('empty_int_values.csv', _empty_float_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
-    pytest.param('empty_int_values.csv', _empty_double_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('empty_int_values.csv', _empty_byte_schema, {'header': 'true'}),
+    pytest.param('empty_int_values.csv', _empty_short_schema, {'header': 'true'}),
+    pytest.param('empty_int_values.csv', _empty_int_schema, {'header': 'true'}),
+    pytest.param('empty_int_values.csv', _empty_long_schema, {'header': 'true'}),
+    pytest.param('empty_int_values.csv', _empty_float_schema, {'header': 'true'}),
+    pytest.param('empty_int_values.csv', _empty_double_schema, {'header': 'true'}),
     pytest.param('nan_and_inf.csv', _float_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-    pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124, https://github.com/NVIDIA/spark-rapids/issues/125i, https://github.com/NVIDIA/spark-rapids/issues/126')),
-    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124, https://github.com/NVIDIA/spark-rapids/issues/125, https://github.com/NVIDIA/spark-rapids/issues/126')),
-    pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2071')),
+    pytest.param('floats_invalid.csv', _float_schema, {'header': 'true'}),
+    pytest.param('floats_invalid.csv', _double_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _byte_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _short_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _int_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _long_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}),
+    pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}),
     pytest.param('ints_with_whitespace.csv', _number_as_string_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2069')),
     pytest.param('ints_with_whitespace.csv', _byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/130'))
     ], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-def test_basic_read(std_input_path, name, schema, options, read_func, v1_enabled_list):
-    updated_conf=copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled):
+    updated_conf=copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled
+    })
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
             conf=updated_conf)
 
@@ -245,13 +255,13 @@ csv_supported_gens = [
         # This would require multiLine reads to work correctly so we avoid these chars
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
         StringGen('[aAbB ]{0,10}'),
+        StringGen('[nN][aA][nN]'),
+        StringGen('[+-]?[iI][nN][fF]([iI][nN][iI][tT][yY])?'),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen,
-        DoubleGen(no_nans=True), # NaN, Inf, and -Inf are not supported
-        # Once https://github.com/NVIDIA/spark-rapids/issues/125 and https://github.com/NVIDIA/spark-rapids/issues/124
-        # are fixed we should not have to special case float values any more.
-        pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-        pytest.param(FloatGen(no_nans=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124')),
-        pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
+        DoubleGen(no_nans=False),
+        pytest.param(double_gen),
+        pytest.param(FloatGen(no_nans=False)),
+        pytest.param(float_gen),
         TimestampGen()]
 
 @approximate_float
@@ -399,3 +409,23 @@ def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
             lambda spark, path: spark.read.csv(path),
             data_path,
             'DataWritingCommandExec')
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@pytest.mark.parametrize('metadata_column', ["file_path", "file_name", "file_size", "file_modification_time"])
+def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column):
+    data_path = spark_tmp_path + "/hidden_metadata.csv"
+    with_cpu_session(lambda spark : spark.range(10) \
+                     .selectExpr("id") \
+                     .write \
+                     .mode("overwrite") \
+                     .csv(data_path))
+
+    def do_csv_scan(spark):
+        df = spark.read.csv(data_path).selectExpr("_c0", "_metadata.{}".format(metadata_column))
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_csv_scan,
+        exist_classes= "FileSourceScanExec",
+        non_exist_classes= "GpuBatchScanExec")

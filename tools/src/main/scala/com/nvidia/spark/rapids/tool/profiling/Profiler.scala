@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
 import org.apache.hadoop.conf.Configuration
 
@@ -279,7 +279,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val dsInfo = collect.getDataSourceInfo
     val execInfo = collect.getExecutorInfo
     val jobInfo = collect.getJobInfo
-    val rapidsProps = collect.getRapidsProperties
+    val rapidsProps = collect.getProperties(rapidsOnly = true)
+    val sparkProps = collect.getProperties(rapidsOnly = false)
     val rapidsJar = collect.getRapidsJARInfo
     val sqlMetrics = collect.getSQLPlanMetrics
     // for compare mode we just add in extra tables for matching across applications
@@ -337,7 +338,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
     (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
       sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
-      failedJobs, removedBMs, removedExecutors, unsupportedOps), compareRes)
+      failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
@@ -347,19 +348,25 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val sums = if (outputCombined) {
       // the properties table here has the column names as the app indexes so we have to
       // handle special
-      def combineProps(sums: Seq[ApplicationSummaryInfo]): Seq[RapidsPropertyProfileResult] = {
+      def combineProps(rapidsOnly: Boolean,
+          sums: Seq[ApplicationSummaryInfo]): Seq[RapidsPropertyProfileResult] = {
         var numApps = 0
         val props = HashMap[String, ArrayBuffer[String]]()
         val outputHeaders = ArrayBuffer("propertyName")
         sums.foreach { app =>
-          if (app.rapidsProps.nonEmpty) {
+          val inputProps = if (rapidsOnly) {
+            app.rapidsProps
+          } else {
+            app.sparkProps
+          }
+          if (inputProps.nonEmpty) {
             numApps += 1
-            val rapidsRelated = app.rapidsProps.map { rp =>
-              rp.rows(0) -> rp.rows(1)
+            val appMappedProps = inputProps.map { p =>
+              p.rows(0) -> p.rows(1)
             }.toMap
 
-            outputHeaders += app.rapidsProps.head.outputHeaders(1)
-            CollectInformation.addNewProps(rapidsRelated, props, numApps)
+            outputHeaders += inputProps.head.outputHeaders(1)
+            CollectInformation.addNewProps(appMappedProps, props, numApps)
           }
         }
         val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
@@ -373,7 +380,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         appsSum.flatMap(_.dsInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.execInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.jobInfo).sortBy(_.appIndex),
-        combineProps(appsSum).sortBy(_.key),
+        combineProps(rapidsOnly=true, appsSum).sortBy(_.key),
         appsSum.flatMap(_.rapidsJar).sortBy(_.appIndex),
         appsSum.flatMap(_.sqlMetrics).sortBy(_.appIndex),
         appsSum.flatMap(_.jsMetAgg).sortBy(_.appIndex),
@@ -385,7 +392,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         appsSum.flatMap(_.failedJobs).sortBy(_.appIndex),
         appsSum.flatMap(_.removedBMs).sortBy(_.appIndex),
         appsSum.flatMap(_.removedExecutors).sortBy(_.appIndex),
-        appsSum.flatMap(_.unsupportedOps).sortBy(_.appIndex)
+        appsSum.flatMap(_.unsupportedOps).sortBy(_.appIndex),
+        combineProps(rapidsOnly=false, appsSum).sortBy(_.key)
       )
       Seq(reduced)
     } else {
@@ -399,6 +407,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Job Information", app.jobInfo)
       profileOutputWriter.write("Spark Rapids parameters set explicitly", app.rapidsProps,
         Some("Spark Rapids parameters"))
+      profileOutputWriter.write("Spark Properties", app.sparkProps,
+        Some("Spark Properties"))
       profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", app.rapidsJar,
         Some("Rapids 4 Spark Jars"))
       profileOutputWriter.write("SQL Plan Metrics for Application", app.sqlMetrics,

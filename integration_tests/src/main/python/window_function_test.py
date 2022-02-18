@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -147,8 +147,7 @@ def test_decimal128_count_window(data_gen):
         ' count(c) over '
         '   (partition by a order by b asc '
         '      rows between 2 preceding and 10 following) as count_c_asc '
-        'from window_agg_table',
-        conf = allow_negative_scale_of_decimal_conf)
+        'from window_agg_table')
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
@@ -160,8 +159,7 @@ def test_decimal128_count_window_no_part(data_gen):
         ' count(b) over '
         '   (order by a asc '
         '      rows between 2 preceding and 10 following) as count_b_asc '
-        'from window_agg_table',
-        conf = allow_negative_scale_of_decimal_conf)
+        'from window_agg_table')
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
@@ -173,8 +171,7 @@ def test_decimal_sum_window(data_gen):
         ' sum(c) over '
         '   (partition by a order by b asc '
         '      rows between 2 preceding and 10 following) as sum_c_asc '
-        'from window_agg_table',
-        conf = allow_negative_scale_of_decimal_conf)
+        'from window_agg_table')
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
@@ -186,8 +183,7 @@ def test_decimal_sum_window_no_part(data_gen):
         ' sum(b) over '
         '   (order by a asc '
         '      rows between 2 preceding and 10 following) as sum_b_asc '
-        'from window_agg_table',
-        conf = allow_negative_scale_of_decimal_conf)
+        'from window_agg_table')
 
 
 @ignore_order
@@ -201,8 +197,7 @@ def test_decimal_running_sum_window(data_gen):
         '   (partition by a order by b asc '
         '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_c_asc '
         'from window_agg_table',
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
-            {'spark.rapids.sql.batchSizeBytes': '100'}))
+        conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
@@ -215,8 +210,7 @@ def test_decimal_running_sum_window_no_part(data_gen):
         '   (order by a asc '
         '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_b_asc '
         'from window_agg_table',
-        conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
-            {'spark.rapids.sql.batchSizeBytes': '100'}))
+        conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
@@ -981,7 +975,8 @@ def test_window_aggs_for_rows_collect_set():
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), ArrayGen(long_gen)], ids=meta_idfn('partBy:'))
+# Arrays and struct of struct (more than single level nesting) are not supported
+@pytest.mark.parametrize('part_gen', [ArrayGen(long_gen), StructGen([["a", StructGen([["a1", long_gen]])]])], ids=meta_idfn('partBy:'))
 # For arrays the sort and hash partition are also not supported
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'AggregateExpression', 'Count', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'Literal', 'SortExec', 'SortOrder', 'ShuffleExchangeExec', 'HashPartitioning')
 def test_nested_part_fallback(part_gen):
@@ -997,6 +992,22 @@ def test_nested_part_fallback(part_gen):
 
     assert_gpu_fallback_collect(do_it, 'WindowExec')
 
+@ignore_order(local=True)
+# single-level structs (no nested structs) are now supported by the plugin
+@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]])], ids=meta_idfn('partBy:'))
+def test_nested_part_struct(part_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(part_gen, length=20)),
+            ('b', LongRangeGen()),
+            ('c', int_gen)]
+    window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=2048) \
+            .withColumn('rn', f.count('c').over(window_spec))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
 # In a distributed setup the order of the partitions returend might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
@@ -1007,8 +1018,7 @@ def test_window_ride_along(ride_along):
             "window_agg_table",
             'select *,'
             ' row_number() over (order by a) as row_num '
-            'from window_agg_table ',
-            conf = allow_negative_scale_of_decimal_conf)
+            'from window_agg_table ')
 
 @approximate_float
 @ignore_order

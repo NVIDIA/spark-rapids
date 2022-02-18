@@ -377,14 +377,7 @@ date. Typically, one that overflowed.
 
 ### CSV Floating Point
 
-The CSV parser is not able to parse `NaN` values.  These are
-likely to be turned into null values, as described in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/125).
-
-Some floating-point values also appear to overflow but do not for the CPU as described in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/124).
-
-Any number that overflows will not be turned into a null value.
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -480,13 +473,45 @@ The nested types(array, map and struct) are not supported yet in current version
 
 ### JSON Floating Point
 
-Like the CSV reader, the JSON reader has the same floating point issue. Please refer to [CSV Floating Point](#csv-floating-point) section.
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
-## LIKE
+The GPU JSON reader does not support `NaN` and `Inf` values with full compatibility with Spark.
 
-If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
-the end of the string.  This will be fixed in a future release. The issue is
-[here](https://github.com/NVIDIA/spark-rapids/issues/119).
+The following are the only formats that are parsed consistently between CPU and GPU. Any other variation, including 
+these formats when unquoted, will produce `null` on the CPU and may produce valid `NaN` and `Inf` results on the GPU.
+
+```json
+{ "number": "NaN" }
+{ "number": "Infinity" }
+{ "number": "-Infinity" }
+```
+
+Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
+Spark will treat them as invalid inputs and will just return `null`.
+
+### JSON Schema discovery
+
+Spark SQL can automatically infer the schema of a JSON dataset if schema is not provided explicitly. The CPU 
+handles schema discovery and there is no GPU acceleration of this. By default Spark will read/parse the entire
+dataset to determine the schema. This means that some options/errors which are ignored by the GPU may still
+result in an exception if used with schema discovery.
+
+### JSON options
+
+Spark supports passing options to the JSON parser when reading a dataset.  In most cases if the RAPIDS Accelerator 
+sees one of these options that it does not support it will fall back to the CPU. In some cases we do not. The 
+following options are documented below.
+
+- `allowNumericLeadingZeros`  - Allows leading zeros in numbers (e.g. 00012). By default this is set to false. 
+When it is false Spark throws an exception if it encounters this type of number. The RAPIDS Accelerator 
+strips off leading zeros from all numbers and this config has no impact on it.
+
+- `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters (ASCII characters with 
+value less than 32, including tab and line feed characters) or not. By default this is set to false. If the schema 
+is provided while reading JSON file, then this flag has no impact on the RAPIDS Accelerator as it always allows 
+unquoted control characters but Spark reads these entries incorrectly as null. However, if the schema is not provided 
+and when the option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown 
+as discussed in `JSON Schema discovery` section.
 
 ## Regular Expressions
 
@@ -497,19 +522,13 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_extract`
 - `regexp_like`
 - `regexp_replace`
+- `string_split`
 
-These operations are disabled by default because of known incompatibilities between the Java regular expression 
-engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 
-kernels can potentially have high memory overhead.
+Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors. To 
+disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
-These operations can be enabled on the GPU with the following configuration settings:
-
-- `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
-- `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
-- `spark.rapids.sql.expression.RegExpExtract=true` for `regexp_extract`
-
-Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
-CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
+There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
+that a pattern is either unsupported or would produce incorrect results on the GPU.
 
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
@@ -517,6 +536,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Line anchor `$`
 - String anchor `\Z`
 - String anchor `\z` is not supported by `regexp_replace`
+- Line and string anchors are not supported by `string_split`
 - Non-digit character class `\D`
 - Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
@@ -527,7 +547,9 @@ Here are some examples of regular expression patterns that are not supported on 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Hex and octal digits
+- Octal digits in the range `\0200` to `\0377`
+- Character classes with octal digits, such as `[\02]` or `[\024]`
+- Hex digits
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.

@@ -21,6 +21,8 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
+import ai.rapids.cudf.Cuda
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -404,10 +406,9 @@ object RapidsConf {
       "\"ASYNC\", and \"NONE\". With \"DEFAULT\", the RMM pool allocator is used; with " +
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS).")
+      "just passes through to CUDA memory allocation directly.")
     .stringConf
-    .createWithDefault("ARENA")
+    .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -469,6 +470,16 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE =
+    conf("spark.rapids.sql.shuffledHashJoin.optimizeShuffle")
+      .doc("Enable or disable an optimization where shuffled build side batches are kept " +
+        "on the host while the first stream batch is loaded onto the GPU. The optimization " +
+        "increases off-heap host memory usage to avoid holding onto the GPU semaphore while " +
+        "waiting for stream side IO.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -885,47 +896,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val ENABLE_READ_CSV_BOOLS = conf("spark.rapids.sql.csv.read.bool.enabled")
-      .doc("Parsing an invalid CSV boolean value produces true instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_BYTES = conf("spark.rapids.sql.csv.read.byte.enabled")
-      .doc("Parsing CSV bytes is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_SHORTS = conf("spark.rapids.sql.csv.read.short.enabled")
-      .doc("Parsing CSV shorts is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_INTEGERS = conf("spark.rapids.sql.csv.read.integer.enabled")
-      .doc("Parsing CSV integers is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_LONGS = conf("spark.rapids.sql.csv.read.long.enabled")
-      .doc("Parsing CSV longs is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
-      .doc("Parsing CSV floats has some issues at the min and max values for floating" +
-          "point numbers and can be more lenient on parsing inf and -inf values")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
-      .doc("Parsing CSV double has some issues at the min and max values for floating" +
-          "point numbers and can be more lenient on parsing inf and -inf values")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -966,6 +936,13 @@ object RapidsConf {
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
       "the different results. When set to false disables the range window acceleration for the " +
       "long type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
+    .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
+      "can cause out of memory issues. Setting this config to false will make any operation " +
+      "using regular expressions fall back to CPU.")
     .booleanConf
     .createWithDefault(true)
 
@@ -1489,6 +1466,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
+  lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
+
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
@@ -1517,7 +1496,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val rmmPool: String = get(RMM_POOL)
+  lazy val rmmPool: String = {
+    val pool = get(RMM_POOL)
+    if ("ASYNC".equalsIgnoreCase(pool) && Cuda.getDriverVersion < 11020) {
+      logWarning("CUDA driver does not support the ASYNC allocator, falling back to ARENA")
+      "ARENA"
+    } else {
+      pool
+    }
+  }
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
@@ -1598,20 +1585,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val isCsvDateReadEnabled: Boolean = get(ENABLE_READ_CSV_DATES)
-
-  lazy val isCsvBoolReadEnabled: Boolean = get(ENABLE_READ_CSV_BOOLS)
-
-  lazy val isCsvByteReadEnabled: Boolean = get(ENABLE_READ_CSV_BYTES)
-
-  lazy val isCsvShortReadEnabled: Boolean = get(ENABLE_READ_CSV_SHORTS)
-
-  lazy val isCsvIntReadEnabled: Boolean = get(ENABLE_READ_CSV_INTEGERS)
-
-  lazy val isCsvLongReadEnabled: Boolean = get(ENABLE_READ_CSV_LONGS)
-
-  lazy val isCsvFloatReadEnabled: Boolean = get(ENABLE_READ_CSV_FLOATS)
-
-  lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
 
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
@@ -1768,6 +1741,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
