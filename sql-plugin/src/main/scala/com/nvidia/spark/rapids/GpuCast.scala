@@ -21,7 +21,7 @@ import java.time.DateTimeException
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.YearParseUtil
@@ -1361,10 +1361,10 @@ object GpuCast extends Arm {
       input: ColumnView,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
-    val prec = DecimalUtil.getPrecisionForIntegralType(input.getType)
+    val prec = input.getType.getPrecisionForInt
     // Cast input to decimal
     val inputDecimalType = new DecimalType(prec, 0)
-    withResource(input.castTo(DecimalUtil.createCudfDecimal(prec, 0))) { castedInput =>
+    withResource(input.castTo(DecimalUtil.createCudfDecimal(inputDecimalType))) { castedInput =>
       castDecimalToDecimal(castedInput, inputDecimalType, dt, ansiMode)
     }
   }
@@ -1404,15 +1404,15 @@ object GpuCast extends Arm {
     }
 
     withResource(checkedInput) { checked =>
-      val targetType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
+      val targetType = DecimalUtil.createCudfDecimal(dt)
       // If target scale reaches DECIMAL128_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      val casted = if (DecimalUtil.getMaxPrecision(targetType) == dt.scale) {
+      val casted = if (targetType.getDecimalMaxPrecision == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
+        val containerType = DecimalUtils.createDecimalType(dt.precision, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
-          DecimalUtil.round(container, dt.scale, cudf.RoundMode.HALF_UP)
+          container.round(dt.scale, cudf.RoundMode.HALF_UP)
         }
       }
       // Cast NaN values to nulls
@@ -1458,8 +1458,8 @@ object GpuCast extends Arm {
       from: DecimalType,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
-    val toDType = DecimalUtil.createCudfDecimal(to.precision, to.scale)
-    val fromDType = DecimalUtil.createCudfDecimal(from.precision, from.scale)
+    val toDType = DecimalUtil.createCudfDecimal(to)
+    val fromDType = DecimalUtil.createCudfDecimal(from)
 
     val fromWholeNumPrecision = from.precision - from.scale
     val toWholeNumPrecision = to.precision - to.scale
@@ -1484,18 +1484,7 @@ object GpuCast extends Arm {
       val rounded = if (!isScaleUpcast) {
         // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
         // this case so we need to also.
-
-        // Rounding up can cause overflow, but if the input is in the proper range for Spark
-        // the overflow will fit in the current CUDF type without the need to cast it.
-        // Int.MinValue =                       -2147483648
-        // DECIMAL32 min unscaled =              -999999999
-        // DECIMAL32 min unscaled and rounded = -1000000000 (Which fits)
-        // Long.MinValue =                      -9223372036854775808
-        // DECIMAL64 min unscaled =              -999999999999999999
-        // DECIMAL64 min unscaled and rounded = -1000000000000000000 (Which fits)
-        // That means we don't need to cast it to a wider type first, we just need to be sure
-        // that we do boundary checks, if we did need to round
-        DecimalUtil.round(input, to.scale, cudf.RoundMode.HALF_UP)
+        input.round(to.scale, cudf.RoundMode.HALF_UP)
       } else {
         input.copyToColumnVector()
       }
