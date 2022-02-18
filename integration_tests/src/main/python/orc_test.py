@@ -20,6 +20,7 @@ from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330
 from parquet_test import _nested_pruning_schemas
+from conftest import is_databricks_runtime
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -465,3 +466,24 @@ def test_orc_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
         do_orc_scan,
         exist_classes= "FileSourceScanExec",
         non_exist_classes= "GpuBatchScanExec")
+
+
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
+def test_orc_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_list):
+    first_data_path = spark_tmp_path + '/ORC_DATA/first'
+    with_cpu_session(lambda spark : spark.range(1).toDF("a").write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/second'
+    with_cpu_session(lambda spark : spark.range(1, 2).toDF("a").write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/ORC_DATA/third'
+    with_cpu_session(lambda spark : spark.range(2, 3).toDF("a").write.json(third_data_path))
+
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.files.ignoreCorruptFiles': "true",
+                                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc([first_data_path, second_data_path, third_data_path]),
+            conf=all_confs)

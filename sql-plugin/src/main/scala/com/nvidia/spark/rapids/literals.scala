@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,8 +52,8 @@ object GpuScalar extends Arm with Logging {
         case DType.FLOAT64 => v.getDouble
         case DType.INT8 => v.getByte
         case DType.INT16 => v.getShort
-        case DType.INT32 => v.getInt
-        case DType.INT64 => v.getLong
+        case DType.INT32 | DType.UINT32 => v.getInt
+        case DType.INT64 | DType.UINT64 => v.getLong
         case DType.TIMESTAMP_DAYS => v.getInt
         case DType.TIMESTAMP_MICROSECONDS => v.getLong
         case DType.STRING => UTF8String.fromBytes(v.getUTF8)
@@ -356,6 +356,21 @@ object GpuScalar extends Arm with Logging {
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
           s" for MapType, expecting MapData")
     }
+    case GpuUnsignedIntegerType => v match {
+      case i: Int =>  Scalar.fromUnsignedInt(i)
+      case s: Short =>  Scalar.fromUnsignedInt(s.toInt)
+      case b: Byte =>  Scalar.fromUnsignedInt(b.toInt)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for IntegerType, expecting Int.")
+    }
+    case GpuUnsignedLongType => v match {
+      case l: Long => Scalar.fromUnsignedLong(l)
+      case i: Int => Scalar.fromUnsignedLong(i.toLong)
+      case s: Short => Scalar.fromUnsignedLong(s.toLong)
+      case b: Byte => Scalar.fromUnsignedLong(b.toLong)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for LongType, expecting Long, or Int.")
+    }
     case _ => throw new UnsupportedOperationException(s"${v.getClass} '$v' is not supported" +
         s" as a Scalar yet")
   }
@@ -564,10 +579,14 @@ object GpuLiteral {
    * Create a GPU literal with default value for given DataType
    */
   def default(dataType: DataType): GpuLiteral = {
-    val cpuLiteral = Literal.default(dataType)
-    GpuLiteral(cpuLiteral.value, cpuLiteral.dataType)
+    dataType match {
+      case GpuUnsignedIntegerType => GpuLiteral(0, dataType)
+      case GpuUnsignedLongType => GpuLiteral(0L, dataType)
+      case _ =>
+        val cpuLiteral = Literal.default(dataType)
+        GpuLiteral(cpuLiteral.value, cpuLiteral.dataType)
+    }
   }
-
 }
 
 /**

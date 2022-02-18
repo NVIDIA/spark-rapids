@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.OrcOutputStripe
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation}
+import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 
@@ -83,5 +83,12 @@ trait OrcShims301until320Base {
       }
     }
     result
+  }
+
+  /**
+   * Compare if the two TypeDescriptions are equal by ignoring attribute
+   */
+  def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
+    lhs.equals(rhs)
   }
 }
