@@ -152,7 +152,7 @@ def test_str_to_map_expr_fixed_pattern_input():
 
 def test_str_to_map_expr_fixed_delimiters():
     data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
-                 .with_special_pattern('[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}', weight=100))]
+                 .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
@@ -161,7 +161,8 @@ def test_str_to_map_expr_fixed_delimiters():
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 def test_str_to_map_expr_random_delimiters():
-    data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True))]
+    data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True)
+                 .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
     delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
     (pair_delim, keyval_delim) = ('', '')
     while pair_delim == keyval_delim:
@@ -175,7 +176,8 @@ def test_str_to_map_expr_random_delimiters():
 
 def test_str_to_map_expr_input_no_delimiter():
     # Test input strings that contain either one delimiter or do not contain delimiters at all.
-    data_gen = [('a', StringGen(pattern='[0-9:,]{0,100}', nullable=True))]
+    data_gen = [('a', StringGen(pattern='[0-9:,]{0,100}', nullable=True)
+                 .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a, "A", ":") as m1',  # input doesn't contain pair delimiter
