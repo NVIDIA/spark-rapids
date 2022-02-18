@@ -843,5 +843,5 @@ def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_fact
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r"ExistenceJoin\(exists#[0-9]+\)",
         conf={
-            "spark.sql.adaptive.enabled": aqeEnabled
+            "spark.sql.adaptive.enabled": aqeEnabled,
         })

@@ -110,7 +110,7 @@ object GpuHashJoin extends Arm {
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
       case FullOuter =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
@@ -120,8 +120,6 @@ object GpuHashJoin extends Arm {
         if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
           meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
         }
-      case ExistenceJoin(_) =>
-        // TODO enabling existence join
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
