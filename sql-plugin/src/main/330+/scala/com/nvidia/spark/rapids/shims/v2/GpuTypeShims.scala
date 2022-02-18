@@ -20,6 +20,26 @@ import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConver
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
 
+/**
+ * Spark use int32 represent YearMonth, Spark use int64 represent DayTime.
+ * And also Spark saves ANSI intervals as primitive physical Parquet types:
+ *   - year-month intervals as `INT32`
+ *   - day-time intervals as `INT64`
+ * To load the values as intervals back, Spark puts the info about interval types
+ * to the extra key `org.apache.spark.sql.parquet.row.metadata`:
+ * $ java -jar parquet-tools-1.12.0.jar meta ./part-...-c000.snappy.parquet
+ * creator: parquet-mr version 1.12.1 (build 2a5c06c58fa987f85aa22170be14d927d5ff6e7d)
+ * extra:   org.apache.spark.version = 3.3.0
+ * extra:   org.apache.spark.sql.parquet.row.metadata =
+ * {"type":"struct","fields":[...,
+ *   {"name":"i","type":"interval year to month","nullable":false,"metadata":{}}]}
+ * file schema: spark_schema
+ * --------------------------------------------------------------------------------
+ * ...
+ * i:  REQUIRED INT32 R:0 D:0
+ *
+ * For details See [SPARK-36825]
+ */
 object GpuTypeShims {
 
   private lazy val getPartialConverter: PartialFunction[(DataType, Boolean), TypeConverter] = {
