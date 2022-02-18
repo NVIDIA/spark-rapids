@@ -119,14 +119,16 @@ _grpkey_long_with_nulls_with_overflow = [
     ('b', LongGen(nullable=True))]
 
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
 
 running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
-        DecimalGen(38, 4),
+        DecimalGen(precision=38, scale=4),
         StructGen(children=[
             ['child_int', IntegerGen()],
             ['child_time', DateGen()],
@@ -994,7 +996,7 @@ def test_nested_part_fallback(part_gen):
 
 @ignore_order(local=True)
 # single-level structs (no nested structs) are now supported by the plugin
-@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]])], ids=meta_idfn('partBy:'))
+@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), StructGen([["a", decimal_gen_36_5]])], ids=meta_idfn('partBy:'))
 def test_nested_part_struct(part_gen):
     data_gen = [
             ('a', RepeatSeqGen(part_gen, length=20)),
