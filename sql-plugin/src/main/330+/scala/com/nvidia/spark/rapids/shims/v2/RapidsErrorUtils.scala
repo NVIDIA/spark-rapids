@@ -41,10 +41,10 @@ object RapidsErrorUtils extends Arm {
           s"NaN or Infinity. To return NULL instead, use 'try_cast'. " +
           s"If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error.")
     }
-    val hashNaN = withResource(FloatUtils.getNanScalar(input.getType)) { nan =>
+    val hasNaN = withResource(FloatUtils.getNanScalar(input.getType)) { nan =>
       input.contains(nan)
     }
-    if (hashNaN) {
+    if (hasNaN) {
       throwDateTimeException
     } else {
       withResource(FloatUtils.getInfinityVector(input)) { inf =>
