@@ -294,10 +294,7 @@ def test_cast_string_to_negative_scale_decimal():
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()])
 def test_cast_double_to_timestamp(type):
     def fun(spark):
-        data=[float("inf"), float("-inf"), float("nan")]
-        df=spark.createDataFrame(
-            SparkContext.getOrCreate().parallelize(data),
-            StructType([StructField('a', type)])
-        )
-        return df.select(f.col('a').cast(TimestampType())).collect()
-    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "org.apache.spark.SparkException")
+        data=[float("inf"),float("-inf"),float("nan")]
+        df = spark.createDataFrame(data, DoubleType())
+        return df.select(f.col('value').cast(TimestampType())).collect()
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "java.time.DateTimeException")
