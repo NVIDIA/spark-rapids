@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, ColumnView}
 
 object RapidsErrorUtils {
   def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
@@ -29,5 +29,9 @@ object RapidsErrorUtils {
     // For now, the default argument is false. The caller sets the correct value accordingly.
     throw new NoSuchElementException(s"Key: ${elementKey} " +
       s"does not exist in any one of the rows in the map column")
+  }
+
+  def preprocessCastFloatToTimestamp(input: ColumnView): Unit = {
+    // noop
   }
 }

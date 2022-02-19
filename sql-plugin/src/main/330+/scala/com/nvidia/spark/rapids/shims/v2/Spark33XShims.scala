@@ -16,9 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import java.time.DateTimeException
-
-import ai.rapids.cudf.ColumnView
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
@@ -34,7 +31,6 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
 trait Spark33XShims extends Spark33XFileOptionsShims with Arm {
@@ -156,19 +152,6 @@ trait Spark33XShims extends Spark33XFileOptionsShims with Arm {
       meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
     }
     super.tagFileSourceScanExec(meta)
-  }
-
-  override def throwIfNansOrInfinity(input: ColumnView): Unit = {
-    val hasNaN = input.contains(FloatUtils.getNanScalar(input.getType))
-    withResource(input.contains(FloatUtils.getInfinityVector(input))) { hasInf =>
-      withResource(hasInf.any()) { isAny =>
-        if ((isAny.isValid && isAny.getBoolean) || hasNaN) {
-          throw new DateTimeException(s"The column contains at least a single value that is" +
-              s" NaN or Infinity. To return NULL instead, use 'try_cast'. " +
-              s"If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error.")
-        }
-      }
-    }
   }
 }
 

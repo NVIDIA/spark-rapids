@@ -296,7 +296,7 @@ def test_cast_double_to_timestamp(type):
     def fun(spark):
         data=[float("inf"), float("-inf"), float("nan")]
         df=spark.createDataFrame(
-            SparkContext.getOrCreate().parallelize([data]),
+            SparkContext.getOrCreate().parallelize(data),
             StructType([StructField('a', type)])
         )
         return df.select(f.col('a').cast(TimestampType())).collect()
