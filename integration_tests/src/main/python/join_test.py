@@ -805,6 +805,8 @@ def test_struct_self_join(spark_tmp_table_factory):
 @pytest.mark.parametrize('numComplementsToExists', [0, 1, 2])
 @pytest.mark.parametrize('aqeEnabled', [
     pytest.param(False),
+    # workaround: somehow AQE retains RDDScanExec preventing parent ShuffleExchangeExec
+    # from being executed on GPU
     pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'))
 ])
 def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_factory):
@@ -813,7 +815,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_fact
     def do_join(spark):
         # create non-overlapping ranges to have a mix of exists=true and exists=false
         # duplicate every row in the rhs to verify it does not affect
-        # the the number of the output rows, which should be equal to the number of the
+        # the number of the output rows, which should be equal to the number of the
         # left-hand side rows
         lhs_upper_bound = 10
         lhs_data = list((f"left_{v}", v * 10, v * 100) for v in range(2, lhs_upper_bound))
@@ -829,9 +831,6 @@ def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_fact
 
         df_right = spark.createDataFrame(rhs_data_with_dupes)
         df_right.createOrReplaceTempView(rightTable)
-
-        assert df_right.count() == df_left.count() * 2
-        assert df_right.distinct().count() == df_left.count()
 
         res = spark.sql((
             "select * "

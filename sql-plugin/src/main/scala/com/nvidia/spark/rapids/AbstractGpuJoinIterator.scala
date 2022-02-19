@@ -299,7 +299,6 @@ abstract class SplittableJoinIterator(
         None
       }
 
-      // TODO refactor lazyLeftMap out of the way, lazy workaround
       lazy val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
       val gatherer = rightMap match {
         case None =>
@@ -357,10 +356,10 @@ abstract class SplittableJoinIterator(
     existenceGatherMap: LazySpillableGatherMap
   ): JoinGatherer = {
     // cuDF executes left semijoin, the gatherer is constructed with a new
-    // gather to gather every row from lhs
+    // gather map to gather every row from lhs
     //
-    // we build a new rhs with a the "exists" Boolean column that has as many rows
-    // as the input from from a false-Scalar, then scatter true-Scalar using the original
+    // we build a new rhs with an "exists" Boolean column that has as many rows
+    // as the input from a false-Scalar, then scatter a true-Scalar using the original
     // semijoin lhs-GatherMap labeling rows that have at least one match in the original
     // rhs
     //
@@ -378,7 +377,7 @@ abstract class SplittableJoinIterator(
                   withResource(
                     GpuColumnVector.from(existsTable, Array[DataType](BooleanType))
                   ) { existsBatch =>
-                    LazySpillableColumnarBatch.apply(existsBatch, spillCallback, "right_data")
+                    LazySpillableColumnarBatch(existsBatch, spillCallback, "right_data")
                   }}}}}}}}
 
     val lazyRightMap: LazySpillableGatherMap = LazySpillableGatherMap.identity(lhs.numRows)
