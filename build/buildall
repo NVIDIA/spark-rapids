@@ -19,7 +19,6 @@ set -e
 
 shopt -s extglob
 
-# actually bloopInstall mojo version but it's just a nuance at the moment.
 BLOOP_VERSION=${BLOOP_VERSION:-"1.4.12"}
 BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
 SKIP_CLEAN=1
