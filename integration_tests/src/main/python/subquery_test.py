@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_sql, _RowCmp, assert_equal
 from data_gen import *
 from marks import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_gpu_session
 
 gens = [('l', LongGen()), ('l2', LongGen()),
         ('i', IntegerGen()), ('i2', IntegerGen()),  ('i3', IntegerGen()),
@@ -38,7 +38,7 @@ def test_scalar_subquery(data_gen):
 
 @ignore_order(True)
 @approximate_float
-@pytest.mark.parametrize('q_index', range(4), ids=idfn)
+@pytest.mark.parametrize('q_index', range(3, 4), ids=idfn)
 @pytest.mark.parametrize('data_gen', [gens], ids=idfn)
 def test_combine_aggregate_for_scalar_subquery(q_index, data_gen, spark_tmp_table_factory):
     queries = [
@@ -84,7 +84,16 @@ def test_combine_aggregate_for_scalar_subquery(q_index, data_gen, spark_tmp_tabl
     def query_exec(spark):
         return spark.sql(queries[q_index].format(t))
 
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        query_exec,
-        exist_classes='ReusedSubqueryExec',
+    cpu_ret = with_cpu_session(
+        lambda spark: query_exec(spark).collect())
+    gpu_comb_ret = with_gpu_session(
+        lambda spark: query_exec(spark).collect(),
         conf={'spark.rapids.sql.combineAggregate.enabled': 'true'})
+    cpu_comb_ret = with_cpu_session(
+        lambda spark: query_exec(spark).collect(),
+        conf={'spark.rapids.sql.combineAggregate.enabled': 'true'})
+    cpu_ret.sort(key=_RowCmp)
+    cpu_comb_ret.sort(key=_RowCmp)
+    gpu_comb_ret.sort(key=_RowCmp)
+    assert_equal(cpu_ret, cpu_comb_ret)
+    assert_equal(cpu_ret, gpu_comb_ret)
