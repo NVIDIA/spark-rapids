@@ -18,7 +18,6 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import allow_non_gpu, approximate_float, incompat
 from pyspark.sql.types import *
-import pyspark.sql.functions as f
 from spark_session import with_cpu_session
 
 
@@ -38,8 +37,8 @@ def test_row_conversions():
             ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])],
             ["q", simple_string_to_string_map_gen],
             ["r", MapGen(BooleanGen(nullable=False), ArrayGen(boolean_gen), max_length=2)],
-            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_scale_precision],
-            ["v", decimal_gen_36_5]]
+            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_32bit],
+            ["v", decimal_gen_128bit]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
@@ -47,7 +46,7 @@ def test_row_conversions_fixed_width():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
             ["e", float_gen], ["f", double_gen], ["h", boolean_gen],
             ["i", timestamp_gen], ["j", date_gen], ["k", decimal_gen_64bit],
-            ["l", decimal_gen_scale_precision]]
+            ["l", decimal_gen_32bit]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
@@ -77,10 +76,10 @@ def test_row_conversions_fixed_width_wide():
 @pytest.mark.parametrize('data_gen', [
     int_gen,
     string_gen,
-    decimal_gen_default,
-    decimal_gen_36_5,
+    decimal_gen_64bit,
+    decimal_gen_128bit,
     ArrayGen(string_gen, max_length=10),
-    ArrayGen(decimal_gen_36_5, max_length=10),
+    ArrayGen(decimal_gen_128bit, max_length=10),
     StructGen([('a', string_gen)]) ] + map_string_string_gen, ids=idfn)
 @allow_non_gpu('ColumnarToRowExec', 'FileSourceScanExec')
 def test_host_columnar_transition(spark_tmp_path, data_gen):

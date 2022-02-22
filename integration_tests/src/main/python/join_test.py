@@ -30,8 +30,7 @@ all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'Fu
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
-           pytest.param(DoubleGen(), marks=[incompat]),
-           decimal_gen_scale_precision, decimal_gen_neg_scale, decimal_gen_64bit, decimal_gen_38_0]
+           pytest.param(DoubleGen(), marks=[incompat])] + decimal_gens
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
@@ -42,7 +41,7 @@ all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
 basic_struct_gen = StructGen([
     ['child' + str(ind), sub_gen]
     for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_64bit])],
     nullable=True)
 
 basic_struct_gen_with_no_null_child = StructGen([
@@ -68,13 +67,13 @@ join_ast_gen = [
 # data types not supported by AST expressions in joins
 join_no_ast_gen = [
     pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat]),
-    string_gen, null_gen, decimal_gen_default, decimal_gen_64bit
+    string_gen, null_gen, decimal_gen_64bit
 ]
 
 # Types to use when running joins on small batches. Small batch joins can take a long time
 # to run and are mostly redundant with the normal batch size test, so we only run these on a
 # set of representative types rather than all types.
-join_small_batch_gens = [ StringGen(), IntegerGen(), decimal_gen_30_2 ]
+join_small_batch_gens = [ StringGen(), IntegerGen(), decimal_gen_128bit ]
 cartesian_join_small_batch_gens = join_small_batch_gens + [basic_struct_gen, ArrayGen(string_gen)]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
@@ -182,7 +181,7 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_sortmerge_join_ridealong(data_gen, join_type):
     def do_join(spark):
@@ -195,7 +194,7 @@ def test_sortmerge_join_ridealong(data_gen, join_type):
 @allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
         'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
     def do_join(spark):
@@ -213,7 +212,7 @@ def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
 # this happen, if test fails something might have changed related to that.
 @validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_hash_join_ridealong(data_gen, join_type):
     def do_join(spark):
@@ -235,7 +234,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
@@ -264,7 +263,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen,batch_size', join_batch_size_test_params(
-    (all_gen + basic_nested_gens + single_array_gens_sample_with_decimal128, '1g'),
+    (all_gen + basic_nested_gens, '1g'),
     (join_small_batch_gens + [basic_struct_gen, ArrayGen(string_gen)], '100')), ids=idfn)
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
@@ -438,7 +437,7 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
         return broadcast(left).join(right, how=join_type).distinct()
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
@@ -446,7 +445,7 @@ def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join
         return left.join(broadcast(right), how=join_type).selectExpr('COUNT(*)')
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 def test_left_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
