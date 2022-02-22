@@ -18,10 +18,12 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 import scala.math.max
+
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
+
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
