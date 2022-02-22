@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
+
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
@@ -42,7 +43,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "a^|b",
       "w$|b",
       "\n[^\r\n]x*|^3x",
-      "]*\\wWW$|zb"
+      "]*\\wWW$|zb",
+      "(\\A|\\05)?"
     )
     // data is not relevant because we are checking for compilation errors
     val inputs = Seq("a")
@@ -119,6 +121,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support single repetition both inside and outside of capture groups") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4487
+    val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
+    patterns.foreach(pattern => 
+      assertUnsupported(pattern, RegexFindMode, "nothing to repeat"))
+  }
+
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
     patterns.foreach(pattern => {
@@ -169,6 +178,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\Atest", "test\\z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
+  }
+
+  test("string anchor \\A will fall back to CPU in some repetitions") {
+    val patterns = Seq(raw"(\A)+", raw"(\A)*", raw"(\A){2,}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+    )
   }
 
   test("string anchor \\Z fall back to CPU") {
@@ -292,6 +308,40 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\d", "\\d+")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("regexp_replace - character class repetition - ? and * - fall back to CPU") {
+    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode,
+        "regexp_replace on GPU does not support repetition with ? or *"
+      )
+    )
+  }
+
+  test("regexp_replace - character class repetition - {0,} - fall back to CPU") {
+    val patterns = Seq(raw"[1a-zA-Z]{0,}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode,
+        "regexp_replace on GPU does not support repetition with {0,}"
+      )
+    )
+  }
+
+  test("regexp_replace - fall back to CPU for {0} or {0,0}") {
+    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode, 
+        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+    )
+  }
+
+  test("regexp_split - fall back to CPU for {0} or {0,0}") {
+    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+    )
   }
 
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {

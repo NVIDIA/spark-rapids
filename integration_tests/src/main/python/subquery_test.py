@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from data_gen import *
 from marks import *
 
 gens = [('l', LongGen()), ('i', IntegerGen()), ('f', FloatGen()), (
-    's', StringGen()), ('d', decimal_gen_38_10)]
+    's', StringGen()), ('d', decimal_gen_128bit)]
 
 
 @ignore_order
