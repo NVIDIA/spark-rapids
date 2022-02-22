@@ -30,5 +30,4 @@ object RapidsErrorUtils {
     throw new NoSuchElementException(s"Key: ${elementKey} " +
       s"does not exist in any one of the rows in the map column")
   }
-
 }

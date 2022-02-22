@@ -30,5 +30,4 @@ object RapidsErrorUtils {
     // For now, the default argument is false. The caller sets the correct value accordingly.
     throw QueryExecutionErrors.mapKeyNotExistError(elementKey, isElementAtFunction)
   }
-
 }
