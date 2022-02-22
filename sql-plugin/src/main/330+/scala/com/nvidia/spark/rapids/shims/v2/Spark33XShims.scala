@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.types.StructType
 
-trait Spark33XShims extends Spark33XFileOptionsShims with Arm {
+trait Spark33XShims extends Spark33XFileOptionsShims {
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
   override def getFileScanRDD(

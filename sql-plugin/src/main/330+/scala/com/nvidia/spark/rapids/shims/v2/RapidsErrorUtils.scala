@@ -16,15 +16,11 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import java.time.DateTimeException
-
-import ai.rapids.cudf.{ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.{Arm, FloatUtils}
+import ai.rapids.cudf.ColumnVector
 
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.internal.SQLConf
 
-object RapidsErrorUtils extends Arm {
+object RapidsErrorUtils {
   def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
     throw QueryExecutionErrors.invalidArrayIndexError(index, numElements)
   }
@@ -35,27 +31,4 @@ object RapidsErrorUtils extends Arm {
     throw QueryExecutionErrors.mapKeyNotExistError(elementKey, isElementAtFunction)
   }
 
-  def preprocessCastFloatToTimestamp(input: ColumnView): Unit = {
-    def throwDateTimeException: Unit = {
-      throw new DateTimeException(s"The column contains at least a single value that is " +
-          s"NaN or Infinity. To return NULL instead, use 'try_cast'. " +
-          s"If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error.")
-    }
-    val hasNaN = withResource(FloatUtils.getNanScalar(input.getType)) { nan =>
-      input.contains(nan)
-    }
-    if (hasNaN) {
-      throwDateTimeException
-    } else {
-      withResource(FloatUtils.getInfinityVector(input)) { inf =>
-        withResource(input.contains(inf)) { hasInf =>
-          withResource(hasInf.any()) { isAny =>
-            if (isAny.isValid && isAny.getBoolean) {
-              throwDateTimeException
-            }
-          }
-        }
-      }
-    }
-  }
 }

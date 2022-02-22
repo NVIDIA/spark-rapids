@@ -16,19 +16,10 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.ColumnView
 
-object RapidsErrorUtils {
-  def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
-    throw new ArrayIndexOutOfBoundsException(s"index $index is beyond the max index allowed " +
-        s"${numElements - 1}")
+object AnsiCheckUtil {
+  def checkAnsiCastFloatToTimestamp(input: ColumnView): Unit = {
+    // noop
   }
-
-  def throwInvalidElementAtIndexError(
-      elementKey: String, isElementAtFunction: Boolean = false): ColumnVector = {
-    // For now, the default argument is false. The caller sets the correct value accordingly.
-    throw new NoSuchElementException(s"Key: ${elementKey} " +
-      s"does not exist in any one of the rows in the map column")
-  }
-
 }
