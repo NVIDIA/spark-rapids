@@ -19,7 +19,7 @@ set -e
 
 shopt -s extglob
 
-BLOOP_VERSION=${BLOOP_VERSION:-"1.4.12"}
+BLOOP_VERSION=${BLOOP_VERSION:-"1.4.13"}
 BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
 SKIP_CLEAN=1
 
@@ -28,6 +28,8 @@ function print_usage() {
   echo "Options:"
   echo "   -h, --help"
   echo "        print this help message"
+  echo "   --debug"
+  echo "        enable bash -x tracing right after this option is parsed"
   echo "   --clean"
   echo "        include Maven clean phase"
   echo "   -gb, --generate-bloop"
