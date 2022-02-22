@@ -21,6 +21,8 @@ from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 
+_decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
+
 def test_cast_empty_string_to_int():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
@@ -35,7 +37,7 @@ def test_cast_empty_string_to_int():
 # pick child types that are simple to cast. Upcasting integer values and casting them to strings
 @pytest.mark.parametrize('data_gen,to_type', [
     (ArrayGen(byte_gen), ArrayType(IntegerType())),
-    (ArrayGen(decimal_gen_36_5), ArrayType(DecimalType(38, 5))),
+    (ArrayGen(_decimal_gen_36_5), ArrayType(DecimalType(38, 5))),
     (ArrayGen(StringGen('[0-9]{1,5}')), ArrayType(IntegerType())),
     (ArrayGen(byte_gen), ArrayType(StringType())),
     (ArrayGen(byte_gen), ArrayType(DecimalType(6, 2))),
@@ -43,12 +45,12 @@ def test_cast_empty_string_to_int():
     (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(StringType()))),
     (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(DecimalType(6, 2)))),
     (StructGen([('a', byte_gen)]), StructType([StructField('a', IntegerType())])),
-    (StructGen([('a', decimal_gen_36_5)]), StructType([StructField('a', DecimalType(38, 5))])),
+    (StructGen([('a', _decimal_gen_36_5)]), StructType([StructField('a', DecimalType(38, 5))])),
     (StructGen([('a', byte_gen), ('c', short_gen)]), StructType([StructField('b', IntegerType()), StructField('c', ShortType())])),
     (StructGen([('a', ArrayGen(byte_gen)), ('c', short_gen)]), StructType([StructField('a', ArrayType(IntegerType())), StructField('c', LongType())])),
     (ArrayGen(StructGen([('a', byte_gen), ('b', byte_gen)])), ArrayType(StringType())),
     (MapGen(ByteGen(nullable=False), byte_gen), MapType(StringType(), StringType())),
-    (MapGen(ByteGen(nullable=False), decimal_gen_36_5), MapType(StringType(), DecimalType(38, 5))),
+    (MapGen(ByteGen(nullable=False), _decimal_gen_36_5), MapType(StringType(), DecimalType(38, 5))),
     (MapGen(ShortGen(nullable=False), ArrayGen(byte_gen)), MapType(IntegerType(), ArrayType(ShortType()))),
     (MapGen(ShortGen(nullable=False), ArrayGen(StructGen([('a', byte_gen)]))), MapType(IntegerType(), ArrayType(StructType([StructField('b', ShortType())]))))
     ], ids=idfn)
@@ -90,7 +92,12 @@ def test_cast_string_timestamp_fallback():
 
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=meta_idfn('from:'))
+@pytest.mark.parametrize('data_gen', [
+    decimal_gen_32bit, decimal_gen_32bit_neg_scale, DecimalGen(precision=7, scale=7),
+    decimal_gen_64bit, decimal_gen_128bit, DecimalGen(precision=30, scale=2),
+    DecimalGen(precision=36, scale=5), DecimalGen(precision=38, scale=0),
+    DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),
+    DecimalGen(precision=38, scale=-10)], ids=meta_idfn('from:'))
 @pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType()], ids=meta_idfn('to:'))
 def test_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
@@ -153,14 +160,14 @@ def test_cast_long_to_decimal_overflow():
 
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
-basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens_no_neg
+basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens
 basic_map_gens_for_cast_to_string = [
     MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
     MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
 
 # GPU does not match CPU to casting these types to string, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]
-not_matched_struct_array_gens_for_cast_to_string = [f() for f in not_matched_gens_for_cast_to_string] + [decimal_gen_neg_scale]
+not_matched_struct_array_gens_for_cast_to_string = [f() for f in not_matched_gens_for_cast_to_string] + [decimal_gen_32bit_neg_scale]
 not_matched_map_gens_for_cast_to_string = [MapGen(f(nullable = False), f()) for f in not_matched_gens_for_cast_to_string] + [MapGen(DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen())]
 
 single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_array_struct_gens_for_cast_to_string]
