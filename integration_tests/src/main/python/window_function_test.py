@@ -996,7 +996,7 @@ def test_nested_part_fallback(part_gen):
 
 @ignore_order(local=True)
 # single-level structs (no nested structs) are now supported by the plugin
-@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), StructGen([["a", decimal_gen_36_5]])], ids=meta_idfn('partBy:'))
+@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]])], ids=meta_idfn('partBy:'))
 def test_nested_part_struct(part_gen):
     data_gen = [
             ('a', RepeatSeqGen(part_gen, length=20)),
