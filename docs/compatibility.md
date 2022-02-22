@@ -492,8 +492,8 @@ as discussed in `JSON Schema discovery` section.
 - `allowNonNumericNumbers` - Allows `NaN` and `Infinity` values to be parsed (note that these are not valid numeric
 values in the [JSON specification](https://json.org)). Spark versions prior to 3.3.0 have inconsistent behavior and will
 parse some variants of `NaN` and `Infinity` even when this option is disabled
-([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with 
-Spark version 3.3.0 and later. 
+([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with
+Spark version 3.3.0 and later.
 
 ## Regular Expressions
 
