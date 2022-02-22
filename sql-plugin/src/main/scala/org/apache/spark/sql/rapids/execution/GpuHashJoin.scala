@@ -15,7 +15,9 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{DType, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 
@@ -671,6 +673,33 @@ trait GpuHashJoin extends GpuExec {
       new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
         boundStreamKeys, streamedPlan.output, compiledCondition,
         realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+    } else if (joinType.isInstanceOf[ExistenceJoin]) {
+      new Iterator[ColumnarBatch]() {
+        def next(): ColumnarBatch = {
+          val leftCb = stream.next()
+          val leftKeysTab = GpuColumnVector.from(
+            GpuProjectExec.project(leftCb, boundStreamKeys)
+          )
+          val rightKeysTab = GpuColumnVector.from(
+            GpuProjectExec.project(builtBatch, boundBuildKeys)
+          )
+          val existsScatterMap = leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
+          val allFalseExistsTmp = ai.rapids.cudf.ColumnVector
+            .fromScalar(ai.rapids.cudf.Scalar.fromBool(false), leftCb.numRows)
+          val existsTable = Table.scatter(
+            Array(ai.rapids.cudf.Scalar.fromBool(true)),
+            existsScatterMap.toColumnView(0, existsScatterMap.getRowCount.toInt),
+            new Table(allFalseExistsTmp), false)
+          val arrayBuff = ArrayBuffer[ColumnVector](GpuColumnVector.extractBases(leftCb): _*)
+          arrayBuff += existsTable.getColumn(0)
+          val resTab = new ai.rapids.cudf.Table(arrayBuff: _*)
+          val resTypes = ArrayBuffer(GpuColumnVector.extractTypes(leftCb): _*)
+          resTypes += BooleanType
+          GpuColumnVector.from(resTab, resTypes.toArray)
+        }
+
+        def hasNext: Boolean = stream.hasNext
+      }
     } else {
       new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
