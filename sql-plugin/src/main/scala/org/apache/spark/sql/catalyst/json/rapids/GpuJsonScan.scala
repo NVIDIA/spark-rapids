@@ -371,7 +371,7 @@ class JsonPartitionReader(
   /**
    * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
    *
-   * Spark then has it's own rules for supporting NaN and Infinity, which are not
+   * Spark then has its own rules for supporting NaN and Infinity, which are not
    * valid numbers in JSON.
    */
   private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
