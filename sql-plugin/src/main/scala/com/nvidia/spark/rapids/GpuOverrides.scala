@@ -3990,7 +3990,10 @@ object GpuOverrides extends Logging {
   }
 }
 
-class ExplainPlanImpl extends ExplainPlanBase {
+/**
+ * This class is meant to be loaded by reflection only.
+ */
+protected class ExplainPlanImpl extends ExplainPlanBase {
   override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     GpuOverrides.explainPotentialGpuPlan(df, explain)
   }
