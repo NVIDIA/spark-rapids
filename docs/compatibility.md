@@ -456,16 +456,11 @@ The nested types(array, map and struct) are not supported yet in current version
 
 Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
-The GPU JSON reader does not support `NaN` and `Inf` values with full compatibility with Spark.
-
-The following are the only formats that are parsed consistently between CPU and GPU. Any other variation, including 
-these formats when unquoted, will produce `null` on the CPU and may produce valid `NaN` and `Inf` results on the GPU.
-
-```json
-{ "number": "NaN" }
-{ "number": "Infinity" }
-{ "number": "-Infinity" }
-```
+Prior to Spark 3.3.0, reading JSON strings such as `"+Infinity"` when specifying that the data type is `FloatType` 
+or `DoubleType` caused these values to be parsed even when `allowNonNumericNumbers` is set to false. Also, Spark
+versions prior to 3.3.0 only supported the `"Infinity"` and `"-Infinity"` representations of infinity and did not 
+support `"+INF"`, `"-INF"`, or `"+Infinity"`, which Spark considers valid when unquoted. The GPU JSON reader is 
+consistent with the behavior in Spark 3.3.0 and later.
 
 Another limitation of the GPU JSON reader is that it will parse strings containing boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.

@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from src.main.python.marks import approximate_float, allow_non_gpu
 
-from src.main.python.spark_session import with_cpu_session
+from src.main.python.spark_session import with_cpu_session, is_before_spark_330
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -192,8 +192,9 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     pytest.param('boolean_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
     'ints.json',
     pytest.param('ints_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4793')),
-    pytest.param('nan_and_inf.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4615, https://github.com/NVIDIA/spark-rapids/issues/4646')),
-    pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4615, https://github.com/NVIDIA/spark-rapids/issues/4646')),
+    'nan_and_inf.json',
+    pytest.param('nan_and_inf_strings.json', marks=pytest.mark.skipif(is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060 fixed in Spark 3.3.0')),
+    'nan_and_inf_invalid.json',
     'floats.json',
     'floats_leading_zeros.json',
     'floats_invalid.json',

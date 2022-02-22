@@ -375,16 +375,14 @@ class JsonPartitionReader(
    * valid numbers in JSON.
    */
   private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
-    // Note that this is not 100% consistent with Spark. See the following issues
-    // for more information:
-    // https://issues.apache.org/jira/browse/SPARK-38060
-    // https://github.com/NVIDIA/spark-rapids/issues/4615
+    // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
+    // due to https://issues.apache.org/jira/browse/SPARK-38060
     val regex = if (parsedOptions.allowNonNumericNumbers) {
       "^" +
       "(?:" +
         "(?:-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?)" +
         "|NaN" +
-        "|(?:[\\+\\-]?INF)" +
+        "|(?:[\\+\\-]INF)" +
         "|(?:[\\-\\+]?Infinity)" +
       ")" +
       "$"
