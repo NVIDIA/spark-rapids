@@ -275,7 +275,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
       ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
     (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
       override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
-        GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
+        GpuGetArrayItem(arr, ordinal, shouldFailOnElementNotExists)
     }),
     GpuOverrides.expr[GetMapValue](
       "Gets Value from a Map based on a key",
@@ -284,7 +284,7 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r){
         override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-          GpuGetMapValue(map, key, SQLConf.get.ansiEnabled)
+          GpuGetMapValue(map, key, shouldFailOnElementNotExists)
       }),
     GpuOverrides.expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
@@ -541,6 +541,8 @@ abstract class Spark31XShims extends Spark301until320Shims with Logging {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
+
+  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
 
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.inputPlan
