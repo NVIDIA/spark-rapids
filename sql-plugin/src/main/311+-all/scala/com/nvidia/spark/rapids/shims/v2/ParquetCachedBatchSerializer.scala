@@ -257,8 +257,9 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 }
 
 /**
- * This class assumes, the data is Columnar and the plugin is on. This is meant to be loaded
- * by reflection only.
+ * This class assumes, the data is Columnar and the plugin is on.
+ * Note, this class should not be referenced directly in source code.
+ * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
  */
 protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
 
