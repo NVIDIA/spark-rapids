@@ -212,9 +212,7 @@ object GpuCSVScan {
 
     if (readSchema.map(_.dataType).contains(DateType)) {
       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
+        DateUtils.tagAndGetCudfFormat(meta, dateFormat, parseString = true)
       }
     }
 

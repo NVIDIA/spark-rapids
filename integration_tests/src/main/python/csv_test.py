@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
 from conftest import get_non_gpu_allowed
 from datetime import datetime, timezone
 from data_gen import *
@@ -308,16 +309,38 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    updated_conf = copy_and_update(_enable_all_types_conf,
+       {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled,
+        'spark.rapids.sql.incompatibleDateFormats.enabled': True,
+        'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write\
                     .option('dateFormat', date_format)\
                     .csv(data_path))
-    assert_gpu_and_cpu_are_equal_collect(
+    if time_parser_policy == 'LEGACY' and date_format not in ['yyyy-MM-dd', 'yyyy/MM/dd']:
+        expected_class = 'FileSourceScanExec'
+        if v1_enabled_list == '':
+            expected_class = 'BatchScanExec'
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read \
+                .schema(schema) \
+                .option('dateFormat', date_format) \
+                .csv(data_path),
+            expected_class,
+            conf=updated_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\
                     .option('dateFormat', date_format)\
