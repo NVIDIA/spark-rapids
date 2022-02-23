@@ -58,7 +58,7 @@ class HealthCheckSuite extends FunSuite {
     val healthCheck = new HealthCheck(apps)
     for (app <- apps) {
       val failedTasks = healthCheck.getFailedTasks
-      // the end reason gets the delimtier changed when writing to CSV so to compare properly
+      // the end reason gets the delimiter changed when writing to CSV so to compare properly
       // change it to be the same here
       val failedWithDelimiter = failedTasks.map { t =>
         val delimited = ProfileUtils.replaceDelimiter(t.endReason, ProfileOutputWriter.CSVDelimiter)
