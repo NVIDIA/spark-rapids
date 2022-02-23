@@ -1276,6 +1276,17 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryAstExprMeta[Cbrt](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCbrt(child)
       }),
+    expr[Hypot](
+      "Pythagorean addition (Hypotenuse) of real numbers",
+      ExprChecks.binaryProject(
+        TypeSig.DOUBLE,
+        TypeSig.DOUBLE,
+        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE),
+        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE)),
+      (a, conf, p, r) => new BinaryExprMeta[Hypot](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuHypot(lhs, rhs)
+      }),
     expr[Floor](
       "Floor of a number",
       ExprChecks.unaryProjectInputMatchesOutput(
