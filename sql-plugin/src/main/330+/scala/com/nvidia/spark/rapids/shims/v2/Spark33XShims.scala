@@ -158,7 +158,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
     super.tagFileSourceScanExec(meta)
   }
 
-  // 330+ supports YEARMONTH and DAYTIME interval types
+  // 330+ supports DAYTIME interval types
   override def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = {
     Map(
       (ParquetFormatType, FileFormatChecks(
@@ -170,7 +170,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
             TypeSig.UDT + TypeSig.DAYTIME).nested())))
   }
 
-  // 330+ supports YEARMONTH and DAYTIME interval types
+  // 330+ supports DAYTIME interval types
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(

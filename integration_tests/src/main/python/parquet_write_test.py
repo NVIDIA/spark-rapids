@@ -425,7 +425,8 @@ def test_interval(spark_tmp_path):
         lambda spark, path: spark.read.parquet(path),
         data_path)
 
-# DayTimeIntervalGen can not run before Spark 330, so copy test_write_round_trip to here and set date gen as DayTimeIntervalGen
+# DayTimeIntervalGen is not supported before Spark 3.3.0, can't added DayTimeIntervalGen to test_write_round_trip,
+# so just copy test_write_round_trip to here and set date gen as DayTimeIntervalGen
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
