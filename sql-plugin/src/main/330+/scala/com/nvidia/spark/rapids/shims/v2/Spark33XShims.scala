@@ -232,7 +232,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuTimeAdd(lhs, rhs)
-        }),
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map
   }
@@ -347,7 +347,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
               TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
           TypeSig.all),
-        (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
+        (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ map
   }
