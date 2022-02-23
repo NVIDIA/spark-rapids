@@ -926,6 +926,7 @@ nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_len
 # Some array gens, but not all because of nesting
 array_gens_sample = single_level_array_gens + nested_array_gens_sample
 array_gens_sample_with_decimal128 = single_level_array_gens + nested_array_gens_sample + single_array_gens_sample_with_decimal128
+array_of_map_gen = ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)
 
 # all of the basic types in a single struct
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])

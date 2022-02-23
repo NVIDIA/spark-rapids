@@ -20,8 +20,8 @@ import ai.rapids.cudf.ColumnVector
 
 object RapidsErrorUtils {
   def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
-    throw new ArrayIndexOutOfBoundsException(s"index $index is beyond the max index allowed " +
-        s"${numElements - 1}")
+    // Follow the Spark string format
+    throw new ArrayIndexOutOfBoundsException(s"Invalid index: $index, numElements: $numElements")
   }
 
   def throwInvalidElementAtIndexError(

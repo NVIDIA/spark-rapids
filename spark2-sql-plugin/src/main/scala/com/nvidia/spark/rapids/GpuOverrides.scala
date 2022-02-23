@@ -2040,7 +2040,7 @@ object GpuOverrides extends Logging {
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+        ("ordinal", TypeSig.INT, TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[GetMapValue](
       "Gets Value from a Map based on a key",

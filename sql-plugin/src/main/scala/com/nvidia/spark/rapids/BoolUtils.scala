@@ -41,4 +41,24 @@ object BoolUtils extends Arm {
     }
   }
 
+  /**
+   * Whether there is any valid row in 'col' and it is true. An empty column will get false.
+   * null rows are skipped.
+   */
+  def isAnyValidTrue(col: ColumnVector): Boolean = {
+    assert(DType.BOOL8 == col.getType, "input column type is not bool")
+    if (col.getRowCount == 0) {
+      return false
+    }
+
+    if (col.getRowCount == col.getNullCount) {
+      // all is null, equal to empty, since nulls should be skipped.
+      return false
+    }
+    withResource(col.any()) { anyTrue =>
+      // Guaranteed there is at least one row and not all of the rows are null,
+      // so result scalar must be valid
+      anyTrue.getBoolean
+    }
+  }
 }
