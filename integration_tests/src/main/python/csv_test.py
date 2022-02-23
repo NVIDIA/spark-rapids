@@ -175,7 +175,7 @@ _enable_all_types_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true',
         'spark.rapids.sql.csv.read.long.enabled': 'true',
         'spark.rapids.sql.csv.read.float.enabled': 'true',
         'spark.rapids.sql.csv.read.double.enabled': 'true',
-        'spark.sql.legacy.timeParserPolicy': 'Corrected'}
+        'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
 def read_csv_df(data_path, schema, options = {}):
     def read_impl(spark):
@@ -200,8 +200,8 @@ def read_csv_sql(data_path, schema, options = {}):
 @pytest.mark.parametrize('name,schema,options', [
     ('Acquisition_2007Q3.txt', _acq_schema, {'sep': '|'}),
     ('Performance_2007Q3.txt_0', _perf_schema, {'sep': '|'}),
-    pytest.param('ts.csv', _date_schema, {}),
-    pytest.param('date.csv', _date_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1111')),
+    ('ts.csv', _date_schema, {}),
+    ('date.csv', _date_schema, {}),
     ('ts.csv', _ts_schema, {}),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
     ('str.csv', _good_str_schema, {'header': 'true'}),

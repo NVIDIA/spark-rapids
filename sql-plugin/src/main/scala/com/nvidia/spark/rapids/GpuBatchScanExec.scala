@@ -412,4 +412,5 @@ class CSVPartitionReader(
     }
   }
 
+  override def dateFormat: String = parsedOptions.dateFormat
 }

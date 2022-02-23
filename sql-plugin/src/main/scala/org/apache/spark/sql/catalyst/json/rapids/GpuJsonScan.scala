@@ -147,10 +147,12 @@ object GpuJsonScan {
     })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
+//      if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+//        // https://github.com/NVIDIA/spark-rapids/issues/4849
+//        meta.willNotWorkOnGpu("GpuJsonScan does not support LEGACY timeParserPolicy")
+//      }
       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
+        DateUtils.tagAndGetCudfFormat(meta, dateFormat, parseString = true)
       }
     }
 
@@ -412,5 +414,7 @@ class JsonPartitionReader(
       super.castStringToDecimal(sanitizedInput, dt)
     }
   }
+
+  override def dateFormat: String = parsedOptions.dateFormat
 
 }

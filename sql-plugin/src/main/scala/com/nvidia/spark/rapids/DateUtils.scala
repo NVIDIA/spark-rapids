@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@ import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{GpuToTimestamp, LegacyTimeParserPolicy}
 
 /**
  * Class for helper functions for Date
@@ -211,4 +213,55 @@ object DateUtils {
   }
 
   case class TimestampFormatConversionException(reason: String) extends Exception
+
+  def tagAndGetCudfFormat(
+                           meta: RapidsMeta[_, _, _],
+                           sparkFormat: String,
+                           parseString: Boolean): String = {
+    var strfFormat = ""
+    if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+      try {
+        // try and convert the format to cuDF format - this will throw an exception if
+        // the format contains unsupported characters or words
+        strfFormat = toStrf(sparkFormat, parseString)
+        // format parsed ok but we have no 100% compatible formats in LEGACY mode
+        if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.contains(sparkFormat)) {
+          // LEGACY support has a number of issues that mean we cannot guarantee
+          // compatibility with CPU
+          // - we can only support 4 digit years but Spark supports a wider range
+          // - we use a proleptic Gregorian calender but Spark uses a hybrid Julian+Gregorian
+          //   calender in LEGACY mode
+          if (SQLConf.get.ansiEnabled) {
+            meta.willNotWorkOnGpu("LEGACY format in ANSI mode is not supported on the GPU")
+          } else if (!meta.conf.incompatDateFormats) {
+            meta.willNotWorkOnGpu(s"LEGACY format '$sparkFormat' on the GPU is not guaranteed " +
+              s"to produce the same results as Spark on CPU. Set " +
+              s"${RapidsConf.INCOMPATIBLE_DATE_FORMATS.key}=true to force onto GPU.")
+          }
+        } else {
+          meta.willNotWorkOnGpu(s"LEGACY format '$sparkFormat' is not supported on the GPU.")
+        }
+      } catch {
+        case e: TimestampFormatConversionException =>
+          meta.willNotWorkOnGpu(s"Failed to convert ${e.reason} ${e.getMessage}")
+      }
+    } else {
+      try {
+        // try and convert the format to cuDF format - this will throw an exception if
+        // the format contains unsupported characters or words
+        strfFormat = toStrf(sparkFormat, parseString)
+        // format parsed ok, so it is either compatible (tested/certified) or incompatible
+        if (!GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains(sparkFormat) &&
+          !meta.conf.incompatDateFormats) {
+          meta.willNotWorkOnGpu(s"CORRECTED format '$sparkFormat' on the GPU is not guaranteed " +
+            s"to produce the same results as Spark on CPU. Set " +
+            s"${RapidsConf.INCOMPATIBLE_DATE_FORMATS.key}=true to force onto GPU.")
+        }
+      } catch {
+        case e: TimestampFormatConversionException =>
+          meta.willNotWorkOnGpu(s"Failed to convert ${e.reason} ${e.getMessage}")
+      }
+    }
+    strfFormat
+  }
 }
