@@ -1,4 +1,4 @@
 appIndex,stageId,stageAttemptId,taskId,attempt,failureReason
-1,238,0,8519,0,"ExecutorLostFailure(2,true,Some(Executor Process Lost))"
-1,238,0,8560,1,"FetchFailed(BlockManagerId(1, hostname-08.domain.com, 46008, None),54,8347,9,72,org.apache.spark.shu"
-1,238,0,8574,1,"FetchFailed(BlockManagerId(1, hostname-08.domain.com, 46008, None),54,8339,1,138,org.apache.spark.sh"
+1,238,0,8519,0,ExecutorLostFailure (executor 2 exited caused by one of the running tasks) Reason: Executor Process 
+1,238,0,8560,1,FetchFailed(BlockManagerId(1; hostname-08.domain.com; 46008; None); shuffleId=54; mapIndex=9; mapId=
+1,238,0,8574,1,FetchFailed(BlockManagerId(1; hostname-08.domain.com; 46008; None); shuffleId=54; mapIndex=1; mapId=

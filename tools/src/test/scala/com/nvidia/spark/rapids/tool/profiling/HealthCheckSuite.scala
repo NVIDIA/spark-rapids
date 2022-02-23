@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,8 +58,14 @@ class HealthCheckSuite extends FunSuite {
     val healthCheck = new HealthCheck(apps)
     for (app <- apps) {
       val failedTasks = healthCheck.getFailedTasks
+      // the end reason gets the delimtier changed when writing to CSV so to compare properly
+      // change it to be the same here
+      val failedWithDelimiter = failedTasks.map { t =>
+        val delimited = ProfileUtils.replaceDelimiter(t.endReason, ProfileOutputWriter.CSVDelimiter)
+        t.copy(endReason = delimited)
+      }
       import sparkSession.implicits._
-      val taskAccums = failedTasks.toDF
+      val taskAccums = failedWithDelimiter.toDF
       val tasksResultExpectation =
         new File(expRoot, "tasks_failure_eventlog_expectation.csv")
       val tasksDfExpect =
