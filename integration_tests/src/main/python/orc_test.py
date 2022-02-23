@@ -487,3 +487,46 @@ def test_orc_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_li
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc([first_data_path, second_data_path, third_data_path]),
             conf=all_confs)
+
+conf_for_orc_aggregate_pushdown = {
+    "spark.sql.orc.aggregatePushdown": "true", 
+    "spark.sql.sources.useV1SourceList": ""
+}
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+@allow_non_gpu(any = True)
+def test_orc_scan_with_aggregation_pushdown_fallback(spark_tmp_path):
+    """
+    The aggregation will be pushed down in this test, so we should fallback to CPU
+    """
+    data_path = spark_tmp_path + '/pushdown.orc'
+
+    def do_orc_scan(spark):
+        df = spark.read.orc(data_path).selectExpr("count(p)")
+        return df
+    
+    with_cpu_session(lambda spark : spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").orc(data_path))
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_orc_scan,
+        exist_classes= "BatchScanExec",
+        non_exist_classes= "GpuBatchScanExec",
+        conf = conf_for_orc_aggregate_pushdown)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+def test_orc_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
+    """
+    No aggregation will be pushed down in this test, so we should not fallback to CPU
+    """
+    data_path = spark_tmp_path + "/pushdown.orc"
+
+    def do_orc_scan(spark):
+        df = spark.read.orc(data_path).selectExpr("Max(p)")
+        return df
+
+    with_cpu_session(lambda spark : spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").orc(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        do_orc_scan,
+        conf_for_orc_aggregate_pushdown
+    )
