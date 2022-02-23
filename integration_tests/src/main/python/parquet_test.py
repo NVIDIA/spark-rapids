@@ -30,10 +30,6 @@ def read_parquet_sql(data_path):
     return lambda spark : spark.sql('select * from parquet.`{}`'.format(data_path))
 
 
-# Override decimal_gens because decimal with negative scale is unsupported in parquet reading
-decimal_gens = [DecimalGen(), DecimalGen(precision=7, scale=3), DecimalGen(precision=10, scale=10),
-                DecimalGen(precision=9, scale=0), DecimalGen(precision=18, scale=15)]
-
 rebase_write_corrected_conf = {
     'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
     'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'
@@ -58,9 +54,9 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
     TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)), ArrayGen(byte_gen),
     ArrayGen(long_gen), ArrayGen(string_gen), ArrayGen(date_gen),
     ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
-    ArrayGen(DecimalGen()),
+    ArrayGen(decimal_gen_64bit),
     ArrayGen(ArrayGen(byte_gen)),
-    StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen], ['child2', float_gen], ['child3', DecimalGen()]]),
+    StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen], ['child2', float_gen], ['child3', decimal_gen_64bit]]),
     ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))] +
                      parquet_map_gens + decimal_gens,
                      pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/132'))]
@@ -99,7 +95,7 @@ def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
 def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens = [string_gen,
-        byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens + decimal_128_gens_no_neg
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens
 
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
@@ -135,7 +131,7 @@ parquet_pred_push_gens = [
         string_gen, date_gen,
         # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
         # timestamp_gen
-        TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
+        TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
 
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -222,9 +218,9 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, DecimalGen(precision=7, scale=3)], decimal_gens,
-                                          [ArrayGen(DecimalGen(7,2), max_length=10)],
-                                          [StructGen([['child0', DecimalGen(7, 2)]])], decimal_128_gens_no_neg], ids=idfn)
+@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, decimal_gen_32bit], decimal_gens,
+                                          [ArrayGen(decimal_gen_32bit, max_length=10)],
+                                          [StructGen([['child0', decimal_gen_32bit]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -240,7 +236,7 @@ def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, re
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                             string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg,
+                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,
                             pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
                             pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
 
@@ -265,7 +261,7 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0/key2=20'
     with_cpu_session(
@@ -338,7 +334,7 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
@@ -362,7 +358,7 @@ def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, re
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens + decimal_128_gens_no_neg
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(

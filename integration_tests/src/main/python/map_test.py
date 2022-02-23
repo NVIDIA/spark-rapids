@@ -20,7 +20,6 @@ from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_311, is_before_spark_330
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-import pyspark.sql.functions as f
 
 # Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
 pytestmark = pytest.mark.premerge_ci_1
@@ -28,7 +27,7 @@ pytestmark = pytest.mark.premerge_ci_1
 basic_struct_gen = StructGen([
     ['child' + str(ind), sub_gen]
     for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default] + decimal_128_gens_no_neg)],
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen] + decimal_gens)],
     nullable=False)
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
@@ -39,8 +38,7 @@ def test_map_keys(data_gen):
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
-                'map_keys(a)'),
-        conf=allow_negative_scale_of_decimal_conf)
+                'map_keys(a)'))
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_values(data_gen):
@@ -50,8 +48,7 @@ def test_map_values(data_gen):
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
-                'map_values(a)'),
-        conf=allow_negative_scale_of_decimal_conf)
+                'map_values(a)'))
 
 @pytest.mark.parametrize('data_gen', map_gens_sample  + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_entries(data_gen):
@@ -61,8 +58,7 @@ def test_map_entries(data_gen):
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
-                'map_entries(a)'),
-        conf=allow_negative_scale_of_decimal_conf)
+                'map_entries(a)'))
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value(data_gen):
@@ -149,8 +145,7 @@ def test_simple_get_map_value_ansi_fail(data_gen):
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'a["NOT_FOUND"]').collect(),
-                conf={'spark.sql.ansi.enabled':True,
-                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                conf=ansi_enabled_conf,
                 error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
@@ -159,8 +154,7 @@ def test_map_get_map_value_ansi_not_fail(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'a["NOT_FOUND"]'),
-                conf={'spark.sql.ansi.enabled':True,
-                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+                conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_element_at_map(data_gen):
@@ -181,8 +175,7 @@ def test_map_element_at_ansi_fail(data_gen):
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'element_at(a, "NOT_FOUND")').collect(),
-                conf={'spark.sql.ansi.enabled':True,
-                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                conf=ansi_enabled_conf,
                 error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
@@ -191,8 +184,7 @@ def test_map_element_at_ansi_not_fail(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'element_at(a, "NOT_FOUND")'),
-                conf={'spark.sql.ansi.enabled':True,
-                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+                conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 def test_transform_values(data_gen):
@@ -226,8 +218,7 @@ def test_transform_values(data_gen):
 
         return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, 
-            conf=allow_negative_scale_of_decimal_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
@@ -244,8 +235,7 @@ def test_transform_keys(data_gen):
 
         return unary_op_df(spark, data_gen).selectExpr(columns)
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, 
-            conf=allow_negative_scale_of_decimal_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_transform_keys_null_fail(data_gen):
@@ -280,5 +270,4 @@ def test_transform_keys_last_win_fallback(data_gen):
     'map(1, sequence(1, 5)) as m'], ids=idfn)
 def test_sql_map_scalars(query):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.sql('SELECT {}'.format(query)),
-            conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            lambda spark : spark.sql('SELECT {}'.format(query)))

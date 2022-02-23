@@ -234,11 +234,17 @@ def std_input_path(request):
         yield path
 
 @pytest.fixture
-def spark_tmp_path(request, worker_id):
+def spark_tmp_path(request):
     debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
+    worker_id = 'main'
+    try:
+        import xdist
+        worker_id = xdist.plugin.get_xdist_worker_id(request)
+    except ImportError:
+        pass
     pid = os.getpid()
     hostname = os.uname()[1]
     ret = f'{ret}/{hostname}-{worker_id}-{pid}-{random.randrange(0, 1<<31)}/'

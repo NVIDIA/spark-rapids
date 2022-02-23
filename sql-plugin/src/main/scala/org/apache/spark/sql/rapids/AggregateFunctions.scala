@@ -575,7 +575,7 @@ case class GpuExtractChunk32(
     replaceNullsWithZero: Boolean) extends GpuExpression with ShimExpression {
   override def nullable: Boolean = true
 
-  override def dataType: DataType = LongType
+  override def dataType: DataType = if (chunkIdx < 3) GpuUnsignedIntegerType else IntegerType
 
   override def sql: String = data.sql
 
@@ -596,12 +596,7 @@ case class GpuExtractChunk32(
       } else {
         chunkCol
       }
-      // TODO: This is a workaround for a libcudf sort-aggregation bug, see
-      // https://github.com/rapidsai/cudf/issues/10246. Ideally we should not need to pay the time
-      // and memory to upcast here since we should be able to get the upcast from libcudf for free.
-      withResource(replacedCol) { replacedCol =>
-        GpuColumnVector.from(replacedCol.castTo(DType.INT64), dataType)
-      }
+      GpuColumnVector.from(replacedCol, dataType)
     }
   }
 
@@ -1488,9 +1483,8 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
     // decimal aggregations.  The null gets inserted back in with evaluateExpression where
     // a divide by 0 gets replaced with a null.
     val chunks = (0 until 4).map { chunkIdx =>
-      GpuCoalesce(Seq(
-        GpuExtractChunk32(GpuCast(child, dt), chunkIdx, replaceNullsWithZero = false),
-        GpuLiteral.default(LongType)))
+      val extract = GpuExtractChunk32(GpuCast(child, dt), chunkIdx, replaceNullsWithZero = false)
+      GpuCoalesce(Seq(extract, GpuLiteral.default(extract.dataType)))
     }
     val forCount = GpuCast(GpuIsNotNull(child), LongType)
     chunks :+ forCount

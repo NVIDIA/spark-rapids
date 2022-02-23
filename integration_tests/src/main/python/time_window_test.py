@@ -75,7 +75,6 @@ def test_sliding_window(data_gen):
 def test_just_window(data_gen):
     row_gen = StructGen([['ts', timestamp_gen],['data', data_gen]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, row_gen).withColumn('time_bucket', f.window('ts', '5 hour', '1 hour')),
-            conf = allow_negative_scale_of_decimal_conf)
+            lambda spark : gen_df(spark, row_gen).withColumn('time_bucket', f.window('ts', '5 hour', '1 hour')))
 
 

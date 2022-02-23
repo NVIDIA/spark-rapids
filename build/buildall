@@ -15,15 +15,23 @@
 # limitations under the License.
 #
 
-set -ex
+set -e
 
 shopt -s extglob
+
+BLOOP_VERSION=${BLOOP_VERSION:-"1.4.13"}
+BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
+SKIP_CLEAN=1
 
 function print_usage() {
   echo "Usage: buildall [OPTION]"
   echo "Options:"
   echo "   -h, --help"
   echo "        print this help message"
+  echo "   --debug"
+  echo "        enable bash -x tracing right after this option is parsed"
+  echo "   --clean"
+  echo "        include Maven clean phase"
   echo "   -gb, --generate-bloop"
   echo "        generate projects for Bloop clients: IDE (Scala Metals, IntelliJ) or Bloop CLI"
   echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
@@ -50,7 +58,7 @@ function bloopInstall() {
       mkdir -p "$bloop_config_dir"
       rm -f "$bloop_config_dir"/*
 
-      mvn install ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl dist -am \
+      mvn install ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall -pl dist -am \
         -Dbloop.configDirectory="$bloop_config_dir" \
         -DdownloadSources=true \
         -Dbuildver="$bv" \
@@ -100,6 +108,14 @@ case "$1" in
 
 -P=*|--parallel=*)
   BUILD_PARALLEL="${1#*=}"
+  ;;
+
+--debug)
+  set -x
+  ;;
+
+--clean)
+  SKIP_CLEAN="0"
   ;;
 
 *)
@@ -183,8 +199,10 @@ export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
 export NUM_SHIMS=${#SPARK_SHIM_VERSIONS[@]}
 export BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 
-echo Clean once across all modules
-mvn -q clean
+if [[ "$SKIP_CLEAN" != "1" ]]; then
+  echo Clean once across all modules
+  mvn -q clean
+fi
 
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
@@ -219,7 +237,7 @@ function build_single_shim() {
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
       -Dmaven.javadoc.skip="$SKIP_CHECKS" \
-      -Dskip="$SKIP_CHECKS" \
+      -Dskip \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl aggregator -am > "$LOG_FILE" 2>&1 || {
         [[ "$LOG_FILE" != "/dev/tty" ]] && tail -20 "$LOG_FILE" || true

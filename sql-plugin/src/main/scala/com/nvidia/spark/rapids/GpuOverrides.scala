@@ -1827,9 +1827,9 @@ object GpuOverrides extends Logging {
       }),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
@@ -2117,9 +2117,9 @@ object GpuOverrides extends Logging {
     expr[Remainder](
       "Remainder or modulo",
       ExprChecks.binaryProject(
-        TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRemainder(lhs, rhs)
@@ -3769,8 +3769,8 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Map("partitionSpec" ->
             InputCheck(
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
             TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
