@@ -265,7 +265,7 @@
                                 <goals><goal>add-test-source</goal></goals>
                                 <configuration>
                                     <sources>
-                                        <!-- Add cases that can't be compiled before Spark 330 -->
+                                        <!-- some test cases that can't be compiled before Spark 330 -->
                                         <source>${project.basedir}/src/test/330+/scala</source>
                                     </sources>
                                 </configuration>

@@ -458,7 +458,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   private static DType toRapidsOrNull(DataType type) {
     DType ret = toRapidsOrNullDefaultImpl(type);
-    // Check types that shim supporting, e.g.: Spark 3.2.0 supports AnsiIntervalType
+    // Check types that shim supporting
+    // e.g.: Spark 3.3.0 begin supporting AnsiIntervalType to/from parquet
     return (ret != null) ? ret : GpuTypeShims.toRapidsOrNull(type);
   }
 

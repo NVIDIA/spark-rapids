@@ -74,8 +74,6 @@ case class GpuTimeAdd(start: Expression,
                 }
                 calendarI.days * microSecondsInOneDay + calendarI.microseconds
               case _: DayTimeIntervalType =>
-                // Scalar does not support 'DayTimeIntervalType' now, so use
-                // the Scala value instead.
                 intervalS.getValue.asInstanceOf[Long]
               case _ =>
                 throw new UnsupportedOperationException(
