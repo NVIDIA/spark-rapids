@@ -59,7 +59,6 @@ SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -
 CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
 
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
-RAPIDS_UDF_JAR=rapids-4-spark-udf-examples_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
 # export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
