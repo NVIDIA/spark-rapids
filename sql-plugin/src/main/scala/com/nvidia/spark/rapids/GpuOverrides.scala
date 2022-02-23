@@ -3990,7 +3990,11 @@ object GpuOverrides extends Logging {
   }
 }
 
-class ExplainPlanImpl extends ExplainPlanBase {
+/**
+ * Note, this class should not be referenced directly in source code.
+ * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
+ */
+protected class ExplainPlanImpl extends ExplainPlanBase {
   override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     GpuOverrides.explainPotentialGpuPlan(df, explain)
   }
