@@ -416,17 +416,13 @@ class HashJoinIterator(
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
       val maps = joinType match {
-        case LeftOuter =>
-          leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+        case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
         case RightOuter =>
           // Reverse the output of the join, because we expect the right gather map to
           // always be on the right
           rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
         case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
-        case LeftSemi | ExistenceJoin(_) =>
-          // existence join is implemented as a LeftSemi join with GatherMap converted
-          // to the Boolean column "exists"
-          Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
+        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
         case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
         case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
         case _ =>

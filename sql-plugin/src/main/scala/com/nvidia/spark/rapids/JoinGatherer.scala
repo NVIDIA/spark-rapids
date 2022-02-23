@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -336,17 +336,6 @@ object LazySpillableGatherMap {
 
   def rightCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
     new RightCrossGatherMap(leftCount, rightCount)
-
-  def identity(numRows: Long): LazySpillableGatherMap = new LazySpillableGatherMap {
-    override val getRowCount = numRows
-    override def toColumnView(startRow: Long, numRows: Int): ColumnView = {
-      withResource(GpuScalar.from(startRow, LongType)) { startScalar =>
-        ai.rapids.cudf.ColumnVector.sequence(startScalar, numRows)
-      }
-    }
-    override def close(): Unit = {}
-    override def allowSpilling(): Unit = {}
-  }
 }
 
 /**
