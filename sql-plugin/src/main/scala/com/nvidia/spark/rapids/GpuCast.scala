@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.YearParseUtil
+import com.nvidia.spark.rapids.shims.v2.{AnsiCheckUtil, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -439,6 +439,11 @@ object GpuCast extends Arm {
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
+        if (ansiMode) {
+          // We are going through a util class because Spark 3.3.0+ throws an
+          // exception if the float value is nan or +/- inf where previously it didn't
+          AnsiCheckUtil.checkAnsiCastFloatToTimestamp(input)
+        }
         withResource(Scalar.fromInt(1000000)) { microsPerSec =>
           withResource(input.nansToNulls()) { inputWithNansToNull =>
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
