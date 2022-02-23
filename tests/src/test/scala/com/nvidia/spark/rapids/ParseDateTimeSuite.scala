@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,6 +86,18 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     conf = LEGACY_TIME_PARSER_POLICY_CONF) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
+  }
+
+  testSparkResultsAreEqual("to_date MM/dd/yyyy",
+      datesAsStrings,
+      conf = CORRECTED_TIME_PARSER_POLICY) {
+    df => df.withColumn("c1", to_date(col("c0"), "MM/dd/yyyy"))
+  }
+
+  testSparkResultsAreEqual("to_date yyyy/MM",
+    datesAsStrings,
+      conf = CORRECTED_TIME_PARSER_POLICY) {
+    df => df.withColumn("c1", to_date(col("c0"), "yyyy/MM"))
   }
 
   testSparkResultsAreEqual("to_date parse date",
@@ -350,7 +362,10 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     "1999-1-1 11:12:3.",
     "1999-1-1 11:2:3.",
     "1999-1-1 11:2:13.",
-    "1999-1-1 1:2:3.4")
+    "1999-1-1 1:2:3.4",
+    "12-01-1999",
+    "01-12-1999",
+    "1999-12")
 
   private val timestampValues = Seq(
     "",
