@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark301db
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims}
+import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims, SparkShimVersion}
 
 object SparkShimServiceProvider {
   val VERSION = DatabricksShimVersion(3, 0, 1)
@@ -24,6 +24,8 @@ object SparkShimServiceProvider {
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
     SparkShimServiceProvider.VERSIONNAMES.contains(version)

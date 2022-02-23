@@ -77,11 +77,10 @@ object ShimLoader extends Logging {
 
   private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
   @volatile private var shimProviderClass: String = _
+  @volatile private var shimProvider: SparkShimServiceProvider = _
   @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
-  // store the version to avoid looking up the shim again
-  @volatile private var sparkShimsVersion: ShimVersion = _
 
   // REPL-only logic
   @volatile private var tmpClassLoader: MutableURLClassLoader = _
@@ -297,6 +296,7 @@ object ShimLoader extends Logging {
         shimServiceProvider.matchesVersion(sparkVersion)
     }.map { case (inst, url) =>
       shimURL = url
+      shimProvider = inst
       // this class will be loaded again by the real executor classloader
       inst.getClass.getName
     }
@@ -323,19 +323,8 @@ object ShimLoader extends Logging {
   }
 
   def getShimVersion: ShimVersion = {
-    if (sparkShimsVersion == null) {
-      // version will be a string e.g. 3.0.1 or 3.0.1-Databricks
-      val version = getSparkVersion
-      val pattern = raw"(\d)\.(\d)\.(\d)(-Databricks)?".r
-      sparkShimsVersion = pattern.findFirstMatchIn(version) match {
-        case Some(i) if i.group(4) == null =>
-          SparkShimVersion(i.group(1).toInt, i.group(2).toInt, i.group(3).toInt)
-        case Some(i) =>
-          DatabricksShimVersion(i.group(1).toInt, i.group(2).toInt, i.group(3).toInt, i.group(4))
-        case None => throw new IllegalStateException("Unsupported Spark version")
-      }
-    }
-    sparkShimsVersion
+    initShimProviderIfNeeded()
+    shimProvider.getShimVersion
   }
 
   def getSparkVersion: String = {
