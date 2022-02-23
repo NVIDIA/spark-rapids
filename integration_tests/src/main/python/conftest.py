@@ -233,18 +233,20 @@ def std_input_path(request):
     else:
         yield path
 
+def get_worker_id(request):
+    try:
+        import xdist
+        return xdist.plugin.get_xdist_worker_id(request)
+    except ImportError:
+        return 'main'
+
 @pytest.fixture
 def spark_tmp_path(request):
     debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
-    worker_id = 'main'
-    try:
-        import xdist
-        worker_id = xdist.plugin.get_xdist_worker_id(request)
-    except ImportError:
-        pass
+    worker_id = get_worker_id(request)
     pid = os.getpid()
     hostname = os.uname()[1]
     ret = f'{ret}/{hostname}-{worker_id}-{pid}-{random.randrange(0, 1<<31)}/'
@@ -270,7 +272,9 @@ class TmpTableFactory:
 
 @pytest.fixture
 def spark_tmp_table_factory(request):
-    base_id = 'tmp_table_{}'.format(random.randint(0, 1000000))
+    worker_id = get_worker_id(request)
+    table_id = random.getrandbits(31)
+    base_id = f'tmp_table_{worker_id}_{table_id}'
     yield TmpTableFactory(base_id)
     sp = get_spark_i_know_what_i_am_doing()
     tables = sp.sql("SHOW TABLES".format(base_id)).collect()
