@@ -102,30 +102,12 @@ object ShimLoader extends Logging {
     }
   }
 
-  // Ideally we would like to expose a simple Boolean config instead of having to document
-  // per-shim ShuffleManager implementations:
-  // https://github.com/NVIDIA/spark-rapids/blob/branch-21.08/docs/additional-functionality/
-  // rapids-shuffle.md#spark-app-configuration
-  //
-  // This is not possible at the current stage of the shim layer rewrite because of the combination
-  // of the following two reasons:
-  // 1) Spark processes ShuffleManager config before any of the plugin code initialized
-  // 2) We can't combine the implementation of the ShuffleManager trait for different Spark
-  //    versions in the same Scala class. A method was changed to final
-  //    https://github.com/apache/spark/blame/v3.2.0-rc2/core/src/main/scala/
-  //    org/apache/spark/shuffle/ShuffleManager.scala#L57
-  //
-  //    ShuffleBlockResolver implementation for 3.1 has MergedBlockMeta in signatures
-  //    missing in the prior versions leading to CNF when loaded in earlier version
-  //
   def getRapidsShuffleManagerClass: String = {
-    initShimProviderIfNeeded()
-    s"com.nvidia.spark.rapids.$shimId.RapidsShuffleManager"
+    s"com.nvidia.spark.rapids.shims.v2.RapidsShuffleManager"
   }
 
   def getRapidsShuffleInternalClass: String = {
-    initShimProviderIfNeeded()
-    s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
+    s"org.apache.spark.sql.rapids.shims.v2.RapidsShuffleInternalManager"
   }
 
   private def serializerClassloader(): Option[ClassLoader] = {
