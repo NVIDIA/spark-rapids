@@ -283,7 +283,6 @@ will produce a different result compared to the plugin.
 Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
 Each data type can be enabled or disabled independently using the following configs.
 
- * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
  * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
 
 If you know that your particular data type will be parsed correctly enough, you may enable each

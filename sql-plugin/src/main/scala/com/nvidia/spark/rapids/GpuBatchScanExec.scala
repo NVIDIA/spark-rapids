@@ -211,10 +211,6 @@ object GpuCSVScan {
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      if (!meta.conf.isCsvDateReadEnabled) {
-        meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading dates. " +
-            s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DATES} to true.")
-      }
       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
         if (!supportedDateFormats.contains(dateFormat)) {
           meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")

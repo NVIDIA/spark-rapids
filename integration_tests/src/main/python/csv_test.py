@@ -167,14 +167,6 @@ _empty_double_schema = StructType([
     StructField('ignored_b', StringType())])
 
 _enable_all_types_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true',
-        'spark.rapids.sql.csv.read.bool.enabled': 'true',
-        'spark.rapids.sql.csv.read.date.enabled': 'true',
-        'spark.rapids.sql.csv.read.byte.enabled': 'true',
-        'spark.rapids.sql.csv.read.short.enabled': 'true',
-        'spark.rapids.sql.csv.read.integer.enabled': 'true',
-        'spark.rapids.sql.csv.read.long.enabled': 'true',
-        'spark.rapids.sql.csv.read.float.enabled': 'true',
-        'spark.rapids.sql.csv.read.double.enabled': 'true',
         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
 def read_csv_df(data_path, schema, options = {}):

@@ -150,7 +150,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def enableCsvConf(): SparkConf = {
     new SparkConf()
-        .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat

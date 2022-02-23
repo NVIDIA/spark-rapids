@@ -215,9 +215,9 @@ object DateUtils {
   case class TimestampFormatConversionException(reason: String) extends Exception
 
   def tagAndGetCudfFormat(
-                           meta: RapidsMeta[_, _, _],
-                           sparkFormat: String,
-                           parseString: Boolean): String = {
+      meta: RapidsMeta[_, _, _],
+      sparkFormat: String,
+      parseString: Boolean): String = {
     var strfFormat = ""
     if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
       try {
