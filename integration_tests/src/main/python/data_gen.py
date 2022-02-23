@@ -620,11 +620,15 @@ class NullGen(DataGen):
 #   HOUR, hours within days [0..23],
 #   DAY, days in the range [0..106751991].
 # For more details: https://spark.apache.org/docs/latest/sql-ref-datatypes.html
+# Note: 106751991/365 = 292471 years which is much bigger than 9999 year, seems something is wrong
 class DayTimeIntervalGen(DataGen):
     """Generate DayTimeIntervalType values"""
-    def __init__(self, nullable=True, special_cases =[timedelta(seconds = 0)]):
+    def __init__(self, max_days = None, nullable=True, special_cases =[timedelta(seconds = 0)]):
         super().__init__(DayTimeIntervalType(), nullable=nullable, special_cases=special_cases)
-
+        if max_days is None:
+            self._max_days = 106751991
+        else:
+            self._max_days = max_days
     def start(self, rand):
         self._start(rand,
             lambda : timedelta(
@@ -632,7 +636,7 @@ class DayTimeIntervalGen(DataGen):
                 seconds = rand.randint(0, 59),
                 minutes = rand.randint(0, 59),
                 hours = rand.randint(0, 23),
-                days = rand.randint(0, 106751991),
+                days = rand.randint(0, self._max_days),
             )
         )
 

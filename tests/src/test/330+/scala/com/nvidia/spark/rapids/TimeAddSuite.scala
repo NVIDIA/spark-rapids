@@ -25,50 +25,27 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  * Tests for writing Parquet files with the GPU on Spark 330+.
  * DayTimeIntervalType and YearMonthIntervalType do not exists before 330
  */
-class ParquetWriterIntervalSuite extends SparkQueryCompareTestSuite {
+class TimeAddSuite extends SparkQueryCompareTestSuite {
 
-  // TODO delete this conf after this issue is solved
-  // https://github.com/NVIDIA/spark-rapids/issues/4841
   val conf = new SparkConf().set("spark.sql.parquet.fieldId.write.enabled", "true")
 
   // CPU write a parquet, then test the reading between CPU and GPU
-  test("test ANSI interval read") {
+  test("test ANSI timestamp + interval") {
     val tmpFile = File.createTempFile("interval", ".parquet")
     try {
       withCpuSparkSession(spark => genDf(spark).coalesce(1)
-          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
+          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath), conf)
       val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath)
+          .selectExpr("t + d")
           .collect())
       val g = withGpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath)
+          .selectExpr("t + d")
           .collect())
       assert(compare(g, c))
     } finally {
       tmpFile.delete()
     }
   }
-
-  // GPU write a parquet, then test the reading between CPU and GPU
-  test("test ANSI interval write") {
-    val tmpFile = File.createTempFile("interval", ".parquet")
-    try {
-      withGpuSparkSession(spark => genDf(spark).coalesce(1)
-          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
-      val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
-      val g = withGpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
-      assert(compare(g, c))
-    } finally {
-      tmpFile.delete()
-    }
-  }
-
-  // Write 2 files with CPU and GPU separately, then read the 2 files with CPU and compare
-  testSparkWritesAreEqual(
-    "test ANSI interval read/write",
-    genDf,
-    (df, path) => df.coalesce(1).write.mode("overwrite").parquet(path),
-    (spark, path) => spark.read.parquet(path),
-    conf
-  )
 
   def genDf(spark: SparkSession): DataFrame = {
     IntervalDataGen.genDf(spark)

@@ -16,35 +16,43 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
+import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
 
-import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
+import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
 
 /**
- * Spark use int32 represent YearMonth, Spark use int64 represent DayTime.
- * And also Spark saves ANSI intervals as primitive physical Parquet types:
+ * Spark stores ANSI YearMonthIntervalType as int32 and ANSI DayTimeIntervalType as int64
+ * internally when computing.
+ * See the comments of YearMonthIntervalType, below is copied from Spark
+ *   Internally, values of year-month intervals are stored in `Int` values as amount of months
+ *     that are calculated by the formula:
+ *     -/+ (12 * YEAR + MONTH)
+ * See the comments of DayTimeIntervalType, below is copied from Spark
+ *   Internally, values of day-time intervals are stored in `Long` values as amount of time in terms
+ *   of microseconds that are calculated by the formula:
+ *     -/+ (24*60*60 * DAY + 60*60 * HOUR + 60 * MINUTE + SECOND) * 1000000
+ *
+ * Spark also stores ANSI intervals as int32 and int64 in Parquet file:
  *   - year-month intervals as `INT32`
  *   - day-time intervals as `INT64`
  * To load the values as intervals back, Spark puts the info about interval types
  * to the extra key `org.apache.spark.sql.parquet.row.metadata`:
  * $ java -jar parquet-tools-1.12.0.jar meta ./part-...-c000.snappy.parquet
- * creator: parquet-mr version 1.12.1 (build 2a5c06c58fa987f85aa22170be14d927d5ff6e7d)
- * extra:   org.apache.spark.version = 3.3.0
- * extra:   org.apache.spark.sql.parquet.row.metadata =
- * {"type":"struct","fields":[...,
- *   {"name":"i","type":"interval year to month","nullable":false,"metadata":{}}]}
- * file schema: spark_schema
- * --------------------------------------------------------------------------------
- * ...
- * i:  REQUIRED INT32 R:0 D:0
+ *     creator: parquet-mr version 1.12.1 (build 2a5c06c58fa987f85aa22170be14d927d5ff6e7d)
+ *     extra:   org.apache.spark.version = 3.3.0
+ *     extra:   org.apache.spark.sql.parquet.row.metadata =
+ *     {"type":"struct","fields":[...,
+ *       {"name":"i","type":"interval year to month","nullable":false,"metadata":{}}]}
+ *     file schema: spark_schema
+ *     --------------------------------------------------------------------------------
+ *     ...
+ *     i:  REQUIRED INT32 R:0 D:0
  *
- * For details See [SPARK-36825]
+ * For details See https://issues.apache.org/jira/browse/SPARK-36825
  */
 object GpuTypeShims {
 
   private lazy val getPartialConverter: PartialFunction[(DataType, Boolean), TypeConverter] = {
-    case (YearMonthIntervalType(_, _), true) => IntConverter
-    case (YearMonthIntervalType(_, _), false) => NotNullIntConverter
     case (DayTimeIntervalType(_, _), true) => LongConverter
     case (DayTimeIntervalType(_, _), false) => NotNullLongConverter
   }
@@ -57,9 +65,8 @@ object GpuTypeShims {
   // Support ANSI interval types
   def toRapidsOrNull(t: DataType): DType = {
     t match {
-      case _: YearMonthIntervalType =>
-        DType.INT32
       case _: DayTimeIntervalType =>
+        // use int64 as Spark does
         DType.INT64
       case _ =>
         null
