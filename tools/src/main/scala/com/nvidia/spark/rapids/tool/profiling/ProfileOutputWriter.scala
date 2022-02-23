@@ -93,7 +93,6 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
 object ProfileOutputWriter {
   val CSVDelimiter = ","
 
-
   /**
    * Regular expression matching full width characters.
    *
