@@ -3769,8 +3769,8 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Map("partitionSpec" ->
             InputCheck(
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
             TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
