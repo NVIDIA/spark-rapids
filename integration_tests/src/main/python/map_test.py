@@ -138,15 +138,35 @@ def test_map_scalar_project():
                 "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
                 "id"))
 
-@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
+@pytest.mark.skipif(not is_before_spark_330() or is_before_spark_311(),
+                    reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value_ansi_fail(data_gen):
-    message = "org.apache.spark.SparkNoSuchElementException" if not is_before_spark_330() else "java.util.NoSuchElementException"
+    message = "java.util.NoSuchElementException"
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'a["NOT_FOUND"]').collect(),
                 conf=ansi_enabled_conf,
                 error_message=message)
+
+@pytest.mark.skipif(is_before_spark_330(),
+                    reason="Only in Spark 3.3.0 + ANSI mode + Strict Index, map key throws on no such element")
+@pytest.mark.parametrize('strict_index', ['true', 'false'])
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_simple_get_map_value_with_strict_index(strict_index, data_gen):
+    message = "org.apache.spark.SparkNoSuchElementException"
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
+    if strict_index == 'true':  
+        assert_gpu_and_cpu_error(
+                lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a["NOT_FOUND"]').collect(),
+                conf=test_conf,
+                error_message=message)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a["NOT_FOUND"]'),
+                conf=test_conf)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
@@ -172,10 +192,12 @@ def test_simple_element_at_map(data_gen):
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_map_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkNoSuchElementException" if not is_before_spark_330() else "java.util.NoSuchElementException"
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'element_at(a, "NOT_FOUND")').collect(),
-                conf=ansi_enabled_conf,
+                conf=test_conf,
                 error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")

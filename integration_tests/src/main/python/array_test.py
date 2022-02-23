@@ -120,10 +120,11 @@ def test_array_contains_for_nans(data_gen):
     assert_gpu_and_cpu_are_equal_collect(main_df)
 
 
-@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
+@pytest.mark.skipif(not is_before_spark_330() or is_before_spark_311(),
+                    reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, array index throws on out of range indexes")
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_get_array_item_ansi_fail(data_gen):
-    message = "org.apache.spark.SparkArrayIndexOutOfBoundsException" if not is_before_spark_330() else "java.lang.ArrayIndexOutOfBoundsException"
+    message = "java.lang.ArrayIndexOutOfBoundsException"
     assert_gpu_and_cpu_error(lambda spark: unary_op_df(
         spark, data_gen).select(col('a')[100]).collect(),
                                conf=ansi_enabled_conf,
@@ -136,6 +137,23 @@ def test_get_array_item_ansi_not_fail(data_gen):
         spark, data_gen).select(col('a')[100]),
                                conf=ansi_enabled_conf)
 
+@pytest.mark.skipif(is_before_spark_330(),
+                    reason="For Spark 3.3.0 + ANSI mode + strictIndex, array index throws on out of range indexes")
+@pytest.mark.parametrize('strict_index', ['true', 'false'])
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_get_array_item_with_strict_index(strict_index, data_gen):
+    message = "org.apache.spark.SparkArrayIndexOutOfBoundsException"
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
+    if strict_index == 'true':  
+        assert_gpu_and_cpu_error(lambda spark: unary_op_df(
+            spark, data_gen).select(col('a')[100]).collect(),
+                                conf=test_conf,
+                                error_message=message)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+            spark, data_gen).select(col('a')[100]),
+                                            conf=test_conf)
+
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
@@ -147,9 +165,11 @@ def test_array_element_at(data_gen):
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkArrayIndexOutOfBoundsException" if not is_before_spark_330() else "java.lang.ArrayIndexOutOfBoundsException"
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(lambda spark: unary_op_df(
         spark, data_gen).select(element_at(col('a'), 100)).collect(),
-                               conf=ansi_enabled_conf,
+                               conf=test_conf,
                                error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if index is out of range")
