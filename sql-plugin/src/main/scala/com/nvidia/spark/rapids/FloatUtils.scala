@@ -63,8 +63,8 @@ object FloatUtils extends Arm {
     }
   }
 
-  def getInfinityVector(vec: ColumnView): ColumnVector = {
-    if (vec.getType == DType.FLOAT64) {
+  def getInfinityVector(dtype: DType): ColumnVector = {
+    if (dtype == DType.FLOAT64) {
       ColumnVector.fromDoubles(Double.PositiveInfinity, Double.NegativeInfinity)
     } else {
       ColumnVector.fromFloats(Float.PositiveInfinity, Float.NegativeInfinity)
@@ -77,7 +77,7 @@ object FloatUtils extends Arm {
       else ColumnVector.fromBoxedFloats(null, null)
     }
 
-    withResource(getInfinityVector(vec)) { infinityVector =>
+    withResource(getInfinityVector(vec.getType)) { infinityVector =>
       withResource(getNullVector) { nullVector =>
         vec.findAndReplaceAll(infinityVector, nullVector)
       }

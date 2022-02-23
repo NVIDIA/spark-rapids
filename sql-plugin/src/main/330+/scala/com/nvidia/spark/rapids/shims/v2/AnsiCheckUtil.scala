@@ -36,7 +36,7 @@ object AnsiCheckUtil extends Arm {
     if (hasNaN) {
       throwDateTimeException
     } else {
-      withResource(FloatUtils.getInfinityVector(input)) { inf =>
+      withResource(FloatUtils.getInfinityVector(input.getType)) { inf =>
         withResource(input.contains(inf)) { hasInf =>
           withResource(hasInf.any()) { isAny =>
             if (isAny.isValid && isAny.getBoolean) {
