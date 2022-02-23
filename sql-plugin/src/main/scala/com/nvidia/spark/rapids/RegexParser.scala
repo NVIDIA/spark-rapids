@@ -277,7 +277,7 @@ class RegexParser(pattern: String) {
             // word boundaries
             consumeExpected(ch)
             RegexEscaped(ch)
-          case '[' | '\\' | '^' | '$' | '.' | '⎮' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
+          case '[' | '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
             // escaped metacharacter
             consumeExpected(ch)
             RegexEscaped(ch)
@@ -446,6 +446,7 @@ object RegexSplitMode extends RegexMode
  *                if matching only (rlike)
  */
 class CudfRegexTranspiler(mode: RegexMode) {
+  private val regexMetaChars = ".$^[]\\|?*+(){}"
 
   // cuDF throws a "nothing to repeat" exception for many of the edge cases that are
   // rejected by the transpiler
@@ -465,6 +466,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     cudfRegex.toRegexString
+  }
+
+  def transpileToSplittableString(e: RegexAST): Option[String] = {
+    e match {
+      case RegexEscaped(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexSequence(parts) =>
+        parts.foldLeft[Option[String]](Some("")) { (all, x) => 
+          all match {
+            case Some(current) =>
+              transpileToSplittableString(x) match {
+                case Some(y) => Some(current + y)
+                case _ => None
+              }
+            case _ => None
+          }
+        }
+      case _ => None
+    }
+  }
+
+  def transpileToSplittableString(pattern: String): Option[String] = {
+    val regex = new RegexParser(pattern).parse()
+    transpileToSplittableString(regex)
   }
 
   private def isRepetition(e: RegexAST): Boolean = {
@@ -666,7 +691,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with {0,}")
 
-        case (_, QuantifierFixedLength(0)) | (_, QuantifierVariableLength(0,Some(0)))
+        case (_, QuantifierFixedLength(0)) | (_, QuantifierVariableLength(0, Some(0)))
           if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
             "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
@@ -674,7 +699,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case (RegexGroup(_, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
           throw new RegexUnsupportedException(nothingToRepeat)
-        case (RegexGroup(_, term), QuantifierVariableLength(_,None))
+        case (RegexGroup(_, term), QuantifierVariableLength(_, None))
             if !isSupportedRepetitionBase(term) =>
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
