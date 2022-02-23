@@ -3776,8 +3776,8 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Map("partitionSpec" ->
             InputCheck(
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
             TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
@@ -3997,7 +3997,11 @@ object GpuOverrides extends Logging {
   }
 }
 
-class ExplainPlanImpl extends ExplainPlanBase {
+/**
+ * Note, this class should not be referenced directly in source code.
+ * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
+ */
+protected class ExplainPlanImpl extends ExplainPlanBase {
   override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     GpuOverrides.explainPotentialGpuPlan(df, explain)
   }

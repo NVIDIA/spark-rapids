@@ -330,10 +330,3 @@ def enable_cudf_udf(request):
     if not enable_udf_cudf:
         # cudf_udf tests are not required for any test runs
         pytest.skip("cudf_udf not configured to run")
-
-@pytest.fixture(scope="session")
-def enable_rapids_udf_example_native(request):
-    native_enabled = request.config.getoption("rapids_udf_example_native")
-    if not native_enabled:
-        # udf_example_native tests are not required for any test runs
-        pytest.skip("rapids_udf_example_native is not configured to run")

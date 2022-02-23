@@ -31,9 +31,17 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
+
 trait Spark33XShims extends Spark33XFileOptionsShims {
+
+  /**
+   * For spark3.3+ optionally return null if element not exists. 
+   */
+  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.strictIndexOperator
+
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
   override def getFileScanRDD(
