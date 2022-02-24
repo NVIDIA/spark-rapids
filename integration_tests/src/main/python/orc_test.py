@@ -488,12 +488,60 @@ def test_orc_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_li
             lambda spark : spark.read.orc([first_data_path, second_data_path, third_data_path]),
             conf=all_confs)
 
+# Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+# Note that Min/Max don't push down partition column. Only Count does.
+# The following tests that GPU falls back to CPU when aggregates are pushed down on ORC.
+#
+# When the spark configuration is enabled we check the following:
+# ----------------------------------------------+
+# | Aggregate | Partition Column | FallBack CPU |
+# +-----------+------------------+--------------+
+# |   COUNT   |        Y         |      Y       |
+# |    MIN    |        Y         |      N       |
+# |    MAX    |        Y         |      N       |
+# |   COUNT   |        N         |      Y       |
+# |    MIN    |        N         |      Y       |
+# |    MAX    |        N         |      Y       |
+
+_aggregate_orc_list_col_partition = ['COUNT']
+_aggregate_orc_list_no_col_partition = ['MAX', 'MIN']
+_aggregate_orc_list = _aggregate_orc_list_col_partition + _aggregate_orc_list_no_col_partition
+_orc_aggregate_pushdown_enabled_conf = {'spark.sql.orc.aggregatePushdown': 'true',
+                                        "spark.sql.sources.useV1SourceList": ""}
+
+def _do_orc_scan_with_agg(spark, path, agg):
+    return spark.read.orc(path).selectExpr('{}(p)'.format(agg))
+
 @pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
-@pytest.mark.parametrize('pushdown_enabled', ['true', 'false'])
-@pytest.mark.parametrize('col_partition', ['true', 'false'])
-@pytest.mark.parametrize('aggregate', ['Count', 'Max', 'Min'])
-def test_orc_scan_with_aggregate_pushdown(spark_tmp_path, pushdown_enabled,
-                                          col_partition, aggregate):
+@pytest.mark.parametrize('aggregate', _aggregate_orc_list)
+def test_orc_scan_with_aggregate_pushdown(spark_tmp_path, aggregate):
+    """
+    Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+    When the spark configuration is enabled we check the following:
+    ---------------------------+
+    | Aggregate | FallBack CPU |
+    +-----------+--------------+
+    |   COUNT   |      Y       |
+    |    MIN    |      Y       |
+    |    MAX    |      Y       |
+    """
+    data_path = spark_tmp_path + '/pushdown.orc'
+    # GPU ORC write with statistics is not correctly working.
+    # Create ORC file in CPU session as a workaround
+    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .mode("overwrite")
+                                .orc(data_path))
+    
+    # fallback to CPU
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+        exist_classes="BatchScanExec",
+        non_exist_classes="GpuBatchScanExec",
+        conf=_orc_aggregate_pushdown_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+@pytest.mark.parametrize('aggregate', _aggregate_orc_list_col_partition)
+def test_orc_scan_with_aggregate_pushdown_on_col_partition(spark_tmp_path, aggregate):
     """
     Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
     Note that Min/Max don't push down partition column. Only Count does.
@@ -503,38 +551,46 @@ def test_orc_scan_with_aggregate_pushdown(spark_tmp_path, pushdown_enabled,
     | Aggregate | Partition Column | FallBack CPU |
     +-----------+------------------+--------------+
     |   COUNT   |        Y         |      Y       |
-    |    MIN    |        Y         |      N       |
-    |    MAX    |        Y         |      N       |
-    |   COUNT   |        N         |      Y       |
-    |    MIN    |        N         |      Y       |
-    |    MAX    |        N         |      Y       |
     """
-    def do_orc_scan(spark, path, agg):
-        df = spark.read.orc(path).selectExpr('{}(p)'.format(agg))
-        return df
-
     data_path = spark_tmp_path + '/pushdown.orc'
-    orc_aggregate_push_down_conf = {"spark.sql.orc.aggregatePushdown": pushdown_enabled,
-                                    "spark.sql.sources.useV1SourceList": ""}
-    should_fallback = pushdown_enabled == 'true' and (aggregate == 'Count' or col_partition == 'false')
-    
-    if col_partition == 'true':
-        with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+    # GPU ORC write with statistics is not correctly working.
+    # Create ORC file in CPU session as a workaround
+    # Partition column P
+    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
                                 .partitionBy("p")
                                 .mode("overwrite")
                                 .orc(data_path))
-    else:
-        with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+    
+    # fallback to CPU only if aggregate is COUNT
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+            exist_classes="BatchScanExec",
+            non_exist_classes="GpuBatchScanExec",
+            conf=_orc_aggregate_pushdown_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+@pytest.mark.parametrize('aggregate', _aggregate_orc_list_col_partition)
+def test_orc_scan_with_aggregate_no_pushdown_on_col_partition(spark_tmp_path, aggregate):
+    """
+    Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+    Note that Min/Max don't push down partition column.
+    When the spark configuration is enabled we check the following:
+    ----------------------------------------------+
+    | Aggregate | Partition Column | FallBack CPU |
+    +-----------+------------------+--------------+
+    |    MIN    |        Y         |      N       |
+    |    MAX    |        Y         |      N       |
+    """
+    data_path = spark_tmp_path + '/pushdown.orc'
+    # GPU ORC write with statistics is not correctly working.
+    # Create ORC file in CPU session as a workaround
+    # Partition column P
+    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .partitionBy("p")
                                 .mode("overwrite")
                                 .orc(data_path))
     
-    if should_fallback:
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: do_orc_scan(spark, data_path, aggregate),
-            exist_classes="BatchScanExec",
-            non_exist_classes="GpuBatchScanExec",
-            conf=orc_aggregate_push_down_conf)
-    else:
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: do_orc_scan(spark, data_path, aggregate),
-            conf=orc_aggregate_push_down_conf)
+    # should not fallback to CPU
+    assert_gpu_and_cpu_are_equal_collect(
+                lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+                conf=_orc_aggregate_pushdown_enabled_conf)
