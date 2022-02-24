@@ -17,9 +17,10 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import ai.rapids.cudf.{ColumnVector, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
@@ -627,7 +628,90 @@ trait GpuHashJoin extends GpuExec {
     (joinLeft.output.size, boundCondition)
   }
 
-  def doJoin(
+  private def existenceJoinIterator(
+    builtBatch: ColumnarBatch,
+    stream: Iterator[ColumnarBatch]) = new Iterator[ColumnarBatch]()
+      with AutoCloseable with Arm {
+    var closed: Boolean = false
+
+    // iteration-independent resources
+    val resources = ArrayBuffer[AutoCloseable]()
+    def use[T <: AutoCloseable](ac: T): T = {
+      resources += ac
+      ac
+    }
+
+    val compiledConditionOpt = boundCondition.map(gpuExpr =>
+      use(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+
+    val rightKeysTab = use(
+      withResource(GpuProjectExec.project(builtBatch, boundBuildKeys))(GpuColumnVector.from(_)))
+
+    val falseScalar = use(Scalar.fromBool(false))
+    val trueScalar = use(Scalar.fromBool(true))
+    override def hasNext: Boolean = {
+      val streamHasNext = stream.hasNext
+      if (!streamHasNext) {
+        close()
+      }
+      streamHasNext
+    }
+
+    override def next(): ColumnarBatch = {
+      withResource(stream.next()) { leftColumnarBatch =>
+        existenceJoinNextBatch(leftColumnarBatch)
+      }
+    }
+
+    override def close() = if (!closed) {
+      closed = true
+      val resourcesReversed = resources.reverse
+      resourcesReversed.safeClose()
+    }
+
+    private def leftKeysTable(leftColumnarBatch: ColumnarBatch): Table = {
+      withResource(GpuProjectExec.project(leftColumnarBatch, boundStreamKeys))(
+        leftKeys => GpuColumnVector.from(leftKeys))
+    }
+
+    private def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
+      withResource(leftKeysTable(leftColumnarBatch))(leftKeysTab =>
+        compiledConditionOpt.map { compiledCondition =>
+          leftKeysTab.conditionalLeftSemiJoinGatherMap(rightKeysTab, compiledCondition)
+        }.getOrElse {
+          leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
+        })
+    }
+
+    private def falseColumnTable(numLeftRows: Int): Table = {
+      withResource(ColumnVector.fromScalar(falseScalar, numLeftRows))(
+        new Table(_)
+      )
+    }
+
+    private def existsTable(leftColumnarBatch: ColumnarBatch): Table = {
+      withResource(existsScatterMap(leftColumnarBatch)) { existsScatterMap =>
+        val numLeftRows = leftColumnarBatch.numRows
+        withResource(falseColumnTable(numLeftRows)) { allFalseTable =>
+          val numExistsTrueRows = existsScatterMap.getRowCount.toInt
+          withResource(existsScatterMap.toColumnView(0, numExistsTrueRows)) { existsView =>
+            Table.scatter(Array(trueScalar), existsView, allFalseTable, false)
+          }
+        }
+      }
+    }
+
+    private def existenceJoinNextBatch(leftColumnarBatch: ColumnarBatch): ColumnarBatch = {
+      // left columns with exists
+      withResource(existsTable(leftColumnarBatch)) { existsTable =>
+        val resCols = GpuColumnVector.extractBases(leftColumnarBatch)  :+ existsTable.getColumn(0)
+        val resTypes = GpuColumnVector.extractTypes(leftColumnarBatch) :+ BooleanType
+        withResource(new Table(resCols: _*))(resTab => GpuColumnVector.from(resTab, resTypes))
+      }
+    }
+  }
+
+  private def hashJoinLikeIterator(
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
       targetSize: Long,
@@ -662,44 +746,38 @@ trait GpuHashJoin extends GpuExec {
 
     // The HashJoinIterator takes ownership of the built keys and built data. It will close
     // them when it is done
-    val joinIterator = if (boundCondition.isDefined) {
+    if (boundCondition.isDefined) {
       // ConditionalHashJoinIterator will close the compiled condition
       val compiledCondition =
         boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
       new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
         boundStreamKeys, streamedPlan.output, compiledCondition,
         realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
-    } else if (joinType.isInstanceOf[ExistenceJoin]) {
-      new Iterator[ColumnarBatch]() {
-        def next(): ColumnarBatch = {
-          val leftCb = stream.next()
-          val leftKeysTab = GpuColumnVector.from(
-            GpuProjectExec.project(leftCb, boundStreamKeys)
-          )
-          val rightKeysTab = GpuColumnVector.from(
-            GpuProjectExec.project(builtBatch, boundBuildKeys)
-          )
-          val existsScatterMap = leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
-          val allFalseExistsTmp = ai.rapids.cudf.ColumnVector
-            .fromScalar(ai.rapids.cudf.Scalar.fromBool(false), leftCb.numRows)
-          val existsTable = Table.scatter(
-            Array(ai.rapids.cudf.Scalar.fromBool(true)),
-            existsScatterMap.toColumnView(0, existsScatterMap.getRowCount.toInt),
-            new Table(allFalseExistsTmp), false)
-          val arrayBuff = ArrayBuffer[ColumnVector](GpuColumnVector.extractBases(leftCb): _*)
-          arrayBuff += existsTable.getColumn(0)
-          val resTab = new ai.rapids.cudf.Table(arrayBuff: _*)
-          val resTypes = ArrayBuffer(GpuColumnVector.extractTypes(leftCb): _*)
-          resTypes += BooleanType
-          GpuColumnVector.from(resTab, resTypes.toArray)
-        }
-
-        def hasNext: Boolean = stream.hasNext
-      }
     } else {
       new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
         opTime, joinTime)
+    }
+  }
+
+  def doJoin(
+      builtBatch: ColumnarBatch,
+      stream: Iterator[ColumnarBatch],
+      targetSize: Long,
+      spillCallback: SpillCallback,
+      numOutputRows: GpuMetric,
+      joinOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      opTime: GpuMetric,
+      joinTime: GpuMetric): Iterator[ColumnarBatch] = {
+
+    // The HashJoinIterator takes ownership of the built keys and built data. It will close
+    // them when it is done
+    val joinIterator = if (joinType.isInstanceOf[ExistenceJoin]) {
+      existenceJoinIterator(builtBatch, stream)
+    } else {
+      hashJoinLikeIterator(builtBatch, stream, targetSize, spillCallback, numOutputRows,
+        joinOutputRows, numOutputBatches, opTime, joinTime)
     }
 
     joinIterator.map { cb =>
