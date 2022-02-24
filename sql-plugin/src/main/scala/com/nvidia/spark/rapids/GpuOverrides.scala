@@ -1829,9 +1829,9 @@ object GpuOverrides extends Logging {
       }),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
@@ -2119,9 +2119,9 @@ object GpuOverrides extends Logging {
     expr[Remainder](
       "Remainder or modulo",
       ExprChecks.binaryProject(
-        TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRemainder(lhs, rhs)
@@ -2656,6 +2656,13 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMapEntries(child)
       }),
+    expr[StringToMap](
+      "Creates a map after splitting the input string into pairs of key-value strings",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)),
+          ParamCheck("keyValueDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)))),
+      (in, conf, p, r) => new GpuStringToMapMeta(in, conf, p, r)),
     expr[ArrayMin](
       "Returns the minimum value in the array",
       ExprChecks.unaryProject(
@@ -3771,8 +3778,8 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Map("partitionSpec" ->
             InputCheck(
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
             TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
@@ -3992,7 +3999,11 @@ object GpuOverrides extends Logging {
   }
 }
 
-class ExplainPlanImpl extends ExplainPlanBase {
+/**
+ * Note, this class should not be referenced directly in source code.
+ * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
+ */
+protected class ExplainPlanImpl extends ExplainPlanBase {
   override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     GpuOverrides.explainPotentialGpuPlan(df, explain)
   }

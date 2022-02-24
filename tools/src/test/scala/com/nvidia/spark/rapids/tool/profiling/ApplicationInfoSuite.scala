@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -216,6 +216,75 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test read GPU datasourcev1") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-gpu-dsv1.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(hadoopConf,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
+      assert(dsRes.size == 5)
+      val allFormats = dsRes.map { r =>
+        r.format
+      }.toSet
+      val expectedFormats = Set("Text", "CSV(GPU)", "Parquet(GPU)", "ORC(GPU)", "JSON(GPU)")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = dsRes.map { r =>
+        r.schema
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = dsRes.filter { r =>
+        r.sqlID == 4
+      }
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      assert(parquetRow.schema.contains("loan_id"))
+    }
+  }
+
+  test("test read GPU datasourcev2") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-gpu-dsv2.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(hadoopConf,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
+      assert(dsRes.size == 5)
+      val allFormats = dsRes.map { r =>
+        r.format
+      }.toSet
+      val expectedFormats =
+        Set("Text", "gpucsv(GPU)", "gpujson(GPU)", "gpuparquet(GPU)", "gpuorc(GPU)")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = dsRes.map { r =>
+        r.schema
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = dsRes.filter { r =>
+        r.sqlID == 3
+      }
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      assert(parquetRow.schema.contains("loan_id"))
+    }
+  }
+
   test("test read datasourcev1") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -306,7 +375,13 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dsRes = collect.getDataSourceInfo
       val format = dsRes.map(r => r.format).toSet.mkString
       val expectedFormat = "JDBC"
+      val location = dsRes.map(r => r.location).toSet.mkString
+      val expectedLocation = "TBLS"
       assert(format.equals(expectedFormat))
+      assert(location.equals(expectedLocation))
+      dsRes.foreach { r =>
+        assert(r.schema.contains("bigint"))
+      }
     }
   }
 
@@ -508,14 +583,19 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
     val collect = new CollectInformation(apps)
     for (app <- apps) {
-      val props = collect.getRapidsProperties
-      val rows = props.map(_.rows.head)
+      val rapidsProps = collect.getProperties(rapidsOnly = true)
+      val rows = rapidsProps.map(_.rows.head)
       assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
       assert(rows.contains("spark.executorEnv.UCX_RNDV_SCHEME"))
 
       //verify gds parameters are captured.
       assert(rows.contains("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
+
+      val sparkProps = collect.getProperties(rapidsOnly = false)
+      val sparkPropsRows = sparkProps.map(_.rows.head)
+      assert(sparkPropsRows.contains("spark.eventLog.dir"))
+      assert(sparkPropsRows.contains("spark.plugins"))
     }
   }
 
@@ -575,7 +655,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 12)
+      assert(dotDirs.length === 13)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -602,7 +682,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 10)
+      assert(dotDirs.length === 11)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -632,7 +712,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 12)
+      assert(dotDirs.length === 13)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -662,7 +742,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 10)
+      assert(dotDirs.length === 11)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly

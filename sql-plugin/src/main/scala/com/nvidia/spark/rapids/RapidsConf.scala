@@ -890,47 +890,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val ENABLE_READ_CSV_BOOLS = conf("spark.rapids.sql.csv.read.bool.enabled")
-      .doc("Parsing an invalid CSV boolean value produces true instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_BYTES = conf("spark.rapids.sql.csv.read.byte.enabled")
-      .doc("Parsing CSV bytes is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_SHORTS = conf("spark.rapids.sql.csv.read.short.enabled")
-      .doc("Parsing CSV shorts is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_INTEGERS = conf("spark.rapids.sql.csv.read.integer.enabled")
-      .doc("Parsing CSV integers is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_LONGS = conf("spark.rapids.sql.csv.read.long.enabled")
-      .doc("Parsing CSV longs is much more lenient and will return 0 for some " +
-          "malformed values instead of null")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
-      .doc("Parsing CSV floats has some issues at the min and max values for floating" +
-          "point numbers and can be more lenient on parsing inf and -inf values")
-      .booleanConf
-      .createWithDefault(false)
-
-  val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
-      .doc("Parsing CSV double has some issues at the min and max values for floating" +
-          "point numbers and can be more lenient on parsing inf and -inf values")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -1533,8 +1492,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmPool: String = {
     val pool = get(RMM_POOL)
-    if ("ASYNC".equalsIgnoreCase(pool) && Cuda.getDriverVersion < 11020) {
-      logWarning("CUDA driver does not support the ASYNC allocator, falling back to ARENA")
+    if ("ASYNC".equalsIgnoreCase(pool) &&
+        (Cuda.getRuntimeVersion < 11020 || Cuda.getDriverVersion < 11020)) {
+      logWarning("CUDA runtime/driver does not support the ASYNC allocator, falling back to ARENA")
       "ARENA"
     } else {
       pool
@@ -1620,20 +1580,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val isCsvDateReadEnabled: Boolean = get(ENABLE_READ_CSV_DATES)
-
-  lazy val isCsvBoolReadEnabled: Boolean = get(ENABLE_READ_CSV_BOOLS)
-
-  lazy val isCsvByteReadEnabled: Boolean = get(ENABLE_READ_CSV_BYTES)
-
-  lazy val isCsvShortReadEnabled: Boolean = get(ENABLE_READ_CSV_SHORTS)
-
-  lazy val isCsvIntReadEnabled: Boolean = get(ENABLE_READ_CSV_INTEGERS)
-
-  lazy val isCsvLongReadEnabled: Boolean = get(ENABLE_READ_CSV_LONGS)
-
-  lazy val isCsvFloatReadEnabled: Boolean = get(ENABLE_READ_CSV_FLOATS)
-
-  lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
 
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 

@@ -172,14 +172,14 @@ object GpuAdd extends Arm {
     // Overflow happens if the arguments have the same signs and it is different from the sign of
     // the result
     val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0)
-    withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignSame = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
+    val zero = BigDecimal(0).bigDecimal
+    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
         lhsLz.equalTo(rhsLz)
       }
       withResource(argsSignSame) { argsSignSame =>
         val resultAndRhsDifferentSign =
-          withResource(DecimalUtil.lessThan(ret, zero)) { resultLz =>
+          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
             rhsLz.notEqualTo(resultLz)
           }
         withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
@@ -286,14 +286,14 @@ case class GpuSubtract(
     // Overflow happens if the arguments have different signs and the sign of the result is
     // different from the sign of subtractend (RHS).
     val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0)
-    val overflow = withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignDifferent = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
+    val zero = BigDecimal(0).bigDecimal
+    val overflow = withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignDifferent = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
         lhsLz.notEqualTo(rhsLz)
       }
       withResource(argsSignDifferent) { argsSignDifferent =>
         val resultAndSubtrahendSameSign =
-          withResource(DecimalUtil.lessThan(ret, zero)) { resultLz =>
+          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
             rhsLz.equalTo(resultLz)
           }
         withResource(resultAndSubtrahendSameSign) { resultAndSubtrahendSameSign =>

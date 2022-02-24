@@ -19,9 +19,10 @@ package org.apache.spark.sql.catalyst.json.rapids
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
 
@@ -40,7 +41,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration;
+import org.apache.spark.util.SerializableConfiguration
 
 object GpuJsonScan {
 
@@ -287,7 +288,22 @@ class JsonPartitionReader(
       hasHeader: Boolean): Table = {
 
     val jsonOpts = buildJsonOptions(parsedOptions)
-    Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+    // cuDF does not yet support reading a subset of columns so we have
+    // to apply the read schema projection here
+    withResource(Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)) { tbl =>
+      val columns = new ListBuffer[ColumnVector]()
+      closeOnExcept(columns) { _ =>
+        for (name <- readDataSchema.fieldNames) {
+          val i = cudfSchema.getColumnNames.indexOf(name)
+          if (i == -1) {
+            throw new IllegalStateException(
+              s"read schema contains field named '$name' that is not in the data schema")
+          }
+          columns += tbl.getColumn(i)
+        }
+      }
+      new Table(columns: _*)
+    }
   }
 
   /**
@@ -334,4 +350,24 @@ class JsonPartitionReader(
       Some(new Table(prunedColumnVectors: _*))
     }
   }
+
+  /**
+   * JSON only supports unquoted lower-case "true" and "false" as valid boolean values.
+   */
+  override def castStringToBool(input: ColumnVector): ColumnVector = {
+    withResource(Scalar.fromString("true")) { t =>
+      withResource(Scalar.fromString("false")) { f =>
+        withResource(input.equalTo(t)) { isTrue =>
+          withResource(input.equalTo(f)) { isFalse =>
+            withResource(isTrue.or(isFalse)) { isValidBool =>
+              withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+                isValidBool.ifElse(isTrue, nullBool)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
 }

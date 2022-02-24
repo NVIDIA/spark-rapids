@@ -31,6 +31,10 @@ _spark = get_spark_i_know_what_i_am_doing()
 _orig_conf = _from_scala_map(_spark.conf._jconf.getAll())
 _orig_conf_keys = _orig_conf.keys()
 
+# Default settings that should apply to CPU and GPU sessions.
+# These settings can be overridden by specific tests if necessary.
+_default_conf = { 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true' }
+
 def is_tz_utc(spark=_spark):
     """
     true if the tz is UTC else false
@@ -42,7 +46,9 @@ def is_tz_utc(spark=_spark):
     return utc == sys_tz
 
 def _set_all_confs(conf):
-    for key, value in conf.items():
+    newconf = _default_conf.copy()
+    newconf.update(conf)
+    for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
             _spark.conf.set(key, value)
 

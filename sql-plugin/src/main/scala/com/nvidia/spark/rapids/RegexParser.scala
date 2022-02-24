@@ -467,6 +467,39 @@ class CudfRegexTranspiler(mode: RegexMode) {
     cudfRegex.toRegexString
   }
 
+  private def isRepetition(e: RegexAST): Boolean = {
+    e match {
+      case RegexRepetition(_, _) => true
+      case RegexGroup(_, term) => isRepetition(term)
+      case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
+      case _ => false
+    }
+  }
+
+  private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
+    e match {
+      case RegexEscaped(ch) if ch != 'd' && ch != 'w' => // example: "\B?"
+        false
+
+      case RegexChar(a) if "$^".contains(a) =>
+        // example: "$*"
+        false
+
+      case RegexRepetition(_, _) =>
+        // example: "a*+"
+        false
+
+      case RegexSequence(parts) =>
+        parts.forall(isSupportedRepetitionBase)
+
+      case RegexGroup(_, term) =>
+        isSupportedRepetitionBase(term)
+
+      case _ => true
+    }
+  }
+
+
   private def rewrite(regex: RegexAST): RegexAST = {
     regex match {
 
@@ -628,20 +661,29 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (RegexEscaped(ch), _) if ch != 'd' && ch != 'w' =>
-          // example: "\B?"
-          throw new RegexUnsupportedException(nothingToRepeat)
+        case (_, QuantifierVariableLength(0,None)) if mode == RegexReplaceMode =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4468
+          throw new RegexUnsupportedException(
+            "regexp_replace on GPU does not support repetition with {0,}")
 
-        case (RegexChar(a), _) if "$^".contains(a) =>
-          // example: "$*"
-          throw new RegexUnsupportedException(nothingToRepeat)
+        case (_, QuantifierFixedLength(0)) | (_, QuantifierVariableLength(0,Some(0)))
+          if mode != RegexFindMode =>
+          throw new RegexUnsupportedException(
+            "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
 
-        case (RegexRepetition(_, _), _) =>
-          // example: "a*+"
+        case (RegexGroup(_, term), SimpleQuantifier(ch))
+            if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
           throw new RegexUnsupportedException(nothingToRepeat)
-
-        case _ =>
+        case (RegexGroup(_, term), QuantifierVariableLength(_,None))
+            if !isSupportedRepetitionBase(term) =>
+          // specifically this variable length repetition: \A{2,}
+          throw new RegexUnsupportedException(nothingToRepeat)
+        case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base), quantifier)
+        case _ if isSupportedRepetitionBase(base) =>
+          RegexRepetition(rewrite(base), quantifier)
+        case _ =>
+          throw new RegexUnsupportedException(nothingToRepeat)
 
       }
 
@@ -650,14 +692,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val rr = rewrite(r)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
-        def isRepetition(e: RegexAST): Boolean = {
-          e match {
-            case RegexRepetition(_, _) => true
-            case RegexGroup(_, term) => isRepetition(term)
-            case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
-            case _ => false
-          }
-        }
         if (isRepetition(ll) || isRepetition(rr)) {
           throw new RegexUnsupportedException(nothingToRepeat)
         }
@@ -667,8 +701,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
         def endsWithLineAnchor(e: RegexAST): Boolean = {
           e match {
             case RegexSequence(parts) if parts.nonEmpty =>
-              isBeginOrEndLineAnchor(parts.last)
-            case _ => false
+              endsWithLineAnchor(parts.last)
+            case RegexEscaped('A') => true
+            case _ => isBeginOrEndLineAnchor(e)
           }
         }
         if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {

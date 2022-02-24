@@ -153,7 +153,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
             || DType.TIMESTAMP_SECONDS.equals(type)
             || DType.TIMESTAMP_MICROSECONDS.equals(type)
             || DType.TIMESTAMP_MILLISECONDS.equals(type)
-            || DType.TIMESTAMP_NANOSECONDS.equals(type)) {
+            || DType.TIMESTAMP_NANOSECONDS.equals(type)
+            || DType.UINT8.equals(type)
+            || DType.UINT16.equals(type)
+            || DType.UINT32.equals(type)
+            || DType.UINT64.equals(type)) {
       debugInteger(hostCol, type);
    } else if (DType.BOOL8.equals(type)) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
@@ -388,7 +392,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
-      HostColumnarToGpu.columnarCopy(cv, builder(colNum), nullable, rows);
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), rows);
     }
 
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
@@ -492,8 +496,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     } else if (type instanceof DecimalType) {
       // Decimal supportable check has been conducted in the GPU plan overriding stage.
       // So, we don't have to handle decimal-supportable problem at here.
-      DecimalType dt = (DecimalType) type;
-      return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
+      return DecimalUtil.createCudfDecimal((DecimalType) type);
+    } else if (type instanceof GpuUnsignedIntegerType) {
+      return DType.UINT32;
+    } else if (type instanceof GpuUnsignedLongType) {
+      return DType.UINT64;
     }
     return null;
   }

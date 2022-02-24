@@ -25,7 +25,7 @@ from pyspark.sql.functions import array_contains, col, first, isnan, lit, elemen
 # negative indexes for all array gens. When that happens
 # test_nested_array_index should go away and this should test with
 # array_gens_sample instead
-@pytest.mark.parametrize('data_gen', single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_array_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -34,8 +34,7 @@ def test_array_item(data_gen):
                 'a[null]',
                 'a[3]',
                 'a[50]',
-                'a[-1]'),
-            conf=allow_negative_scale_of_decimal_conf)
+                'a[-1]'))
 
 # Once we support arrays as literals then we can support a[null] for
 # all array gens. See test_array_index for more info
@@ -49,10 +48,10 @@ def test_nested_array_item(data_gen):
                 'a[50]'))
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens +
-                         [decimal_gen_default, decimal_gen_scale_precision] + decimal_128_gens_no_neg
-                         + [StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
-                            StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [
+                         decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit,
+                         StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
+                         StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
 def test_make_array(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     assert_gpu_and_cpu_are_equal_collect(
@@ -68,8 +67,7 @@ def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.uniq_int from array_table order by uniq_int',
-        conf=allow_negative_scale_of_decimal_conf)
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
@@ -122,14 +120,14 @@ def test_array_contains_for_nans(data_gen):
     assert_gpu_and_cpu_are_equal_collect(main_df)
 
 
-@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
+@pytest.mark.skipif(not is_before_spark_330() or is_before_spark_311(),
+                    reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, array index throws on out of range indexes")
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_get_array_item_ansi_fail(data_gen):
-    message = "org.apache.spark.SparkArrayIndexOutOfBoundsException" if not is_before_spark_330() else "java.lang.ArrayIndexOutOfBoundsException"
+    message = "java.lang.ArrayIndexOutOfBoundsException"
     assert_gpu_and_cpu_error(lambda spark: unary_op_df(
         spark, data_gen).select(col('a')[100]).collect(),
-                               conf={'spark.sql.ansi.enabled':True,
-                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                               conf=ansi_enabled_conf,
                                error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if index is out of range")
@@ -137,25 +135,41 @@ def test_get_array_item_ansi_fail(data_gen):
 def test_get_array_item_ansi_not_fail(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
         spark, data_gen).select(col('a')[100]),
-                               conf={'spark.sql.ansi.enabled':True,
-                               'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+                               conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.skipif(is_before_spark_330(),
+                    reason="For Spark 3.3.0 + ANSI mode + strictIndex, array index throws on out of range indexes")
+@pytest.mark.parametrize('strict_index', ['true', 'false'])
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_get_array_item_with_strict_index(strict_index, data_gen):
+    message = "org.apache.spark.SparkArrayIndexOutOfBoundsException"
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
+    if strict_index == 'true':  
+        assert_gpu_and_cpu_error(lambda spark: unary_op_df(
+            spark, data_gen).select(col('a')[100]).collect(),
+                                conf=test_conf,
+                                error_message=message)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+            spark, data_gen).select(col('a')[100]),
+                                            conf=test_conf)
+
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
         spark, data_gen).select(element_at(col('a'), 1),
                                element_at(col('a'), -1)),
-                               conf={'spark.sql.ansi.enabled':False,
-                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+                               conf={'spark.sql.ansi.enabled':False})
 
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkArrayIndexOutOfBoundsException" if not is_before_spark_330() else "java.lang.ArrayIndexOutOfBoundsException"
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(lambda spark: unary_op_df(
         spark, data_gen).select(element_at(col('a'), 100)).collect(),
-                               conf={'spark.sql.ansi.enabled':True,
-                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                               conf=test_conf,
                                error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if index is out of range")
@@ -163,8 +177,7 @@ def test_array_element_at_ansi_fail(data_gen):
 def test_array_element_at_ansi_not_fail(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
         spark, data_gen).select(element_at(col('a'), 100)),
-                               conf={'spark.sql.ansi.enabled':True,
-                               'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+                               conf=ansi_enabled_conf)
 
 # This corner case is for both Spark 3.0.x and 3.1.x
 # CPU version will return `null` for null[100], not throwing an exception
@@ -172,11 +185,10 @@ def test_array_element_at_ansi_not_fail(data_gen):
 def test_array_element_at_all_null_ansi_not_fail(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
         spark, data_gen).select(element_at(col('a'), 100)),
-                               conf={'spark.sql.ansi.enabled':True,
-                               'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+                               conf=ansi_enabled_conf)
 
 
-@pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_transform(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
@@ -204,31 +216,26 @@ def test_array_transform(data_gen):
 
         return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, 
-            conf=allow_negative_scale_of_decimal_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens + decimal_128_gens
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
                 'array_min(a)'),
-            conf={
-                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-                'spark.rapids.sql.hasNans': 'false'})
+            conf=no_nans_conf)
 
 
-@pytest.mark.parametrize('data_gen', decimal_128_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_array_concat_decimal(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : debug_df(unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
             'concat(a, a)')),
-        conf={
-            'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-            'spark.rapids.sql.hasNans': 'false'})
+        conf=no_nans_conf)
 
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
@@ -236,9 +243,7 @@ def test_array_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
                 'array_max(a)'),
-            conf={
-                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-                'spark.rapids.sql.hasNans': 'false'})
+            conf=no_nans_conf)
 
 # We add in several types of processing for foldable functions because the output
 # can be different types.
@@ -253,5 +258,4 @@ def test_array_max(data_gen):
     'array(array(struct(1 as a, 2 as b), struct(3 as a, 4 as b))) as a_a_s'], ids=idfn)
 def test_sql_array_scalars(query):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.sql('SELECT {}'.format(query)),
-            conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            lambda spark : spark.sql('SELECT {}'.format(query)))

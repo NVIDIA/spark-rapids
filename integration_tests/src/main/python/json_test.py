@@ -16,9 +16,10 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from src.main.python.marks import approximate_float, allow_non_gpu
+from conftest import is_databricks_runtime
+from marks import approximate_float, allow_non_gpu, ignore_order
 
-from src.main.python.spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_gpu_session
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -37,6 +38,21 @@ json_supported_gens = [
 _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
     'spark.rapids.sql.format.json.read.enabled': 'true'}
+
+_bool_schema = StructType([
+    StructField('number', BooleanType())])
+
+_byte_schema = StructType([
+    StructField('number', ByteType())])
+
+_short_schema = StructType([
+    StructField('number', ShortType())])
+
+_int_schema = StructType([
+    StructField('number', IntegerType())])
+
+_long_schema = StructType([
+    StructField('number', LongType())])
 
 _float_schema = StructType([
     StructField('number', FloatType())])
@@ -170,6 +186,10 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 
 @approximate_float
 @pytest.mark.parametrize('filename', [
+    'boolean.json',
+    pytest.param('boolean_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
+    'ints.json',
+    pytest.param('ints_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4793')),
     'nan_and_inf.json',
     pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
     'floats.json',
@@ -177,7 +197,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'floats_invalid.json',
     pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
 ])
-@pytest.mark.parametrize('schema', [_float_schema, _double_schema])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, _float_schema, _double_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
@@ -201,3 +221,27 @@ def test_json_unquotedCharacters(std_input_path, filename, schema, read_func, al
         schema,
         {"allowUnquotedControlChars": allow_unquoted_chars}),
         conf=_enable_all_types_conf)
+
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
+def test_json_read_with_corrupt_files(spark_tmp_path, v1_enabled_list):
+    first_data_path = spark_tmp_path + '/JSON_DATA/first'
+    with_cpu_session(lambda spark : spark.range(1).toDF("a").write.json(first_data_path))
+    second_data_path = spark_tmp_path + '/JSON_DATA/second'
+    with_cpu_session(lambda spark : spark.range(1, 2).toDF("a").write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/JSON_DATA/third'
+    with_cpu_session(lambda spark : spark.range(2, 3).toDF("a").write.json(third_data_path))
+
+    all_confs = copy_and_update(_enable_all_types_conf,
+                                {'spark.sql.files.ignoreCorruptFiles': "true",
+                                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    schema = StructType([StructField("a", IntegerType())])
+
+    # when ignoreCorruptFiles is enabled, gpu reading should not throw exception, while CPU can successfully
+    # read the three files without ignore corrupt files. So we just check if GPU will throw exception.
+    with_gpu_session(
+            lambda spark : spark.read.schema(schema)
+                .json([first_data_path, second_data_path, third_data_path])
+                .collect(),
+            conf=all_confs)

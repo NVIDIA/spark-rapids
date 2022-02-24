@@ -16,7 +16,6 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -42,7 +41,7 @@ if_struct_gens_sample = [if_struct_gen,
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
-@pytest.mark.parametrize('data_gen', all_gens + if_nested_gens + decimal_128_gens_no_neg, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
 def test_if_else(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -65,11 +64,10 @@ def test_if_else_map(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
                 'IF(TRUE, b, c)',
-                'IF(a, b, c)'),
-            conf = allow_negative_scale_of_decimal_conf)
+                'IF(a, b, c)'))
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens + single_array_gens_sample_with_decimal128 + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -97,8 +95,7 @@ def test_case_when(data_gen):
                 f.when(f.col('_b0'), s1).when(f.lit(False), f.col('_c0')),
                 f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
-                f.when(f.lit(False), f.col('_c0'))),
-            conf = allow_negative_scale_of_decimal_conf)
+                f.when(f.lit(False), f.col('_c0'))))
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):
@@ -111,7 +108,7 @@ def test_nanvl(data_gen):
                 f.nanvl(f.lit(None).cast(data_type), f.col('b')),
                 f.nanvl(f.lit(float('nan')).cast(data_type), f.col('b'))))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_128_gens_no_neg, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
 def test_nvl(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -128,7 +125,7 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + decimal_128_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -140,8 +137,7 @@ def test_coalesce(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
-                f.coalesce(*command_args)),
-            conf = allow_negative_scale_of_decimal_conf)
+                f.coalesce(*command_args)))
 
 def test_coalesce_constant_output():
     # Coalesce can allow a constant value as output. Technically Spark should mark this
@@ -150,7 +146,7 @@ def test_coalesce_constant_output():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(1, 100).selectExpr("4 + coalesce(5, id) as nine"))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_128_gens_no_neg, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
 def test_nvl2(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -162,7 +158,7 @@ def test_nvl2(data_gen):
                 'nvl2({}, b, c)'.format(null_lit),
                 'nvl2(a, {}, c)'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', eq_gens + decimal_128_gens_no_neg, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_nullif(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -174,7 +170,7 @@ def test_nullif(data_gen):
                 'nullif({}, b)'.format(null_lit),
                 'nullif(a, {})'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', eq_gens + decimal_128_gens_no_neg, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_ifnull(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -191,7 +187,7 @@ def test_conditional_with_side_effects_col_col(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a < 2147483647, a + 1, a)'),
-            conf = {'spark.sql.ansi.enabled':True})
+            conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [IntegerGen().with_special_case(2147483647)], ids=idfn)
 def test_conditional_with_side_effects_col_scalar(data_gen):
@@ -199,14 +195,14 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a < 2147483647, a + 1, 2147483647)',
                 'IF(a >= 2147483646, 2147483647, a + 1)'),
-            conf = {'spark.sql.ansi.enabled':True})
+            conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
 def test_conditional_with_side_effects_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
-            conf = {'spark.sql.ansi.enabled':True})
+            conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
 def test_conditional_with_side_effects_case_when(data_gen):
@@ -216,4 +212,4 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
                 WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
                 ELSE -1 END'),
-                conf = {'spark.sql.ansi.enabled':True})
+                conf = ansi_enabled_conf)

@@ -1281,7 +1281,8 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY +
       STRUCT + MAP) +
       psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
-      "desired child types")
+      "desired child types") +
+      psNote(TypeEnum.STRING, "the map's key and value must also support being cast to string")
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
@@ -2114,13 +2115,6 @@ object SupportedOpsForTools {
         val readOps = types.map { t =>
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
             t.toString match {
-              case "BOOLEAN" => conf.isCsvBoolReadEnabled
-              case "BYTE" => conf.isCsvByteReadEnabled
-              case "SHORT" => conf.isCsvShortReadEnabled
-              case "INT" => conf.isCsvIntReadEnabled
-              case "LONG" => conf.isCsvLongReadEnabled
-              case "FLOAT" => conf.isCsvFloatReadEnabled
-              case "DOUBLE" => conf.isCsvDoubleReadEnabled
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
               case "DATE" => conf.isCsvDateReadEnabled
               case _ => true
