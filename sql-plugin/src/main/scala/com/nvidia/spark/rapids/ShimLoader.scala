@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -316,10 +315,6 @@ object ShimLoader extends Logging {
       shimProviderClass = detectShimProvider()
     }
     shimProviderClass
-  }
-
-  def getSparkShims: SparkShims = {
-    SparkShimImpl
   }
 
   def getShimVersion: ShimVersion = {

@@ -20,9 +20,9 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExecParent, GpuExec, GpuMetric, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta, TargetSize}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExecParent, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -108,13 +108,13 @@ class GpuSubqueryBroadcastMeta(
     //          +- [GPU overrides of executed subquery...]
     //
     case a: AdaptiveSparkPlanExec =>
-      ShimLoader.getSparkShims.getAdaptiveInputPlan(a) match {
+      SparkShimImpl.getAdaptiveInputPlan(a) match {
         case ex: BroadcastExchangeExec =>
           val exMeta = new GpuBroadcastMeta(ex, conf, p, r)
           exMeta.tagForGpu()
           if (exMeta.canThisBeReplaced) {
             broadcastBuilder = () =>
-              ShimLoader.getSparkShims.columnarAdaptivePlan(
+              SparkShimImpl.columnarAdaptivePlan(
                 a, TargetSize(conf.gpuTargetBatchSizeBytes))
           } else {
             willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")

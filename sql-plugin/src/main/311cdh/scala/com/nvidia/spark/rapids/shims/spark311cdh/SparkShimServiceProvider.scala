@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark311cdh
 
-import com.nvidia.spark.rapids.{ClouderaShimVersion, SparkShims, SparkShimVersion}
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.{ClouderaShimVersion, SparkShimVersion}
 
 object SparkShimServiceProvider {
   val VERSION = ClouderaShimVersion(3, 1, 1, "3.1.7270")
@@ -31,9 +30,5 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
 
   def matchesVersion(version: String): Boolean = {
     version.contains(SparkShimServiceProvider.CDH_BASE_VERSION)
-  }
-
-  def buildShim: SparkShims = {
-    SparkShimImpl
   }
 }

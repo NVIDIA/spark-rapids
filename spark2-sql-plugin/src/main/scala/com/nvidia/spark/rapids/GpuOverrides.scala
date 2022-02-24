@@ -1397,7 +1397,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         override def shouldFallbackOnAnsiTimestamp: Boolean = false
-          // ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+          // SparkShimImpl.shouldFallbackOnAnsiTimestamp
       }),
     expr[UnixTimestamp](
       "Returns the UNIX timestamp of current or specified time",
@@ -1410,7 +1410,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
         override def shouldFallbackOnAnsiTimestamp: Boolean = false
-          // ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+          // SparkShimImpl.shouldFallbackOnAnsiTimestamp
 
       }),
     expr[Hour](
@@ -2865,8 +2865,8 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r) {}
     ),
-    // ShimLoader.getSparkShims.aqeShuffleReaderExec,
-    // ShimLoader.getSparkShims.neverReplaceShowCurrentNamespaceCommand,
+    // SparkShimImpl.aqeShuffleReaderExec,
+    // SparkShimImpl.neverReplaceShowCurrentNamespaceCommand,
     neverReplaceExec[ExecutedCommandExec]("Table metadata operation")
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
@@ -2955,7 +2955,7 @@ object GpuOverrides extends Logging {
       // case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
       case re: ReusedExchangeExec => prepareExplainOnly(re.child)
       // case aqe: AdaptiveSparkPlanExec =>
-      //   prepareExplainOnly(ShimLoader.getSparkShims.getAdaptiveInputPlan(aqe))
+      //   prepareExplainOnly(SparkShimImpl.getAdaptiveInputPlan(aqe))
       case sub: SubqueryExec => prepareExplainOnly(sub.child)
     }
     planAfter

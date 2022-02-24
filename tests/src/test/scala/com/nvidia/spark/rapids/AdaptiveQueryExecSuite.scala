@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
@@ -88,7 +90,7 @@ class AdaptiveQueryExecSuite
   }
 
   private def findReusedExchange(plan: SparkPlan): Seq[ReusedExchangeExec] = {
-    collectWithSubqueries(plan)(ShimLoader.getSparkShims.reusedExchangeExecPfn)
+    collectWithSubqueries(plan)(SparkShimImpl.reusedExchangeExecPfn)
   }
 
   test("get row counts from executed shuffle query stages") {
@@ -350,7 +352,7 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[AdaptiveSparkPlanExec])
           .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      if (ShimLoader.getSparkShims.supportsColumnarAdaptivePlans) {
+      if (SparkShimImpl.supportsColumnarAdaptivePlans) {
         // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
         // support columnar adaptive plans
         assert(adaptiveSparkPlanExec

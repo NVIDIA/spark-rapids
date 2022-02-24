@@ -31,7 +31,4 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
     SparkShimServiceProvider.VERSIONNAMES.contains(version)
   }
 
-  def buildShim: SparkShims = {
-    SparkShimImpl
-  }
 }

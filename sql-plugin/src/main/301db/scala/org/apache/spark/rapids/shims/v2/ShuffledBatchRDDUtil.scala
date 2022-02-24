@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, SparkEnv, TaskContext}
 import org.apache.spark.shuffle.ShuffleReader
@@ -57,7 +57,7 @@ object ShuffledBatchRDDUtil {
       dependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
       sqlMetricsReporter: SQLShuffleReadMetricsReporter):
   (ShuffleReader[Nothing, Nothing], Long) = {
-    val shim = ShimLoader.getSparkShims
+    val shim = SparkShimImpl
     split.asInstanceOf[ShuffledBatchRDDPartition].spec match {
       case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
         val reader = SparkEnv.get.shuffleManager.getReader(

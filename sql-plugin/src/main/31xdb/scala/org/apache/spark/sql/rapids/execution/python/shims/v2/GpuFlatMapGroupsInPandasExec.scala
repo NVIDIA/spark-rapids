@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.execution.python.shims.v2
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -95,7 +96,7 @@ case class GpuFlatMapGroupsInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(groupingAttributes.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
+    Seq(groupingAttributes.map(SparkShimImpl.sortOrder(_, Ascending)))
 
   private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
 

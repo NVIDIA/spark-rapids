@@ -31,6 +31,7 @@ import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 import java.util
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -1242,7 +1243,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
             // at least a single block
             val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
             val outputFile: OutputFile = new ByteArrayOutputFile(stream)
-            conf.setConfString(ShimLoader.getSparkShims.parquetRebaseWriteKey,
+            conf.setConfString(SparkShimImpl.parquetRebaseWriteKey,
               LegacyBehaviorPolicy.CORRECTED.toString)
             val recordWriter = SQLConf.withExistingConf(conf) {
               parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
@@ -1422,7 +1423,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     hadoopConf.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
     hadoopConf.setBoolean(SQLConf.CASE_SENSITIVE.key, false)
 
-    hadoopConf.set(ShimLoader.getSparkShims.parquetRebaseWriteKey,
+    hadoopConf.set(SparkShimImpl.parquetRebaseWriteKey,
       LegacyBehaviorPolicy.CORRECTED.toString)
 
     hadoopConf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,

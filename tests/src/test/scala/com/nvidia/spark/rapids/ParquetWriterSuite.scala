@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl 
 import java.io.File
 import java.nio.charset.StandardCharsets
-
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
@@ -150,7 +150,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       try {
         spark.sql("CREATE TABLE t(id STRING) USING PARQUET")
         val df = spark.sql("INSERT INTO TABLE t SELECT 'abc'")
-        val insert = ShimLoader.getSparkShims.findOperators(df.queryExecution.executedPlan,
+        val insert = SparkShimImpl.findOperators(df.queryExecution.executedPlan,
           _.isInstanceOf[GpuDataWritingCommandExec]).head
           .asInstanceOf[GpuDataWritingCommandExec]
         assert(insert.metrics.contains(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME))

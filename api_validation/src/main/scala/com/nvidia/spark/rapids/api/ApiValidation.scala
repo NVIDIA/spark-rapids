@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import scala.reflect.api
 import scala.reflect.runtime.universe._
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.internal.Logging
 
@@ -70,7 +71,7 @@ object ApiValidation extends Logging {
     var printNewline = false
 
     val sparkToShimMap = Map("3.0.1" -> "spark301", "3.1.1" -> "spark311")
-    val sparkVersion = ShimLoader.getSparkShims.getSparkShimVersion.toString
+    val sparkVersion = SparkShimImpl.getSparkShimVersion.toString
     val shimVersion = sparkToShimMap(sparkVersion)
 
     gpuKeys.foreach { e =>

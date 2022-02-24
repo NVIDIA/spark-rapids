@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import java.sql.Timestamp
 import java.time.DateTimeException
 
 import scala.util.Random
+
+import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -789,7 +791,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
 
   private def assertContainsAnsiCast(df: DataFrame, expected: Int = 1): DataFrame = {
-    val projections = ShimLoader.getSparkShims.findOperators(df.queryExecution.executedPlan, {
+    val projections = SparkShimImpl.findOperators(df.queryExecution.executedPlan, {
       case _: ProjectExec | _: GpuProjectExec => true
       case _ => false
     })
