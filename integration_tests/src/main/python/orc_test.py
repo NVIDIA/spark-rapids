@@ -488,45 +488,53 @@ def test_orc_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_li
             lambda spark : spark.read.orc([first_data_path, second_data_path, third_data_path]),
             conf=all_confs)
 
-conf_for_orc_aggregate_pushdown = {
-    "spark.sql.orc.aggregatePushdown": "true", 
-    "spark.sql.sources.useV1SourceList": ""
-}
-
 @pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
-@allow_non_gpu(any = True)
-def test_orc_scan_with_aggregation_pushdown_fallback(spark_tmp_path):
+@pytest.mark.parametrize('pushdown_enabled', ['true', 'false'])
+@pytest.mark.parametrize('col_partition', ['true', 'false'])
+@pytest.mark.parametrize('aggregate', ['Count', 'Max', 'Min'])
+def test_orc_scan_with_aggregate_pushdown(spark_tmp_path, pushdown_enabled,
+                                          col_partition, aggregate):
     """
-    The aggregation will be pushed down in this test, so we should fallback to CPU
+    Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+    Note that Min/Max don't push down partition column. Only Count does.
+    This test checks that GPU falls back to CPU when aggregates are pushed down on ORC.
+    When the spark configuration is enabled we check the following:
+    ----------------------------------------------+
+    | Aggregate | Partition Column | FallBack CPU |
+    +-----------+------------------+--------------+
+    |   COUNT   |        Y         |      Y       |
+    |    MIN    |        Y         |      N       |
+    |    MAX    |        Y         |      N       |
+    |   COUNT   |        N         |      Y       |
+    |    MIN    |        N         |      Y       |
+    |    MAX    |        N         |      Y       |
     """
+    def do_orc_scan(spark, path, agg):
+        df = spark.read.orc(path).selectExpr('{}(p)'.format(agg))
+        return df
+
     data_path = spark_tmp_path + '/pushdown.orc'
-
-    def do_orc_scan(spark):
-        df = spark.read.orc(data_path).selectExpr("count(p)")
-        return df
+    orc_aggregate_push_down_conf = {"spark.sql.orc.aggregatePushdown": pushdown_enabled,
+                                    "spark.sql.sources.useV1SourceList": ""}
+    should_fallback = pushdown_enabled == 'true' and (aggregate == 'Count' or col_partition == 'false')
     
-    with_cpu_session(lambda spark : spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").orc(data_path))
-
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        do_orc_scan,
-        exist_classes= "BatchScanExec",
-        non_exist_classes= "GpuBatchScanExec",
-        conf = conf_for_orc_aggregate_pushdown)
-
-@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
-def test_orc_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
-    """
-    No aggregation will be pushed down in this test, so we should not fallback to CPU
-    """
-    data_path = spark_tmp_path + "/pushdown.orc"
-
-    def do_orc_scan(spark):
-        df = spark.read.orc(data_path).selectExpr("Max(p)")
-        return df
-
-    with_cpu_session(lambda spark : spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").orc(data_path))
-
-    assert_gpu_and_cpu_are_equal_collect(
-        do_orc_scan,
-        conf_for_orc_aggregate_pushdown
-    )
+    if col_partition == 'true':
+        with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .partitionBy("p")
+                                .mode("overwrite")
+                                .orc(data_path))
+    else:
+        with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .mode("overwrite")
+                                .orc(data_path))
+    
+    if should_fallback:
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: do_orc_scan(spark, data_path, aggregate),
+            exist_classes="BatchScanExec",
+            non_exist_classes="GpuBatchScanExec",
+            conf=orc_aggregate_push_down_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: do_orc_scan(spark, data_path, aggregate),
+            conf=orc_aggregate_push_down_conf)
