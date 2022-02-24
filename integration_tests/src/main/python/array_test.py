@@ -30,7 +30,7 @@ array_zero_index_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
 array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
     special_cases=[(-25, 100), (-20, 100), (-10, 100), (-4, 100), (-3, 100), (-2, 100), (-1, 100), (None, 100)])
 
-array_all_null_gen =  ArrayGen(int_gen, all_null=True)
+array_all_null_gen = ArrayGen(int_gen, all_null=True)
 array_item_test_gens = array_gens_sample + [array_of_map_gen, array_all_null_gen]
 
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
