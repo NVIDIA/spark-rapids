@@ -21,7 +21,7 @@ import java.time.DateTimeException
 
 import scala.util.Random
 
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}

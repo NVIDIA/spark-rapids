@@ -40,7 +40,7 @@ Upstream base classes we derive from might be incompatible in the sense that one
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
 between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes directly we 
-inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.v2.ShimExpression` that
+inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
 issue as you can see e.g., comparing TreeNode:
 1. [ShimExpression For 3.0.x and 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/post320-treenode/scala/com/nvidia/spark/rapids/shims/v2/TreeNode.scala#L23)

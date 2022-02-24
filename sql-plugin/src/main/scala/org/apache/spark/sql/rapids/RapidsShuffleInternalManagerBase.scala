@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
@@ -30,7 +30,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.shims.v2.{GpuShuffleBlockResolver, RapidsShuffleInternalManager}
+import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleInternalManager}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 

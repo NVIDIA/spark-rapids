@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.net.URI
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._

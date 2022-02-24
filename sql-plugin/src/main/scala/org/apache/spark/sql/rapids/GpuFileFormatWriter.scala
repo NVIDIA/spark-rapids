@@ -21,7 +21,7 @@ import java.util.{Date, UUID}
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._

@@ -18,7 +18,7 @@
 package org.apache.spark.sql.catalyst.expressions.rapids
 
 import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
 import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}

@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.GpuExec
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 

@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.GpuColumnVector
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.types.StructType

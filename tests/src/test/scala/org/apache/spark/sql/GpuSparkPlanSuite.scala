@@ -17,7 +17,7 @@
 package org.apache.spark.sql
 
 import com.nvidia.spark.rapids.SparkSessionHolder
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf

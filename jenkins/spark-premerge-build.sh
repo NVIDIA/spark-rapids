@@ -95,7 +95,7 @@ rapids_shuffle_smoke_test() {
       PYSP_TEST_spark_cores_max=2 \
       PYSP_TEST_spark_executor_cores=1 \
       SPARK_SUBMIT_FLAGS="--conf spark.executorEnv.UCX_ERROR_SIGNALS=" \
-      PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.shims.v2.RapidsShuffleManager \
+      PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.shims.RapidsShuffleManager \
       PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
       PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
       PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \

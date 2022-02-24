@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl 
+import com.nvidia.spark.rapids.shims.SparkShimImpl 
 import java.io.File
 import java.nio.charset.StandardCharsets
 import org.apache.hadoop.fs.Path

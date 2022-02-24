@@ -21,7 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{GpuHashPartitioning, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD

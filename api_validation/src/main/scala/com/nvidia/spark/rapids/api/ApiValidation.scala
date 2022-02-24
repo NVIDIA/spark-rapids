@@ -20,7 +20,7 @@ import scala.reflect.api
 import scala.reflect.runtime.universe._
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.SparkShimImpl
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
 

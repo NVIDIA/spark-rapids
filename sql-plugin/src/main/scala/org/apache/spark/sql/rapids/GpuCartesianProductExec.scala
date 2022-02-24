@@ -23,7 +23,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NoopMetric, SpillCallback}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
+import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
