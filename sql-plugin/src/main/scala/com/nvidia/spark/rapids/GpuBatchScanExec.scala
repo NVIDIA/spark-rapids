@@ -39,6 +39,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -211,6 +212,12 @@ object GpuCSVScan {
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
     if (readSchema.map(_.dataType).contains(DateType)) {
+      if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+        // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
+        // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
+        // so we fall back to CPU
+        meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
+      }
       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
         DateUtils.tagAndGetCudfFormat(meta, dateFormat, parseString = true)
       }
