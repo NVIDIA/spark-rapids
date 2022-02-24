@@ -658,8 +658,14 @@ trait GpuHashJoin extends GpuExec {
     }
 
     override def next(): ColumnarBatch = {
-      withResource(stream.next()) { leftColumnarBatch =>
-        existenceJoinNextBatch(leftColumnarBatch)
+      try {
+        withResource(stream.next()) { leftColumnarBatch =>
+          existenceJoinNextBatch(leftColumnarBatch)
+        }
+      } catch {
+        case t: Throwable =>
+          close()
+          throw t
       }
     }
 

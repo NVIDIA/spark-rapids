@@ -786,7 +786,8 @@ def test_struct_self_join(spark_tmp_table_factory):
     # from being executed on GPU
     pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'))
 ])
-def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_factory):
+@pytest.mark.parametrize('conditionalJoin', [False, True])
+def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
     def do_join(spark):
@@ -796,6 +797,10 @@ def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_fact
         # left-hand side rows
         lhs_upper_bound = 10
         lhs_data = list((f"left_{v}", v * 10, v * 100) for v in range(2, lhs_upper_bound))
+        # duplicate without a match
+        lhs_data.append(('left_1', 10, 100))
+        # duplicate with a match
+        lhs_data.append(('left_2', 20, 200))
         lhs_data.append(('left_null', None, None))
         df_left = spark.createDataFrame(lhs_data)
         df_left.createOrReplaceTempView(leftTable)
@@ -808,16 +813,20 @@ def test_existence_join(numComplementsToExists, aqeEnabled, spark_tmp_table_fact
 
         df_right = spark.createDataFrame(rhs_data_with_dupes)
         df_right.createOrReplaceTempView(rightTable)
-
+        cond = "<=" if conditionalJoin else "="
         res = spark.sql((
             "select * "
             "from {} as l "
             f"where l._2 >= {10 * (lhs_upper_bound - numComplementsToExists)}"
-            "   or exists (select * from {} as r where r._2 = l._2 AND r._3 = l._3)"
-        ).format(leftTable, rightTable))
+            "   or exists (select * from {} as r where r._2 = l._2 AND r._3 {} l._3)"
+        ).format(leftTable, rightTable, cond))
         return res
+    if conditionalJoin:
+        existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\), \(.+ <= .+\)"
+    else:
+        existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\)"
 
-    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r"ExistenceJoin\(exists#[0-9]+\)",
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, existenceJoinRegex,
         conf={
             "spark.sql.adaptive.enabled": aqeEnabled,
         })
