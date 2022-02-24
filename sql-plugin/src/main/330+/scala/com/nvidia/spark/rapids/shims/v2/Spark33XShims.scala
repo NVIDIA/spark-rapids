@@ -172,7 +172,7 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
 
   // 330+ supports DAYTIME interval types
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
+    val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[Coalesce](
         "Returns the first non-null argument if exists. Otherwise, null",
