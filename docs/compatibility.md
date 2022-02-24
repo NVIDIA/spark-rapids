@@ -322,16 +322,13 @@ Only a limited set of formats are supported when parsing dates.
 * `"MM/yyyy"`
 * `"MM-dd-yyyy"`
 * `"MM/dd/yyyy"`
+* `"dd-MM-yyyy"`
+* `"dd/MM/yyyy"`
 
 The reality is that all of these formats are supported at the same time. The plugin will only
 disable itself if you set a format that it does not support.
 
 As a workaround you can parse the column as a timestamp and then cast it to a date.
-
-Invalid dates in Spark, values that have the correct format, but the numbers produce invalid dates,
-can result in an exception by default, and how they are parsed can be controlled through a config.
-The RAPIDS Accelerator does not support any of this and will produce an incorrect date. Typically,
-one that overflowed.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
