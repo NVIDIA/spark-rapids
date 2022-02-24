@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_128_gens + array_gens_sample + map_gens_sample + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + array_gens_sample + map_gens_sample + struct_gens_sample, ids=idfn)
 def test_simple_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             # We need some processing after the limit to avoid a CollectLimitExec

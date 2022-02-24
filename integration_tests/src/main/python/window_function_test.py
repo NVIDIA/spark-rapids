@@ -119,14 +119,16 @@ _grpkey_long_with_nulls_with_overflow = [
     ('b', LongGen(nullable=True))]
 
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
 
 running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
-        DecimalGen(38, 4),
+        DecimalGen(precision=38, scale=4),
         StructGen(children=[
             ['child_int', IntegerGen()],
             ['child_time', DateGen()],
@@ -138,7 +140,7 @@ all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
@@ -150,7 +152,7 @@ def test_decimal128_count_window(data_gen):
         'from window_agg_table')
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
@@ -162,7 +164,7 @@ def test_decimal128_count_window_no_part(data_gen):
         'from window_agg_table')
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
@@ -174,7 +176,7 @@ def test_decimal_sum_window(data_gen):
         'from window_agg_table')
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
@@ -187,7 +189,7 @@ def test_decimal_sum_window_no_part(data_gen):
 
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_running_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
@@ -200,7 +202,7 @@ def test_decimal_running_sum_window(data_gen):
         conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_running_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
@@ -367,7 +369,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
-@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_32bit], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
@@ -423,7 +425,7 @@ def test_running_float_sum_no_part(batch_size):
 # to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 @pytest.mark.parametrize('data_gen',
-                         all_basic_gens_no_nans + [decimal_gen_scale_precision, decimal_gen_38_10],
+                         all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit],
                          ids=meta_idfn('data:'))
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
@@ -452,7 +454,7 @@ def test_window_running_rank_no_part(data_gen):
 # but small batch sizes can make sort very slow, so do the final order by locally
 # TODO: add test data on DECIMAL_128 after we support DECIMAL_128 as PartitionSpec
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_scale_precision], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit], ids=idfn)
 def test_window_running_rank(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -478,7 +480,7 @@ def test_window_running_rank(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
-        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_scale_precision]], ids=idfn)
+        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
@@ -797,15 +799,15 @@ _gen_data_for_collect_list = [
     ('c_float', FloatGen()),
     ('c_double', DoubleGen()),
     ('c_decimal_32', DecimalGen(precision=8, scale=3)),
-    ('c_decimal_64', decimal_gen_12_2),
-    ('c_decimal_128', decimal_gen_36_5),
+    ('c_decimal_64', decimal_gen_64bit),
+    ('c_decimal_128', decimal_gen_128bit),
     ('c_struct', StructGen(children=[
         ['child_int', IntegerGen()],
         ['child_time', DateGen()],
         ['child_string', StringGen()],
         ['child_decimal_32', DecimalGen(precision=8, scale=3)],
-        ['child_decimal_64', decimal_gen_12_2],
-        ['child_decimal_128', decimal_gen_36_5]])),
+        ['child_decimal_64', decimal_gen_64bit],
+        ['child_decimal_128', decimal_gen_128bit]])),
     ('c_array', ArrayGen(int_gen)),
     ('c_map', simple_string_to_string_map_gen)]
 
@@ -909,8 +911,8 @@ _gen_data_for_collect_set = [
     ('c_float', RepeatSeqGen(FloatGen(), length=15)),
     ('c_double', RepeatSeqGen(DoubleGen(), length=15)),
     ('c_decimal_32', RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15)),
-    ('c_decimal_64', RepeatSeqGen(decimal_gen_12_2, length=15)),
-    ('c_decimal_128', RepeatSeqGen(decimal_gen_36_5, length=15)),
+    ('c_decimal_64', RepeatSeqGen(decimal_gen_64bit, length=15)),
+    ('c_decimal_128', RepeatSeqGen(decimal_gen_128bit, length=15)),
     # case to verify the NAN_UNEQUAL strategy
     ('c_fp_nan', RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5)),
 ]

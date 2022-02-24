@@ -23,10 +23,12 @@ from marks import incompat, allow_non_gpu, ignore_order
 
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
-decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
-                DecimalGen(precision=7, scale=-2),
-                decimal_gen_same_scale_precision, decimal_gen_64bit]
-decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
+
+# cache does not work with 128-bit decimals, see https://github.com/NVIDIA/spark-rapids/issues/4826
+_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit]
+_cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_null + _cache_decimal_gens]
+
+decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(_cache_decimal_gens)])
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
@@ -54,76 +56,33 @@ double_special_cases = [
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
            pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
-           BooleanGen(), DateGen(), TimestampGen()] + decimal_gens
+           BooleanGen(), DateGen(), TimestampGen()] + _cache_decimal_gens
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
-def test_cache_join(data_gen, join_type, enable_vectorized_conf):
+def test_cache_join(data_gen, enable_vectorized_conf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
-        cached = left.join(right, left.a == right.r_a, join_type).cache()
+        cached = left.join(right, left.a == right.r_a, 'Inner').cache()
         cached.count() # populates cache
         return cached
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 # We are OK running everything on CPU until we complete 'https://github.com/NVIDIA/spark-rapids/issues/360'
 # because we have an explicit check in our code that disallows InMemoryTableScan to have anything other than
 # AttributeReference
 @allow_non_gpu(any=True)
 @ignore_order
-def test_cached_join_filter(data_gen, join_type, enable_vectorized_conf):
+def test_cached_join_filter(data_gen, enable_vectorized_conf):
     data = data_gen
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
-        cached = left.join(right, left.a == right.r_a, join_type).cache()
+        cached = left.join(right, left.a == right.r_a, 'Inner').cache()
         cached.count() #populates the cache
         return cached.filter("a is not null")
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
-
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@ignore_order
-def test_cache_broadcast_hash_join(data_gen, join_type, enable_vectorized_conf):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 500)
-        cached = left.join(right.hint("broadcast"), left.a == right.r_a, join_type).cache()
-        cached.count()
-        return cached
-
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
-
-shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
-                 "spark.sql.join.preferSortMergeJoin": "false",
-                 "spark.sql.shuffle.partitions": "2"}
-
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@ignore_order
-def test_cache_shuffled_hash_join(data_gen, join_type, enable_vectorized_conf):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 50, 500)
-        cached = left.join(right, left.a == right.r_a, join_type).cache()
-        cached.count()
-        return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
-
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@ignore_order
-def test_cache_broadcast_nested_loop_join(data_gen, join_type, enable_vectorized_conf):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 50, 25)
-        cached = left.crossJoin(right.hint("broadcast")).cache()
-        cached.count()
-        return cached
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -144,7 +103,7 @@ def test_cache_expand_exec(data_gen, enable_vectorized_conf):
                                           StructGen([['child0', StringGen()],
                                                      ['child1',
                                                       StructGen([['child0', IntegerGen()]])]])),
-                                      decimal_struct_gen] + single_level_array_gens_no_null + all_gen, ids=idfn)
+                                      decimal_struct_gen] + _cache_single_array_gens_no_null + all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, enable_vectorized_conf):
@@ -185,8 +144,8 @@ def test_cache_diff_req_order(spark_tmp_path):
                                                       StructGen([['child0', IntegerGen()]])]])),
                                      pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
                                      pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
-                                     BooleanGen(), DateGen(), TimestampGen(), decimal_gen_default, decimal_gen_scale_precision,
-                                     decimal_gen_same_scale_precision, decimal_gen_64bit] + single_level_array_gens_no_null, ids=idfn)
+                                     BooleanGen(), DateGen(), TimestampGen(), decimal_gen_32bit, decimal_gen_64bit,
+                                     decimal_gen_128bit] + _cache_single_array_gens_no_null, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
@@ -217,7 +176,7 @@ def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
                                       ArrayGen(
                                           StructGen([['child0', StringGen()],
                                                      ['child1',
-                                                      StructGen([['child0', IntegerGen()]])]]))] + single_level_array_gens_no_null + all_gen, ids=idfn)
+                                                      StructGen([['child0', IntegerGen()]])]]))] + _cache_single_array_gens_no_null + all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
     def func(spark):
@@ -318,7 +277,7 @@ def test_cache_multi_batch(data_gen, with_x_session, enable_vectorized_conf, bat
     test_conf = copy_and_update(enable_vectorized_conf, batch_size)
     function_to_test_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, test_conf)
 
-@pytest.mark.parametrize('data_gen', all_basic_map_gens + single_level_array_gens_no_null, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_map_gens + _cache_single_array_gens_no_null, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized', enable_vectorized_confs, ids=idfn)
 def test_cache_map_and_array(data_gen, enable_vectorized):
     def helper(spark):

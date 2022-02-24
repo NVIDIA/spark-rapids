@@ -1492,8 +1492,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmPool: String = {
     val pool = get(RMM_POOL)
-    if ("ASYNC".equalsIgnoreCase(pool) && Cuda.getDriverVersion < 11020) {
-      logWarning("CUDA driver does not support the ASYNC allocator, falling back to ARENA")
+    if ("ASYNC".equalsIgnoreCase(pool) &&
+        (Cuda.getRuntimeVersion < 11020 || Cuda.getDriverVersion < 11020)) {
+      logWarning("CUDA runtime/driver does not support the ASYNC allocator, falling back to ARENA")
       "ARENA"
     } else {
       pool

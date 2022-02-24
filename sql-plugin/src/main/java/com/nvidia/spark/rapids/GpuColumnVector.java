@@ -488,8 +488,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     } else if (type instanceof DecimalType) {
       // Decimal supportable check has been conducted in the GPU plan overriding stage.
       // So, we don't have to handle decimal-supportable problem at here.
-      DecimalType dt = (DecimalType) type;
-      return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
+      return DecimalUtil.createCudfDecimal((DecimalType) type);
     } else if (type instanceof GpuUnsignedIntegerType) {
       return DType.UINT32;
     } else if (type instanceof GpuUnsignedLongType) {

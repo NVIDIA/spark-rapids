@@ -31,13 +31,13 @@ array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
     special_cases=[(-25, 100), (-20, 100), (-10, 100), (-4, 100), (-3, 100), (-2, 100), (-1, 100), (None, 100)])
 
 array_all_null_gen =  ArrayGen(int_gen, all_null=True)
-array_item_test_gens = array_gens_sample_with_decimal128 + [array_of_map_gen, array_all_null_gen]
+array_item_test_gens = array_gens_sample + [array_of_map_gen, array_all_null_gen]
 
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 def test_array_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : two_col_df(spark, data_gen, array_index_gen).selectExpr(
+        lambda spark: two_col_df(spark, data_gen, array_index_gen).selectExpr(
             'a[b]',
             'a[0]',
             'a[1]',
@@ -47,13 +47,40 @@ def test_array_item(data_gen):
             'a[-1]'))
 
 
+# No need to test this for multiple data types for array. Only one is enough
+@pytest.mark.skipif(is_before_spark_330(), reason="'strictIndexOperator' is introduced from Spark 3.3.0")
+@pytest.mark.parametrize('strict_index_enabled', [True, False])
+@pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
+def test_array_item_with_strict_index(strict_index_enabled, index):
+    # ignore error message until we figure out a way to create a customized
+    # 'SparkArrayIndexOutOfBoundsException' for the case we don't know the exact
+    #  element number of an array or the illegal index value.
+    message = ""
+    if isinstance(index, int):
+        test_df = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index])
+    else:
+        test_df = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr('a[b]')
+
+    test_conf=copy_and_update(
+        ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index_enabled})
+
+    if strict_index_enabled:
+        assert_gpu_and_cpu_error(
+            lambda spark: test_df(spark).collect(),
+            conf=test_conf,
+            error_message=message)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            test_df,
+            conf=test_conf)
+
+
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
-@pytest.mark.skipif(is_before_spark_311(), reason="Before Spark 3.1.1 with ANSI mode, returns nulls for invalid index")
+@pytest.mark.skipif(is_before_spark_311() or not is_before_spark_330(),
+                    reason="Only in Spark [3.1.1, 3.3.0) with ANSI mode, it throws exceptions for invalid index")
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_ansi_fail_invalid_index(index):
-    # ignore error message until we figure out a way to create a customized 'SparkArrayIndexOutOfBoundsException' for
-    # the case we don't know the exact element number of an array or the illegal index value.
-    message = ""
+    message = "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:
@@ -64,7 +91,8 @@ def test_array_item_ansi_fail_invalid_index(index):
         error_message=message)
 
 
-@pytest.mark.skipif(not is_before_spark_311(), reason="Spark 3.1.1+ with ANSI mode, throws an exception for invalid index")
+@pytest.mark.skipif(not is_before_spark_311(),
+                    reason="Only before Spark 3.1.1 with ANSI mode, it returns nulls for invalid index")
 def test_array_item_ansi_not_fail_invalid_index():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, ArrayGen(int_gen), array_neg_index_gen, array_out_index_gen).selectExpr(
@@ -85,10 +113,10 @@ def test_array_item_ansi_not_fail_all_null_data():
         conf=ansi_enabled_conf)
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens +
-                         [decimal_gen_default, decimal_gen_scale_precision] + decimal_128_gens_no_neg
-                         + [StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
-                            StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [
+                         decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit,
+                         StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
+                         StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
 def test_make_array(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     assert_gpu_and_cpu_are_equal_collect(
@@ -170,7 +198,8 @@ def test_array_element_at(data_gen):
 
 
 # No need tests for multiple data types for list data. Only one is enough.
-@pytest.mark.skipif(is_before_spark_311(), reason="Before Spark 3.1.1 with ANSI mode, returns nulls for invalid index")
+@pytest.mark.skipif(is_before_spark_311(),
+                    reason="Only for Spark 3.1.1+ with ANSI mode, it throws an exception for invalid index")
 @pytest.mark.parametrize('index', [100, array_out_index_gen], ids=idfn)
 def test_array_element_at_ansi_fail_invalid_index(index):
     # ignore the error message
@@ -181,13 +210,16 @@ def test_array_element_at_ansi_fail_invalid_index(index):
     else:
         test_func = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr(
             'element_at(a, b)').collect()
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
         test_func,
-        conf=ansi_enabled_conf,
+        conf=test_conf,
         error_message=message)
 
 
-@pytest.mark.skipif(not is_before_spark_311(), reason="Spark 3.1.1+ with ANSI mode, throws an exception for invalid index")
+@pytest.mark.skipif(not is_before_spark_311(),
+                    reason="Only before Spark 3.1.1 with ANSI mode, it returns nulls for invalid index")
 def test_array_element_at_ansi_not_fail_invalid_index():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, ArrayGen(int_gen), array_out_index_gen).selectExpr(
@@ -222,7 +254,7 @@ def test_array_element_at_zero_index_fail(index, ansi_enabled):
         error_message=message)
 
 
-@pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_transform(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
@@ -254,7 +286,7 @@ def test_array_transform(data_gen):
 
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens + decimal_128_gens
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
@@ -264,7 +296,7 @@ def test_array_min(data_gen):
             conf=no_nans_conf)
 
 
-@pytest.mark.parametrize('data_gen', decimal_128_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_array_concat_decimal(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : debug_df(unary_op_df(spark, ArrayGen(data_gen)).selectExpr(

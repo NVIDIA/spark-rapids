@@ -30,9 +30,8 @@ def test_struct_scalar_project():
     StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
     StructGen([["first", double_gen], ["second", date_gen], ["third", timestamp_gen]]),
     StructGen([["first", string_gen], ["second", ArrayGen(byte_gen)], ["third", simple_string_to_string_map_gen]]),
-    StructGen([["first", decimal_gen_default], ["second", decimal_gen_scale_precision], ["third", decimal_gen_same_scale_precision]]),
-    StructGen([["first", decimal_gen_20_2], ["second", decimal_gen_30_2], ["third", decimal_gen_36_5]]),
-    StructGen([["first", decimal_gen_20_2], ["second", decimal_gen_30_2], ["third", decimal_gen_36_neg5]])], ids=idfn)
+    StructGen([["first", decimal_gen_64bit], ["second", decimal_gen_32bit], ["third", decimal_gen_32bit]]),
+    StructGen([["first", decimal_gen_128bit], ["second", decimal_gen_128bit], ["third", decimal_gen_128bit]])], ids=idfn)
 def test_struct_get_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -41,8 +40,8 @@ def test_struct_get_item(data_gen):
                 'a.third'))
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default,
-                                                       decimal_gen_scale_precision] + decimal_128_gens + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + [
+    null_gen] + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_make_struct(data_gen):
     # Spark has no good way to create a map literal without the map function
     # so we are inserting one.
