@@ -1358,17 +1358,7 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
               }
           }
         } else {
-          val str = utf8Str.toString
-          isRegExp = RegexParser.isRegExpString(str)
-          if (isRegExp) {
-            try {
-              pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str)
-            } catch {
-              case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
-            }
-          } else {
-            pattern = str
-          }
+          pattern = utf8Str.toString
         }
       }
     }

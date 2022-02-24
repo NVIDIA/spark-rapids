@@ -437,9 +437,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split - optimized") {
-    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", "c\\|d")
+    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d")
     val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
-        "abc|def")
+        "abc,def", "abc;def", "abcdef", "abc|def")
     for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
       assertTranspileToSplittableString(patterns)
       doStringSplitTest(patterns, data, limit)
@@ -666,8 +666,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => s.split(pattern, limit))
   }
 
-  private def gpuSplit(pattern: String, input: Seq[String],
-                       limit: Int, isRegex: Boolean): Seq[Array[String]] = {
+  private def gpuSplit(
+      pattern: String,
+      input: Seq[String],
+      limit: Int,
+      isRegex: Boolean): Seq[Array[String]] = {
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       withResource(cv.stringSplitRecord(pattern, limit, isRegex)) { x =>
         withResource(x.copyToHost()) { hcv =>
