@@ -2654,6 +2654,13 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMapEntries(child)
       }),
+    expr[StringToMap](
+      "Creates a map after splitting the input string into pairs of key-value strings",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)),
+          ParamCheck("keyValueDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)))),
+      (in, conf, p, r) => new GpuStringToMapMeta(in, conf, p, r)),
     expr[ArrayMin](
       "Returns the minimum value in the array",
       ExprChecks.unaryProject(

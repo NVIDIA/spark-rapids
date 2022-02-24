@@ -12207,6 +12207,95 @@ are limited.
 <th>UDT</th>
 </tr>
 <tr>
+<td rowSpan="4">StringToMap</td>
+<td rowSpan="4">`str_to_map`</td>
+<td rowSpan="4">Creates a map after splitting the input string into pairs of key-value strings</td>
+<td rowSpan="4">None</td>
+<td rowSpan="4">project</td>
+<td>str</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>pairDelim</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>keyValueDelim</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="3">StringTrim</td>
 <td rowSpan="3">`trim`</td>
 <td rowSpan="3">StringTrim operator</td>
@@ -12500,6 +12589,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="4">SubstringIndex</td>
 <td rowSpan="4">`substring_index`</td>
 <td rowSpan="4">substring_index operator</td>
@@ -12587,32 +12702,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="6">Subtract</td>
@@ -12927,6 +13016,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="3">TimeAdd</td>
 <td rowSpan="3"> </td>
 <td rowSpan="3">Adds interval to timestamp</td>
@@ -12993,32 +13108,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="3">TimeSub</td>
@@ -13319,6 +13408,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="3">TransformValues</td>
 <td rowSpan="3">`transform_values`</td>
 <td rowSpan="3">Transform values in a map using a transform function</td>
@@ -13385,32 +13500,6 @@ are limited.
 <td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">UnaryMinus</td>
@@ -13713,6 +13802,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="2">UnscaledValue</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Convert a Decimal to an unscaled long value for some aggregation optimizations</td>
@@ -13758,32 +13873,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="2">Upper</td>
