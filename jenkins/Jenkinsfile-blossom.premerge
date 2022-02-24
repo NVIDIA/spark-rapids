@@ -328,7 +328,7 @@ pipeline {
                                                                       'shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,' +
                                                                       'shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,' +
                                                                       'shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,' +
-                                                                      'shims/spark313/src/main/scala/'
+                                                                      'shims/spark313/src/main/scala/,shims/spark314/src/main/scala/'
                                         ])
                                     } finally {
                                         // Save pytest result and publish to Jenkins at last
