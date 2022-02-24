@@ -22,7 +22,7 @@ import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
-import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
+import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
@@ -365,14 +365,6 @@ object ShimLoader extends Logging {
   //
   // Reflection-based API with Spark to switch the classloader used by the caller
   //
-
-  def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): Any = {
-    val shuffleClassLoader = getShimClassLoader()
-    val shuffleClassName = getRapidsShuffleInternalClass
-    val shuffleClass = shuffleClassLoader.loadClass(shuffleClassName)
-    shuffleClass.getConstructor(classOf[SparkConf], java.lang.Boolean.TYPE)
-        .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
-  }
 
   def newDriverPlugin(): DriverPlugin = {
     newInstanceOf("com.nvidia.spark.rapids.RapidsDriverPlugin")

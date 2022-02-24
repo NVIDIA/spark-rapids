@@ -27,7 +27,6 @@ import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, Rapid
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     extends RapidsShuffleInternalManagerBase(conf, isDriver) {
-
   def getReader[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,
