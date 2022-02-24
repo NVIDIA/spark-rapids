@@ -1342,23 +1342,18 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
         if (utf8Str.numChars() == 0) {
           willNotWorkOnGpu("An empty delimiter pattern is not supported")
         }
-        isRegExp = RegexParser.isRegExpString(utf8Str.toString)
-        if (isRegExp) {
-          val transpiler = new CudfRegexTranspiler(RegexSplitMode)
-          transpiler.transpileToSplittableString(utf8Str.toString) match {
-            case Some(simplified) =>
-              pattern = simplified
-              isRegExp = false
-            case None =>
-              try {
-                pattern = transpiler.transpile(utf8Str.toString)
-              } catch {
-                case e: RegexUnsupportedException =>
-                  willNotWorkOnGpu(e.getMessage)
-              }
-          }
-        } else {
-          pattern = utf8Str.toString
+        val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+        transpiler.transpileToSplittableString(utf8Str.toString) match {
+          case Some(simplified) =>
+            pattern = simplified
+          case None =>
+            try {
+              pattern = transpiler.transpile(utf8Str.toString)
+              isRegExp = true
+            } catch {
+              case e: RegexUnsupportedException =>
+                willNotWorkOnGpu(e.getMessage)
+            }
         }
       }
     }

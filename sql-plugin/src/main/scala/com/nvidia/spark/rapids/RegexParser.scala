@@ -488,8 +488,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
   }
 
   def transpileToSplittableString(pattern: String): Option[String] = {
-    val regex = new RegexParser(pattern).parse()
-    transpileToSplittableString(regex)
+    try {
+      val regex = new RegexParser(pattern).parse()
+      transpileToSplittableString(regex)
+    } catch {
+      // treat as regex if we can't parse it
+      case _: RegexUnsupportedException =>
+        None
+    }
   }
 
   private def isRepetition(e: RegexAST): Boolean = {
