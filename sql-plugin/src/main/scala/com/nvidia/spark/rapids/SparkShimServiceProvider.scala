@@ -20,6 +20,6 @@ package com.nvidia.spark.rapids
  * A Spark version shim layer interface.
  */
 trait SparkShimServiceProvider {
-  def getShimVersion: SparkShimVersion
+  def getShimVersion: ShimVersion
   def matchesVersion(version:String): Boolean
 }
