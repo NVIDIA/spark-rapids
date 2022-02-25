@@ -644,6 +644,8 @@ trait GpuHashJoin extends GpuExec {
     val compiledConditionOpt = boundCondition.map(gpuExpr =>
       use(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
 
+    lazy val rightTab = use(GpuColumnVector.from(builtBatch))
+
     val rightKeysTab = use(
       withResource(GpuProjectExec.project(builtBatch, boundBuildKeys))(GpuColumnVector.from(_)))
 
@@ -680,10 +682,24 @@ trait GpuHashJoin extends GpuExec {
         leftKeys => GpuColumnVector.from(leftKeys))
     }
 
+    private def conditionalBatchLeftSemiJoin(
+      leftColumnarBatch: ColumnarBatch,
+      leftfKeysTab: Table,
+      compiledCondition: CompiledExpression): GatherMap = {
+      withResource(GpuColumnVector.from(leftColumnarBatch))(leftTab =>
+        Table.mixedLeftSemiJoinGatherMap(
+          leftfKeysTab,
+          rightKeysTab,
+          leftTab,
+          rightTab,
+          compiledCondition,
+          if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL))
+    }
+
     private def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
       withResource(leftKeysTable(leftColumnarBatch))(leftKeysTab =>
         compiledConditionOpt.map { compiledCondition =>
-          leftKeysTab.conditionalLeftSemiJoinGatherMap(rightKeysTab, compiledCondition)
+          conditionalBatchLeftSemiJoin(leftColumnarBatch, leftKeysTab, compiledCondition)
         }.getOrElse {
           leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
         })
