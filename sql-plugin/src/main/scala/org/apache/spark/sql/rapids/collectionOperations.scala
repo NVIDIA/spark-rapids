@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -33,7 +34,6 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
-import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
@@ -125,7 +125,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   override def nullable: Boolean = true
 
   @transient
-  private lazy val doElementAtV: (ColumnView, ColumnView) => cudf.ColumnVector =
+  private lazy val doElementAtV: (ColumnVector, ColumnVector) => cudf.ColumnVector =
     left.dataType match {
       case _: ArrayType =>
         (array, indices) => {
@@ -134,14 +134,16 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
             // array or indices are skipped during this computation. Then no exception will be
             // raised if no valid entry (An entry is valid when both the array row and its index
             // are not null), the same with what Spark does.
-            val hasLargerIndices = withResource(indices.abs()) { absIndices =>
-              withResource(array.countElements()) { numElements =>
+            withResource(array.countElements()) { numElements =>
+              val hasLargerIndices = withResource(indices.abs()) { absIndices =>
                 absIndices.greaterThan(numElements)
               }
-            }
-            withResource(hasLargerIndices) { _ =>
-              if(BoolUtils.isAnyValidTrue(hasLargerIndices)) {
-                throw new ArrayIndexOutOfBoundsException("Some indices are out of bound")
+              withResource(hasLargerIndices) { _ =>
+                if (BoolUtils.isAnyValidTrue(hasLargerIndices)) {
+                  val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndices,
+                    indices, numElements)
+                  throw RapidsErrorUtils.invalidArrayIndexError(index, numElem, true)
+                }
               }
             }
           } // end of "if (failOnError)"
@@ -151,7 +153,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
             // No exception should be raised if no valid entry (An entry is valid when both
             // the array row and its index are not null), the same with what Spark does.
             if (array.getRowCount != array.getNullCount && indices.contains(zeroS)) {
-              throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+              throw RapidsErrorUtils.sqlArrayIndexNotStartAtOneError()
             }
             val zeroBasedIndices = withResource(Scalar.fromInt(1)) { oneS =>
               indices.sub(oneS, indices.getType)
@@ -198,14 +200,14 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 withResource(numElementsCV.min) { minScalar =>
                   val minNumElements = minScalar.getInt
                   if (math.abs(index) > minNumElements) {
-                    RapidsErrorUtils.throwArrayIndexOutOfBoundsException(index, minNumElements)
+                    throw RapidsErrorUtils.invalidArrayIndexError(index, minNumElements, true)
                   }
                 }
               }
             }
             // convert to zero-based index if it is positive
             val idx = if (index == 0) {
-              throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+              throw RapidsErrorUtils.sqlArrayIndexNotStartAtOneError()
             } else if (index > 0) {
               index - 1
             } else {
@@ -223,8 +225,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 if (!exist.isValid || exist.getBoolean) {
                   map.getMapValue(key)
                 } else {
-                  RapidsErrorUtils.throwInvalidElementAtIndexError(
-                    keyS.getValue.asInstanceOf[UTF8String].toString, true)
+                  throw RapidsErrorUtils.mapKeyNotExistError(keyS.getValue.toString, true)
                 }
               }
             }

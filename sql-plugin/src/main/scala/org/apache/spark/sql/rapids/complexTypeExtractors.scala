@@ -16,8 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimUnaryExpression}
@@ -28,7 +29,6 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends ShimUnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
@@ -106,31 +106,38 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     val (array, indices) = (lhs.getBase, rhs.getBase)
     val indicesCol = withResource(Scalar.fromInt(0)) { zeroS =>
       withResource(indices.lessThan(zeroS)) { hasNegativeIndicesCV =>
-        val hasNegativeIndices = isAnyValidTrue(hasNegativeIndicesCV)
         if (failOnError) {
           // Check if any index is out of bound only when ansi mode is enabled.
           // No exception should be raised if no valid entry (An entry is valid when both
           // the array row and its index are not null), the same with what Spark does.
-          if(hasNegativeIndices && array.getNullCount != array.getRowCount) {
-            // fast fail
-            throw new ArrayIndexOutOfBoundsException("Invalid index: some indices are < 0")
-          }
-          val hasLargerIndicesCV = withResource(array.countElements()) { numElements =>
-            indices.greaterOrEqualTo(numElements)
-          }
-          withResource(hasLargerIndicesCV) { _ =>
-            if(isAnyValidTrue(hasLargerIndicesCV)) {
+          withResource(array.countElements()) { numElements =>
+            // Check negative indices. Should ignore the rows that are not valid
+            val hasValidEntryCV = hasNegativeIndicesCV.mergeAndSetValidity(BinaryOp.BITWISE_AND,
+                array, hasNegativeIndicesCV)
+            withResource(hasValidEntryCV) { _ =>
+              if (isAnyValidTrue(hasValidEntryCV)) {
+                val (index, numElem) = firstIndexAndNumElementUnchecked(hasValidEntryCV,
+                  indices, numElements)
+                throw RapidsErrorUtils.invalidArrayIndexError(index, numElem)
+              }
+            }
+            // Then check if any index is larger than its array size
+            withResource(indices.greaterOrEqualTo(numElements)) { hasLargerIndicesCV =>
               // No need to check the validity of array column here, since the validity info
               // is included in this `hasLargerIndicesCV`.
-              throw new ArrayIndexOutOfBoundsException(
-                "Invalid index: some indices are larger than the element number")
+              if (isAnyValidTrue(hasLargerIndicesCV)) {
+                val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndicesCV,
+                  indices, numElements)
+                throw RapidsErrorUtils.invalidArrayIndexError(index, numElem)
+              }
             }
           }
         } // end of "if (failOnError)"
 
-        if (hasNegativeIndices) {
-          // Replace negative indices with nulls, then cuDF will return nulls, the same
-          // with what Spark returns for negative indices.
+        if (isAnyValidTrue(hasNegativeIndicesCV)) {
+          // Replace negative indices with nulls no matter whether the corresponding array is
+          // null, then cuDF will return nulls, the same with what Spark returns for negative
+          // indices.
           withResource(Scalar.fromNull(DType.INT32)) { nullS =>
             hasNegativeIndicesCV.ifElse(nullS, indices)
           }
@@ -166,7 +173,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
           withResource(numElementsCV.min) { minScalar =>
             val minNumElements = minScalar.getInt
             if (ordinal < 0 || ordinal >= minNumElements) {
-              RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinal, minNumElements)
+              throw RapidsErrorUtils.invalidArrayIndexError(ordinal, minNumElements)
             }
           }
         }
@@ -223,8 +230,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.isValid && !exist.getBoolean) {
-            RapidsErrorUtils.throwInvalidElementAtIndexError(
-              rhs.getValue.asInstanceOf[UTF8String].toString)
+            throw RapidsErrorUtils.mapKeyNotExistError(rhs.getValue.toString)
           }
         }
       }

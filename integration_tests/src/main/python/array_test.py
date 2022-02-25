@@ -31,7 +31,8 @@ array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
     special_cases=[(-25, 100), (-20, 100), (-10, 100), (-4, 100), (-3, 100), (-2, 100), (-1, 100), (None, 100)])
 
 array_all_null_gen = ArrayGen(int_gen, all_null=True)
-array_item_test_gens = array_gens_sample + [array_of_map_gen, array_all_null_gen]
+array_item_test_gens = array_gens_sample + [array_all_null_gen,
+    ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)]
 
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
@@ -52,10 +53,7 @@ def test_array_item(data_gen):
 @pytest.mark.parametrize('strict_index_enabled', [True, False])
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_with_strict_index(strict_index_enabled, index):
-    # ignore error message until we figure out a way to create a customized
-    # 'SparkArrayIndexOutOfBoundsException' for the case we don't know the exact
-    #  element number of an array or the illegal index value.
-    message = ""
+    message = "SparkArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_df = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index])
     else:
@@ -202,8 +200,7 @@ def test_array_element_at(data_gen):
                     reason="Only for Spark 3.1.1+ with ANSI mode, it throws an exception for invalid index")
 @pytest.mark.parametrize('index', [100, array_out_index_gen], ids=idfn)
 def test_array_element_at_ansi_fail_invalid_index(index):
-    # ignore the error message
-    message = ""
+    message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() else "SparkArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(
             element_at(col('a'), index)).collect()

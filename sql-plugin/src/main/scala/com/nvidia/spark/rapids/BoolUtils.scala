@@ -47,12 +47,9 @@ object BoolUtils extends Arm {
    */
   def isAnyValidTrue(col: ColumnVector): Boolean = {
     assert(DType.BOOL8 == col.getType, "input column type is not bool")
-    if (col.getRowCount == 0) {
-      return false
-    }
 
     if (col.getRowCount == col.getNullCount) {
-      // all is null, equal to empty, since nulls should be skipped.
+      // all is null, return false since nulls should be skipped.
       return false
     }
     withResource(col.any()) { anyTrue =>
