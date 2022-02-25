@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.shims.ProxyRapidsShuffleInternalManager
