@@ -730,8 +730,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
     } else {
       baseGenerators ++ Seq(
         () => escapedChar, // https://github.com/NVIDIA/spark-rapids/issues/4505
-        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4486
-        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4409
+        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4865
+        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4862
     }
     generators(rr.nextInt(generators.length))()
   }

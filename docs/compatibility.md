@@ -550,7 +550,8 @@ Here are some examples of regular expression patterns that are not supported on 
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - Octal digits in the range `\0200` to `\0377`
 - Character classes with octal digits, such as `[\02]` or `[\024]`
-- Hex digits
+- Character classes with hex digits, such as `[\x02]` or `[\x24]`
+- Hex digits in the range `\x80` to `Character.MAX_CODE_POINT`
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
