@@ -32,6 +32,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
@@ -128,12 +129,25 @@ object HostColumnarToGpu extends Logging {
         ColumnarCopyHelper.doubleCopy(cv, b, rows)
       case StringType =>
         ColumnarCopyHelper.stringCopy(cv, b, rows)
-      case dt: DecimalType if DecimalType.is32BitDecimalType(dt) =>
-        ColumnarCopyHelper.decimal32Copy(cv, b, rows, dt.precision, dt.scale)
-      case dt: DecimalType if DecimalType.is64BitDecimalType(dt) =>
-        ColumnarCopyHelper.decimal64Copy(cv, b, rows, dt.precision, dt.scale)
       case dt: DecimalType =>
-        ColumnarCopyHelper.decimal128Copy(cv, b, rows, dt.precision, dt.scale)
+        cv match {
+          case wcv: WritableColumnVector =>
+            if (DecimalType.is32BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal32CopyFromParquet(wcv, b, rows)
+            } else if (DecimalType.is64BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal64CopyFromParquet(wcv, b, rows)
+            } else {
+              ColumnarCopyHelper.decimal128CopyFromParquet(wcv, b, rows)
+            }
+          case _ =>
+            if (DecimalType.is32BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal32Copy(cv, b, rows, dt.precision, dt.scale)
+            } else if (DecimalType.is64BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal64Copy(cv, b, rows, dt.precision, dt.scale)
+            } else {
+              ColumnarCopyHelper.decimal128Copy(cv, b, rows, dt.precision, dt.scale)
+            }
+        }
       case t =>
         throw new UnsupportedOperationException(
           s"Converting to GPU for $t is not currently supported")
