@@ -539,7 +539,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         if (codePoint >= 128) {
           // see https://github.com/NVIDIA/spark-rapids/issues/4866
           throw new RegexUnsupportedException(
-            "cuDF does not support hex digits > 0x80")
+            "cuDF does not support hex digits > 0x7F")
         }
         RegexHexDigit(String.format("%02x", Int.box(codePoint)))
 
