@@ -792,8 +792,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, spa
     rightTable = spark_tmp_table_factory.get()
     def do_join(spark):
         # create non-overlapping ranges to have a mix of exists=true and exists=false
-        # duplicate every row in the rhs to verify it does not affect
-        # the number of the output rows, which should be equal to the number of the
+
         # left-hand side rows
         lhs_upper_bound = 10
         lhs_data = list((f"left_{v}", v * 10, v * 100) for v in range(2, lhs_upper_bound))
@@ -807,6 +806,8 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, spa
 
         rhs_data = list((f"right_{v}", v * 10, v * 100) for v in range(0, 8))
         rhs_data.append(('right_null', None, None))
+        # duplicate every row in the rhs to verify it does not affect
+        # the number of the output rows, which should be equal to the number of the
         rhs_data_with_dupes=[]
         for dupe in rhs_data:
             rhs_data_with_dupes.extend([dupe, dupe])
