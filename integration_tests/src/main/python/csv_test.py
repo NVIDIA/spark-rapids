@@ -273,7 +273,29 @@ csv_supported_gens = [
         pytest.param(double_gen),
         pytest.param(FloatGen(no_nans=False)),
         pytest.param(float_gen),
-        TimestampGen()]
+        TimestampGen(),
+        # 365 days * 5000 is about 5000 years
+        DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000, allow_negative=True),
+        DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000),
+]
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)

@@ -28,6 +28,7 @@ import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourc
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
@@ -81,6 +82,10 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   // 330+ supports DAYTIME interval types
   override def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = {
     Map(
+      (CsvFormatType, FileFormatChecks(
+        cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+        cudfWrite = TypeSig.none,
+        sparkSig = TypeSig.cpuAtomics)),
       (ParquetFormatType, FileFormatChecks(
         cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
             TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME).nested(),
@@ -161,6 +166,19 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
     val map: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+      GpuOverrides.exec[BatchScanExec](
+        "The backend for most file input",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+              TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
+          override val childScans: scala.Seq[ScanMeta[_]] =
+            Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+          override def convertToGpu(): GpuExec =
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+        }),
       GpuOverrides.exec[CoalesceExec](
         "The backend for the dataframe coalesce method",
         ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +

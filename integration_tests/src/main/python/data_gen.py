@@ -613,31 +613,112 @@ class NullGen(DataGen):
         self._start(rand, make_null)
 
 # DayTimeIntervalGen is for Spark 3.3.0+
-# DayTimeIntervalType(startField, endField): Represents a day-time interval which is made up of a contiguous subset of the following fields:
+# DayTimeIntervalType(startField, endField):
+# Represents a day-time interval which is made up of a contiguous subset of the following fields:
 #   SECOND, seconds within minutes and possibly fractions of a second [0..59.999999],
+#   Note Spark now uses 99 as max second, see issue https://issues.apache.org/jira/browse/SPARK-38324
+#   If second is start field, it's max value is long.max / microseconds in one second
 #   MINUTE, minutes within hours [0..59],
+#   If minute is start field, it's max value is long.max / microseconds in one minute
 #   HOUR, hours within days [0..23],
-#   DAY, days in the range [0..106751991].
+#   If hour is start field, it's max value is long.max / microseconds in one hour
+#   DAY, days in the range [0..106751991]. 106751991 is long.max / microseconds in one day
 # For more details: https://spark.apache.org/docs/latest/sql-ref-datatypes.html
-# Note: 106751991/365 = 292471 years which is much bigger than 9999 year, seems something is wrong
+# Note: 106751991/365 = 292471 years which is much bigger than 9999 year
 class DayTimeIntervalGen(DataGen):
     """Generate DayTimeIntervalType values"""
-    def __init__(self, max_days = None, nullable=True, special_cases =[timedelta(seconds = 0)]):
+    def __init__(self, max_days=None, start_field="day", end_field="second", allow_negative=False, nullable=True,
+                 special_cases=[timedelta(seconds=0)]):
         super().__init__(DayTimeIntervalType(), nullable=nullable, special_cases=special_cases)
         if max_days is None:
             self._max_days = 106751991
         else:
+            assert 106751991 >= max_days > 0
             self._max_days = max_days
+        self._allow_negative = allow_negative
+        self._start_field = start_field
+        self._end_field = end_field
+
+        fields = ["day", "hour", "minute", "second"]
+        start_index = fields.index(start_field)
+        end_index = fields.index(end_field)
+        if start_index > end_index:
+            raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field should <= end field'.format(start_field, end_field, fields))
+
+        super().__init__(DayTimeIntervalType(start_index, end_index), nullable=nullable, special_cases=special_cases)
+
+    def _gen_random(self, rand, start_field, end_field):
+        micros_per_second = 1000 * 1000
+        micros_per_minute = 60 * micros_per_second
+        micros_per_hour = 60 * micros_per_minute
+        micros_per_day = 24 * micros_per_hour
+
+        max_micros = self._max_days * micros_per_day
+
+        # set default value
+        days = 0
+        hours = 0
+        minutes = 0
+        seconds = 0
+        microseconds = 0
+
+        if (start_field, end_field) == ("day", "day"):
+            days = rand.randint(0, self._max_days)
+        if (start_field, end_field) == ("day", "hour"):
+            days = rand.randint(0, self._max_days)
+            hours_remaining = (max_micros - days * micros_per_day) / micros_per_hour
+            hours = rand.randint(0, min(23, hours_remaining))
+        if (start_field, end_field) == ("day", "minute"):
+            days = rand.randint(0, self._max_days)
+            hours_remaining = (max_micros - days * micros_per_day) / micros_per_hour
+            hours = rand.randint(0, min(23, hours_remaining))
+            minutes_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour) / micros_per_minute
+            minutes = rand.randint(0, min(59, minutes_remaining))
+        if (start_field, end_field) == ("day", "second"):
+            days = rand.randint(0, self._max_days)
+            hours_remaining = (max_micros - days * micros_per_day) / micros_per_hour
+            hours = rand.randint(0, min(23, hours_remaining))
+            minutes_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour) / micros_per_minute
+            minutes = rand.randint(0, min(59, minutes_remaining))
+            seconds_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute ) / micros_per_second
+            seconds = rand.randint(0, min(99, seconds_remaining))
+            microseconds_remaining = max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute - seconds * micros_per_second
+            microseconds = rand.randint(0, min(999999, microseconds_remaining))
+        if (start_field, end_field) == ("hour", "hour"):
+            hours = rand.randint(0, max_micros / micros_per_hour)
+        if (start_field, end_field) == ("hour", "minute"):
+            hours = rand.randint(0, max_micros / micros_per_hour)
+            minutes_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour) / micros_per_minute
+            minutes = rand.randint(0, min(59, minutes_remaining))
+        if (start_field, end_field) == ("hour", "second"):
+            hours = rand.randint(0, max_micros / micros_per_hour)
+            minutes_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour) / micros_per_minute
+            minutes = rand.randint(0, min(59, minutes_remaining))
+            seconds_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute ) / micros_per_second
+            seconds = rand.randint(0, min(99, seconds_remaining))
+            microseconds_remaining = max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute - seconds * micros_per_second
+            microseconds = rand.randint(0, min(999999, microseconds_remaining))
+        if (start_field, end_field) == ("minute", "minute"):
+            minutes = rand.randint(0, max_micros / micros_per_minute)
+        if (start_field, end_field) == ("minute", "second"):
+            minutes = rand.randint(0, max_micros / micros_per_minute)
+            seconds_remaining = (max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute ) / micros_per_second
+            seconds = rand.randint(0, min(99, seconds_remaining))
+            microseconds_remaining = max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute - seconds * micros_per_second
+            microseconds = rand.randint(0, min(999999, microseconds_remaining))
+        if (start_field, end_field) == ("second", "second"):
+            seconds = rand.randint(0, max_micros / micros_per_second)
+            microseconds_remaining = max_micros - days * micros_per_day - hours * micros_per_hour - minutes * micros_per_minute - seconds * micros_per_second
+            microseconds = rand.randint(0, min(999999, microseconds_remaining))
+
+        if self._allow_negative:
+            sign = 1 if (rand.randint(0, 1) == 0) else -1
+        else:
+            sign = 1
+        return timedelta(microseconds * sign, seconds * sign, minutes * sign, hours * sign, days * sign)
+
     def start(self, rand):
-        self._start(rand,
-            lambda : timedelta(
-                microseconds = rand.randint(0, 999999),
-                seconds = rand.randint(0, 59),
-                minutes = rand.randint(0, 59),
-                hours = rand.randint(0, 23),
-                days = rand.randint(0, self._max_days),
-            )
-        )
+        self._start(rand, lambda: self._gen_random(rand, self._start_field, self._end_field))
 
 def skip_if_not_utc():
     if (not is_tz_utc()):

@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf.ColumnVector
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
 
@@ -46,4 +47,9 @@ object GpuTypeShims {
    * @return the cuDF type if the Shim supports
    */
   def toRapidsOrNull(t: DataType): DType = null
+
+  def supportCsvRead(dt: DataType) : Boolean = false
+
+  def csvRead(cv: ColumnVector, dt: DataType): ColumnVector =
+    throw new RuntimeException(s"Not support type $dt.")
 }

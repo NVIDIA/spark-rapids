@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.DType
+import ai.rapids.cudf.{ColumnVector, DType}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
@@ -93,4 +93,19 @@ object GpuTypeShims {
         null
     }
   }
+
+  def supportCsvRead(dt: DataType) : Boolean = {
+    dt match {
+      case DayTimeIntervalType(_, _) => true
+      case _ => false
+    }
+  }
+
+  def csvRead(cv: ColumnVector, dt: DataType): ColumnVector  = {
+    dt match {
+      case d: DayTimeIntervalType => GpuIntervalUtils.castStringToDTInterval(cv, d)
+      case _ => throw new RuntimeException(s"Not support type $dt.")
+    }
+  }
+
 }
