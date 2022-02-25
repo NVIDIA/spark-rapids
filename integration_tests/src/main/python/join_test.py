@@ -779,14 +779,14 @@ def test_struct_self_join(spark_tmp_table_factory):
 # If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
 # the optimizer won't use ExistenceJoin.
 @ignore_order(local=True)
-@pytest.mark.parametrize('numComplementsToExists', [0, 1, 2])
+@pytest.mark.parametrize('numComplementsToExists', [0, 1, 2], ids=(lambda val: f"complements:{val}") )
 @pytest.mark.parametrize('aqeEnabled', [
-    pytest.param(False),
+    pytest.param(False, id='aqe:off'),
     # workaround: somehow AQE retains RDDScanExec preventing parent ShuffleExchangeExec
     # from being executed on GPU
-    pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'))
+    pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'), id='aqe:on')
 ])
-@pytest.mark.parametrize('conditionalJoin', [False, True])
+@pytest.mark.parametrize('conditionalJoin', [False, True], ids=['ast:off', 'ast:on'])
 def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
