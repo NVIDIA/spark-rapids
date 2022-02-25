@@ -113,7 +113,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
           withResource(array.countElements()) { numElements =>
             // Check negative indices. Should ignore the rows that are not valid
             val hasValidEntryCV = hasNegativeIndicesCV.mergeAndSetValidity(BinaryOp.BITWISE_AND,
-                array, hasNegativeIndicesCV)
+                hasNegativeIndicesCV, array)
             withResource(hasValidEntryCV) { _ =>
               if (isAnyValidTrue(hasValidEntryCV)) {
                 val (index, numElem) = firstIndexAndNumElementUnchecked(hasValidEntryCV,

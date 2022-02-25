@@ -152,8 +152,12 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
           val indicesCol = withResource(Scalar.fromInt(0)) { zeroS =>
             // No exception should be raised if no valid entry (An entry is valid when both
             // the array row and its index are not null), the same with what Spark does.
-            if (array.getRowCount != array.getNullCount && indices.contains(zeroS)) {
-              throw RapidsErrorUtils.sqlArrayIndexNotStartAtOneError()
+            val hasValidEntryCV = indices.mergeAndSetValidity(BinaryOp.BITWISE_AND,
+              indices, array)
+            withResource(hasValidEntryCV) { _ =>
+              if (hasValidEntryCV.contains(zeroS)) {
+                throw RapidsErrorUtils.sqlArrayIndexNotStartAtOneError()
+              }
             }
             val zeroBasedIndices = withResource(Scalar.fromInt(1)) { oneS =>
               indices.sub(oneS, indices.getType)
