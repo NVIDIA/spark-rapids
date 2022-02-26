@@ -122,7 +122,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4487
     val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
     patterns.foreach(pattern => 
       assertUnsupported(pattern, RegexFindMode, "nothing to repeat"))
@@ -319,28 +318,31 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("regexp_replace - character class repetition - {0,} - fall back to CPU") {
-    val patterns = Seq(raw"[1a-zA-Z]{0,}")
+  test("regexp_replace - character class repetition - {0,} or {0,n} - fall back to CPU") {
+    val patterns = Seq(raw"[1a-zA-Z]{0,}", raw"[1a-zA-Z]{0,2}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
-        "regexp_replace on GPU does not support repetition with {0,}"
+        "regexp_replace on GPU does not support repetition with {0,} or {0,n}"
       )
     )
   }
 
-  test("regexp_replace - fall back to CPU for {0} or {0,0}") {
-    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+  test("regexp_split - character class repetition - ? and * - fall back to CPU") {
+    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexReplaceMode, 
-        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+      assertUnsupported(pattern, RegexSplitMode,
+        "regexp_split on GPU does not support repetition with ? or * " +
+        "consistently with Spark"
+      )
     )
   }
 
-  test("regexp_split - fall back to CPU for {0} or {0,0}") {
-    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+  test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
+    val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexSplitMode,
-        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+        "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
+        "consistently with Spark")
     )
   }
 
@@ -678,12 +680,12 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
         () => predefinedCharacterClass,
         () => group(depth),
         () => boundaryMatch,
-        () => sequence(depth))
+        () => sequence(depth),
+        () => repetition(depth))
       val generators = if (skipKnownIssues) {
         baseGenerators
       } else {
         baseGenerators ++ Seq(
-          () => repetition(depth), // https://github.com/NVIDIA/spark-rapids/issues/4487
           () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
       }
       generators(rr.nextInt(generators.length))()
