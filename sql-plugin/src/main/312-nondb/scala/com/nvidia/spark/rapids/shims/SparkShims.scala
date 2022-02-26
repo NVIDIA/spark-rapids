@@ -16,14 +16,11 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
 object SparkShimImpl extends Spark31XShims with Spark30Xuntil33XShims {
-
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def hasCastFloatTimestampUpcast: Boolean = true
 

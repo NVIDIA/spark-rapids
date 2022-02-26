@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark301db
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShimVersion}
+import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
 
 object SparkShimServiceProvider {
   val VERSION = DatabricksShimVersion(3, 0, 1)
@@ -25,7 +25,7 @@ object SparkShimServiceProvider {
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
-  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+  override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
     SparkShimServiceProvider.VERSIONNAMES.contains(version)

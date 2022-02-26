@@ -83,7 +83,7 @@ case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersio
 }
 
 trait SparkShims {
-  def getSparkShimVersion: ShimVersion
+  def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
   def parquetRebaseReadKey: String
   def parquetRebaseWriteKey: String
   def avroRebaseReadKey: String
