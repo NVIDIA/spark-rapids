@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark302
 
-import com.nvidia.spark.rapids.SparkShimVersion
+import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 object SparkShimServiceProvider {
   val VERSION = SparkShimVersion(3, 0, 2)
@@ -29,4 +30,5 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   def matchesVersion(version: String): Boolean = {
     SparkShimServiceProvider.VERSIONNAMES.contains(version)
   }
+
 }
