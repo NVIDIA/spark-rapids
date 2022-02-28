@@ -304,7 +304,7 @@ case class GpuGetArrayStructFields(
       structView.getChildColumnView(ordinal)
     }
     val listView = withResource(fieldView) { _ =>
-      new ColumnView(DType.LIST, base.getRowCount, Optional.of(base.getNullCount),
+      new ColumnView(DType.LIST, base.getRowCount, Optional.of[java.lang.Long](base.getNullCount),
         base.getValid, base.getOffsets, Array(fieldView))
     }
     withResource(listView) { _ =>
