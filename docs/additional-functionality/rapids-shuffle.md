@@ -282,13 +282,30 @@ In this section, we are using a docker container built using the sample dockerfi
 
 ### Spark App Configuration
 
-Settings for UCX 1.11.2+:
+1. Choose the version of the shuffle manager that matches your Spark version.
+   Currently we support:
 
-Minimum configuration:
+    | Spark Shim    | spark.shuffle.manager value                              |
+    | --------------| -------------------------------------------------------- |
+    | 3.0.1         | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
+    | 3.0.2         | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
+    | 3.0.3         | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
+    | 3.1.1         | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+    | 3.1.1 CDH     | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
+    | 3.1.2         | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
+    | 3.1.3         | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
+    | 3.2.0         | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
+    | 3.2.1         | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
+    | Databricks 7.3| com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
+    | Databricks 9.1| com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
+
+2. Settings for UCX 1.11.2+:
+
+    Minimum configuration:
 
     ```shell
     ...
-    --conf spark.shuffle.manager=com.nvidia.spark.rapids.RapidsShuffleManager \
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -300,7 +317,7 @@ Minimum configuration:
 
     ```shell
     ...
-    --conf spark.shuffle.manager=com.nvidia.spark.rapids.RapidsShuffleManager \
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -311,6 +328,9 @@ Minimum configuration:
     --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
     --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1
     ```
+
+Please replace `[shim package]` with the appropriate value. For example, the full class name for
+Apache Spark 3.1.3 is: `com.nvidia.spark.rapids.spark313.RapidsShuffleManager`.
 
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.

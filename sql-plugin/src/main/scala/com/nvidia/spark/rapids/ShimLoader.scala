@@ -102,7 +102,7 @@ object ShimLoader extends Logging {
 
   def getRapidsShuffleManagerClass: String = {
     initShimProviderIfNeeded()
-    s"com.nvidia.spark.rapids.RapidsShuffleManager"
+    s"com.nvidia.spark.rapids.shims.RapidsShuffleManager"
   }
 
   def getRapidsShuffleInternalClass: String = {
