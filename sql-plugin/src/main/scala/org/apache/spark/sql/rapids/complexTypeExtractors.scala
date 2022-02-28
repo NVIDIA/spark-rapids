@@ -285,7 +285,7 @@ class GpuGetArrayStructFieldsMeta(
  * For a child whose data type is an array of structs, extracts the `ordinal`-th fields of all array
  * elements, and returns them as a new array.
  *
- * No need to do type checking since it is handled by [[ExtractValue]].
+ * No need to do type checking since it is handled by 'ExtractValue'.
  */
 case class GpuGetArrayStructFields(
     child: Expression,
