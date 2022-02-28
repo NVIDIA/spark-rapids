@@ -30,7 +30,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleInternalManager}
+import org.apache.spark.sql.rapids.shims.GpuShuffleBlockResolver
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -452,7 +452,8 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
 
   // touched in the plugin code after the shim initialization
   // is complete
-  lazy val self: ShuffleManager = new RapidsShuffleInternalManager(conf, isDriver)
+  lazy val self: ShuffleManager = ShimLoader.newInternalShuffleManager(conf, isDriver)
+      .asInstanceOf[ShuffleManager]
 
   // This function touches the lazy val `self` so we actually instantiate
   // the manager. This is called from both the driver and executor.

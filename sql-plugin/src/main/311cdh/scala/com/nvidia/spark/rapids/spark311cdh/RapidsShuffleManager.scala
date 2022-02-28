@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.spark311cdh
 
-/**
- * A Spark version shim layer interface.
- */
-trait SparkShimServiceProvider {
-  def getShimVersion: ShimVersion
-  def matchesVersion(version:String): Boolean
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.shims.spark311cdh.ProxyRapidsShuffleInternalManager
+
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
 }
