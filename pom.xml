@@ -465,7 +465,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/30X-33X/scala</source>
                                         <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/312db/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>

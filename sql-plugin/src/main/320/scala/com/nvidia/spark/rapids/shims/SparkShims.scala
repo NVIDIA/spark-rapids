@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
@@ -27,6 +28,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.types.StructType
 
 object SparkShimImpl extends Spark320PlusShims with Spark30Xuntil33XShims {
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def getFileScanRDD(
       sparkSession: SparkSession,

@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
@@ -24,6 +26,7 @@ import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, P
 import org.apache.spark.sql.types.StructType
 
 object SparkShimImpl extends Spark321PlusShims with Spark30Xuntil33XShims {
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def getFileScanRDD(
       sparkSession: SparkSession,
