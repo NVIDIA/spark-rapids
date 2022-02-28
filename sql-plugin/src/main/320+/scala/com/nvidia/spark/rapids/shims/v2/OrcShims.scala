@@ -127,4 +127,9 @@ object OrcShims {
   def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
     lhs.equals(rhs, false)
   }
+
+  // forcePositionalEvolution is available from Spark-3.2.
+  def forcePositionalEvolution(conf: Configuration): Boolean = {
+    OrcConf.FORCE_POSITIONAL_EVOLUTION.getBoolean(conf)
+  }
 }

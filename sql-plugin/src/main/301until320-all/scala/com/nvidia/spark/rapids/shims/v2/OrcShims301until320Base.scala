@@ -91,4 +91,9 @@ trait OrcShims301until320Base {
   def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
     lhs.equals(rhs)
   }
+
+  // forcePositionalEvolution is available from Spark-3.2. So setting this as false.
+  def forcePositionalEvolution(conf:Configuration): Boolean = {
+    false
+  }
 }
