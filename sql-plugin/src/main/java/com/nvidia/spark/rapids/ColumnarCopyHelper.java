@@ -167,18 +167,15 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void decimal32CopyFromParquet(WritableColumnVector cv,
-      ColumnBuilder b, int rows) {
+  public static void decimal32Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
     intCopy(cv, b, rows);
   }
 
-  public static void decimal64CopyFromParquet(WritableColumnVector cv,
-      ColumnBuilder b, int rows) {
+  public static void decimal64Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
     longCopy(cv, b, rows);
   }
 
-  public static void decimal128CopyFromParquet(WritableColumnVector cv,
-      ColumnBuilder b, int rows) {
+  public static void decimal128Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.appendDecimal128(cv.getBinary(i));

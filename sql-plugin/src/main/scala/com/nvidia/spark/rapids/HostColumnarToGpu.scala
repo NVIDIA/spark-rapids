@@ -133,11 +133,11 @@ object HostColumnarToGpu extends Logging {
         cv match {
           case wcv: WritableColumnVector =>
             if (DecimalType.is32BitDecimalType(dt)) {
-              ColumnarCopyHelper.decimal32CopyFromParquet(wcv, b, rows)
+              ColumnarCopyHelper.decimal32Copy(wcv, b, rows)
             } else if (DecimalType.is64BitDecimalType(dt)) {
-              ColumnarCopyHelper.decimal64CopyFromParquet(wcv, b, rows)
+              ColumnarCopyHelper.decimal64Copy(wcv, b, rows)
             } else {
-              ColumnarCopyHelper.decimal128CopyFromParquet(wcv, b, rows)
+              ColumnarCopyHelper.decimal128Copy(wcv, b, rows)
             }
           case _ =>
             if (DecimalType.is32BitDecimalType(dt)) {
