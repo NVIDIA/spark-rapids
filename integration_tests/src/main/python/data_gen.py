@@ -932,6 +932,8 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
+nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
+
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 
