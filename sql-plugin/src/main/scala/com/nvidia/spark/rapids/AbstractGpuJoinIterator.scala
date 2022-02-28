@@ -26,6 +26,11 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+trait TaskAutoCloseableResource extends AutoCloseable {
+  protected var closed = false
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+}
+
 /**
  * Base class for iterators producing the results of a join.
  * @param gatherNvtxName name to use for the NVTX range when producing the join gather maps
@@ -37,13 +42,12 @@ abstract class AbstractGpuJoinIterator(
     gatherNvtxName: String,
     targetSize: Long,
     val opTime: GpuMetric,
-    joinTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
+    joinTime: GpuMetric)
+    extends Iterator[ColumnarBatch]
+    with Arm
+    with TaskAutoCloseableResource {
   private[this] var nextCb: Option[ColumnarBatch] = None
   private[this] var gathererStore: Option[JoinGatherer] = None
-
-  protected[this] var closed = false
-
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   /** Returns whether there are any more batches on the stream side of the join */
   protected def hasNextStreamBatch: Boolean
