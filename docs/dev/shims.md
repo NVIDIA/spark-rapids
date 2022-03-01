@@ -26,9 +26,9 @@ In the following we provide recipes for typical scenarios addressed by the Shim 
 It's among the easiest issues to resolve. We define a method in SparkShims
 trait covering a superset of parameters from all versions and call it 
 ```
-ShimLoader.getSparkShims.methodWithDiscrepancies(p_1, ..., p_n)
+SparkShimImpl.methodWithDiscrepancies(p_1, ..., p_n)
 ```
-instead of referencing it directly. Shim implementations are in charge of dispatching it further 
+instead of referencing it directly. Shim implementations (SparkShimImpl) are in charge of dispatching it further 
 to correct version-dependent methods. Moreover, unlike in the below sections 
 conflicts between versions are easily avoided by using different package or class names 
 for conflicting Shim implementations. 
