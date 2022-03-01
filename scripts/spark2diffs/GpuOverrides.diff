@@ -5,9 +5,9 @@
 24a25
 > import ai.rapids.cudf.DType
 26c27
-< import com.nvidia.spark.rapids.shims._
+< import com.nvidia.spark.rapids.shims.v2._
 ---
-> import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
+> import com.nvidia.spark.rapids.shims.v2.{AQEUtils, GpuHashPartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 31a33,35
 > import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 > import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
@@ -32,7 +32,7 @@
 > import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 50a62,63
 > import org.apache.spark.sql.rapids.execution.python._
-> import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+> import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
 63c76
 < abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPUT, BASE]](
 ---
