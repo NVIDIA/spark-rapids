@@ -43,6 +43,8 @@ object GpuParquetFileFormat {
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
 
+    ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema)
+
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
