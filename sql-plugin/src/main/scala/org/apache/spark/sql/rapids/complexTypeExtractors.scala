@@ -16,10 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import java.util.Optional
-
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimUnaryExpression}
 
@@ -304,8 +302,7 @@ case class GpuGetArrayStructFields(
       structView.getChildColumnView(ordinal)
     }
     val listView = withResource(fieldView) { _ =>
-      new ColumnView(DType.LIST, base.getRowCount, Optional.of[java.lang.Long](base.getNullCount),
-        base.getValid, base.getOffsets, Array(fieldView))
+      GpuListUtils.replaceListDataColumnAsView(base, fieldView)
     }
     withResource(listView) { _ =>
       listView.copyToColumnVector()
