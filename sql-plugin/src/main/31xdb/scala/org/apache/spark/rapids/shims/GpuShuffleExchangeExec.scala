@@ -72,5 +72,5 @@ case class GpuShuffleExchangeExec(
     )
   }
 
-  def shuffleId: Int = shuffleDependencyColumnar.shuffleId
+  override def shuffleId: Int = shuffleDependencyColumnar.shuffleId
 }
