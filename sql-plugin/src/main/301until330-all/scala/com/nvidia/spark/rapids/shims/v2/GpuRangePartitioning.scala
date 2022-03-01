@@ -16,20 +16,32 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.GpuRangePartitioningBase
+import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}
 
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuRangePartitioning(gpuOrdering: Seq[SortOrder], numPartitions: Int)
-  extends GpuExpression with ShimExpression with GpuPartitioning {
-  
+/**
+ * A GPU accelerated `org.apache.spark.sql.catalyst.plans.physical.Partitioning` that partitions
+ * sortable records by range into roughly equal ranges. The ranges are determined by sampling
+ * the content of the RDD passed in.
+ *
+ * @note The actual number of partitions created might not be the same
+ * as the `numPartitions` parameter, in the case where the number of sampled records is less than
+ * the value of `partitions`.
+ *
+ * The GpuRangePartitioner is where all of the processing actually happens.
+ */
+case class GpuRangePartitioning(
+    gpuOrdering: Seq[SortOrder],
+    numPartitions: Int) extends GpuExpression with ShimExpression with GpuPartitioning {
+
   override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
-  
+
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {
       required match {
