@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
@@ -26,10 +25,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  * DayTimeIntervalType and YearMonthIntervalType do not exists before 330
  */
 class ParquetWriterIntervalSuite extends SparkQueryCompareTestSuite {
-
-  // TODO delete this conf after this issue is solved
-  // https://github.com/NVIDIA/spark-rapids/issues/4841
-  val conf = new SparkConf().set("spark.sql.parquet.fieldId.write.enabled", "true")
 
   // CPU write a parquet, then test the reading between CPU and GPU
   test("test ANSI interval read") {
@@ -67,7 +62,6 @@ class ParquetWriterIntervalSuite extends SparkQueryCompareTestSuite {
     genDf,
     (df, path) => df.coalesce(1).write.mode("overwrite").parquet(path),
     (spark, path) => spark.read.parquet(path),
-    conf
   )
 
   def genDf(spark: SparkSession): DataFrame = {

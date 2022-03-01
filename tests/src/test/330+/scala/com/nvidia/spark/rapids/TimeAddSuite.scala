@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
@@ -27,14 +26,12 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  */
 class TimeAddSuite extends SparkQueryCompareTestSuite {
 
-  val conf = new SparkConf().set("spark.sql.parquet.fieldId.write.enabled", "true")
-
   // CPU write a parquet, then test the reading between CPU and GPU
   test("test ANSI timestamp + interval") {
     val tmpFile = File.createTempFile("interval", ".parquet")
     try {
       withCpuSparkSession(spark => genDf(spark).coalesce(1)
-          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath), conf)
+          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
       val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath)
           .selectExpr("t + d")
           .collect())
