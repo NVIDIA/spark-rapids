@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,15 @@ import com.nvidia.spark.rapids.GpuRangePartitioningBase
 
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
+import org.apache.spark.sql.types.{DataType, IntegerType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuRangePartitioning(gpuOrdering: Seq[SortOrder], numPartitions: Int)
-  extends GpuRangePartitioningBase(gpuOrdering, numPartitions) {
+  extends GpuExpression with ShimExpression with GpuPartitioning {
+  
+  override def children: Seq[SortOrder] = gpuOrdering
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
   
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {
@@ -53,4 +59,7 @@ case class GpuRangePartitioning(gpuOrdering: Seq[SortOrder], numPartitions: Int)
       }
     }
   }
+
+  override def columnarEval(batch: ColumnarBatch): Any =
+    throw new IllegalStateException("This cannot be executed")
 }

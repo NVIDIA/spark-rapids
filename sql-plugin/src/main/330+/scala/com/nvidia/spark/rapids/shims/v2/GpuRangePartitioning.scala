@@ -16,14 +16,19 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.GpuRangePartitioningBase
+import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}
 
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
+import org.apache.spark.sql.types.{DataType, IntegerType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuRangePartitioning(gpuOrdering: Seq[SortOrder], numPartitions: Int)
-  extends GpuRangePartitioningBase(gpuOrdering, numPartitions) {
+   extends GpuExpression with ShimExpression with GpuPartitioning {
 
+  override def children: Seq[SortOrder] = gpuOrdering
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {
       required match {
@@ -58,4 +63,6 @@ case class GpuRangePartitioning(gpuOrdering: Seq[SortOrder], numPartitions: Int)
     }
   }
 
+  override def columnarEval(batch: ColumnarBatch): Any =
+    throw new IllegalStateException("This cannot be executed")
 }
