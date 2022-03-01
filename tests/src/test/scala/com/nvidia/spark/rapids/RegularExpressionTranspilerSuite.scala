@@ -310,6 +310,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("regexp_replace - character class repetition - ? and * - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4468
     val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
@@ -319,6 +320,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("regexp_replace - character class repetition - {0,} or {0,n} - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4468
     val patterns = Seq(raw"[1a-zA-Z]{0,}", raw"[1a-zA-Z]{0,2}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
@@ -328,6 +330,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("regexp_split - character class repetition - ? and * - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
     val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexSplitMode,
@@ -338,6 +341,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
     val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexSplitMode,

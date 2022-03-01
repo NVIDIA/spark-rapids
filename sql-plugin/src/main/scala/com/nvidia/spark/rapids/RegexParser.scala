@@ -665,7 +665,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
           // cuDF: XXXX] b[
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
+          // see https://github.com/NVIDIA/spark-rapids/issues/4884
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with ? or * consistently with Spark")
 
@@ -675,7 +675,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             "regexp_replace on GPU does not support repetition with {0,} or {0,n}")
 
         case (_, QuantifierVariableLength(0, _)) if mode == RegexSplitMode =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
+          // see https://github.com/NVIDIA/spark-rapids/issues/4884
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
             "consistently with Spark")
