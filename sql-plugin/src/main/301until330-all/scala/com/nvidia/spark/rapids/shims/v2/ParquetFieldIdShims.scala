@@ -29,7 +29,7 @@ object ParquetFieldIdShims {
     // Parquet field ID support configs are not supported until Spark 3.3
   }
 
-  def tagGpuSupportForFieldId(meta: RapidsMeta[_, _, _], schema: StructType): Unit = {
+  def tagGpuSupportWriteForFieldId(meta: RapidsMeta[_, _, _], schema: StructType): Unit = {
     // Parquet field ID support configs are not supported until Spark 3.3
   }
 
