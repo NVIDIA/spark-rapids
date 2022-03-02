@@ -404,16 +404,6 @@ def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
         conf=writer_confs)
 
 from spark_session import is_before_spark_330
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
-def test_interval(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen = DayTimeIntervalGen()
-
-    assert_gpu_and_cpu_writes_are_equal_collect(
-        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
-        lambda spark, path: spark.read.parquet(path),
-        data_path)
-
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
 def test_write_daytime_interval(spark_tmp_path):
