@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import py
 import pytest
 from _pytest.mark.structures import ParameterSet
 from pyspark.sql.functions import broadcast
