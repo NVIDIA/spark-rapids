@@ -787,7 +787,7 @@ def test_struct_self_join(spark_tmp_table_factory):
     # pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'), id='aqe:on')
 ])
 @pytest.mark.parametrize('conditionalJoin', [False, True], ids=['ast:off', 'ast:on'])
-@pytest.mark.parametrize('forceBroadcastHashJoin', [False, True], ids=['broadcastHJ:off', 'broadcastHJ:off'])
+@pytest.mark.parametrize('forceBroadcastHashJoin', [False, True], ids=['broadcastHJ:off', 'broadcastHJ:on'])
 def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, forceBroadcastHashJoin, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
@@ -823,16 +823,15 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
             "   or exists (select * from {} as r where r._2 = l._2 and r._3 {} l._3)"
         ).format(leftTable, rightTable, cond))
         return res
+    existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\),"
     if conditionalJoin:
-        existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\), \(.+ <= .+\)"
-    else:
-        existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\)"
+        existenceJoinRegex = existenceJoinRegex + r" \(.+ <= .+\)"
 
     if forceBroadcastHashJoin:
         # hints don't work with ExistenceJoin
         # forcing by upping the size to the estimated right output
         bhjThreshold = "9223372036854775807b"
-        existenceJoinRegex = r"BroadcastHashJoin .* " + existenceJoinRegex
+        existenceJoinRegex = r'BroadcastHashJoin .* ' + existenceJoinRegex
     else:
         bhjThreshold = "-1b"
 
