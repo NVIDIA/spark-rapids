@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import py
 import pytest
 from _pytest.mark.structures import ParameterSet
 from pyspark.sql.functions import broadcast
@@ -779,15 +780,16 @@ def test_struct_self_join(spark_tmp_table_factory):
 # If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
 # the optimizer won't use ExistenceJoin.
 @ignore_order(local=True)
-@pytest.mark.parametrize('numComplementsToExists', [0, 1, 2], ids=(lambda val: f"complements:{val}") )
+@pytest.mark.parametrize('numComplementsToExists', [0, 1, 2], ids=(lambda val: f"complements:{val}"))
 @pytest.mark.parametrize('aqeEnabled', [
     pytest.param(False, id='aqe:off'),
     # workaround: somehow AQE retains RDDScanExec preventing parent ShuffleExchangeExec
     # from being executed on GPU
-    pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'), id='aqe:on')
+    # pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'), id='aqe:on')
 ])
 @pytest.mark.parametrize('conditionalJoin', [False, True], ids=['ast:off', 'ast:on'])
-def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, spark_tmp_table_factory):
+@pytest.mark.parametrize('forceBroadcastHashJoin', [False, True], ids=['broadcastHJ:off', 'broadcastHJ:off'])
+def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, forceBroadcastHashJoin, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
     def do_join(spark):
@@ -819,15 +821,25 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, spa
             "select * "
             "from {} as l "
             f"where l._2 >= {10 * (lhs_upper_bound - numComplementsToExists)}"
-            "   or exists (select * from {} as r where r._2 = l._2 AND r._3 {} l._3)"
+            "   or exists (select * from {} as r where r._2 = l._2 and r._3 {} l._3)"
         ).format(leftTable, rightTable, cond))
+        res.explain(True)
         return res
     if conditionalJoin:
         existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\), \(.+ <= .+\)"
     else:
         existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\)"
 
+    if forceBroadcastHashJoin:
+        # hints don't work with ExistenceJoin
+        # forcing by upping the size to the estimated right output
+        bhjThreshold = "9223372036854775807b"
+        existenceJoinRegex = r"BroadcastHashJoin .* " + existenceJoinRegex
+    else:
+        bhjThreshold = "-1b"
+
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, existenceJoinRegex,
         conf={
             "spark.sql.adaptive.enabled": aqeEnabled,
+            "spark.sql.autoBroadcastJoinThreshold": bhjThreshold
         })
