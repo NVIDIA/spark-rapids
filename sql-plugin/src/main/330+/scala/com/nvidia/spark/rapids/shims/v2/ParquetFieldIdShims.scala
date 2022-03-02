@@ -41,8 +41,8 @@ object ParquetFieldIdShims {
 
   def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _, _], conf: SQLConf): Unit = {
     if(conf.parquetFieldIdReadEnabled) {
-      meta.willNotWorkOnGpu("reading by Parquet field ID is not supported, " +
-          "SQLConf.PARQUET_FIELD_ID_READ_ENABLED is true")
+      meta.willNotWorkOnGpu(s"reading by Parquet field ID is not supported, " +
+          s"${SQLConf.PARQUET_FIELD_ID_READ_ENABLED.key} is true")
     }
   }
 }
