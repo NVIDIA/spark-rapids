@@ -822,7 +822,6 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
             f"where l._2 >= {10 * (lhs_upper_bound - numComplementsToExists)}"
             "   or exists (select * from {} as r where r._2 = l._2 and r._3 {} l._3)"
         ).format(leftTable, rightTable, cond))
-        res.explain(True)
         return res
     if conditionalJoin:
         existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\), \(.+ <= .+\)"
