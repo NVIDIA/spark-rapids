@@ -808,7 +808,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
         rhs_data = list((f"right_{v}", v * 10, v * 100) for v in range(0, 8))
         rhs_data.append(('right_null', None, None))
         # duplicate every row in the rhs to verify it does not affect
-        # the number of output rows, which should be equal to the number of the
+        # the number of output rows, which should be equal to the left table row count
         rhs_data_with_dupes=[]
         for dupe in rhs_data:
             rhs_data_with_dupes.extend([dupe, dupe])
