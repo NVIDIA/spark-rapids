@@ -542,6 +542,12 @@ class ExistenceJoinIterator(
     }
   }
 
+  override def close(): Unit = {
+    opTime.ns {
+      super.close()
+    }
+  }
+
   private def leftKeysTable(leftColumnarBatch: ColumnarBatch): Table = {
     withResource(GpuProjectExec.project(leftColumnarBatch, boundStreamKeys)) {
       GpuColumnVector.from(_)
