@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims.v2
 import com.nvidia.spark.rapids.RapidsMeta
 import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.sql.RuntimeConfig
 import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
@@ -32,17 +31,18 @@ object ParquetFieldIdShims {
       sqlConf.parquetFieldIdWriteEnabled.toString)
   }
 
-  def tagGpuSupportWriteForFieldId(meta: RapidsMeta[_, _, _], schema: StructType): Unit = {
-    if (ParquetUtils.hasFieldIds(schema)) {
+  def tagGpuSupportWriteForFieldId(meta: RapidsMeta[_, _, _], schema: StructType,
+      conf: SQLConf): Unit = {
+    if (conf.parquetFieldIdWriteEnabled && ParquetUtils.hasFieldIds(schema)) {
       meta.willNotWorkOnGpu(
-        "Currently not support 'parquet.field.id' in parquet writer, schema is " + schema.json)
+        "field IDs are not supported for Parquet writes, schema is " + schema.json)
     }
   }
 
-  def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _, _], conf: RuntimeConfig): Unit = {
-    if(conf.get(SQLConf.PARQUET_FIELD_ID_READ_ENABLED.key, "false").toBoolean) {
-      meta.willNotWorkOnGpu("Currently not support reading field ids, " +
-          "please set spark.sql.parquet.fieldId.read.enabled as false")
+  def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _, _], conf: SQLConf): Unit = {
+    if(conf.parquetFieldIdReadEnabled) {
+      meta.willNotWorkOnGpu("reading by Parquet field ID is not supported, " +
+          "SQLConf.PARQUET_FIELD_ID_READ_ENABLED is true")
     }
   }
 }

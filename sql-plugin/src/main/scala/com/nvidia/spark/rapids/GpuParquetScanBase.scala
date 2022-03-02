@@ -144,7 +144,7 @@ object GpuParquetScanBase {
       meta: RapidsMeta[_, _, _]): Unit = {
     val sqlConf = sparkSession.conf
 
-    ParquetFieldIdShims.tagGpuSupportReadForFieldId(meta, sqlConf)
+    ParquetFieldIdShims.tagGpuSupportReadForFieldId(meta, sparkSession.sessionState.conf)
 
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
