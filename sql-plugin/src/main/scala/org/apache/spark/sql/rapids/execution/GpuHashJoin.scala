@@ -525,8 +525,9 @@ class ExistenceJoinIterator(
     with TaskAutoCloseableResource with Arm {
 
   use(spillableBuiltBatch)
-  val compiledConditionRes: Option[CompiledExpression] = boundCondition
-    .map(gpuExpr => use(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+  val compiledConditionRes: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
+    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+  }
 
   override def hasNext: Boolean = {
     val streamHasNext = lazyStream.hasNext
@@ -538,7 +539,13 @@ class ExistenceJoinIterator(
 
   override def next(): ColumnarBatch = {
     withResource(lazyStream.next()) { lazyBatch =>
-      existenceJoinNextBatch(lazyBatch.getBatch)
+      withResource(new NvtxWithMetrics("existence join batch", NvtxColor.ORANGE, joinTime)) { _ =>
+        opTime.ns {
+          val ret = existenceJoinNextBatch(lazyBatch.getBatch)
+          spillableBuiltBatch.allowSpilling()
+          ret
+        }
+      }
     }
   }
 
@@ -596,7 +603,7 @@ class ExistenceJoinIterator(
    */
   private def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
     withResource(
-      new NvtxWithMetrics("existence join gather map", NvtxColor.ORANGE, joinTime)
+      new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)
     ) { _ =>
       withResource(leftKeysTable(leftColumnarBatch)) { leftKeysTab =>
         withResource(rightKeysTable()) { rightKeysTab =>
