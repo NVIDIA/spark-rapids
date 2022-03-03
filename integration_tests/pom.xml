@@ -61,15 +61,14 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.test.version}</version>
+        </dependency>
+        <dependency>
+            <!-- for hive udf test cases -->
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-hive_${scala.binary.version}</artifactId>
         </dependency>
     </dependencies>
 
@@ -107,6 +106,17 @@
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                    </exclusions>
                 </dependency>
             </dependencies>
         </profile>
@@ -178,6 +188,30 @@
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
+                <dependency>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-exec</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-serde</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.commons</groupId>
+                    <artifactId>commons-io</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-common</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
             </dependencies>
         </profile>
     </profiles>
@@ -204,6 +238,23 @@
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
                                 <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
+                                    <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>generate-test-build-info</id>
+                        <phase>process-test-classes</phase>
+                        <configuration>
+                            <!-- Execute the shell script to generate the plugin build information. -->
+                            <target>
+                                <exec executable="bash" failonerror="true" output="${project.build.testOutputDirectory}/rapids4spark-version-info.properties" >
                                     <arg value="${spark.rapids.source.basedir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>

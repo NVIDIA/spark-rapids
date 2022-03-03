@@ -292,6 +292,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StringRepeat"></a>spark.rapids.sql.expression.StringRepeat|`repeat`|StringRepeat operator that repeats the given strings with numbers of times given by repeatTimes|true|None|
 <a name="sql.expression.StringReplace"></a>spark.rapids.sql.expression.StringReplace|`replace`|StringReplace operator|true|None|
 <a name="sql.expression.StringSplit"></a>spark.rapids.sql.expression.StringSplit|`split`|Splits `str` around occurrences that match `regex`|true|None|
+<a name="sql.expression.StringToMap"></a>spark.rapids.sql.expression.StringToMap|`str_to_map`|Creates a map after splitting the input string into pairs of key-value strings|true|None|
 <a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|`trim`|StringTrim operator|true|None|
 <a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|`ltrim`|StringTrimLeft operator|true|None|
 <a name="sql.expression.StringTrimRight"></a>spark.rapids.sql.expression.StringTrimRight|`rtrim`|StringTrimRight operator|true|None|

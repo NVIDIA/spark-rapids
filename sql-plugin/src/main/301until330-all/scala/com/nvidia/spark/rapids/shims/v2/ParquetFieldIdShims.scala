@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark321
+package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import org.apache.hadoop.conf.Configuration
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 2, 1)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
+import org.apache.spark.sql.internal.SQLConf
 
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark321Shims()
+object ParquetFieldIdShims {
+  /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
+  def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    // Parquet field ID support configs are not supported until Spark 3.3
   }
 }

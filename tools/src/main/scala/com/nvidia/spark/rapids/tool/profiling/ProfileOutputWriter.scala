@@ -21,8 +21,6 @@ import org.apache.commons.lang3.StringUtils
 class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: Int,
     outputCSV: Boolean = false) {
 
-  private val CSVDelimiter = ","
-
   private val textFileWriter = new ToolTextFileWriter(outputDir,
     s"$filePrefix.log", "Profile summary")
 
@@ -64,13 +62,14 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
         val csvWriter = new ToolTextFileWriter(outputDir,
           s"${suffix}.csv", s"$header CSV:")
         try {
-          val headerString = outRows.head.outputHeaders.mkString(CSVDelimiter)
+          val headerString = outRows.head.outputHeaders.mkString(ProfileOutputWriter.CSVDelimiter)
           csvWriter.write(headerString + "\n")
           val rows = outRows.map(_.convertToSeq)
           rows.foreach { row =>
-            val delimiterHandledRow = row.map(ProfileUtils.replaceDelimiter(_, CSVDelimiter))
+            val delimiterHandledRow =
+              row.map(ProfileUtils.replaceDelimiter(_, ProfileOutputWriter.CSVDelimiter))
             val formattedRow = delimiterHandledRow.map(stringIfempty(_))
-            val outStr = formattedRow.mkString(CSVDelimiter)
+            val outStr = formattedRow.mkString(ProfileOutputWriter.CSVDelimiter)
             csvWriter.write(outStr + "\n")
           }
         } finally {
@@ -92,6 +91,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
 }
 
 object ProfileOutputWriter {
+  val CSVDelimiter = ","
 
   /**
    * Regular expression matching full width characters.

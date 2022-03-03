@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-#pragma once
+package com.nvidia.spark.rapids.tests.udf.hive;
 
-#include <cudf/column/column.hpp>
-#include <cudf/column/column_view.hpp>
+import org.apache.hadoop.hive.ql.exec.UDF;
 
-/**
- * @brief Count the words in a string separated by whitespace
- *
- * @param strs The column containing the strings to be examined
- * @return The INT32 column containing the word count results for each string
- */
-std::unique_ptr<cudf::column> string_word_count(cudf::column_view const& strs);
+/** An empty Hive simple UDF returning the first input directly for row-based UDF test only. */
+public class EmptyHiveSimpleUDF extends UDF {
+  public String evaluate(String in, String in2) {
+    return in;
+  }
+}

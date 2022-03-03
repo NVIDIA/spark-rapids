@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ incompat = pytest.mark.incompat
 limit = pytest.mark.limit
 qarun = pytest.mark.qarun
 cudf_udf = pytest.mark.cudf_udf
-rapids_udf_example_native = pytest.mark.rapids_udf_example_native
 shuffle_test = pytest.mark.shuffle_test
 nightly_gpu_mem_consuming_case = pytest.mark.nightly_gpu_mem_consuming_case
 nightly_host_mem_consuming_case = pytest.mark.nightly_host_mem_consuming_case

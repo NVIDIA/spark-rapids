@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, \
+    assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_311, is_before_spark_330
@@ -133,20 +134,112 @@ def test_map_expr_multi_non_literal_keys():
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(2).selectExpr(
-                "map(1, 2, 3, 4) as i", 
+                "map(1, 2, 3, 4) as i",
                 "map('a', 'b', 'c', 'd') as s",
                 "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
                 "id"))
 
-@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
+def test_str_to_map_expr_fixed_pattern_input():
+    # Test pattern "key1:val1,key2:val2".
+    # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
+    # key start with a letter [a-zA-Z].
+    data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
+                                nullable=True))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m1',
+            'str_to_map(a, ",") as m2',
+            'str_to_map(a, ",", ":") as m3'))
+
+def test_str_to_map_expr_fixed_delimiters():
+    data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
+                 .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m1',
+            'str_to_map(a, ",") as m2',
+            'str_to_map(a, ",", ":") as m3'
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+def test_str_to_map_expr_random_delimiters():
+    data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True)
+                 .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
+    delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
+    (pair_delim, keyval_delim) = ('', '')
+    while pair_delim == keyval_delim:
+        (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m1',
+            'str_to_map(a, {}) as m2'.format(pair_delim),
+            'str_to_map(a, {}, {}) as m3'.format(pair_delim, keyval_delim)
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+def test_str_to_map_expr_input_no_delimiter():
+    # Test input strings that contain either one delimiter or do not contain delimiters at all.
+    data_gen = [('a', StringGen(pattern='[0-9:,]{0,100}', nullable=True)
+                 .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a, "A", ":") as m1',  # input doesn't contain pair delimiter
+            'str_to_map(a, ",", "A") as m2',  # input doesn't contain key-value delimiter
+            'str_to_map(a, "A", "A") as m3'   # input doesn't contain any delimiter
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+def test_str_to_map_expr_with_regex_and_non_regex_delimiters():
+    data_gen = [('a', StringGen(pattern='(([bf]:{0,5}){1,7},{0,5}[0-9]{1,10}){0,10}',
+                                nullable=True))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a, "[,]") as m1',
+            'str_to_map(a, "[,]{1,5}") as m2',
+            'str_to_map(a, "[,b]") as m3',
+            'str_to_map(a, ",", "[:]") as m4',
+            'str_to_map(a, ",", "[:f]") as m5',
+            'str_to_map(a, ",", "[:]{1,10}") as m6'
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+def test_str_to_map_expr_with_all_regex_delimiters():
+    data_gen = [('a', StringGen(pattern='(([bf]:{0,5}){1,7},{0,5}[0-9]{1,10}){0,10}',
+                                nullable=True))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'str_to_map(a, "[,]") as m1',
+            'str_to_map(a, "[,]", "[:]") as m2',
+            'str_to_map(a, "[,b]", "[:f]") as m3',
+            'str_to_map(a, "[,]", "[:]{1,10}") as m4',
+            'str_to_map(a, "[,]{1,10}", "[:]{1,10}") as m5'
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+@pytest.mark.skipif(not is_before_spark_330() or is_before_spark_311(),
+                    reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value_ansi_fail(data_gen):
-    message = "org.apache.spark.SparkNoSuchElementException" if not is_before_spark_330() else "java.util.NoSuchElementException"
+    message = "java.util.NoSuchElementException"
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'a["NOT_FOUND"]').collect(),
                 conf=ansi_enabled_conf,
                 error_message=message)
+
+@pytest.mark.skipif(is_before_spark_330(),
+                    reason="Only in Spark 3.3.0 + ANSI mode + Strict Index, map key throws on no such element")
+@pytest.mark.parametrize('strict_index', ['true', 'false'])
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_simple_get_map_value_with_strict_index(strict_index, data_gen):
+    message = "org.apache.spark.SparkNoSuchElementException"
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
+    if strict_index == 'true':
+        assert_gpu_and_cpu_error(
+                lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a["NOT_FOUND"]').collect(),
+                conf=test_conf,
+                error_message=message)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a["NOT_FOUND"]'),
+                conf=test_conf)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
@@ -172,10 +265,12 @@ def test_simple_element_at_map(data_gen):
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_map_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkNoSuchElementException" if not is_before_spark_330() else "java.util.NoSuchElementException"
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'element_at(a, "NOT_FOUND")').collect(),
-                conf=ansi_enabled_conf,
+                conf=test_conf,
                 error_message=message)
 
 @pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if key is not found")
@@ -219,7 +314,6 @@ def test_transform_values(data_gen):
         return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
-
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 def test_transform_keys(data_gen):

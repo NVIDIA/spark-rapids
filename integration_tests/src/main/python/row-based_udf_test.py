@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,25 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from spark_session import with_spark_session
-from rapids_udf_test import skip_if_no_hive, load_hive_udf_or_skip_test
+from conftest import skip_unless_precommit_tests
+
+def drop_udf(spark, udfname):
+    spark.sql("DROP TEMPORARY FUNCTION IF EXISTS {}".format(udfname))
+
+def skip_if_no_hive(spark):
+    if spark.conf.get("spark.sql.catalogImplementation") != "hive":
+        skip_unless_precommit_tests('The Spark session does not have Hive support')
+
+def load_hive_udf(spark, udfname, udfclass):
+    drop_udf(spark, udfname)
+    # if UDF failed to load, throws AnalysisException, check if the udf class is in the class path
+    spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udfname, udfclass))
 
 def test_hive_empty_simple_udf():
     with_spark_session(skip_if_no_hive)
     data_gens = [["i", int_gen], ["s", string_gen]]
     def evalfn(spark):
-        load_hive_udf_or_skip_test(spark, "emptysimple", "com.nvidia.spark.rapids.udf.hive.EmptyHiveSimpleUDF")
+        load_hive_udf(spark, "emptysimple", "com.nvidia.spark.rapids.tests.udf.hive.EmptyHiveSimpleUDF")
         return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
@@ -34,7 +46,7 @@ def test_hive_empty_simple_udf():
 def test_hive_empty_generic_udf():
     with_spark_session(skip_if_no_hive)
     def evalfn(spark):
-        load_hive_udf_or_skip_test(spark, "emptygeneric", "com.nvidia.spark.rapids.udf.hive.EmptyHiveGenericUDF")
+        load_hive_udf(spark, "emptygeneric", "com.nvidia.spark.rapids.tests.udf.hive.EmptyHiveGenericUDF")
         return gen_df(spark, [["s", string_gen]])
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,10 +34,6 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--cudf_udf", action='store_true', default=False, help="if true enable cudf_udf test"
-    )
-    parser.addoption(
-        "--rapids_udf_example_native", action='store_true', default=False,
-        help="if true enable tests for RAPIDS UDF examples with native code"
     )
     parser.addoption(
         "--test_type", action='store', default="developer",
