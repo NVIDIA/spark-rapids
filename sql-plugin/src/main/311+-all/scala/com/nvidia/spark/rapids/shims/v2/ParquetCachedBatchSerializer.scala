@@ -907,8 +907,10 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           index -> inMemReqSparkSchema.fields.indexOf(reqSparkSchemaInCacheOrder.fields(index))
         }.toMap
 
-        val reqParquetSchemaInCacheOrder =
-          sparkToParquetSchemaConverter.convert(reqSparkSchemaInCacheOrder)
+        val reqParquetSchemaInCacheOrder = new org.apache.parquet.schema.MessageType(
+          inMemCacheParquetSchema.getName(), reqSparkSchemaInCacheOrder.fields.map { f =>
+            inMemCacheParquetSchema.getFields().get(inMemCacheParquetSchema.getFieldIndex(f.name))
+          }:_*)
 
         // reset spark schema calculated from parquet schema
         hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
