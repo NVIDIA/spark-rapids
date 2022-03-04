@@ -442,6 +442,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), RegexReplaceMode)
   }
 
+  test("string split - optimized") {
+    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d")
+    val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
+        "abc,def", "abc;def", "abcdef", "abc|def")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      assertTranspileToSplittableString(patterns)
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("string split - not optimized") {
+    val patterns = Set(".\\$", "\\[.", "\\(.", ".\\}", "\\+.", "c.\\|d")
+    val data = Seq("abc.$def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
+        "abc#|def")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      assertNoTranspileToSplittableString(patterns)
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
   test("string split - limit < 0") {
     val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
     val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
@@ -466,17 +486,53 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  def assertTranspileToSplittableString(patterns: Set[String]) {
+    for (pattern <- patterns) {
+      val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+      transpiler.transpileToSplittableString(pattern) match {
+        case None =>
+          fail(s"string_split pattern=${toReadableString(pattern)} " +
+            "does not produce a simplified string to split on"
+          )
+        case _ =>
+      }
+    }
+  }
+
+  def assertNoTranspileToSplittableString(patterns: Set[String]) {
+    for (pattern <- patterns) {
+      val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+      transpiler.transpileToSplittableString(pattern) match {
+        case Some(_) =>
+          fail(s"string_split pattern=${toReadableString(pattern)} " +
+            "is trying to produce a simplified string to split on when " +
+            "it can't"
+          )
+        case _ =>
+      }
+    }
+  }
+
   def doStringSplitTest(patterns: Set[String], data: Seq[String], limit: Int) {
     for (pattern <- patterns) {
       val cpu = cpuSplit(pattern, data, limit)
-      val cudfPattern = new CudfRegexTranspiler(RegexSplitMode).transpile(pattern)
-      val gpu = gpuSplit(cudfPattern, data, limit)
+      val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+      val (isRegex, cudfPattern) = if (RegexParser.isRegExpString(pattern)) {
+        transpiler.transpileToSplittableString(pattern) match {
+          case Some(simplified) => (false, simplified)
+          case _ => (true, transpiler.transpile(pattern))
+        }
+      } else {
+        (false, pattern)
+      }
+      val gpu = gpuSplit(cudfPattern, data, limit, isRegex)
       assert(cpu.length == gpu.length)
       for (i <- cpu.indices) {
         val cpuArray = cpu(i)
         val gpuArray = gpu(i)
         if (!cpuArray.sameElements(gpuArray)) {
           fail(s"string_split pattern=${toReadableString(pattern)} " +
+            s"isRegex=$isRegex " +
             s"data=${toReadableString(data(i))} limit=$limit " +
             s"\nCPU [${cpuArray.length}]: ${toReadableString(cpuArray.mkString(", "))} " +
             s"\nGPU [${gpuArray.length}]: ${toReadableString(gpuArray.mkString(", "))}")
@@ -616,8 +672,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => s.split(pattern, limit))
   }
 
-  private def gpuSplit(pattern: String, input: Seq[String], limit: Int): Seq[Array[String]] = {
-    val isRegex = RegexParser.isRegExpString(pattern)
+  private def gpuSplit(
+      pattern: String,
+      input: Seq[String],
+      limit: Int,
+      isRegex: Boolean): Seq[Array[String]] = {
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       withResource(cv.stringSplitRecord(pattern, limit, isRegex)) { x =>
         withResource(x.copyToHost()) { hcv =>
