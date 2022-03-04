@@ -302,13 +302,18 @@ class RegexParser(pattern: String) {
     // \x{h...h} The character with hexadecimal value 0xh...h
     //           (Character.MIN_CODE_POINT  <= 0xh...h <=  Character.MAX_CODE_POINT)
 
+    val varHex = pattern.charAt(pos) == '{'
+    if (varHex) {
+      consumeExpected('{')
+    }
     val start = pos
     while (!eof() && isHexDigit(pattern.charAt(pos))) {
       pos += 1
     }
     val hexDigit = pattern.substring(start, pos)
-
-    if (hexDigit.length < 2) {
+    if (varHex) {
+      consumeExpected('}')
+    } else if (hexDigit.length != 2) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
     }
 
@@ -554,15 +559,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
           digits
         }
         if (Integer.parseInt(octal, 8) >= 128) {
+          // see https://github.com/NVIDIA/spark-rapids/issues/4746
           throw new RegexUnsupportedException(
             "cuDF does not support octal digits 0o177 < n <= 0o377")
         }
         RegexOctalChar(octal)
 
-      case RegexHexDigit(_) =>
-        // see https://github.com/NVIDIA/spark-rapids/issues/4486
-        throw new RegexUnsupportedException(
-          s"cuDF does not support hex digits consistently with Spark")
+      case RegexHexDigit(digits) =>
+        val codePoint = Integer.parseInt(digits, 16)
+        if (codePoint >= 128) {
+          // see https://github.com/NVIDIA/spark-rapids/issues/4866
+          throw new RegexUnsupportedException(
+            "cuDF does not support hex digits > 0x7F")
+        }
+        RegexHexDigit(String.format("%02x", Int.box(codePoint)))
 
       case RegexEscaped(ch) => ch match {
         case 'D' =>
@@ -609,10 +619,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
           case RegexEscaped(ch) if ch == '0' =>
+            // see https://github.com/NVIDIA/spark-rapids/issues/4862
             // examples
             // - "[\02] should match the character with code point 2"
             throw new RegexUnsupportedException(
               "cuDF does not support octal digits in character classes")
+          case RegexEscaped(ch) if ch == 'x' =>
+            // examples
+            // - "[\x02] should match the character with code point 2"
+            throw new RegexUnsupportedException(
+              "cuDF does not support hex digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
@@ -828,7 +844,13 @@ sealed trait RegexCharacterClassComponent extends RegexAST
 
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"\\x$a"
+  override def toRegexString: String = {
+    if (a.length == 2) {
+      s"\\x$a"
+    } else {
+      s"\\x{$a}"
+    }
+  }
 }
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
