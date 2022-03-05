@@ -259,3 +259,12 @@ def test_array_max(data_gen):
 def test_sql_array_scalars(query):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.sql('SELECT {}'.format(query)))
+
+
+@pytest.mark.parametrize('data_gen', all_basic_gens + nested_gens_sample, ids=idfn)
+def test_get_array_struct_fields(data_gen):
+    array_struct_gen = ArrayGen(
+        StructGen([['child0', data_gen], ['child1', int_gen]]),
+        max_length=6)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, array_struct_gen).selectExpr('a.child0'))
