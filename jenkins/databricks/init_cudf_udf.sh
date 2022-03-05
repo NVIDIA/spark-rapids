@@ -27,7 +27,7 @@ base=$(conda info --base)
 # Create and activate 'cudf-udf' conda env for cudf-udf tests
 conda create -y -n cudf-udf && source activate && conda activate cudf-udf
 # Use mamba to install cudf-udf packages to speed up conda resolve time
-conda install -c conda-forge mamba
+conda install -c conda-forge mamba python=3.8
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas
-${base}/envs/cudf-udf/bin/mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=$CUDF_VER cudatoolkit=11.0 python=3.8
+${base}/envs/cudf-udf/bin/mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=$CUDF_VER cudatoolkit=11.0
 conda deactivate

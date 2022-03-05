@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -25,9 +25,9 @@ import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetArrayStructFields, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
@@ -312,4 +312,46 @@ case class GpuArrayContains(left: Expression, right: Expression)
   }
 
   override def prettyName: String = "array_contains"
+}
+
+class GpuGetArrayStructFieldsMeta(
+     expr: GetArrayStructFields,
+     conf: RapidsConf,
+     parent: Option[RapidsMeta[_, _, _]],
+     rule: DataFromReplacementRule)
+  extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
+
+  def convertToGpu(child: Expression): GpuExpression =
+    GpuGetArrayStructFields(child, expr.field, expr.ordinal, expr.numFields, expr.containsNull)
+}
+
+/**
+ * For a child whose data type is an array of structs, extracts the `ordinal`-th fields of all array
+ * elements, and returns them as a new array.
+ *
+ * No need to do type checking since it is handled by 'ExtractValue'.
+ */
+case class GpuGetArrayStructFields(
+    child: Expression,
+    field: StructField,
+    ordinal: Int,
+    numFields: Int,
+    containsNull: Boolean) extends GpuUnaryExpression with ExtractValue with NullIntolerant {
+
+  override def dataType: DataType = ArrayType(field.dataType, containsNull)
+  override def toString: String = s"$child.${field.name}"
+  override def sql: String = s"${child.sql}.${quoteIdentifier(field.name)}"
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val base = input.getBase
+    val fieldView = withResource(base.getChildColumnView(0)) { structView =>
+      structView.getChildColumnView(ordinal)
+    }
+    val listView = withResource(fieldView) { _ =>
+      GpuListUtils.replaceListDataColumnAsView(base, fieldView)
+    }
+    withResource(listView) { _ =>
+      listView.copyToColumnVector()
+    }
+  }
 }

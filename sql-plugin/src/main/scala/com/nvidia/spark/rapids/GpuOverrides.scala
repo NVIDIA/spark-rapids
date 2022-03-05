@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.v2.{AQEUtils, GpuHashPartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
+import com.nvidia.spark.rapids.shims.v2.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -3365,7 +3365,20 @@ object GpuOverrides extends Logging {
         TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
       (a, conf, p, r) => new UnaryExprMeta[OctetLength](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
-      })
+      }),
+    expr[GetArrayStructFields](
+      "Extracts the `ordinal`-th fields of all array elements for the data with the type of" +
+        " array of struct",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        // we should allow all supported types for the children types signature of the nested
+        // struct, even only a struct child is allowed for the array here. Since TypeSig supports
+        // only one level signature for nested type.
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
