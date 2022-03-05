@@ -142,3 +142,7 @@ def is_before_spark_330():
 def is_databricks91_or_later():
     spark = get_spark_i_know_what_i_am_doing()
     return spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "") >= "9.1"
+
+def is_with_rapids_cache_serializer():
+    _ser = _spark.conf.get('spark.sql.cache.serializer', None)
+    return _ser == 'com.nvidia.spark.ParquetCachedBatchSerializer'
