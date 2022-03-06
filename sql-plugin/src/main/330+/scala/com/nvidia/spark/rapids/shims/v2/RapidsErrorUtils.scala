@@ -16,18 +16,24 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import ai.rapids.cudf.ColumnVector
-
 import org.apache.spark.sql.errors.QueryExecutionErrors
 
 object RapidsErrorUtils {
-  def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
-    throw QueryExecutionErrors.invalidArrayIndexError(index, numElements)
+  def invalidArrayIndexError(index: Int, numElements: Int,
+      isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
+    if (isElementAtF) {
+      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
+    } else {
+      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
+    }
   }
 
-  def throwInvalidElementAtIndexError(
-      elementKey: String, isElementAtFunction: Boolean = false): ColumnVector = {
+  def mapKeyNotExistError(key: String, isElementAtF: Boolean = false): NoSuchElementException = {
     // For now, the default argument is false. The caller sets the correct value accordingly.
-    throw QueryExecutionErrors.mapKeyNotExistError(elementKey, isElementAtFunction)
+    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF)
+  }
+
+  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
+    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
 }

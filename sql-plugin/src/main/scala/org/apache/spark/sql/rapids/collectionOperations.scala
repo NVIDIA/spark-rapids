@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -33,7 +34,6 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
-import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
@@ -124,67 +124,127 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   // GetArrayItemUtil.computeNullabilityFromArray
   override def nullable: Boolean = true
 
+  @transient
+  private lazy val doElementAtV: (ColumnVector, ColumnVector) => cudf.ColumnVector =
+    left.dataType match {
+      case _: ArrayType =>
+        (array, indices) => {
+          if (failOnError) {
+            // Check if any index is out of bound only when ansi mode is enabled. Nulls in either
+            // array or indices are skipped during this computation. Then no exception will be
+            // raised if no valid entry (An entry is valid when both the array row and its index
+            // are not null), the same with what Spark does.
+            withResource(array.countElements()) { numElements =>
+              val hasLargerIndices = withResource(indices.abs()) { absIndices =>
+                absIndices.greaterThan(numElements)
+              }
+              withResource(hasLargerIndices) { _ =>
+                if (BoolUtils.isAnyValidTrue(hasLargerIndices)) {
+                  val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndices,
+                    indices, numElements)
+                  throw RapidsErrorUtils.invalidArrayIndexError(index, numElem, true)
+                }
+              }
+            }
+          } // end of "if (failOnError)"
+
+          // convert to zero-based indices for positive values
+          val indicesCol = withResource(Scalar.fromInt(0)) { zeroS =>
+            // No exception should be raised if no valid entry (An entry is valid when both
+            // the array row and its index are not null), the same with what Spark does.
+            val hasValidEntryCV = indices.mergeAndSetValidity(BinaryOp.BITWISE_AND,
+              indices, array)
+            withResource(hasValidEntryCV) { _ =>
+              if (hasValidEntryCV.contains(zeroS)) {
+                throw RapidsErrorUtils.sqlArrayIndexNotStartAtOneError()
+              }
+            }
+            val zeroBasedIndices = withResource(Scalar.fromInt(1)) { oneS =>
+              indices.sub(oneS, indices.getType)
+            }
+            withResource(zeroBasedIndices) { _ =>
+              withResource(indices.greaterThan(zeroS)) { hasPositiveIndices =>
+                hasPositiveIndices.ifElse(zeroBasedIndices, indices)
+              }
+            }
+          }
+          withResource(indicesCol) { _ =>
+            array.extractListElement(indicesCol)
+          }
+        }
+      case _: MapType =>
+        (_, _) => throw new UnsupportedOperationException("non-literal key is not supported")
+    }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    doElementAtV(lhs.getBase, rhs.getBase)
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): cudf.ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    withResource(ColumnVector.fromScalar(lhs.getBase, rhs.getRowCount.toInt)) { expandedCV =>
+      doElementAtV(expandedCV, rhs.getBase)
+    }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
-    lhs.dataType match {
+  @transient
+  private lazy val doElementAtS: (ColumnView, GpuScalar) => cudf.ColumnVector =
+    left.dataType match {
       case _: ArrayType =>
-        if (rhs.isValid) {
-          if (rhs.getValue.asInstanceOf[Int] == 0) {
-            throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
-          } else  {
-            // Positive or negative index
-            val ordinalValue = rhs.getValue.asInstanceOf[Int]
-            withResource(lhs.getBase.countElements) { numElementsCV =>
-              withResource(numElementsCV.min) { minScalar =>
-                val minNumElements = minScalar.getInt
-                // index out of bound
-                // Note: when the column is containing all null arrays, CPU will not throw, so make
-                // GPU to behave the same.
-                if (failOnError &&
-                    minNumElements < math.abs(ordinalValue) &&
-                    lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
-                  RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinalValue, minNumElements)
-                } else {
-                  if (ordinalValue > 0) {
-                    // Positive index
-                    lhs.getBase.extractListElement(ordinalValue - 1)
-                  } else {
-                    // Negative index
-                    lhs.getBase.extractListElement(ordinalValue)
+        (array, indexS) => {
+          if (!indexS.isValid || array.getRowCount == array.getNullCount) {
+            // Return nulls when index is null or all the array rows are null,
+            // the same with what Spark does.
+            GpuColumnVector.columnVectorFromNull(array.getRowCount.toInt, dataType)
+          } else {
+            // The index is valid, and array column contains at least one non-null row.
+            val index = indexS.getValue.asInstanceOf[Int]
+            if (failOnError) {
+              // Check if index is out of bound only when ansi mode is enabled, since cuDF
+              // returns nulls if index is out of bound, the same with what Spark does when
+              // ansi mode is disabled.
+              withResource(array.countElements()) { numElementsCV =>
+                withResource(numElementsCV.min) { minScalar =>
+                  val minNumElements = minScalar.getInt
+                  if (math.abs(index) > minNumElements) {
+                    throw RapidsErrorUtils.invalidArrayIndexError(index, minNumElements, true)
                   }
                 }
               }
             }
+            // convert to zero-based index if it is positive
+            val idx = if (index == 0) {
+              throw RapidsErrorUtils.sqlArrayIndexNotStartAtOneError()
+            } else if (index > 0) {
+              index - 1
+            } else {
+              index
+            }
+            array.extractListElement(idx)
           }
-        } else {
-          GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
         }
       case _: MapType =>
-        if (failOnError) {
-          withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)){ keyExistenceColumn =>
-            withResource(keyExistenceColumn.all()) { exist =>
-              if (!exist.isValid || exist.getBoolean) {
-                lhs.getBase.getMapValue(rhs.getBase)
-              } else {
-                RapidsErrorUtils.throwInvalidElementAtIndexError(
-                  rhs.getValue.asInstanceOf[UTF8String].toString, true)
+        (map, keyS) => {
+          val key = keyS.getBase
+          if (failOnError) {
+            withResource(map.getMapKeyExistence(key)){ keyExistenceColumn =>
+              withResource(keyExistenceColumn.all()) { exist =>
+                if (!exist.isValid || exist.getBoolean) {
+                  map.getMapValue(key)
+                } else {
+                  throw RapidsErrorUtils.mapKeyNotExistError(keyS.getValue.toString, true)
+                }
               }
             }
+          } else {
+            map.getMapValue(key)
           }
-        } else {
-          lhs.getBase.getMapValue(rhs.getBase)
         }
     }
-  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector =
+    doElementAtS(lhs.getBase, rhs)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector =
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
-      doColumnar(expandedLhs, rhs)
+    withResource(ColumnVector.fromScalar(lhs.getBase, numRows)) { expandedCV =>
+      doElementAtS(expandedCV, rhs)
     }
 
   override def prettyName: String = "element_at"

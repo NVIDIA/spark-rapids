@@ -16,18 +16,19 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import ai.rapids.cudf.ColumnVector
-
 object RapidsErrorUtils {
-  def throwArrayIndexOutOfBoundsException(index: Int, numElements: Int): ColumnVector = {
-    throw new ArrayIndexOutOfBoundsException(s"index $index is beyond the max index allowed " +
-        s"${numElements - 1}")
+  def invalidArrayIndexError(index: Int, numElements: Int,
+      isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
+    // Follow the Spark string format before 3.3.0
+    new ArrayIndexOutOfBoundsException(s"Invalid index: $index, numElements: $numElements")
   }
 
-  def throwInvalidElementAtIndexError(
-      elementKey: String, isElementAtFunction: Boolean = false): ColumnVector = {
-    // For now, the default argument is false. The caller sets the correct value accordingly.
-    throw new NoSuchElementException(s"Key: ${elementKey} " +
-      s"does not exist in any one of the rows in the map column")
+  def mapKeyNotExistError(key: String, isElementAtF: Boolean = false): NoSuchElementException = {
+    // Follow the Spark string format before 3.3.0
+    new NoSuchElementException(s"Key $key does not exist.")
+  }
+
+  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
+    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
 }
