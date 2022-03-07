@@ -51,7 +51,12 @@ import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
  * For details See https://issues.apache.org/jira/browse/SPARK-36825
  */
 object GpuTypeShims {
-  // If support Shims special type
+
+  /**
+   * If Shim supports the data type for row to column converter
+   * @param otherType the data type that should be checked in the Shim
+   * @return true if Shim support the otherType, false otherwise.
+   */
   def hasConverterForType(otherType: DataType) : Boolean = {
     otherType match {
       case DayTimeIntervalType(_, _) => true
@@ -59,7 +64,13 @@ object GpuTypeShims {
     }
   }
 
-  // Support ANSI interval types
+  /**
+   * Get the TypeConverter of the data type for this Shim
+   * Note should first calling hasConverterForType
+   * @param t the data type
+   * @param nullable is nullable
+   * @return the row to column convert for the data type
+   */
   def getConverterForType(t: DataType, nullable: Boolean): TypeConverter = {
     (t, nullable) match {
       case (DayTimeIntervalType(_, _), true) => LongConverter
@@ -68,8 +79,11 @@ object GpuTypeShims {
     }
   }
 
-  // Get type that shim supporting
-  // Support ANSI interval day-time type
+  /**
+   * Get the cuDF type for the Spark data type
+   * @param t the Spark data type
+   * @return the cuDF type if the Shim supports
+   */
   def toRapidsOrNull(t: DataType): DType = {
     t match {
       case _: DayTimeIntervalType =>
