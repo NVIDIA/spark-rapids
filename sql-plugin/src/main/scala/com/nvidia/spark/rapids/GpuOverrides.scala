@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -804,7 +804,7 @@ object GpuOverrides extends Logging {
 
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
-      cudfRead = TypeSig.commonCudfTypes,
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.cpuAtomics)),
     (ParquetFormatType, FileFormatChecks(
@@ -823,7 +823,7 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
-      cudfRead = TypeSig.commonCudfTypes,
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))
@@ -2560,7 +2560,7 @@ object GpuOverrides extends Logging {
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+        ("ordinal", TypeSig.INT, TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[GetMapValue](
       "Gets Value from a Map based on a key",
@@ -2579,7 +2579,7 @@ object GpuOverrides extends Logging {
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+        ("index/key", (TypeSig.INT + TypeSig.lit(TypeEnum.STRING))
           .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
             "not as maps keys")
           .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
@@ -2603,7 +2603,7 @@ object GpuOverrides extends Logging {
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
                   TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
                   TypeSig.ARRAY.nested(TypeSig.all)),
-                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+                ("ordinal", TypeSig.INT, TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
           }
           checks.tag(this)
@@ -3365,7 +3365,20 @@ object GpuOverrides extends Logging {
         TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
       (a, conf, p, r) => new UnaryExprMeta[OctetLength](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
-      })
+      }),
+    expr[GetArrayStructFields](
+      "Extracts the `ordinal`-th fields of all array elements for the data with the type of" +
+        " array of struct",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        // we should allow all supported types for the children types signature of the nested
+        // struct, even only a struct child is allowed for the array here. Since TypeSig supports
+        // only one level signature for nested type.
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions

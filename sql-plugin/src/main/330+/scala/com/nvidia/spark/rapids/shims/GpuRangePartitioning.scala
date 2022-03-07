@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}
 
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
@@ -41,7 +41,6 @@ case class GpuRangePartitioning(
   override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
-
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {
       required match {
@@ -65,8 +64,13 @@ case class GpuRangePartitioning(
           //   `OrderedDistribution(a, b)`.
           val minSize = Seq(requiredOrdering.size, gpuOrdering.size).min
           requiredOrdering.take(minSize) == gpuOrdering.take(minSize)
-        case ClusteredDistribution(requiredClustering, _) =>
-          gpuOrdering.map(_.child).forall(x => requiredClustering.exists(_.semanticEquals(x)))
+        case c @ ClusteredDistribution(requiredClustering, requireAllClusterKeys, _) =>
+          val expressions = gpuOrdering.map(_.child)
+          if (requireAllClusterKeys) {
+            c.areAllClusterKeysMatched(expressions)
+          } else {
+            expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+          }
         case _ => false
       }
     }

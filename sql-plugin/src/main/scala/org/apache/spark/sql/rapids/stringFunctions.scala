@@ -1341,18 +1341,19 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
       } else {
         if (utf8Str.numChars() == 0) {
           willNotWorkOnGpu("An empty delimiter pattern is not supported")
-        } else {
-          val str = utf8Str.toString
-          isRegExp = RegexParser.isRegExpString(str)
-          if (isRegExp) {
+        }
+        val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+        transpiler.transpileToSplittableString(utf8Str.toString) match {
+          case Some(simplified) =>
+            pattern = simplified
+          case None =>
             try {
-              pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str)
+              pattern = transpiler.transpile(utf8Str.toString)
+              isRegExp = true
             } catch {
-              case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
+              case e: RegexUnsupportedException =>
+                willNotWorkOnGpu(e.getMessage)
             }
-          } else {
-            pattern = str
-          }
         }
       }
     }

@@ -277,7 +277,7 @@ class RegexParser(pattern: String) {
             // word boundaries
             consumeExpected(ch)
             RegexEscaped(ch)
-          case '[' | '\\' | '^' | '$' | '.' | '⎮' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
+          case '[' | '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
             // escaped metacharacter
             consumeExpected(ch)
             RegexEscaped(ch)
@@ -302,13 +302,18 @@ class RegexParser(pattern: String) {
     // \x{h...h} The character with hexadecimal value 0xh...h
     //           (Character.MIN_CODE_POINT  <= 0xh...h <=  Character.MAX_CODE_POINT)
 
+    val varHex = pattern.charAt(pos) == '{'
+    if (varHex) {
+      consumeExpected('{')
+    }
     val start = pos
     while (!eof() && isHexDigit(pattern.charAt(pos))) {
       pos += 1
     }
     val hexDigit = pattern.substring(start, pos)
-
-    if (hexDigit.length < 2) {
+    if (varHex) {
+      consumeExpected('}')
+    } else if (hexDigit.length != 2) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
     }
 
@@ -446,6 +451,7 @@ object RegexSplitMode extends RegexMode
  *                if matching only (rlike)
  */
 class CudfRegexTranspiler(mode: RegexMode) {
+  private val regexMetaChars = ".$^[]\\|?*+(){}"
 
   // cuDF throws a "nothing to repeat" exception for many of the edge cases that are
   // rejected by the transpiler
@@ -465,6 +471,36 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     cudfRegex.toRegexString
+  }
+
+  def transpileToSplittableString(e: RegexAST): Option[String] = {
+    e match {
+      case RegexEscaped(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexSequence(parts) =>
+        parts.foldLeft[Option[String]](Some("")) { (all, x) => 
+          all match {
+            case Some(current) =>
+              transpileToSplittableString(x) match {
+                case Some(y) => Some(current + y)
+                case _ => None
+              }
+            case _ => None
+          }
+        }
+      case _ => None
+    }
+  }
+
+  def transpileToSplittableString(pattern: String): Option[String] = {
+    try {
+      val regex = new RegexParser(pattern).parse()
+      transpileToSplittableString(regex)
+    } catch {
+      // treat as regex if we can't parse it
+      case _: RegexUnsupportedException =>
+        None
+    }
   }
 
   private def isRepetition(e: RegexAST): Boolean = {
@@ -523,15 +559,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
           digits
         }
         if (Integer.parseInt(octal, 8) >= 128) {
+          // see https://github.com/NVIDIA/spark-rapids/issues/4746
           throw new RegexUnsupportedException(
             "cuDF does not support octal digits 0o177 < n <= 0o377")
         }
         RegexOctalChar(octal)
 
-      case RegexHexDigit(_) =>
-        // see https://github.com/NVIDIA/spark-rapids/issues/4486
-        throw new RegexUnsupportedException(
-          s"cuDF does not support hex digits consistently with Spark")
+      case RegexHexDigit(digits) =>
+        val codePoint = Integer.parseInt(digits, 16)
+        if (codePoint >= 128) {
+          // see https://github.com/NVIDIA/spark-rapids/issues/4866
+          throw new RegexUnsupportedException(
+            "cuDF does not support hex digits > 0x7F")
+        }
+        RegexHexDigit(String.format("%02x", Int.box(codePoint)))
 
       case RegexEscaped(ch) => ch match {
         case 'D' =>
@@ -578,10 +619,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
           case RegexEscaped(ch) if ch == '0' =>
+            // see https://github.com/NVIDIA/spark-rapids/issues/4862
             // examples
             // - "[\02] should match the character with code point 2"
             throw new RegexUnsupportedException(
               "cuDF does not support octal digits in character classes")
+          case RegexEscaped(ch) if ch == 'x' =>
+            // examples
+            // - "[\x02] should match the character with code point 2"
+            throw new RegexUnsupportedException(
+              "cuDF does not support hex digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
@@ -661,20 +708,34 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_replace on GPU does not support repetition with ? or *")
 
-        case (_, QuantifierVariableLength(0,None)) if mode == RegexReplaceMode =>
+        case (_, SimpleQuantifier(ch)) if mode == RegexSplitMode && "?*".contains(ch) =>
+          // example: pattern " ?", input "] b[", replace with "X":
+          // java: X]XXbX[X
+          // cuDF: XXXX] b[
+          // see https://github.com/NVIDIA/spark-rapids/issues/4884
+          throw new RegexUnsupportedException(
+            "regexp_split on GPU does not support repetition with ? or * consistently with Spark")
+
+        case (_, QuantifierVariableLength(0, _)) if mode == RegexReplaceMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4468
           throw new RegexUnsupportedException(
-            "regexp_replace on GPU does not support repetition with {0,}")
+            "regexp_replace on GPU does not support repetition with {0,} or {0,n}")
 
-        case (_, QuantifierFixedLength(0)) | (_, QuantifierVariableLength(0,Some(0)))
+        case (_, QuantifierVariableLength(0, _)) if mode == RegexSplitMode =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/4884
+          throw new RegexUnsupportedException(
+            "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
+            "consistently with Spark")
+
+        case (_, QuantifierFixedLength(0))
           if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
-            "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+            "regex_replace and regex_split on GPU do not support repetition with {0}")
 
         case (RegexGroup(_, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
           throw new RegexUnsupportedException(nothingToRepeat)
-        case (RegexGroup(_, term), QuantifierVariableLength(_,None))
+        case (RegexGroup(_, term), QuantifierVariableLength(_, None))
             if !isSupportedRepetitionBase(term) =>
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
@@ -797,7 +858,13 @@ sealed trait RegexCharacterClassComponent extends RegexAST
 
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"\\x$a"
+  override def toRegexString: String = {
+    if (a.length == 2) {
+      s"\\x$a"
+    } else {
+      s"\\x{$a}"
+    }
+  }
 }
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {

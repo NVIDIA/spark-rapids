@@ -43,7 +43,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
@@ -376,7 +376,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
           TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+        ("ordinal", TypeSig.INT, TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r) {
         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
           GpuGetArrayItem(arr, ordinal, shouldFailOnElementNotExists)
@@ -401,7 +401,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP, "If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+        ("index/key", (TypeSig.INT + TypeSig.lit(TypeEnum.STRING))
           .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
             "not as maps keys")
           .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
@@ -425,7 +425,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
                   TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
                   TypeSig.ARRAY.nested(TypeSig.all)),
-                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+                ("ordinal", TypeSig.INT, TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
           }
           checks.tag(this)
@@ -671,79 +671,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
-      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = {
-          GpuParquetScanBase.tagSupport(this)
-          // we are being overly cautious and that Parquet does not support this yet
-          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
-              " on datasource V2 yet.")
-          }
-        }
-
-        override def convertToGpu(): Scan = {
-          GpuParquetScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.pushedFilters,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-        }
-      }),
+      (a, conf, p, r) => new RapidsParquetScanMeta(a, conf, p, r)),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
-      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = {
-          GpuOrcScanBase.tagSupport(this)
-          // we are being overly cautious and that Orc does not support this yet
-          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
-              " on datasource V2 yet.")
-          }
-        }
-
-        override def convertToGpu(): Scan =
-          GpuOrcScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.pushedFilters,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      }),
+      (a, conf, p, r) => new RapidsOrcScanMeta(a, conf, p, r)),
     GpuOverrides.scan[CSVScan](
       "CSV parsing",
-      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = {
-          GpuCSVScan.tagSupport(this)
-          // we are being overly cautious and that Csv does not support this yet
-          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
-              " on datasource V2 yet.")
-          }
-        }
-
-        override def convertToGpu(): Scan =
-          GpuCSVScan(a.sparkSession,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
-      })
+      (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def getPartitionFileNames(

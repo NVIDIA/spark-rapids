@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -402,3 +402,19 @@ def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
         lambda spark, path: spark.read.parquet(path),
         data_path,
         conf=writer_confs)
+
+# should fallback when trying to write field ID metadata
+@pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
+@allow_non_gpu('DataWritingCommandExec')
+def test_parquet_write_field_id(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    schema = StructType([
+        StructField("c1", IntegerType(), metadata={'parquet.field.id' : 1}),
+    ])
+    data = [(1,),(2,),(3,),]
+    assert_gpu_fallback_write(
+            lambda spark, path: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite").parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec',
+            conf = {"spark.sql.parquet.fieldId.write.enabled" : "true"}) # default is true

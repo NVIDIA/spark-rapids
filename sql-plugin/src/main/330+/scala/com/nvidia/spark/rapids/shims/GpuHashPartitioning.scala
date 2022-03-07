@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids.GpuHashPartitioningBase
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution}
+import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, StatefulOpClusteredDistribution}
 
 case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
   extends GpuHashPartitioningBase(expressions, numPartitions) {
@@ -27,8 +27,16 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {
       required match {
-        case ClusteredDistribution(requiredClustering, _) =>
-          expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+        case h: StatefulOpClusteredDistribution =>
+          expressions.length == h.expressions.length && expressions.zip(h.expressions).forall {
+            case (l, r) => l.semanticEquals(r)
+          }
+        case c @ ClusteredDistribution(requiredClustering, requireAllClusterKeys, _) =>
+          if (requireAllClusterKeys) {
+            c.areAllClusterKeysMatched(expressions)
+          } else {
+            expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+          }          
         case _ => false
       }
     }

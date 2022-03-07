@@ -271,7 +271,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all)),
-      ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+      ("ordinal", TypeSig.INT, TypeSig.INT)),
     (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
       override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
         GpuGetArrayItem(arr, ordinal, shouldFailOnElementNotExists)
@@ -296,7 +296,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+        ("index/key", (TypeSig.INT + TypeSig.lit(TypeEnum.STRING))
           .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
             "not as maps keys")
           .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
@@ -320,7 +320,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
                   TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
                   TypeSig.ARRAY.nested(TypeSig.all)),
-                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+                ("ordinal", TypeSig.INT, TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
           }
           checks.tag(this)
@@ -507,42 +507,10 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
-      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
-
-        override def convertToGpu(): Scan = {
-          GpuParquetScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.pushedFilters,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-        }
-      }),
+      (a, conf, p, r) => new RapidsParquetScanMeta(a, conf, p, r)),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
-      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit =
-          GpuOrcScanBase.tagSupport(this)
-
-        override def convertToGpu(): Scan =
-          GpuOrcScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.pushedFilters,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      })
+      (a, conf, p, r) => new RapidsOrcScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def getPartitionFileNames(

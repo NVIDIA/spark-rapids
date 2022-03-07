@@ -50,7 +50,7 @@ object SparkShimImpl extends Spark320PlusShims with Spark30Xuntil33XShims {
       lookupFileMeta: String => String,
       dateTimeRebaseModeFromConf: String): ParquetFilters = {
     val datetimeRebaseMode = DataSourceUtils
-        .datetimeRebaseMode(lookupFileMeta, dateTimeRebaseModeFromConf)
+      .datetimeRebaseMode(lookupFileMeta, dateTimeRebaseModeFromConf)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
