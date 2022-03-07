@@ -18,10 +18,6 @@ package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.HostColumnVector.ColumnBuilder;
 
-import ai.rapids.cudf.HostColumnVectorCore;
-import org.apache.hadoop.hive.ql.exec.vector.DecimalColumnVector;
-import org.apache.spark.sql.execution.datasources.orc.OrcAtomicColumnVector;
-import org.apache.spark.sql.execution.datasources.orc.OrcColumnVector;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.vectorized.ColumnVector;
 
