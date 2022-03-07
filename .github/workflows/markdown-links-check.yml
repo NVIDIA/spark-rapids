@@ -1,10 +1,6 @@
 name: Check Markdown links
 
-on:
-  pull_request_target:
-    branches:
-      - gh-pages
-    types: [opened, synchronize, reopened, push]
+on: push
 
 jobs:
   markdown-link-check:
