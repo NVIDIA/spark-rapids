@@ -640,7 +640,7 @@
                             <execution>
                                 <id>add-test-profile-src-320</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/320/scala</source>
@@ -704,7 +704,7 @@
                             <execution>
                                 <id>add-test-profile-src-321</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/321/scala</source>
@@ -768,7 +768,7 @@
                             <execution>
                                 <id>add-test-profile-src-322</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/322/scala</source>
@@ -830,7 +830,7 @@
                             <execution>
                                 <id>add-test-profile-src-330</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/330/scala</source>
