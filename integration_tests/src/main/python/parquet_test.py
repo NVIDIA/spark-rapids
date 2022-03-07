@@ -794,7 +794,7 @@ def test_parquet_read_field_id(spark_tmp_path):
 def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('_c1', DayTimeIntervalGen())]
-    # write DayTimeInterval with GPU
+    # write DayTimeInterval with CPU
     with_cpu_session(lambda spark :gen_df(spark, gen_list).coalesce(1).write.mode("overwrite").parquet(data_path))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: spark.read.parquet(data_path))
