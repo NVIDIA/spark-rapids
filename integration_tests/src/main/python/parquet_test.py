@@ -769,3 +769,23 @@ def test_parquet_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enable
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(first_data_path, second_data_path, third_data_path),
             conf=all_confs)
+
+# should fallback when trying to read with field ID
+@pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec")
+def test_parquet_read_field_id(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    schema = StructType([
+        StructField("c1", IntegerType(), metadata={'parquet.field.id' : 1}),
+    ])
+    data = [(1,),(2,),(3,),]
+    # write parquet with field IDs
+    with_cpu_session(lambda spark :spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite").parquet(data_path))
+
+    readSchema = StructType([
+        StructField("mapped_name_xxx", IntegerType(), metadata={'parquet.field.id' : 1}),
+    ])
+    assert_gpu_fallback_collect(
+            lambda spark: spark.read.schema(readSchema).parquet(data_path),
+            'FileSourceScanExec',
+            {"spark.sql.parquet.fieldId.read.enabled": "true"}) # default is false
