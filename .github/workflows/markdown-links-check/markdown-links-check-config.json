@@ -1,9 +1,5 @@
 {
-    "ignorePatterns": [
-		{
-            "pattern": "^https:\/\/mvnrepository\.com\/artifact"
-		}
-	],
+
     "aliveStatusCodes": [
         200,
         301,
