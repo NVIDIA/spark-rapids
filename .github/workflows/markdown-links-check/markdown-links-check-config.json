@@ -19,6 +19,9 @@
       "pattern": "\/docs\/img\/spark3cluster.png"
     },
     {
+      "pattern": "\/docs\/archives"
+    },
+    {
       "pattern": "https:\/\/github.com\/NVIDIA\/spark-rapids\/issues\/"
     }
   ],
