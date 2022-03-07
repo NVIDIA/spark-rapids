@@ -27,7 +27,7 @@ object GpuTypeShims {
 
   // Get Shim special converter
   def getConverterForType(t: DataType, nullable: Boolean): TypeConverter = {
-    throw new RuntimeException("Wrong logic.")
+    throw new RuntimeException(s"No converter is found for type $t.")
   }
 
   // Get type that shim supporting

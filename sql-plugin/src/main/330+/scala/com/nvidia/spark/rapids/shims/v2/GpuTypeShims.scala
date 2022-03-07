@@ -64,7 +64,7 @@ object GpuTypeShims {
     (t, nullable) match {
       case (DayTimeIntervalType(_, _), true) => LongConverter
       case (DayTimeIntervalType(_, _), false) => NotNullLongConverter
-      case _ => throw new RuntimeException("Wrong logic.")
+      case _ => throw new RuntimeException(s"No converter is found for type $t.")
     }
   }
 

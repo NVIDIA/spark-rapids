@@ -49,8 +49,7 @@ def test_timeadd_daytime_column():
         # max days is 8000 year, so added result will not be out of range
         ('d', DayTimeIntervalGen(max_days = 8000 * 365))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list).selectExpr("t + d")
-    )
+        lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_dateaddinterval(data_gen):
