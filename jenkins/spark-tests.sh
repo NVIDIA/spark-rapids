@@ -54,12 +54,6 @@ RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
 # The version of pytest.tar.gz that is uploaded is the one built against spark301 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 
-# For the HIVE UDF integration tests
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
-    -Dtransitive=false \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM'tests'
-RAPIDS_HIVE_UDF_TESTS_JAR=="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM'tests'.jar"
-
 tmp_info=${TMP_INFO_FILE:-'/tmp/artifacts-build.info'}
 rm -rf "$tmp_info"
 TEE_CMD="tee -a $tmp_info"
@@ -80,22 +74,20 @@ getRevision() {
 set +x
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 echo "-------------------- cudf JNI BUILD INFO --------------------" >> "$tmp_info"
-c_ver=$(getRevision $CUDF_JAR cudf-java-version-info.properties)
+c_ver=$(getRevision $JARS_PATH/$CUDF_JAR cudf-java-version-info.properties)
 echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
-p_ver=$(getRevision $RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
+p_ver=$(getRevision $JARS_PATH/$RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"
-it_ver=$(getRevision $RAPIDS_TEST_JAR rapids4spark-version-info.properties)
+it_ver=$(getRevision $JARS_PATH/$RAPIDS_TEST_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" >> "$tmp_info"
-pt_ver=$(getRevision $RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
-echo "-------------------- rapids-4-spark-integration-tests tests BUILD INFO --------------------" >> "$tmp_info"
-hu_ver=$(getRevision $RAPIDS_HIVE_UDF_TESTS_JAR rapids4spark-version-info.properties)
+pt_ver=$(getRevision $JARS_PATH/$RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 set -x
 cat "$tmp_info" || true
 
 SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
 if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
-      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver"  || "$p_ver" != "$hu_ver") ]]; then
+      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver") ]]; then
   echo "Artifacts revisions are inconsistent!"
   exit 1
 fi
