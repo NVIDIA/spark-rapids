@@ -5,6 +5,9 @@
     },
     {
       "pattern": "http:\/\/RM_hostname"
+    },
+    {
+      "pattern": "\/docs\/img\/perf-cost.png"
     }
   ],
   "timeout": "5s",
