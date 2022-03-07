@@ -1740,6 +1740,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
+  def timestampsAsDatesCsvDf= {
+    fromCsvDf("timestamps.csv", StructType(Array(
+      StructField("dates", DateType, false),
+      StructField("ints", IntegerType, false)
+    )))(_)
+  }
+
   private def setNullableStateForAllColumns(df: DataFrame, nullable: Boolean) : DataFrame = {
     // get schema
     val schema = df.schema

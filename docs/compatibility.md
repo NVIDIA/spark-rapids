@@ -309,8 +309,6 @@ Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
 
 ### CSV Dates
-Parsing a `timestamp` as a `date` does not work. The details are documented in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/869).
 
 Only a limited set of formats are supported when parsing dates.
 
@@ -324,11 +322,6 @@ Only a limited set of formats are supported when parsing dates.
 * `"MM/dd/yyyy"`
 * `"dd-MM-yyyy"`
 * `"dd/MM/yyyy"`
-
-The reality is that all of these formats are supported at the same time. The plugin will only
-disable itself if you set a format that it does not support.
-
-As a workaround you can parse the column as a timestamp and then cast it to a date.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
