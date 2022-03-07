@@ -93,7 +93,7 @@ private[rapids] object GpuRowToColumnConverter {
     getConverterForType(field.dataType, field.nullable)
 
   private[rapids] def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
-    val basicMatches: PartialFunction[(DataType, Boolean), TypeConverter] = {
+    (dataType, nullable) match {
       case (BooleanType, true) => BooleanConverter
       case (BooleanType, false) => NotNullBooleanConverter
       case (ByteType, true) => ByteConverter
@@ -138,24 +138,12 @@ private[rapids] object GpuRowToColumnConverter {
           getConverterForType(v, vcn))
       case (NullType, true) =>
         NullConverter
-    }
-
-    val unknownMatch: PartialFunction[(DataType, Boolean), TypeConverter] = {
+      // check special Shims types, such as DayTimeIntervalType
+      case (otherType, nullable) if GpuTypeShims.hasConverterForType(otherType) =>
+        GpuTypeShims.getConverterForType(otherType, nullable)
       case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
-
-    // get shim matches
-    val shimMatches = GpuTypeShims.getConverterForType
-
-    // combine multiple partial matches
-    val combinedMatches = if(shimMatches.nonEmpty) {
-      basicMatches orElse shimMatches.get orElse unknownMatch
-    } else {
-      basicMatches orElse unknownMatch
-    }
-
-    combinedMatches((dataType, nullable))
   }
 
   private object NullConverter extends TypeConverter {
@@ -247,7 +235,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 2 + VALIDITY
   }
 
-  private[rapids] object IntConverter extends TypeConverter {
+  private object IntConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
@@ -262,7 +250,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 4 + VALIDITY
   }
 
-  private[rapids] object NotNullIntConverter extends TypeConverter {
+  private object NotNullIntConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {

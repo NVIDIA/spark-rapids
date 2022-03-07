@@ -22,11 +22,14 @@ import org.apache.spark.sql.types.DataType
 
 object GpuTypeShims {
 
-  // Get shim matches
-  lazy val getConverterForType: Option[PartialFunction[(DataType, Boolean), TypeConverter]] = None
+  // If support Shims special type
+  def hasConverterForType(otherType: DataType) : Boolean = false
+
+  // Get Shim special converter
+  def getConverterForType(t: DataType, nullable: Boolean): TypeConverter = {
+    throw new RuntimeException("Wrong logic.")
+  }
 
   // Get type that shim supporting
-  def toRapidsOrNull(t: DataType): DType = {
-    return null
-  }
+  def toRapidsOrNull(t: DataType): DType = null
 }

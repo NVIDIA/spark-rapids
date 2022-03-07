@@ -51,18 +51,25 @@ import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
  * For details See https://issues.apache.org/jira/browse/SPARK-36825
  */
 object GpuTypeShims {
-
-  private lazy val getPartialConverter: PartialFunction[(DataType, Boolean), TypeConverter] = {
-    case (DayTimeIntervalType(_, _), true) => LongConverter
-    case (DayTimeIntervalType(_, _), false) => NotNullLongConverter
+  // If support Shims special type
+  def hasConverterForType(otherType: DataType) : Boolean = {
+    otherType match {
+      case DayTimeIntervalType(_, _) => true
+      case _ => false
+    }
   }
 
-  // Get shim matches
   // Support ANSI interval types
-  lazy val getConverterForType = Option(getPartialConverter)
+  def getConverterForType(t: DataType, nullable: Boolean): TypeConverter = {
+    (t, nullable) match {
+      case (DayTimeIntervalType(_, _), true) => LongConverter
+      case (DayTimeIntervalType(_, _), false) => NotNullLongConverter
+      case _ => throw new RuntimeException("Wrong logic.")
+    }
+  }
 
   // Get type that shim supporting
-  // Support ANSI interval types
+  // Support ANSI interval day-time type
   def toRapidsOrNull(t: DataType): DType = {
     t match {
       case _: DayTimeIntervalType =>

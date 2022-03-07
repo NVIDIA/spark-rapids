@@ -41,7 +41,7 @@ def test_timeadd(data_gen):
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000

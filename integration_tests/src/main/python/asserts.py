@@ -93,7 +93,7 @@ def _assert_equal(cpu, gpu, float_check, path):
     elif isinstance(cpu, bytearray):
         assert cpu == gpu, "GPU and CPU bytearray values are different at {}".format(path)
     elif isinstance(cpu, timedelta):
-        # Used by interval type DayTimeIntervalGen for Spark 3.3.0+
+        # Used by interval type DayTimeInterval for Pyspark 3.3.0+
         assert cpu == gpu, "GPU and CPU timedelta values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)

@@ -789,3 +789,21 @@ def test_parquet_read_field_id(spark_tmp_path):
             lambda spark: spark.read.schema(readSchema).parquet(data_path),
             'FileSourceScanExec',
             {"spark.sql.parquet.fieldId.read.enabled": "true"}) # default is false
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('_c1', DayTimeIntervalGen())]
+    # write DayTimeInterval with GPU
+    with_cpu_session(lambda spark :gen_df(spark, gen_list).coalesce(1).write.mode("overwrite").parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.parquet(data_path))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_parquet_read_daytime_interval_gpu_file(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('_c1', DayTimeIntervalGen())]
+    # write DayTimeInterval with GPU
+    with_gpu_session(lambda spark :gen_df(spark, gen_list).coalesce(1).write.mode("overwrite").parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.parquet(data_path))

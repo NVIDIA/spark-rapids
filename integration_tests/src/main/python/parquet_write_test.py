@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -420,7 +420,7 @@ def test_parquet_write_field_id(spark_tmp_path):
             conf = {"spark.sql.parquet.fieldId.write.enabled" : "true"}) # default is true
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeIntervalGen is not supported before Spark 3.3.0')
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_write_daytime_interval(spark_tmp_path):
     gen_list = [('_c1', DayTimeIntervalGen())]
     data_path = spark_tmp_path + '/PARQUET_DATA'
