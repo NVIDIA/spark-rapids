@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl 
 import java.io.File
 import java.nio.charset.StandardCharsets
+
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader

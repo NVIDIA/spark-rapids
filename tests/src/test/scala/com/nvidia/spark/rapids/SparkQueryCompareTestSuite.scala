@@ -15,11 +15,12 @@
  */
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import java.io.File
 import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
+
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.{Assertion, FunSuite}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}

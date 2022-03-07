@@ -16,8 +16,6 @@
 
 package org.apache.spark.rapids.shims
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
-
 import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, SparkEnv, TaskContext}
 import org.apache.spark.shuffle.ShuffleReader
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec}
