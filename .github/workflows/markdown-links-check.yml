@@ -1,6 +1,10 @@
 name: Check Markdown links
 
-on: push
+on:
+  pull_request_target:
+    branches:
+      - gh-pages
+    types: [opened, synchronize, reopened]
 
 jobs:
   markdown-link-check:
@@ -10,3 +14,4 @@ jobs:
     - uses: gaurav-nelson/github-action-markdown-link-check@v1
       with:
         max-depth: -1
+        config-file: './.github/workflows/markdown-links-check/markdown-links-check-config.json'
