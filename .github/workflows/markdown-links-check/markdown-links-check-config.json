@@ -7,5 +7,7 @@
       "pattern": "http:\/\/RM_hostname"
     }
   ],
+  "timeout": "5s",
+  "retryCount": 3,
   "aliveStatusCodes": [302, 200]
 }
