@@ -218,12 +218,12 @@ object DateUtils {
       meta: RapidsMeta[_, _, _],
       sparkFormat: String,
       parseString: Boolean): String = {
-    var strfFormat: Option[String] = None
+    var strfFormat: String = null
     if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
       try {
         // try and convert the format to cuDF format - this will throw an exception if
         // the format contains unsupported characters or words
-        strfFormat = Some(toStrf(sparkFormat, parseString))
+        strfFormat = toStrf(sparkFormat, parseString)
         // format parsed ok but we have no 100% compatible formats in LEGACY mode
         if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.contains(sparkFormat)) {
           // LEGACY support has a number of issues that mean we cannot guarantee
@@ -249,7 +249,7 @@ object DateUtils {
       try {
         // try and convert the format to cuDF format - this will throw an exception if
         // the format contains unsupported characters or words
-        strfFormat = Some(toStrf(sparkFormat, parseString))
+        strfFormat = toStrf(sparkFormat, parseString)
         // format parsed ok, so it is either compatible (tested/certified) or incompatible
         if (!GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains(sparkFormat) &&
           !meta.conf.incompatDateFormats) {
@@ -262,6 +262,6 @@ object DateUtils {
           meta.willNotWorkOnGpu(s"Failed to convert ${e.reason} ${e.getMessage}")
       }
     }
-    strfFormat.get
+    strfFormat
   }
 }
