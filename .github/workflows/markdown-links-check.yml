@@ -1,7 +1,10 @@
 name: Check Markdown links
 
-on: push
-
+on: 
+  push:
+    branches:
+    - gh-pages
+    
 jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
@@ -10,4 +13,5 @@ jobs:
     - uses: gaurav-nelson/github-action-markdown-link-check@v1
       with:
         max-depth: -1
+        use-verbose-mode: 'yes'
         config-file: './.github/workflows/markdown-links-check/markdown-links-check-config.json'
