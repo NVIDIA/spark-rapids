@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
+package org.apache.spark.sql.rapids.shims.spark304
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
