@@ -218,7 +218,7 @@ abstract class GpuTextBasedPartitionReader(
                 case dt: DecimalType =>
                   castStringToDecimal(table.getColumn(i), dt)
                 case DataTypes.DateType =>
-                  castStringToDate(table.getColumn(i), ansiEnabled = false)
+                  castStringToDate(table.getColumn(i))
                 case _ =>
                   table.getColumn(i).incRefCount()
               }
@@ -237,7 +237,7 @@ abstract class GpuTextBasedPartitionReader(
 
   def dateFormat: String
 
-  def castStringToDate(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
+  def castStringToDate(input: ColumnVector): ColumnVector = {
     val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
     withResource(input.isTimestamp(cudfFormat)) { isDate =>
       if (GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
