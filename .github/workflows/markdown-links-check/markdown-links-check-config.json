@@ -1,8 +1,15 @@
 {
-
-    "aliveStatusCodes": [
-        200,
-        301,
-        302
-    ]
+  "ignorePatterns": [
+    {
+      "pattern": "^https:\/\/mvnrepository\.com\/artifact"
+    },
+    {
+      "pattern": "^http:\/\/RM_hostname"
+    }
+  ],
+  "aliveStatusCodes": [
+    200,
+    301,
+    302
+  ]
 }
