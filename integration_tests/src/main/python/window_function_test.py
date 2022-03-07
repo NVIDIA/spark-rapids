@@ -119,14 +119,16 @@ _grpkey_long_with_nulls_with_overflow = [
     ('b', LongGen(nullable=True))]
 
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
 
 running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
-        DecimalGen(38, 4),
+        DecimalGen(precision=38, scale=4),
         StructGen(children=[
             ['child_int', IntegerGen()],
             ['child_time', DateGen()],

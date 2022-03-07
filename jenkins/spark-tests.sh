@@ -32,8 +32,6 @@ $MVN_GET_CMD -DremoteRepositories=$CUDF_REPO \
     -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER -Dclassifier=$CUDA_CLASSIFIER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
@@ -45,7 +43,6 @@ else
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
 fi
 export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
-RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
@@ -77,22 +74,20 @@ getRevision() {
 set +x
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 echo "-------------------- cudf JNI BUILD INFO --------------------" >> "$tmp_info"
-c_ver=$(getRevision $JARS_PATH/$CUDF_JAR cudf-java-version-info.properties)
+c_ver=$(getRevision $CUDF_JAR cudf-java-version-info.properties)
 echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
-p_ver=$(getRevision $JARS_PATH/$RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
+p_ver=$(getRevision $RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"
-it_ver=$(getRevision $JARS_PATH/$RAPIDS_TEST_JAR rapids4spark-version-info.properties)
+it_ver=$(getRevision $RAPIDS_TEST_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" >> "$tmp_info"
-pt_ver=$(getRevision $JARS_PATH/$RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
-echo "-------------------- rapids-4-spark-udf-examples BUILD INFO --------------------" >> "$tmp_info"
-u_ver=$(getRevision $JARS_PATH/$RAPIDS_UDF_JAR rapids4spark-version-info.properties)
+pt_ver=$(getRevision $RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 set -x
 cat "$tmp_info" || true
 
 SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
 if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
-      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver" || "$p_ver" != "$u_ver") ]]; then
+      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver") ]]; then
   echo "Artifacts revisions are inconsistent!"
   exit 1
 fi

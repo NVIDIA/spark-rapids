@@ -501,6 +501,7 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_like`
 - `regexp_replace`
 - `string_split`
+- `str_to_map`
 
 Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors. To 
 disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
@@ -514,7 +515,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - Line anchor `$`
 - String anchor `\Z`
 - String anchor `\z` is not supported by `regexp_replace`
-- Line and string anchors are not supported by `string_split`
+- Line and string anchors are not supported by `string_split` and `str_to_map`
 - Non-digit character class `\D`
 - Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
@@ -527,7 +528,8 @@ Here are some examples of regular expression patterns that are not supported on 
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - Octal digits in the range `\0200` to `\0377`
 - Character classes with octal digits, such as `[\02]` or `[\024]`
-- Hex digits
+- Character classes with hex digits, such as `[\x02]` or `[\x24]`
+- Hex digits in the range `\x80` to `Character.MAX_CODE_POINT`
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.

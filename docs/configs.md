@@ -198,6 +198,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Floor"></a>spark.rapids.sql.expression.Floor|`floor`|Floor of a number|true|None|
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|`from_unixtime`|Get the string from a unix timestamp|true|None|
 <a name="sql.expression.GetArrayItem"></a>spark.rapids.sql.expression.GetArrayItem| |Gets the field at `ordinal` in the Array|true|None|
+<a name="sql.expression.GetArrayStructFields"></a>spark.rapids.sql.expression.GetArrayStructFields| |Extracts the `ordinal`-th fields of all array elements for the data with the type of array of struct|true|None|
 <a name="sql.expression.GetJsonObject"></a>spark.rapids.sql.expression.GetJsonObject|`get_json_object`|Extracts a json object from path|true|None|
 <a name="sql.expression.GetMapValue"></a>spark.rapids.sql.expression.GetMapValue| |Gets Value from a Map based on a key|true|None|
 <a name="sql.expression.GetStructField"></a>spark.rapids.sql.expression.GetStructField| |Gets the named field of the struct|true|None|
@@ -290,6 +291,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StringRepeat"></a>spark.rapids.sql.expression.StringRepeat|`repeat`|StringRepeat operator that repeats the given strings with numbers of times given by repeatTimes|true|None|
 <a name="sql.expression.StringReplace"></a>spark.rapids.sql.expression.StringReplace|`replace`|StringReplace operator|true|None|
 <a name="sql.expression.StringSplit"></a>spark.rapids.sql.expression.StringSplit|`split`|Splits `str` around occurrences that match `regex`|true|None|
+<a name="sql.expression.StringToMap"></a>spark.rapids.sql.expression.StringToMap|`str_to_map`|Creates a map after splitting the input string into pairs of key-value strings|true|None|
 <a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|`trim`|StringTrim operator|true|None|
 <a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|`ltrim`|StringTrimLeft operator|true|None|
 <a name="sql.expression.StringTrimRight"></a>spark.rapids.sql.expression.StringTrimRight|`rtrim`|StringTrimRight operator|true|None|

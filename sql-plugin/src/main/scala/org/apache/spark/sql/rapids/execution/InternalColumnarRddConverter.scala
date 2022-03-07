@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import ai.rapids.cudf.{DecimalUtils, Table}
 import ai.rapids.cudf.HostColumnVector.ColumnBuilder
-import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
@@ -523,7 +523,7 @@ private object GpuExternalRowToColumnConverter {
 
   private class DecimalConverter(
     precision: Int, scale: Int) extends NotNullDecimalConverter(precision, scale) {
-    private val appendedSize = DecimalUtil.createCudfDecimal(precision, scale).getSizeInBytes +
+    private val appendedSize = DecimalUtils.createDecimalType(precision, scale).getSizeInBytes +
         VALIDITY
 
     override def append(
@@ -540,7 +540,7 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private class NotNullDecimalConverter(precision: Int, scale: Int) extends TypeConverter {
-    private val appendedSize = DecimalUtil.createCudfDecimal(precision, scale).getSizeInBytes +
+    private val appendedSize = DecimalUtils.createDecimalType(precision, scale).getSizeInBytes +
         VALIDITY
 
     override def append(

@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling._
 
+import org.apache.spark.TaskFailedReason
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
@@ -209,12 +210,18 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
             + res.name + ",value=" + res.value + ",update=" + res.update)
       }
     }
+    val reason = event.reason match {
+      case failed: TaskFailedReason =>
+        failed.toErrorString
+      case _ =>
+        event.reason.toString
+    }
 
     val thisTask = TaskCase(
       event.stageId,
       event.stageAttemptId,
       event.taskType,
-      event.reason.toString,
+      reason,
       event.taskInfo.taskId,
       event.taskInfo.attemptNumber,
       event.taskInfo.launchTime,

@@ -41,15 +41,17 @@ else
     if [ -d "$LOCAL_JAR_PATH" ]; then
         CUDF_JARS=$(echo "$LOCAL_JAR_PATH"/cudf-*.jar)
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
-        TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER*.jar)
-        UDF_EXAMPLE_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-udf-examples*.jar)
+        # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
+        TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER.jar)
     else
         CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
-        TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER*.jar)
-        UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/../udf-examples/target/rapids-4-spark-udf-examples*.jar)
+        # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
+        TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER.jar)
     fi
-    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $UDF_EXAMPLE_JARS"
+
+    # Only 3 jars: cudf.jar dist.jar integration-test.jar
+    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then

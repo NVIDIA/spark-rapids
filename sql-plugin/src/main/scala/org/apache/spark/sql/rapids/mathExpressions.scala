@@ -181,7 +181,7 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
+        DecimalUtil.createCudfDecimal(dt)
       case _ =>
         DType.INT64
     }
@@ -258,7 +258,7 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
+        DecimalUtil.createCudfDecimal(dt)
       case _ =>
         DType.INT64
     }
@@ -599,7 +599,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
     dataType match {
       case DecimalType.Fixed(_, scaleVal) =>
-        DecimalUtil.round(lhsValue, scaleVal, roundMode)
+        lhsValue.round(scaleVal, roundMode)
       case ByteType =>
         fixUpOverflowInts(() => Scalar.fromByte(0.toByte), scaleVal, lhsValue)
       case ShortType =>
@@ -643,7 +643,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
     // overflow. Otherwise, we only need to handle round down situations.
     if (-scale == 19 && lhs.getType == DType.INT64) {
       fixUpInt64OnBounds(lhs)
-    } else if (-scale >= DecimalUtil.getPrecisionForIntegralType(lhs.getType)) {
+    } else if (-scale >= lhs.getType.getPrecisionForInt) {
       withResource(zeroFn()) { s =>
         withResource(ColumnVector.fromScalar(s, lhs.getRowCount.toInt)) { zero =>
           // set null mask if necessary

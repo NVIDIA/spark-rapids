@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
+import com.nvidia.spark.rapids.shims.v2.ParquetFieldIdShims
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -43,6 +44,9 @@ object GpuParquetFileFormat {
       schema: StructType): Option[GpuParquetFileFormat] = {
 
     val sqlConf = spark.sessionState.conf
+
+    ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema, sqlConf)
+
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
     if (!meta.conf.isParquetEnabled) {
@@ -150,11 +154,12 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       job: Job,
       options: Map[String, String],
       dataSchema: StructType): ColumnarOutputWriterFactory = {
-    val parquetOptions = new ParquetOptions(options, sparkSession.sessionState.conf)
+    val sqlConf = sparkSession.sessionState.conf
+    val parquetOptions = new ParquetOptions(options, sqlConf)
 
     val conf = ContextUtil.getConfiguration(job)
 
-    val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
+    val outputTimestampType = sqlConf.parquetOutputTimestampType
     val dateTimeRebaseException = "EXCEPTION".equals(
       sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
     // prior to spark 311 int96 don't check for rebase exception
@@ -197,14 +202,14 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     // This metadata is useful for keeping UDTs like Vector/Matrix.
     ParquetWriteSupport.setSchema(dataSchema, conf)
 
-    if (sparkSession.sessionState.conf.writeLegacyParquetFormat) {
+    if (sqlConf.writeLegacyParquetFormat) {
       throw new UnsupportedOperationException("Spark legacy output format not supported")
     }
     // Sets flags for `ParquetWriteSupport`, which converts Catalyst schema to Parquet
     // schema and writes actual rows to Parquet files.
     conf.set(
       SQLConf.PARQUET_WRITE_LEGACY_FORMAT.key,
-      sparkSession.sessionState.conf.writeLegacyParquetFormat.toString)
+      sqlConf.writeLegacyParquetFormat.toString)
 
     if(!GpuParquetFileFormat.isOutputTimestampTypeSupported(outputTimestampType)) {
       val hasTimestamps = dataSchema.exists { field =>
@@ -216,6 +221,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       }
     }
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
+
+    ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
 
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)
