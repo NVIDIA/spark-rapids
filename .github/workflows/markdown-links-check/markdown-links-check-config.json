@@ -6,10 +6,6 @@
     {
       "pattern": "^http:\/\/RM_hostname"
     }
-  ],
-  "aliveStatusCodes": [
-    200,
-    301,
-    302
   ]
+
 }
