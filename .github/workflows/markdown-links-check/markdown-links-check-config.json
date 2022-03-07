@@ -1,6 +1,9 @@
 {
   "ignorePatterns": [
     {
+      "pattern": "https:\/\/mvnrepository\.com\/artifact"
+    },
+    {
       "pattern": "http:\/\/RM_hostname"
     }
   ],
