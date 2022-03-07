@@ -1,5 +1,27 @@
 {
-  
+  "ignorePatterns": [
+    {
+      "pattern": "https:\/\/mvnrepository"
+    },
+    {
+      "pattern": "http:\/\/RM_hostname"
+    },
+    {
+      "pattern": "\/docs\/img\/perf-cost.png"
+    },
+    {
+      "pattern": "\/docs\/img\/ease-of-use.png"
+    },
+    {
+      "pattern": "\/docs\/get-started\/getting-started.md"
+    },
+    {
+      "pattern": "\/docs\/img\/spark3cluster.png"
+    },
+    {
+      "pattern": "https:\/\/github.com\/NVIDIA\/spark-rapids\/issues\/"
+    }
+  ],
   "timeout": "5s",
   "retryCount":10,
   "aliveStatusCodes": [302, 200, 429]
