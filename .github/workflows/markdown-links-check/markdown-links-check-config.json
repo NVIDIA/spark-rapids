@@ -20,6 +20,6 @@
     }
   ],
   "timeout": "5s",
-  "retryCount": 3,
+  "retryCount":5,
   "aliveStatusCodes": [302, 200]
 }
