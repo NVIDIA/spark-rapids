@@ -32,7 +32,7 @@ how to install a Kubernetes cluster with NVIDIA GPU support.
 
 On a client machine which has access to the Kubernetes cluster:
 
-1. [Download Apache Spark](https://spark.apache.org/downloads-yua.html).
+1. [Download Apache Spark](https://spark.apache.org/downloads.html).
    Supported versions of Spark are listed on the [RAPIDS Accelerator download page](../download.md).  Please note that only
    Scala version 2.12 is currently supported by the accelerator. 
 
