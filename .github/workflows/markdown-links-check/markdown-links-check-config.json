@@ -8,6 +8,15 @@
     },
     {
       "pattern": "\/docs\/img\/perf-cost.png"
+    },
+    {
+      "pattern": "\/docs\/img\/ease-of-use.png"
+    },
+    {
+      "pattern": "\/docs\/get-started\/getting-started.md"
+    },
+    {
+      "pattern": "\/docs\/img\/spark3cluster.png"
     }
   ],
   "timeout": "5s",
