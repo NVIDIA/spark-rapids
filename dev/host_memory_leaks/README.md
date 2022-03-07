@@ -31,17 +31,17 @@ I didn't even create a `Makefile` for this because 1. this is kind of hacky and 
 using this ahead of time, and 2, it is only 1 file anyways...
 
 ```
-g++ -fPIC hack.cpp
-g++ -shared -Wl,-init,init_hack -o libhack.so hack.o
+g++ -fPIC -c leak_detect.cpp
+g++ -shared -Wl,-init,init_leak_detect -o libleak_detect.so leak_detect.o
 ```
 
 ## Running
 
 Running with this change is quite a bit more complicated. Generally you set `LD_PRELOAD` to point to the full
-path to where libhack.so is located and capture stderr for later processing
+path to where `libleak_detect.so` is located and capture stderr for later processing
 
 ```
-LD_PRELOAD=$PWD/libhack.so java -cp ... com.nvidia.MyTest 2>alloc_log.txt
+LD_PRELOAD=$PWD/libleak_detect.so java -cp ... com.nvidia.MyTest 2>alloc_log.txt
 ```
 
 But things start to get complicated if you are running pyspark or the pytest integration tests. This is because
@@ -93,7 +93,7 @@ index c3f73ed745..82203659c3 100644
 
 By default only the address of what was allocated is printed out when something is allocated. This is
 helpful in detecting if there was a memory leak, but not in telling what leaked the memory. If you set
-the environment variable `HACK_TRACE` to anything C++ stack traces will be output with each allocation.
+the environment variable `LEAK_DETECT_TRACE` to anything C++ stack traces will be output with each allocation.
 Not doing the stack traces speeds up the runs a lot, which is why it is off by default.
 
 ## Interpreting The Results
