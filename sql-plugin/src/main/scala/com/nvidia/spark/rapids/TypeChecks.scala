@@ -528,6 +528,30 @@ object TypeSig {
     TypeSig.none.withLit(dataType)
 
   /**
+   * Create a TypeSig that only supports literals of certain given types.
+   */
+  def lit(dataTypes: TypeEnum.ValueSet): TypeSig =
+    new TypeSig(dataTypes)
+
+  /**
+   * Create a TypeSig that supports only literals of common primitive CUDF types.
+   */
+  def commonCudfTypesLit(): TypeSig = {
+    lit(TypeEnum.ValueSet(
+      TypeEnum.BOOLEAN,
+      TypeEnum.BYTE,
+      TypeEnum.SHORT,
+      TypeEnum.INT,
+      TypeEnum.LONG,
+      TypeEnum.FLOAT,
+      TypeEnum.DOUBLE,
+      TypeEnum.DATE,
+      TypeEnum.TIMESTAMP,
+      TypeEnum.STRING
+    ))
+  }
+
+  /**
    * Create a TypeSig that has partial support for the given type.
    */
   def psNote(dataType: TypeEnum.Value, note: String): TypeSig =
