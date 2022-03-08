@@ -30,7 +30,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
+import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -411,6 +411,6 @@ class JsonPartitionReader(
     }
   }
 
-  override def dateFormat: String = parsedOptions.dateFormat
+  override def dateFormat: String = GpuJsonUtils.dateFormatInRead(parsedOptions)
 
 }
