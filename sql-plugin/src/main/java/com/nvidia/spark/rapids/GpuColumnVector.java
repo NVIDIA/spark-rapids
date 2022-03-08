@@ -25,7 +25,7 @@ import ai.rapids.cudf.HostColumnVectorCore;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
-import com.nvidia.spark.rapids.shims.v2.GpuTypeShims;
+import com.nvidia.spark.rapids.shims.GpuTypeShims;
 import org.apache.arrow.memory.ReferenceManager;
 
 import org.apache.spark.sql.catalyst.expressions.Attribute;

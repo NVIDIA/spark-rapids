@@ -24,6 +24,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -147,7 +148,7 @@ object GpuJsonScan {
     })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
+      SparkShimImpl.dateFormatInRead(parsedOptions).foreach { dateFormat =>
         if (!supportedDateFormats.contains(dateFormat)) {
           meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
         }
@@ -158,7 +159,7 @@ object GpuJsonScan {
       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+      SparkShimImpl.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
         val parts = tsFormat.split("'T'", 2)
         if (parts.isEmpty) {
           meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")

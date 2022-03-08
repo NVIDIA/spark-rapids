@@ -22,7 +22,7 @@ import java.util.Arrays
 import com.nvidia.spark.rapids.GpuMetric
 
 import org.apache.spark.{Dependency, Partition, Partitioner, ShuffleDependency, TaskContext}
-import org.apache.spark.rapids.shims.v2.ShuffledBatchRDDUtil
+import org.apache.spark.rapids.shims.ShuffledBatchRDDUtil
 import org.apache.spark.rdd.RDD
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, ShufflePartitionSpec}

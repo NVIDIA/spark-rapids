@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{GpuColumnVector, ShimLoader}
+import com.nvidia.spark.rapids.GpuColumnVector
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.types.StructType
@@ -43,7 +44,7 @@ object GpuBroadcastHelper {
         val builtBatch = broadcastBatch.batch
         GpuColumnVector.incRefCounts(builtBatch)
         builtBatch
-      case v if ShimLoader.getSparkShims.isEmptyRelation(v) =>
+      case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
@@ -67,7 +68,7 @@ object GpuBroadcastHelper {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
         broadcastBatch.batch.numRows()
-      case v if ShimLoader.getSparkShims.isEmptyRelation(v) => 0
+      case v if SparkShimImpl.isEmptyRelation(v) => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
     }

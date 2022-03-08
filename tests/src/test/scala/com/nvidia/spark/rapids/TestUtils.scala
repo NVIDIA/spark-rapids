@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
-
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+import java.io.File
 import org.scalatest.Assertions
 
 import org.apache.spark.SparkConf
@@ -63,7 +63,7 @@ object TestUtils extends Assertions with Arm {
 
   /** Recursively check if the predicate matches in the given plan */
   def findOperator(plan: SparkPlan, predicate: SparkPlan => Boolean): Option[SparkPlan] = {
-    ShimLoader.getSparkShims.findOperators(plan, predicate).headOption
+    SparkShimImpl.findOperators(plan, predicate).headOption
   }
 
   /** Return final executed plan */

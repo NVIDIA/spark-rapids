@@ -17,6 +17,7 @@
 package org.apache.spark.sql.catalyst.json.rapids
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.SparkSession
@@ -68,7 +69,7 @@ object GpuReadJsonFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuJsonScan.tagSupport(
-      ShimLoader.getSparkShims.sessionFromPlan(fsse),
+      SparkShimImpl.sessionFromPlan(fsse),
       fsse.relation.dataSchema,
       fsse.output.toStructType,
       fsse.relation.options,

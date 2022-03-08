@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.v2.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
+import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -60,7 +60,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
+import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -828,7 +828,7 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))
 
-  lazy val fileFormats = basicFormats ++ ShimLoader.getSparkShims.getFileFormats
+  lazy val fileFormats = basicFormats ++ SparkShimImpl.getFileFormats
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
@@ -1722,7 +1722,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         override def shouldFallbackOnAnsiTimestamp: Boolean =
-          ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+          SparkShimImpl.shouldFallbackOnAnsiTimestamp
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
@@ -1744,7 +1744,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
         override def shouldFallbackOnAnsiTimestamp: Boolean =
-          ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+          SparkShimImpl.shouldFallbackOnAnsiTimestamp
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
@@ -3220,7 +3220,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[StddevPop](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
           GpuStddevPop(childExprs.head, !legacyStatisticalAggregate)
         }
       }),
@@ -3232,7 +3232,7 @@ object GpuOverrides extends Logging {
             TypeSig.DOUBLE))),
         (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
           override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-            val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+            val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
             GpuStddevSamp(childExprs.head, !legacyStatisticalAggregate)
           }
         }),
@@ -3243,7 +3243,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[VariancePop](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
           GpuVariancePop(childExprs.head, !legacyStatisticalAggregate)
         }
       }),
@@ -3254,7 +3254,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[VarianceSamp](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
           GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
         }
       }),
@@ -3386,7 +3386,7 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        ShimLoader.getSparkShims.getExprs
+        SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -3433,7 +3433,7 @@ object GpuOverrides extends Logging {
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
-    commonScans ++ ShimLoader.getSparkShims.getScans
+    commonScans ++ SparkShimImpl.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,
@@ -3607,7 +3607,7 @@ object GpuOverrides extends Logging {
                 takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+                SparkShimImpl.getGpuShuffleExchangeExec(
                   GpuSinglePartitioning,
                   GpuTopN(
                     takeExec.limit,
@@ -3808,7 +3808,7 @@ object GpuOverrides extends Logging {
       ExecChecks(TypeSig.all, TypeSig.all),
       (s, conf, p, r) => new GpuSubqueryBroadcastMeta(s, conf, p, r)
     ),
-    ShimLoader.getSparkShims.aqeShuffleReaderExec,
+    SparkShimImpl.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
@@ -3820,7 +3820,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DropNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[SetCatalogAndNamespaceExec]("Namespace metadata operation"),
-    ShimLoader.getSparkShims.neverReplaceShowCurrentNamespaceCommand,
+    SparkShimImpl.neverReplaceShowCurrentNamespaceCommand,
     neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation"),
     neverReplaceExec[ExecutedCommandExec]("Table metadata operation"),
     neverReplaceExec[AlterTableExec]("Table metadata operation"),
@@ -3840,7 +3840,7 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ ShimLoader.getSparkShims.getExecs
+    commonExecs ++ SparkShimImpl.getExecs
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
@@ -4005,7 +4005,7 @@ object GpuOverrides extends Logging {
       case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
       case re: ReusedExchangeExec => prepareExplainOnly(re.child)
       case aqe: AdaptiveSparkPlanExec =>
-        prepareExplainOnly(ShimLoader.getSparkShims.getAdaptiveInputPlan(aqe))
+        prepareExplainOnly(SparkShimImpl.getAdaptiveInputPlan(aqe))
       case sub: SubqueryExec => prepareExplainOnly(sub.child)
     }
     planAfter

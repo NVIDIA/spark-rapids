@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
@@ -94,12 +94,12 @@ object HostColumnarToGpu extends Logging {
     }
 
     val nullCount = valVector.getNullCount()
-    val dataBuf = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowDataBuf(valVector))
-    val validity = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowValidityBuf(valVector))
+    val dataBuf = getBufferAndAddReference(SparkShimImpl.getArrowDataBuf(valVector))
+    val validity = getBufferAndAddReference(SparkShimImpl.getArrowValidityBuf(valVector))
     // this is a bit ugly, not all Arrow types have the offsets buffer
     var offsets: ByteBuffer = null
     try {
-      offsets = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector))
+      offsets = getBufferAndAddReference(SparkShimImpl.getArrowOffsetsBuf(valVector))
     } catch {
       case _: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer

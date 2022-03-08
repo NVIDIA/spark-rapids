@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package com.nvidia.spark.rapids.shims.spark321;
 
-import com.nvidia.spark.rapids.{ShimLoader, SparkShims, SparkShimVersion, TypeSig}
+import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion, TypeSig}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
 class Spark321ShimsSuite extends FunSuite {
-  val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim
   test("spark shims version") {
-    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 2, 1))
+    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 2, 1))
   }
 
   test("shuffle manager class") {
