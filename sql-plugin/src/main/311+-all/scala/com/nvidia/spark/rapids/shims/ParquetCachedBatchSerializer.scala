@@ -53,8 +53,8 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference,
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.columnar.CachedBatch
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, SparkToParquetSchemaConverter, VectorizedColumnReader}
-import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.{ParquetRecordMaterializer, ShimVectorizedColumnReader}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, VectorizedColumnReader}
+import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.v2.{ParquetRecordMaterializer, ShimVectorizedColumnReader}
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
@@ -889,13 +889,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         val inMemCacheSparkSchema = parquetToSparkSchemaConverter.convert(inMemCacheParquetSchema)
 
         val totalRowCount = parquetFileReader.getRowGroups.asScala.map(_.getRowCount).sum
-        val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(hadoopConf)
         val inMemReqSparkSchema = StructType(selectedAttributes.toStructType.map { field =>
           inMemCacheSparkSchema.fields(inMemCacheSparkSchema.fieldIndex(field.name))
         })
-        val inMemReqParquetSchema = sparkToParquetSchemaConverter.convert(inMemReqSparkSchema)
-        val columnsRequested: util.List[ColumnDescriptor] = inMemReqParquetSchema.getColumns
-
         val reqSparkSchemaInCacheOrder = StructType(inMemCacheSparkSchema.filter(f =>
           inMemReqSparkSchema.fields.exists(f0 => f0.name.equals(f.name))))
 
@@ -907,23 +903,26 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           index -> inMemReqSparkSchema.fields.indexOf(reqSparkSchemaInCacheOrder.fields(index))
         }.toMap
 
-        val reqParquetSchemaInCacheOrder =
-          sparkToParquetSchemaConverter.convert(reqSparkSchemaInCacheOrder)
+        val reqParquetSchemaInCacheOrder = new org.apache.parquet.schema.MessageType(
+          inMemCacheParquetSchema.getName(), reqSparkSchemaInCacheOrder.fields.map { f =>
+            inMemCacheParquetSchema.getFields().get(inMemCacheParquetSchema.getFieldIndex(f.name))
+          }:_*)
 
+        val columnsRequested: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
         // reset spark schema calculated from parquet schema
         hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
         hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, inMemReqSparkSchema.json)
 
         val columnsInCache: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
         val typesInCache: util.List[Type] = reqParquetSchemaInCacheOrder.asGroupType.getFields
-        val missingColumns = new Array[Boolean](inMemReqParquetSchema.getFieldCount)
+        val missingColumns = new Array[Boolean](reqParquetSchemaInCacheOrder.getFieldCount)
 
         // initialize missingColumns to cover the case where requested column isn't present in the
         // cache, which should never happen but just in case it does
-        val paths: util.List[Array[String]] = inMemReqParquetSchema.getPaths
+        val paths: util.List[Array[String]] = reqParquetSchemaInCacheOrder.getPaths
 
-        for (i <- 0 until inMemReqParquetSchema.getFieldCount) {
-          val t = inMemReqParquetSchema.getFields.get(i)
+        for (i <- 0 until reqParquetSchemaInCacheOrder.getFieldCount) {
+          val t = reqParquetSchemaInCacheOrder.getFields.get(i)
           if (!t.isPrimitive || t.isRepetition(Type.Repetition.REPEATED)) {
             throw new UnsupportedOperationException("Complex types not supported.")
           }
