@@ -26,6 +26,7 @@ import scala.util.Try
 import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -386,7 +387,7 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    ShimLoader.getSparkShims.getSparkShimVersion.toString
+    SparkShimImpl.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
     PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||

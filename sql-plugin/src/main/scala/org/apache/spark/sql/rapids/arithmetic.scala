@@ -22,7 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -662,7 +662,7 @@ object GpuDivModLike extends Arm {
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
   lazy val failOnError: Boolean =
-    ShimLoader.getSparkShims.shouldFailDivByZero()
+    SparkShimImpl.shouldFailDivByZero()
 
   override def nullable: Boolean = true
 
@@ -728,7 +728,7 @@ case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
-    failOnError: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero()) extends
+    failOnError: Boolean = SparkShimImpl.shouldFailDivByZero()) extends
     ShimExpression with GpuExpression {
 
   override def toString: String = s"($left / $right)"
@@ -856,7 +856,7 @@ object GpuDecimalDivide {
 }
 
 case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero())
+    failOnErrorOverride: Boolean = SparkShimImpl.shouldFailDivByZero())
       extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
@@ -876,7 +876,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   lazy val failOnOverflow: Boolean =
-    ShimLoader.getSparkShims.shouldFailDivOverflow
+    SparkShimImpl.shouldFailDivOverflow
 
   override def checkDivideOverflow: Boolean = left.dataType match {
     case LongType if failOnOverflow => true

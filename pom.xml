@@ -115,6 +115,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301/scala</source>
+                                        <source>${project.basedir}/src/main/301until304/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -164,6 +165,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/302/scala</source>
+                                        <source>${project.basedir}/src/main/301until304/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -222,6 +224,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/303/scala</source>
+                                        <source>${project.basedir}/src/main/301until304/scala</source>
                                         <source>${project.basedir}/src/main/301until310-all/scala</source>
                                         <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
@@ -327,7 +330,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311/scala</source>
+                                        <source>${project.basedir}/src/main/311-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
@@ -337,7 +340,6 @@
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -464,7 +466,6 @@
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/31xdb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -509,7 +510,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/312/scala</source>
+                                        <source>${project.basedir}/src/main/312-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
@@ -519,7 +520,6 @@
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -577,7 +577,6 @@
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -629,7 +628,6 @@
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/320/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
@@ -640,7 +638,7 @@
                             <execution>
                                 <id>add-test-profile-src-320</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/320/scala</source>
@@ -693,7 +691,6 @@
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
@@ -704,7 +701,7 @@
                             <execution>
                                 <id>add-test-profile-src-321</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/321/scala</source>
@@ -757,9 +754,9 @@
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/322+/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
@@ -768,7 +765,7 @@
                             <execution>
                                 <id>add-test-profile-src-322</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/322/scala</source>
@@ -822,6 +819,7 @@
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/322+/scala</source>
                                         <source>${project.basedir}/src/main/330+/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
@@ -830,7 +828,7 @@
                             <execution>
                                 <id>add-test-profile-src-330</id>
                                 <goals><goal>add-test-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <phase>generate-test-sources</phase>
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/330/scala</source>
@@ -879,6 +877,8 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311cdh/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until330-all/scala</source>
@@ -887,7 +887,6 @@
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>

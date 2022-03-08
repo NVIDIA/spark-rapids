@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD

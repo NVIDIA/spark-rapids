@@ -20,7 +20,7 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
+import com.nvidia.spark.rapids.shims.TypeSigUtil
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._

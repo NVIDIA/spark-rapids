@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{AnsiCheckUtil, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiCheckUtil, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -52,7 +52,7 @@ final class CastExprMeta[INPUT <: CastBase](
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
-  val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
+  val legacyCastToString: Boolean = SparkShimImpl.getLegacyComplexTypeToString()
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
@@ -116,7 +116,7 @@ final class CastExprMeta[INPUT <: CastBase](
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, dt:DecimalType) =>
-        if (dt.scale < 0 && !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported) {
+        if (dt.scale < 0 && !SparkShimImpl.isCastingStringToNegDecimalScaleSupported) {
           willNotWorkOnGpu("RAPIDS doesn't support casting string to decimal for " +
               "negative scale decimal in this version of Spark because of SPARK-37451")
         }
@@ -449,7 +449,7 @@ object GpuCast extends Arm {
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
                 if (fromDataType == FloatType &&
-                    ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
+                    SparkShimImpl.hasCastFloatTimestampUpcast) {
                   withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
                     withResource(doubles.mul(microsPerSec, DType.INT64)) {
                       inputTimesMicrosCv =>

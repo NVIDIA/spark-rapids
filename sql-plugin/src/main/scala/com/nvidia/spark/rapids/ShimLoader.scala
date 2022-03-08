@@ -76,6 +76,7 @@ object ShimLoader extends Logging {
 
   private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
   @volatile private var shimProviderClass: String = _
+  @volatile private var shimProvider: SparkShimServiceProvider = _
   @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
@@ -310,6 +311,7 @@ object ShimLoader extends Logging {
         shimServiceProvider.matchesVersion(sparkVersion)
     }.map { case (inst, url) =>
       shimURL = url
+      shimProvider = inst
       // this class will be loaded again by the real executor classloader
       inst.getClass.getName
     }
@@ -331,11 +333,9 @@ object ShimLoader extends Logging {
     shimProviderClass
   }
 
-  def getSparkShims: SparkShims = {
-    if (sparkShims == null) {
-      sparkShims = newInstanceOf[SparkShimServiceProvider](findShimProvider()).buildShim
-    }
-    sparkShims
+  def getShimVersion: ShimVersion = {
+    initShimProviderIfNeeded()
+    shimProvider.getShimVersion
   }
 
   def getSparkVersion: String = {

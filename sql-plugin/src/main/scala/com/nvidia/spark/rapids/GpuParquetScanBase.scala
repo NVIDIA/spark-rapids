@@ -33,7 +33,7 @@ import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ParquetFieldIdShims
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -196,31 +196,31 @@ object GpuParquetScanBase {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
-    sqlConf.get(ShimLoader.getSparkShims.int96ParquetRebaseReadKey) match {
+    sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is EXCEPTION")
+            s"${SparkShimImpl.int96ParquetRebaseReadKey} is EXCEPTION")
       }
       case "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-              s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is LEGACY")
+              s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
 
-    sqlConf.get(ShimLoader.getSparkShims.parquetRebaseReadKey) match {
+    sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${ShimLoader.getSparkShims.parquetRebaseReadKey} is EXCEPTION")
+            s"${SparkShimImpl.parquetRebaseReadKey} is EXCEPTION")
       }
       case "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-              s"${ShimLoader.getSparkShims.parquetRebaseReadKey} is LEGACY")
+              s"${SparkShimImpl.parquetRebaseReadKey} is LEGACY")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
@@ -313,9 +313,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
-  private val rebaseMode = ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
+  private val rebaseMode = SparkShimImpl.parquetRebaseRead(sqlConf)
   private val isCorrectedRebase = "CORRECTED" == rebaseMode
-  val int96RebaseMode = ShimLoader.getSparkShims.int96ParquetRebaseRead(sqlConf)
+  val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
 
 
@@ -344,7 +344,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
-      val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
+      val parquetFilters = SparkShimImpl.getParquetFilters(fileSchema, pushDownDate,
         pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
         isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
       filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)

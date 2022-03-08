@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
-import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -315,8 +315,6 @@ object GpuWindowExec extends Arm {
     val windowDedupe = mutable.HashMap[Expression, Attribute]()
     val postProject = ArrayBuffer[NamedExpression]()
 
-    val shims = ShimLoader.getSparkShims
-
     exprs.foreach { expr =>
       if (hasGpuWindowFunction(expr)) {
         // First pass replace any operations that should be totally replaced.
@@ -348,7 +346,7 @@ object GpuWindowExec extends Arm {
               extractAndSave(_, preProject, preDedupe)).toArray.toSeq
             val newOrderSpec = orderSpec.map { so =>
               val newChild = extractAndSave(so.child, preProject, preDedupe)
-              shims.sortOrder(newChild, so.direction, so.nullOrdering)
+              SparkShimImpl.sortOrder(newChild, so.direction, so.nullOrdering)
             }.toArray.toSeq
             wsc.copy(partitionSpec = newPartitionSpec, orderSpec = newOrderSpec)
         }
@@ -405,13 +403,11 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   }
 
   lazy val gpuPartitionOrdering: Seq[SortOrder] = {
-    val shims = ShimLoader.getSparkShims
-    gpuPartitionSpec.map(shims.sortOrder(_, Ascending))
+    gpuPartitionSpec.map(SparkShimImpl.sortOrder(_, Ascending))
   }
 
   lazy val cpuPartitionOrdering: Seq[SortOrder] = {
-    val shims = ShimLoader.getSparkShims
-    cpuPartitionSpec.map(shims.sortOrder(_, Ascending))
+    cpuPartitionSpec.map(SparkShimImpl.sortOrder(_, Ascending))
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =

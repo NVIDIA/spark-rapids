@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
+import org.apache.spark.sql.rapids.shims.GpuInMemoryTableScanExec
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
@@ -80,7 +80,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
   }
 
   private lazy val realSerializer: GpuCachedBatchSerializer = {
-    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.shims.v2.ParquetCachedBatchSerializer")
+    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.shims.ParquetCachedBatchSerializer")
   }
 
   /**

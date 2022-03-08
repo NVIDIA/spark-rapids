@@ -79,7 +79,7 @@ object GpuParquetFileFormat {
     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
     // for us.
     /*
-    ShimLoader.getSparkShims.int96ParquetRebaseWrite(sqlConf) match {
+    SparkShimImpl.int96ParquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" =>
       case "CORRECTED" =>
       case "LEGACY" =>
@@ -90,7 +90,7 @@ object GpuParquetFileFormat {
         meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
     }
 
-    ShimLoader.getSparkShims.parquetRebaseWrite(sqlConf) match {
+    SparkShimImpl.parquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" => //Good
       case "CORRECTED" => //Good
       case "LEGACY" =>

@@ -20,10 +20,10 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.scalatest.{Assertion, FunSuite}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
-
-import org.scalatest.{Assertion, FunSuite}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -1839,7 +1839,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     assume(!VersionUtils.isSpark311OrLater, "Spark version not before 3.1.1")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val sparkShimVersion = SparkShimImpl.getSparkShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)
