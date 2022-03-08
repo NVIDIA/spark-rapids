@@ -24,7 +24,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, MetadataAttribute}
 import org.apache.spark.sql.catalyst.json.rapids.shims.Spark33XFileOptionsShims
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters

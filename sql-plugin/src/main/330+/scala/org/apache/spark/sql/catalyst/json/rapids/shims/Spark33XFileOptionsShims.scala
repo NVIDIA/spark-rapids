@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.catalyst.json.rapids.shims
 
+import com.nvidia.spark.rapids.shims.Spark321PlusShims
+
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.json.JSONOptions
 
