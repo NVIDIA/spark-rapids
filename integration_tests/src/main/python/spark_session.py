@@ -33,7 +33,29 @@ _orig_conf_keys = _orig_conf.keys()
 
 # Default settings that should apply to CPU and GPU sessions.
 # These settings can be overridden by specific tests if necessary.
-_default_conf = { 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true' }
+# Many of these are redundant with default settings for the configs but are set here explicitly
+# to ensure any cluster settings do not interfere with tests that assume the defaults.
+_default_conf = {
+    'spark.ansi.enabled': 'false',
+    'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
+    'spark.rapids.sql.castDecimalToString.enabled': 'false',
+    'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
+    'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
+    'spark.rapids.sql.castFloatToString.enabled': 'false',
+    'spark.rapids.sql.castStringToFloat.enabled': 'false',
+    'spark.rapids.sql.castStringToTimestamp.enabled': 'false',
+    'spark.rapids.sql.fast.sample': 'false',
+    'spark.rapids.sql.hasExtendedYearValues': 'true',
+    'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
+    'spark.rapids.sql.hasNans': 'true',
+    'spark.rapids.sql.improvedFloatOps.enabled': 'false',
+    'spark.rapids.sql.improvedTimeOps.enabled': 'false',
+    'spark.rapids.sql.incompatibleDateFormats.enabled': 'false',
+    'spark.rapids.sql.incompatibleOps.enabled': 'false',
+    'spark.rapids.sql.mode': 'executeongpu',
+    'spark.rapids.sql.variableFloatAgg.enabled': 'false',
+    'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+}
 
 def is_tz_utc(spark=_spark):
     """
