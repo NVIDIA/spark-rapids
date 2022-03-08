@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.shims
 
 import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
@@ -59,48 +59,59 @@ case class GpuTimeAdd(start: Expression,
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
       withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+        // lhs is start, rhs is interval
         (lhs, rhs) match {
-          case (l: GpuColumnVector, intvlS: GpuScalar) =>
-            val interval = intvlS.dataType match {
+          case (l: GpuColumnVector, intervalS: GpuScalar) =>
+            // get long type interval
+            val interval = intervalS.dataType match {
               case CalendarIntervalType =>
                 // Scalar does not support 'CalendarInterval' now, so use
                 // the Scala value instead.
                 // Skip the null check because it wll be detected by the following calls.
-                val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
-                if (intvl.months != 0) {
+                val calendarI = intervalS.getValue.asInstanceOf[CalendarInterval]
+                if (calendarI.months != 0) {
                   throw new UnsupportedOperationException("Months aren't supported at the moment")
                 }
-                intvl.days * microSecondsInOneDay + intvl.microseconds
+                calendarI.days * microSecondsInOneDay + calendarI.microseconds
               case _: DayTimeIntervalType =>
-                // Scalar does not support 'DayTimeIntervalType' now, so use
-                // the Scala value instead.
-                intvlS.getValue.asInstanceOf[Long]
+                intervalS.getValue.asInstanceOf[Long]
               case _ =>
-                throw new UnsupportedOperationException("GpuTimeAdd unsupported data type: " +
-                  intvlS.dataType)
+                throw new UnsupportedOperationException(
+                  "GpuTimeAdd unsupported data type: " + intervalS.dataType)
             }
 
+            // add interval
             if (interval != 0) {
-              withResource(Scalar.fromLong(interval)) { us_s =>
-                withResource(l.getBase.bitCastTo(DType.INT64)) { us =>
-                  withResource(intervalMath(us_s, us)) { longResult =>
-                    GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS),
-                      dataType)
-                  }
-                }
+              withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { d =>
+                GpuColumnVector.from(timestampAddDuration(l.getBase, d), dataType)
               }
             } else {
               l.incRefCount()
             }
+          case (l: GpuColumnVector, r: GpuColumnVector) =>
+            (l.dataType(), r.dataType) match {
+              case (_: TimestampType, _: DayTimeIntervalType) =>
+                // DayTimeIntervalType is stored as long
+                // bitCastTo is similar to reinterpret_cast, it's fast, the time can be ignored.
+                withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
+                  GpuColumnVector.from(timestampAddDuration(l.getBase, duration), dataType)
+                }
+              case _ =>
+                throw new UnsupportedOperationException(
+                  "GpuTimeAdd takes column and interval as an argument only")
+            }
           case _ =>
-            throw new UnsupportedOperationException("GpuTimeAdd takes column and interval as an " +
-              "argument only")
+            throw new UnsupportedOperationException(
+              "GpuTimeAdd takes column and interval as an argument only")
         }
       }
     }
   }
 
-  private def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
-    us.add(us_s)
+  private def timestampAddDuration(cv: ColumnView, duration: BinaryOperable): ColumnVector = {
+    // Not use cv.add(duration), because of it invoke BinaryOperable.implicitConversion,
+    // and currently BinaryOperable.implicitConversion return Long
+    // Directly specify the return type is TIMESTAMP_MICROSECONDS
+    cv.binaryOp(BinaryOp.ADD, duration, DType.TIMESTAMP_MICROSECONDS)
   }
 }

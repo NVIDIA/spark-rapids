@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -138,6 +138,9 @@ private[rapids] object GpuRowToColumnConverter {
           getConverterForType(v, vcn))
       case (NullType, true) =>
         NullConverter
+      // check special Shims types, such as DayTimeIntervalType
+      case (otherType, nullable) if GpuTypeShims.hasConverterForType(otherType) =>
+        GpuTypeShims.getConverterForType(otherType, nullable)
       case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
@@ -284,7 +287,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 4 + VALIDITY
   }
 
-  private object LongConverter extends TypeConverter {
+  private[rapids] object LongConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
@@ -299,7 +302,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 8 + VALIDITY
   }
 
-  private object NotNullLongConverter extends TypeConverter {
+  private[rapids] object NotNullLongConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {

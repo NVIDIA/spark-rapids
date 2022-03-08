@@ -418,3 +418,14 @@ def test_parquet_write_field_id(spark_tmp_path):
             data_path,
             'DataWritingCommandExec',
             conf = {"spark.sql.parquet.fieldId.write.enabled" : "true"}) # default is true
+
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_write_daytime_interval(spark_tmp_path):
+    gen_list = [('_c1', DayTimeIntervalGen())]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=writer_confs)
