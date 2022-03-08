@@ -136,6 +136,52 @@ def test_split_re_no_limit():
             'split(a, "[bf]")',
             'split(a, "[o]")'))
 
+def test_split_optimized_no_re():
+    data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|{}]{1,2}){1,7}') \
+        .with_special_case('boo.and.foo') \
+        .with_special_case('boo?and?foo') \
+        .with_special_case('boo+and+foo') \
+        .with_special_case('boo^and^foo') \
+        .with_special_case('boo$and$foo') \
+        .with_special_case('boo|and|foo') \
+        .with_special_case('boo{and}foo') \
+        .with_special_case('boo$|and$|foo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, "\\\\.")',
+            'split(a, "\\\\?")',
+            'split(a, "\\\\+")',
+            'split(a, "\\\\^")',
+            'split(a, "\\\\$")',
+            'split(a, "\\\\|")',
+            'split(a, "\\\\{")',
+            'split(a, "\\\\}")',
+            'split(a, "\\\\$\\\\|")',
+        )
+    )
+
+def test_split_optimized_no_re_combined():
+    data_gen = mk_str_gen('([bf]o{0,2}[AZ.?+\\^$|{}]{1,2}){1,7}') \
+        .with_special_case('booA.ZandA.Zfoo') \
+        .with_special_case('booA?ZandA?Zfoo') \
+        .with_special_case('booA+ZandA+Zfoo') \
+        .with_special_case('booA^ZandA^Zfoo') \
+        .with_special_case('booA$ZandA$Zfoo') \
+        .with_special_case('booA|ZandA|Zfoo') \
+        .with_special_case('boo{Zand}Zfoo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, "A\\\\.Z")',
+            'split(a, "A\\\\?Z")',
+            'split(a, "A\\\\+Z")',
+            'split(a, "A\\\\^Z")',
+            'split(a, "A\\\\$Z")',
+            'split(a, "A\\\\|Z")',
+            'split(a, "\\\\{Z")',
+            'split(a, "\\\\}Z")',
+        )
+    )
+
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
     (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)

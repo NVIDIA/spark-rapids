@@ -127,6 +127,12 @@ _float_schema = StructType([
 _double_schema = StructType([
     StructField('number', DoubleType())])
 
+_decimal_10_2_schema = StructType([
+    StructField('number', DecimalType(10, 2))])
+
+_decimal_10_3_schema = StructType([
+    StructField('number', DecimalType(10, 3))])
+
 _number_as_string_schema = StructType([
     StructField('number', StringType())])
 
@@ -220,6 +226,9 @@ def read_csv_sql(data_path, schema, options = {}):
     pytest.param('simple_int_values.csv', _long_schema, {'header': 'true'}),
     ('simple_int_values.csv', _float_schema, {'header': 'true'}),
     ('simple_int_values.csv', _double_schema, {'header': 'true'}),
+    ('simple_int_values.csv', _decimal_10_2_schema, {'header': 'true'}),
+    ('decimals.csv', _decimal_10_2_schema, {'header': 'true'}),
+    ('decimals.csv', _decimal_10_3_schema, {'header': 'true'}),
     pytest.param('empty_int_values.csv', _empty_byte_schema, {'header': 'true'}),
     pytest.param('empty_int_values.csv', _empty_short_schema, {'header': 'true'}),
     pytest.param('empty_int_values.csv', _empty_int_schema, {'header': 'true'}),
@@ -235,6 +244,8 @@ def read_csv_sql(data_path, schema, options = {}):
     pytest.param('simple_float_values.csv', _long_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _decimal_10_2_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _decimal_10_3_schema, {'header': 'true'}),
     pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}),
     pytest.param('ints_with_whitespace.csv', _number_as_string_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2069')),
     pytest.param('ints_with_whitespace.csv', _byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/130'))

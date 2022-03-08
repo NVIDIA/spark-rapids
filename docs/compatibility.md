@@ -283,14 +283,7 @@ will produce a different result compared to the plugin.
 Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
 Each data type can be enabled or disabled independently using the following configs.
 
- * [spark.rapids.sql.csv.read.bool.enabled](configs.md#sql.csv.read.bool.enabled)
- * [spark.rapids.sql.csv.read.byte.enabled](configs.md#sql.csv.read.byte.enabled)
  * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
- * [spark.rapids.sql.csv.read.double.enabled](configs.md#sql.csv.read.double.enabled)
- * [spark.rapids.sql.csv.read.float.enabled](configs.md#sql.csv.read.float.enabled)
- * [spark.rapids.sql.csv.read.integer.enabled](configs.md#sql.csv.read.integer.enabled)
- * [spark.rapids.sql.csv.read.long.enabled](configs.md#sql.csv.read.long.enabled)
- * [spark.rapids.sql.csv.read.short.enabled](configs.md#sql.csv.read.short.enabled)
  * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
 
 If you know that your particular data type will be parsed correctly enough, you may enable each
@@ -306,14 +299,6 @@ Spark allows for stripping leading and trailing white space using various option
 default. The plugin will strip leading and trailing space for all values except strings.
 
 There are also discrepancies/issues with specific types that are detailed below.
-
-### CSV Boolean
-
-Invalid values like `BAD` show up as `true` as described by this 
-[issue](https://github.com/NVIDIA/spark-rapids/issues/2071)
-
-This is the same for all other types, but because that is the only issue with boolean parsing
-we have called it out specifically here.
 
 ### CSV Strings
 Writing strings to a CSV file in general for Spark can be problematic unless you can ensure that
@@ -382,10 +367,6 @@ Parsing floating-point values has the same limitations as [casting from string t
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
 then results in a number being returned when the CPU would have returned null.
-
-### CSV Integer
-
-Any number that overflows will not be turned into a null value.
 
 ## ORC
 
@@ -475,18 +456,13 @@ The nested types(array, map and struct) are not supported yet in current version
 
 Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
 
-The GPU JSON reader does not support `NaN` and `Inf` values with full compatibility with Spark.
+Prior to Spark 3.3.0, reading JSON strings such as `"+Infinity"` when specifying that the data type is `FloatType` 
+or `DoubleType` caused these values to be parsed even when `allowNonNumericNumbers` is set to false. Also, Spark
+versions prior to 3.3.0 only supported the `"Infinity"` and `"-Infinity"` representations of infinity and did not 
+support `"+INF"`, `"-INF"`, or `"+Infinity"`, which Spark considers valid when unquoted. The GPU JSON reader is 
+consistent with the behavior in Spark 3.3.0 and later.
 
-The following are the only formats that are parsed consistently between CPU and GPU. Any other variation, including 
-these formats when unquoted, will produce `null` on the CPU and may produce valid `NaN` and `Inf` results on the GPU.
-
-```json
-{ "number": "NaN" }
-{ "number": "Infinity" }
-{ "number": "-Infinity" }
-```
-
-Another limitation of the GPU JSON reader is that it will parse strings containing floating-point values where
+Another limitation of the GPU JSON reader is that it will parse strings containing boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
 
 ### JSON Schema discovery
@@ -512,6 +488,12 @@ is provided while reading JSON file, then this flag has no impact on the RAPIDS 
 unquoted control characters but Spark reads these entries incorrectly as null. However, if the schema is not provided 
 and when the option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown 
 as discussed in `JSON Schema discovery` section.
+
+- `allowNonNumericNumbers` - Allows `NaN` and `Infinity` values to be parsed (note that these are not valid numeric
+values in the [JSON specification](https://json.org)). Spark versions prior to 3.3.0 have inconsistent behavior and will
+parse some variants of `NaN` and `Infinity` even when this option is disabled
+([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with
+Spark version 3.3.0 and later.
 
 ## Regular Expressions
 
@@ -550,7 +532,8 @@ Here are some examples of regular expression patterns that are not supported on 
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - Octal digits in the range `\0200` to `\0377`
 - Character classes with octal digits, such as `[\02]` or `[\024]`
-- Hex digits
+- Character classes with hex digits, such as `[\x02]` or `[\x24]`
+- Hex digits in the range `\x80` to `Character.MAX_CODE_POINT`
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.

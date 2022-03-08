@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import math
 from pyspark.sql import Row
@@ -92,6 +92,9 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
     elif isinstance(cpu, bytearray):
         assert cpu == gpu, "GPU and CPU bytearray values are different at {}".format(path)
+    elif isinstance(cpu, timedelta):
+        # Used by interval type DayTimeInterval for Pyspark 3.3.0+
+        assert cpu == gpu, "GPU and CPU timedelta values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.v2.GpuCSVScan
+import com.nvidia.spark.rapids.shims.GpuCSVScan
 
 import org.apache.spark.sql.execution.FileSourceScanExec
 
