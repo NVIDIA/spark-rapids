@@ -388,42 +388,10 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
-      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
-
-        override def convertToGpu(): Scan = {
-          GpuParquetScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.pushedFilters,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-        }
-      }),
+      (a, conf, p, r) => new RapidsParquetScanMeta(a, conf, p, r)),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
-      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit =
-          GpuOrcScanBase.tagSupport(this)
-
-        override def convertToGpu(): Scan =
-          GpuOrcScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.pushedFilters,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      })
+      (a, conf, p, r) => new RapidsOrcScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def getPartitionFileNames(

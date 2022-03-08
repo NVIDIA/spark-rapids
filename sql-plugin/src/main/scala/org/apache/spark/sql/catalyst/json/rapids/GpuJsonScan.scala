@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, DecimalType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -367,6 +367,49 @@ class JsonPartitionReader(
           }
         }
       }
+    }
+  }
+
+  /**
+   * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
+   *
+   * Spark then has its own rules for supporting NaN and Infinity, which are not
+   * valid numbers in JSON.
+   */
+  private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
+    // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
+    // due to https://issues.apache.org/jira/browse/SPARK-38060
+    // cuDF `isFloat` supports some inputs that are not valid JSON numbers, such as `.1`, `1.`,
+    // and `+1` so we use a regular expression to match valid JSON numbers instead
+    val jsonNumberRegexp = "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
+    val isValid = if (parsedOptions.allowNonNumericNumbers) {
+      withResource(ColumnVector.fromStrings("NaN", "+INF", "-INF", "+Infinity",
+        "Infinity", "-Infinity")) { nonNumeric =>
+        withResource(input.matchesRe(jsonNumberRegexp)) { isJsonNumber =>
+          withResource(input.contains(nonNumeric)) { nonNumeric =>
+            isJsonNumber.or(nonNumeric)
+          }
+        }
+      }
+    } else {
+      input.matchesRe(jsonNumberRegexp)
+    }
+    withResource(isValid) { _ =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+        isValid.ifElse(input, nullString)
+      }
+    }
+  }
+
+  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
+    withResource(sanitizeNumbers(input)) { sanitizedInput =>
+      super.castStringToFloat(sanitizedInput, dt)
+    }
+  }
+
+  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    withResource(sanitizeNumbers(input)) { sanitizedInput =>
+      super.castStringToDecimal(sanitizedInput, dt)
     }
   }
 
