@@ -14,18 +14,17 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark314
+package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
-class Spark314Shims extends Spark31XShims with Spark30Xuntil33XShims {
+object SparkShimImpl extends Spark31XShims with Spark30Xuntil33XShims {
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def getParquetFilters(
       schema: MessageType,

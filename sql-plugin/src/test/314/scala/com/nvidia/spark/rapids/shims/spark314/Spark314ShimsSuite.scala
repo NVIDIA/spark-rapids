@@ -16,13 +16,13 @@
 
 package com.nvidia.spark.rapids.shims.spark314;
 
-import com.nvidia.spark.rapids.{ShimLoader, SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 class Spark314ShimsSuite extends FunSuite {
-  val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim
   test("spark shims version") {
-    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 1, 4))
+    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 1, 4))
   }
 
   test("shuffle manager class") {
