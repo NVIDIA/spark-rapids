@@ -237,7 +237,7 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=[pytest.mark.allow_non_gpu('FileSourceScanExec'), \
-        pytest.mark.xfail(not is_before_spark_330(), reason="https://github.com/NVIDIA/spark-rapids/issues/4912")]),
+        pytest.mark.xfail(is_spark_330_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4912")]),
     'CORRECTED',
     'EXCEPTION'
 ])
