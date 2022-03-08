@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_spark_session, is_before_spark_311
+from spark_session import with_spark_session, is_before_spark_311, is_before_spark_330
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -40,6 +40,16 @@ def test_timeadd(data_gen):
         # and beyond year 10000 while doing TimeAdd
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_timeadd_daytime_column():
+    gen_list = [
+        # timestamp column max year is 1000
+        ('t', TimestampGen(end = datetime(1000, 1, 1, tzinfo=timezone.utc))),
+        # max days is 8000 year, so added result will not be out of range
+        ('d', DayTimeIntervalGen(max_days = 8000 * 365))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_dateaddinterval(data_gen):

@@ -25,8 +25,9 @@ import ai.rapids.cudf.HostColumnVectorCore;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
-
+import com.nvidia.spark.rapids.shims.v2.GpuTypeShims;
 import org.apache.arrow.memory.ReferenceManager;
+
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -460,6 +461,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   private static DType toRapidsOrNull(DataType type) {
+    DType ret = toRapidsOrNullCommon(type);
+    // Check types that shim supporting
+    // e.g.: Spark 3.3.0 begin supporting AnsiIntervalType to/from parquet
+    return (ret != null) ? ret : GpuTypeShims.toRapidsOrNull(type);
+  }
+
+  private static DType toRapidsOrNullCommon(DataType type) {
     if (type instanceof LongType) {
       return DType.INT64;
     } else if (type instanceof DoubleType) {

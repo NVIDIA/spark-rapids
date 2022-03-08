@@ -802,7 +802,7 @@ object GpuOverrides extends Logging {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
-  lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
+  lazy val basicFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
       cudfWrite = TypeSig.none,
@@ -827,6 +827,8 @@ object GpuOverrides extends Logging {
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))
+
+  lazy val fileFormats = basicFormats ++ ShimLoader.getSparkShims.getFileFormats
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
