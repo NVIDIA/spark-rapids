@@ -23,14 +23,6 @@ import org.apache.spark.sql.catalyst.json.JSONOptions
 
 trait Spark33XFileOptionsShims extends Spark321PlusShims {
 
-  def dateFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case csvOpts: CSVOptions => csvOpts.dateFormatInRead
-      case jsonOpts: JSONOptions => jsonOpts.dateFormatInRead
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
-  }
-
   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {
       case csvOpts: CSVOptions => csvOpts.dateFormatInRead

@@ -236,8 +236,7 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
-    pytest.param('LEGACY', marks=[pytest.mark.allow_non_gpu('FileSourceScanExec'), \
-        pytest.mark.xfail(is_spark_330_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4912")]),
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
     'CORRECTED',
     'EXCEPTION'
 ])
@@ -263,8 +262,7 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
-    pytest.param('LEGACY', marks=[pytest.mark.allow_non_gpu('FileSourceScanExec'), \
-        pytest.mark.xfail(is_spark_330_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/4912")]),
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
     'CORRECTED',
     'EXCEPTION'
 ])

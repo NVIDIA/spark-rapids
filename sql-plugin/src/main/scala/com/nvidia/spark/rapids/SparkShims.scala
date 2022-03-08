@@ -303,9 +303,6 @@ trait SparkShims {
   */
   def getLegacyStatisticalAggregate(): Boolean
 
-
-  def dateFormatInRead(fileOptions: Serializable): Option[String]
-
   def timestampFormatInRead(fileOptions: Serializable): Option[String]
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]

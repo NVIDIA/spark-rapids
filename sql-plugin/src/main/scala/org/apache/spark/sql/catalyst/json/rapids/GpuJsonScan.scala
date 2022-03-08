@@ -147,9 +147,8 @@ object GpuJsonScan {
     })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        DateUtils.tagAndGetCudfFormat(meta, dateFormat, parseString = true)
-      }
+      DateUtils.tagAndGetCudfFormat(meta,
+        GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {

@@ -218,9 +218,8 @@ object GpuCSVScan {
         // so we fall back to CPU
         meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
       }
-      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        DateUtils.tagAndGetCudfFormat(meta, dateFormat, parseString = true)
-      }
+      DateUtils.tagAndGetCudfFormat(meta,
+        GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {
