@@ -145,3 +145,7 @@ def is_spark_330_or_later():
 def is_databricks91_or_later():
     spark = get_spark_i_know_what_i_am_doing()
     return spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "") >= "9.1"
+
+def is_databricks104_or_later():
+    spark = get_spark_i_know_what_i_am_doing()
+    return spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "") >= "10.4"

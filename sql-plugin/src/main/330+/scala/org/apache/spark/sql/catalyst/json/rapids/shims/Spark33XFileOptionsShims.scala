@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.shims.Spark321PlusShims
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.json.JSONOptions
 
-trait Spark33XFileOptionsShims extends Spark321PlusShims {
+trait Spark33XFileOptionsShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {

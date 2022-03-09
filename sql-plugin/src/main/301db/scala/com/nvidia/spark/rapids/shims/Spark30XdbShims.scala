@@ -40,6 +40,7 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
+import org.apache.spark.sql.catalyst.json.rapids.shims.Spark30Xuntil33XFileOptionsShims
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
@@ -50,6 +51,7 @@ import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FileIndex, F
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.execution.datasources.v2.ShowCurrentNamespaceExec
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
@@ -66,7 +68,8 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
+abstract class Spark30XdbShims extends Spark30XdbShimsBase with Spark30Xuntil33XFileOptionsShims
+    with Logging {
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
@@ -680,4 +683,13 @@ abstract class Spark30XdbShims extends Spark30XdbShimsBase with Logging {
     AvoidAdaptiveTransitionToRow(GpuRowToColumnarExec(a, goal))
   }
 
+  def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
+    GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")
+  }
+}
+
+// First, Last and Collect have mistakenly been marked as non-deterministic until Spark-3.3.
+// They are actually deterministic iff their child expression is deterministic.
+trait GpuDeterministicFirstLastCollectShim extends Expression {
+  override lazy val deterministic = false
 }
