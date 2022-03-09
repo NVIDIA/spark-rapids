@@ -359,6 +359,8 @@ def test_window_aggs_for_rows(data_gen, batch_size):
         '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as rank_val, '
         ' dense_rank() over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as dense_rank_val, '
+        ' percent_rank() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as percent_rank_val, '
         ' row_number() over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
         'from window_agg_table ',
@@ -369,7 +371,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
-@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_32bit], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
@@ -445,6 +447,28 @@ def test_window_running_rank_no_part(data_gen):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
+# Percent rank is a rank aggregation like rank and dense rank that does care about ordering. However, unlink rank 
+# and dense rank, it does not use the GPU running window optimization, so therefore we have to make it a separate 
+# test from rank and dense rank.
+@pytest.mark.parametrize('data_gen',
+                         all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit],
+                         ids=meta_idfn('data:'))
+def test_window_running_percent_rank_no_part(data_gen):
+    # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
+    # testing the fixup operation.
+    conf = {'spark.rapids.sql.batchSizeBytes': 1000}
+    query_parts = ['a',
+            'percent_rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val']
+
+    # When generating the ordering try really hard to have duplicate values
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, RepeatSeqGen(data_gen, length=500), length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        conf = conf)
+
 # Rank aggregations are running window aggregations but they care about the ordering. In most tests we don't
 # allow duplicate ordering, because that makes the results ambiguous. If two rows end up being switched even
 # if the order-by column is the same then we can get different results for say a running sum. Here we are going
@@ -452,9 +476,8 @@ def test_window_running_rank_no_part(data_gen):
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
-# TODO: add test data on DECIMAL_128 after we support DECIMAL_128 as PartitionSpec
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=idfn)
 def test_window_running_rank(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -473,6 +496,26 @@ def test_window_running_rank(data_gen):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
+# Percent rank is a running window aggregation that currently does not use the Batch Optimiz
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=idfn)
+def test_window_running_percent_rank(data_gen):
+    # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
+    # testing the fixup operation.
+    conf = {'spark.rapids.sql.batchSizeBytes': 1000}
+    query_parts = ['b', 'a',
+            'percent_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as percent_rank_val']
+
+    # When generating the ordering try really hard to have duplicate values
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, RepeatSeqGen(data_gen, length=500), RepeatSeqGen(data_gen, length=100), length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        # validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
+        conf = conf)
+
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
@@ -480,7 +523,7 @@ def test_window_running_rank(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
-        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit]], ids=idfn)
+        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
@@ -686,6 +729,7 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
                 .withColumn('inc_min_c', f.min('c').over(inclusiveWindowSpec)) \
                 .withColumn('rank_val', f.rank().over(baseWindowSpec)) \
                 .withColumn('dense_rank_val', f.dense_rank().over(baseWindowSpec)) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec)) \
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
@@ -882,6 +926,8 @@ def test_running_window_function_exec_for_all_aggs():
             (partition by a order by b,c_int) as rank_val,
           dense_rank() over
             (partition by a order by b,c_int) as dense_rank_val,
+          percent_rank() over
+            (partition by a order by b,c_int) as percent_rank_val,
           collect_list(c_float) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_float,
           collect_list(c_decimal_32) over

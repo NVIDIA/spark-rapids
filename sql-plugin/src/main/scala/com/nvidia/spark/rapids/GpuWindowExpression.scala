@@ -1526,3 +1526,37 @@ case class GpuLag(input: Expression, offset: Expression, default: Expression)
     }
   }
 }
+
+/**
+ * Technically, percent_rank() *is* a running window function, but because of 
+ * the current implementation of CUDF, it cannot currently be run with a fixer.
+ *   
+ */
+case class GpuPercentRank(children: Seq[Expression]) extends GpuRunningWindowFunction {
+  override def nullable: Boolean = false
+  override def dataType: DataType = DoubleType
+
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
+    val orderedBy = if (children.length == 1) {
+      children.head
+    } else {
+      val childrenWithNames = children.zipWithIndex.flatMap {
+        case (expr, idx) => Seq(GpuLiteral(idx.toString, StringType), expr)
+      }
+      GpuCreateNamedStruct(childrenWithNames)
+    }
+    Seq(orderedBy)
+  }
+  
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
+    Seq(AggAndReplace(GroupByScanAggregation.percentRank(), None))
+  }
+
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    groupByScanInputProjection(isRunningBatched)
+
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
+    Seq(AggAndReplace(ScanAggregation.percentRank(), None))
+  }
+}
