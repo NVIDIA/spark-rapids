@@ -779,27 +779,64 @@ def test_struct_self_join(spark_tmp_table_factory):
 # If the condition is something like an AND, it makes the result a subset of a SemiJoin, and
 # the optimizer won't use ExistenceJoin.
 @ignore_order(local=True)
-@pytest.mark.parametrize(
-    "allowFallback", [
-        pytest.param('true',
-            marks=pytest.mark.allow_non_gpu('SortMergeJoinExec')),
-        pytest.param('false',
-            marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/589"))
-    ], ids=idfn
-)
-def test_existence_join(allowFallback, spark_tmp_table_factory):
+@pytest.mark.parametrize('numComplementsToExists', [0, 1, 2], ids=(lambda val: f"complements:{val}"))
+@pytest.mark.parametrize('aqeEnabled', [
+    pytest.param(False, id='aqe:off'),
+    # workaround: somehow AQE retains RDDScanExec preventing parent ShuffleExchangeExec
+    # from being executed on GPU
+    # pytest.param(True, marks=pytest.mark.allow_non_gpu('ShuffleExchangeExec'), id='aqe:on')
+])
+@pytest.mark.parametrize('conditionalJoin', [False, True], ids=['ast:off', 'ast:on'])
+@pytest.mark.parametrize('forceBroadcastHashJoin', [False, True], ids=['broadcastHJ:off', 'broadcastHJ:on'])
+def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, forceBroadcastHashJoin, spark_tmp_table_factory):
     leftTable = spark_tmp_table_factory.get()
     rightTable = spark_tmp_table_factory.get()
     def do_join(spark):
         # create non-overlapping ranges to have a mix of exists=true and exists=false
-        spark.createDataFrame([v] for v in range(2, 10)).createOrReplaceTempView(leftTable)
-        spark.createDataFrame([v] for v in range(0, 8)).createOrReplaceTempView(rightTable)
+
+        # left-hand side rows
+        lhs_upper_bound = 10
+        lhs_data = list((f"left_{v}", v * 10, v * 100) for v in range(2, lhs_upper_bound))
+        # duplicate without a match
+        lhs_data.append(('left_1', 10, 100))
+        # duplicate with a match
+        lhs_data.append(('left_2', 20, 200))
+        lhs_data.append(('left_null', None, None))
+        df_left = spark.createDataFrame(lhs_data)
+        df_left.createOrReplaceTempView(leftTable)
+
+        rhs_data = list((f"right_{v}", v * 10, v * 100) for v in range(0, 8))
+        rhs_data.append(('right_null', None, None))
+        # duplicate every row in the rhs to verify it does not affect
+        # the number of output rows, which should be equal to the left table row count
+        rhs_data_with_dupes=[]
+        for dupe in rhs_data:
+            rhs_data_with_dupes.extend([dupe, dupe])
+
+        df_right = spark.createDataFrame(rhs_data_with_dupes)
+        df_right.createOrReplaceTempView(rightTable)
+        cond = "<=" if conditionalJoin else "="
         res = spark.sql((
             "select * "
             "from {} as l "
-            "where l._1 < 0 "
-            "   OR l._1 in (select * from {} as r)"
-        ).format(leftTable, rightTable))
+            f"where l._2 >= {10 * (lhs_upper_bound - numComplementsToExists)}"
+            "   or exists (select * from {} as r where r._2 = l._2 and r._3 {} l._3)"
+        ).format(leftTable, rightTable, cond))
         return res
-    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, r".+Join ExistenceJoin\(exists#[0-9]+\).+")
+    existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\),"
+    if conditionalJoin:
+        existenceJoinRegex = existenceJoinRegex + r" \(.+ <= .+\)"
 
+    if forceBroadcastHashJoin:
+        # hints don't work with ExistenceJoin
+        # forcing by upping the size to the estimated right output
+        bhjThreshold = "9223372036854775807b"
+        existenceJoinRegex = r'BroadcastHashJoin .* ' + existenceJoinRegex
+    else:
+        bhjThreshold = "-1b"
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, existenceJoinRegex,
+        conf={
+            "spark.sql.adaptive.enabled": aqeEnabled,
+            "spark.sql.autoBroadcastJoinThreshold": bhjThreshold
+        })
