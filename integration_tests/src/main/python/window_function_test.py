@@ -513,7 +513,6 @@ def test_window_running_percent_rank(data_gen):
         'select ' +
         ', '.join(query_parts) +
         ' from window_agg_table ',
-        # validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
 # This is for aggregations that work with a running window optimization. They don't need to be batched
