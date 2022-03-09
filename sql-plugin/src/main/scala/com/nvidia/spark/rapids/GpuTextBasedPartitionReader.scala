@@ -28,7 +28,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
-import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
+import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -172,7 +172,7 @@ abstract class GpuTextBasedPartitionReader(
             f.dataType match {
               case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
                    DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
-                   DataTypes.DoubleType =>
+                   DataTypes.DoubleType | _: DecimalType =>
                 f.copy(dataType = DataTypes.StringType)
               case _ =>
                 f
@@ -196,8 +196,6 @@ abstract class GpuTextBasedPartitionReader(
           // Table increases the ref counts on the columns so we have
           // to close them after creating the table
           withResource(columns) { _ =>
-            // ansi mode does not apply to text inputs
-            val ansiEnabled = false
             for (i <- 0 until table.getNumberOfColumns) {
               val castColumn = newReadDataSchema.fields(i).dataType match {
                 case DataTypes.BooleanType =>
@@ -211,9 +209,11 @@ abstract class GpuTextBasedPartitionReader(
                 case DataTypes.LongType =>
                   castStringToInt(table.getColumn(i), DType.INT64)
                 case DataTypes.FloatType =>
-                  GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT32)
+                  castStringToFloat(table.getColumn(i), DType.FLOAT32)
                 case DataTypes.DoubleType =>
-                  GpuCast.castStringToFloats(table.getColumn(i), ansiEnabled, DType.FLOAT64)
+                  castStringToFloat(table.getColumn(i), DType.FLOAT64)
+                case dt: DecimalType =>
+                  castStringToDecimal(table.getColumn(i), dt)
                 case _ =>
                   table.getColumn(i).incRefCount()
               }
@@ -231,6 +231,14 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   def castStringToBool(input: ColumnVector): ColumnVector
+
+  def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
+    GpuCast.castStringToFloats(input, ansiEnabled = false, dt)
+  }
+
+  def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    GpuCast.castStringToDecimal(input, ansiEnabled = false, dt)
+  }
 
   def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
     withResource(input.isInteger(intType)) { isInt =>

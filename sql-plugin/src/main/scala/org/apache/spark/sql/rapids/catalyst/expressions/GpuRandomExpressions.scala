@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
+import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.AnalysisException

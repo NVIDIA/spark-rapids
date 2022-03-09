@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark321
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.SparkShimVersion
 
 object SparkShimServiceProvider {
   val VERSION = SparkShimVersion(3, 2, 1)
@@ -25,11 +25,9 @@ object SparkShimServiceProvider {
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+
   def matchesVersion(version: String): Boolean = {
     SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark321Shims()
   }
 }

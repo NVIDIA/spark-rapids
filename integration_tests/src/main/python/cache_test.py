@@ -24,8 +24,7 @@ from marks import incompat, allow_non_gpu, ignore_order
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
 
-# cache does not work with 128-bit decimals, see https://github.com/NVIDIA/spark-rapids/issues/4826
-_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit]
+_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
 _cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_null + _cache_decimal_gens]
 
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(_cache_decimal_gens)])

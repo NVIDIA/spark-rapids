@@ -122,7 +122,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4487
     val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
     patterns.foreach(pattern => 
       assertUnsupported(pattern, RegexFindMode, "nothing to repeat"))
@@ -144,13 +143,23 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF does not support octal digits 0o177 < n <= 0o377") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4746
     val patterns = Seq(raw"\0200", raw"\0377")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support octal digits 0o177 < n <= 0o377"))
   }
 
+  test("cuDF does not support hex digits > 0x7F") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4866
+    val patterns = Seq(raw"\x80", raw"\xff", raw"\xFF", raw"\x{ABC}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support hex digits > 0x7F"))
+  }
+
   test("cuDF does not support octal digits in character classes") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4862
     val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode,
@@ -159,19 +168,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support hex digits consistently with Spark") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4486
-    val patterns = Seq(raw"\xA9", raw"\x00A9", raw"\x10FFFF")
+  test("cuDF does not support hex digits in character classes") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4865
+    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support hex digits consistently with Spark"))
+        "cuDF does not support hex digits in character classes"
+      )
+    )
   }
 
   test("octal digits < 0o177 - find") {
-    // val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\0377")
-    val patterns = Seq(raw"\07", raw"\077", raw"\0177")
+    val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
-        "\u0007\u003f\u007f", "\u007f"))
+        "\u0007\u003f\u007f", "\u007f", "\u007f2"))
+  }
+
+  test("hex digits < 0x7F - find") {
+    val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
+        "\u0007\u003f\u007f", "\u007f", "\u007f2"))
   }
   
   test("string anchors - find") {
@@ -311,6 +327,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("regexp_replace - character class repetition - ? and * - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4468
     val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
@@ -319,28 +336,34 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("regexp_replace - character class repetition - {0,} - fall back to CPU") {
-    val patterns = Seq(raw"[1a-zA-Z]{0,}")
+  test("regexp_replace - character class repetition - {0,} or {0,n} - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4468
+    val patterns = Seq(raw"[1a-zA-Z]{0,}", raw"[1a-zA-Z]{0,2}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
-        "regexp_replace on GPU does not support repetition with {0,}"
+        "regexp_replace on GPU does not support repetition with {0,} or {0,n}"
       )
     )
   }
 
-  test("regexp_replace - fall back to CPU for {0} or {0,0}") {
-    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+  test("regexp_split - character class repetition - ? and * - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
+    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexReplaceMode, 
-        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+      assertUnsupported(pattern, RegexSplitMode,
+        "regexp_split on GPU does not support repetition with ? or * " +
+        "consistently with Spark"
+      )
     )
   }
 
-  test("regexp_split - fall back to CPU for {0} or {0,0}") {
-    val patterns = Seq("a{0}", raw"\02{0}", "a{0,0}", raw"\02{0,0}")
+  test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
+    val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexSplitMode,
-        "regex_replace and regex_split on GPU do not support repetition with {0} or {0,0}")
+        "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
+        "consistently with Spark")
     )
   }
 
@@ -436,6 +459,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), RegexReplaceMode)
   }
 
+  test("string split - optimized") {
+    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d")
+    val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
+        "abc,def", "abc;def", "abcdef", "abc|def")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      assertTranspileToSplittableString(patterns)
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("string split - not optimized") {
+    val patterns = Set(".\\$", "\\[.", "\\(.", ".\\}", "\\+.", "c.\\|d")
+    val data = Seq("abc.$def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
+        "abc#|def")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      assertNoTranspileToSplittableString(patterns)
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
   test("string split - limit < 0") {
     val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
     val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
@@ -460,17 +503,53 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  def assertTranspileToSplittableString(patterns: Set[String]) {
+    for (pattern <- patterns) {
+      val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+      transpiler.transpileToSplittableString(pattern) match {
+        case None =>
+          fail(s"string_split pattern=${toReadableString(pattern)} " +
+            "does not produce a simplified string to split on"
+          )
+        case _ =>
+      }
+    }
+  }
+
+  def assertNoTranspileToSplittableString(patterns: Set[String]) {
+    for (pattern <- patterns) {
+      val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+      transpiler.transpileToSplittableString(pattern) match {
+        case Some(_) =>
+          fail(s"string_split pattern=${toReadableString(pattern)} " +
+            "is trying to produce a simplified string to split on when " +
+            "it can't"
+          )
+        case _ =>
+      }
+    }
+  }
+
   def doStringSplitTest(patterns: Set[String], data: Seq[String], limit: Int) {
     for (pattern <- patterns) {
       val cpu = cpuSplit(pattern, data, limit)
-      val cudfPattern = new CudfRegexTranspiler(RegexSplitMode).transpile(pattern)
-      val gpu = gpuSplit(cudfPattern, data, limit)
+      val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+      val (isRegex, cudfPattern) = if (RegexParser.isRegExpString(pattern)) {
+        transpiler.transpileToSplittableString(pattern) match {
+          case Some(simplified) => (false, simplified)
+          case _ => (true, transpiler.transpile(pattern))
+        }
+      } else {
+        (false, pattern)
+      }
+      val gpu = gpuSplit(cudfPattern, data, limit, isRegex)
       assert(cpu.length == gpu.length)
       for (i <- cpu.indices) {
         val cpuArray = cpu(i)
         val gpuArray = gpu(i)
         if (!cpuArray.sameElements(gpuArray)) {
           fail(s"string_split pattern=${toReadableString(pattern)} " +
+            s"isRegex=$isRegex " +
             s"data=${toReadableString(data(i))} limit=$limit " +
             s"\nCPU [${cpuArray.length}]: ${toReadableString(cpuArray.mkString(", "))} " +
             s"\nGPU [${gpuArray.length}]: ${toReadableString(gpuArray.mkString(", "))}")
@@ -610,8 +689,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => s.split(pattern, limit))
   }
 
-  private def gpuSplit(pattern: String, input: Seq[String], limit: Int): Seq[Array[String]] = {
-    val isRegex = RegexParser.isRegExpString(pattern)
+  private def gpuSplit(
+      pattern: String,
+      input: Seq[String],
+      limit: Int,
+      isRegex: Boolean): Seq[Array[String]] = {
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       withResource(cv.stringSplitRecord(pattern, limit, isRegex)) { x =>
         withResource(x.copyToHost()) { hcv =>
@@ -678,12 +760,12 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
         () => predefinedCharacterClass,
         () => group(depth),
         () => boundaryMatch,
-        () => sequence(depth))
+        () => sequence(depth),
+        () => repetition(depth))
       val generators = if (skipKnownIssues) {
         baseGenerators
       } else {
         baseGenerators ++ Seq(
-          () => repetition(depth), // https://github.com/NVIDIA/spark-rapids/issues/4487
           () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
       }
       generators(rr.nextInt(generators.length))()
@@ -713,8 +795,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
     } else {
       baseGenerators ++ Seq(
         () => escapedChar, // https://github.com/NVIDIA/spark-rapids/issues/4505
-        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4486
-        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4409
+        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4865
+        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4862
     }
     generators(rr.nextInt(generators.length))()
   }

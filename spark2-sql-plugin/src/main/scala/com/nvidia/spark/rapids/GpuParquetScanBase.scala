@@ -97,31 +97,31 @@ object GpuParquetScanBase {
 
     // Spark 2.x doesn't support the rebase mode
     /*
-    sqlConf.get(ShimLoader.getSparkShims.int96ParquetRebaseReadKey) match {
+    sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is EXCEPTION")
+            s"${SparkShimImpl.int96ParquetRebaseReadKey} is EXCEPTION")
       }
       case "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-              s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is LEGACY")
+              s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
 
-    sqlConf.get(ShimLoader.getSparkShims.parquetRebaseReadKey) match {
+    sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${ShimLoader.getSparkShims.parquetRebaseReadKey} is EXCEPTION")
+            s"${SparkShimImpl.parquetRebaseReadKey} is EXCEPTION")
       }
       case "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-              s"${ShimLoader.getSparkShims.parquetRebaseReadKey} is LEGACY")
+              s"${SparkShimImpl.parquetRebaseReadKey} is LEGACY")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")

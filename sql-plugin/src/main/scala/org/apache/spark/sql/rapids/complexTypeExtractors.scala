@@ -16,18 +16,19 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
+import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{RapidsErrorUtils, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetArrayStructFields, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends ShimUnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
@@ -72,17 +73,7 @@ class GpuGetArrayItemMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
-  import GpuOverrides._
 
-  override def tagExprForGpu(): Unit = {
-    extractLit(expr.ordinal).foreach { litOrd =>
-      // Once literal array/struct types are supported this can go away
-      val ord = litOrd.value
-      if ((ord == null || ord.asInstanceOf[Int] < 0) && DataTypeUtils.isNestedType(expr.dataType)) {
-        willNotWorkOnGpu("negative and null indexes are not supported for nested types")
-      }
-    }
-  }
   override def convertToGpu(
       arr: Expression,
       ordinal: Expression): GpuExpression =
@@ -111,31 +102,87 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
-
-  override def doColumnar(lhs: GpuColumnVector, ordinalS: GpuScalar): ColumnVector = {
-    val ordinal = ordinalS.getValue.asInstanceOf[Int]
-    if (ordinalS.isValid) {
-      withResource(lhs.getBase.countElements) { numElementsCV =>
-        withResource(numElementsCV.min) { minScalar =>
-          val minNumElements = minScalar.getInt
-          if (failOnError &&
-              (ordinal < 0 || minNumElements < ordinal + 1) &&
-              numElementsCV.getRowCount != numElementsCV.getNullCount) {
-            RapidsErrorUtils.throwArrayIndexOutOfBoundsException(ordinal, minNumElements)
-          } else if (!failOnError && ordinal < 0) {
-            GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
-          } else {
-            lhs.getBase.extractListElement(ordinal)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val (array, indices) = (lhs.getBase, rhs.getBase)
+    val indicesCol = withResource(Scalar.fromInt(0)) { zeroS =>
+      withResource(indices.lessThan(zeroS)) { hasNegativeIndicesCV =>
+        if (failOnError) {
+          // Check if any index is out of bound only when ansi mode is enabled.
+          // No exception should be raised if no valid entry (An entry is valid when both
+          // the array row and its index are not null), the same with what Spark does.
+          withResource(array.countElements()) { numElements =>
+            // Check negative indices. Should ignore the rows that are not valid
+            val hasValidEntryCV = hasNegativeIndicesCV.mergeAndSetValidity(BinaryOp.BITWISE_AND,
+                hasNegativeIndicesCV, array)
+            withResource(hasValidEntryCV) { _ =>
+              if (isAnyValidTrue(hasValidEntryCV)) {
+                val (index, numElem) = firstIndexAndNumElementUnchecked(hasValidEntryCV,
+                  indices, numElements)
+                throw RapidsErrorUtils.invalidArrayIndexError(index, numElem)
+              }
+            }
+            // Then check if any index is larger than its array size
+            withResource(indices.greaterOrEqualTo(numElements)) { hasLargerIndicesCV =>
+              // No need to check the validity of array column here, since the validity info
+              // is included in this `hasLargerIndicesCV`.
+              if (isAnyValidTrue(hasLargerIndicesCV)) {
+                val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndicesCV,
+                  indices, numElements)
+                throw RapidsErrorUtils.invalidArrayIndexError(index, numElem)
+              }
+            }
           }
+        } // end of "if (failOnError)"
+
+        if (isAnyValidTrue(hasNegativeIndicesCV)) {
+          // Replace negative indices with nulls no matter whether the corresponding array is
+          // null, then cuDF will return nulls, the same with what Spark returns for negative
+          // indices.
+          withResource(Scalar.fromNull(DType.INT32)) { nullS =>
+            hasNegativeIndicesCV.ifElse(nullS, indices)
+          }
+        } else {
+          indices.incRefCount()
         }
       }
-    } else {
+    }
+
+    withResource(indicesCol) { _ =>
+      array.extractListElement(indicesCol)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+
+  override def doColumnar(lhs: GpuColumnVector, ordinalS: GpuScalar): ColumnVector = {
+    if (!ordinalS.isValid || lhs.getRowCount == lhs.numNulls()) {
+      // Return nulls when index is null or all the array rows are null,
+      // the same with what Spark does.
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
+    } else {
+      // The index is valid, and array column contains at least one non-null row.
+      val ordinal = ordinalS.getValue.asInstanceOf[Int]
+      if (failOnError) {
+        // Check if index is out of bound only when ansi mode is enabled, since cuDF
+        // returns nulls if index is out of bound, the same with what Spark does when
+        // ansi mode is disabled.
+        withResource(lhs.getBase.countElements()) { numElementsCV =>
+          withResource(numElementsCV.min) { minScalar =>
+            val minNumElements = minScalar.getInt
+            if (ordinal < 0 || ordinal >= minNumElements) {
+              throw RapidsErrorUtils.invalidArrayIndexError(ordinal, minNumElements)
+            }
+          }
+        }
+      } else if (ordinal < 0) {
+        // Only take care of this case since cuDF treats negative index as offset to the
+        // end of array, instead of invalid index.
+        return GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
+      }
+      lhs.getBase.extractListElement(ordinal)
     }
   }
 
@@ -183,8 +230,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.isValid && !exist.getBoolean) {
-            RapidsErrorUtils.throwInvalidElementAtIndexError(
-              rhs.getValue.asInstanceOf[UTF8String].toString)
+            throw RapidsErrorUtils.mapKeyNotExistError(rhs.getValue.toString)
           }
         }
       }
@@ -266,4 +312,46 @@ case class GpuArrayContains(left: Expression, right: Expression)
   }
 
   override def prettyName: String = "array_contains"
+}
+
+class GpuGetArrayStructFieldsMeta(
+     expr: GetArrayStructFields,
+     conf: RapidsConf,
+     parent: Option[RapidsMeta[_, _, _]],
+     rule: DataFromReplacementRule)
+  extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
+
+  def convertToGpu(child: Expression): GpuExpression =
+    GpuGetArrayStructFields(child, expr.field, expr.ordinal, expr.numFields, expr.containsNull)
+}
+
+/**
+ * For a child whose data type is an array of structs, extracts the `ordinal`-th fields of all array
+ * elements, and returns them as a new array.
+ *
+ * No need to do type checking since it is handled by 'ExtractValue'.
+ */
+case class GpuGetArrayStructFields(
+    child: Expression,
+    field: StructField,
+    ordinal: Int,
+    numFields: Int,
+    containsNull: Boolean) extends GpuUnaryExpression with ExtractValue with NullIntolerant {
+
+  override def dataType: DataType = ArrayType(field.dataType, containsNull)
+  override def toString: String = s"$child.${field.name}"
+  override def sql: String = s"${child.sql}.${quoteIdentifier(field.name)}"
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val base = input.getBase
+    val fieldView = withResource(base.getChildColumnView(0)) { structView =>
+      structView.getChildColumnView(ordinal)
+    }
+    val listView = withResource(fieldView) { _ =>
+      GpuListUtils.replaceListDataColumnAsView(base, fieldView)
+    }
+    withResource(listView) { _ =>
+      listView.copyToColumnVector()
+    }
+  }
 }

@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
-import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
+import com.nvidia.spark.rapids.shims.TypeSigUtil
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}

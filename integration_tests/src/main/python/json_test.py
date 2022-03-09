@@ -19,7 +19,7 @@ from data_gen import *
 from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order
 
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -59,6 +59,12 @@ _float_schema = StructType([
 
 _double_schema = StructType([
     StructField('number', DoubleType())])
+
+_decimal_10_2_schema = StructType([
+    StructField('number', DecimalType(10, 2))])
+
+_decimal_10_3_schema = StructType([
+    StructField('number', DecimalType(10, 3))])
 
 _string_schema = StructType([
     StructField('a', StringType())])
@@ -191,13 +197,15 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'ints.json',
     pytest.param('ints_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4793')),
     'nan_and_inf.json',
-    pytest.param('nan_and_inf_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4646')),
+    pytest.param('nan_and_inf_strings.json', marks=pytest.mark.skipif(is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060 fixed in Spark 3.3.0')),
+    'nan_and_inf_invalid.json',
     'floats.json',
     'floats_leading_zeros.json',
     'floats_invalid.json',
     pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
+    'decimals.json',
 ])
-@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, _float_schema, _double_schema])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
