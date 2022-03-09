@@ -19,6 +19,7 @@ com/nvidia/spark/rapids/ShimLoader*
 com/nvidia/spark/rapids/ShimVersion*
 com/nvidia/spark/rapids/SparkShimServiceProvider*
 com/nvidia/spark/rapids/SparkShimVersion*
+com/nvidia/spark/rapids/DatabricksShimVersion*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/udf/Plugin*
 libjucx.so
