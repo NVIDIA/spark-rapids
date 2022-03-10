@@ -58,10 +58,14 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           GpuColumnVector.fromNull(batch.numRows(), dt)
         // Literal struct values are wrapped in GpuScalar
         case s: GpuScalar =>
-          val ir = s.getValue.asInstanceOf[InternalRow]
-          val tmp = ir.get(ordinal, dt)
-          withResource(GpuScalar.from(tmp, dt)) { scalar =>
-            GpuColumnVector.from(scalar, batch.numRows(), dt)
+          s.getValue match {
+            case null =>
+              GpuColumnVector.fromNull(batch.numRows(), dt)
+            case ir: InternalRow =>
+              val tmp = ir.get(ordinal, dt)
+              withResource(GpuScalar.from(tmp, dt)) { scalar =>
+                GpuColumnVector.from(scalar, batch.numRows(), dt)
+              }
           }
       }
     }
