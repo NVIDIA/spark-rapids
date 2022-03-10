@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims
 import java.io.{InputStream, IOException}
 import java.lang.reflect.Method
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -58,6 +57,7 @@ import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.{ParquetR
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
+import org.apache.spark.sql.rapids.PCBSSchemaConverter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
@@ -306,8 +306,23 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       case ArrayType(elementType, _) => isTypeSupportedByParquet(elementType)
       case MapType(keyType, valueType, _) => isTypeSupportedByParquet(keyType) &&
           isTypeSupportedByParquet(valueType)
+      //Atomic Types
+      case BinaryType => true
+      case BooleanType => true
+      case ByteType => true
+      case ShortType => true
+      case IntegerType => true
+      case LongType => true
+      case FloatType => true
+      case DoubleType => true
       case d: DecimalType if d.scale < 0 => false
-      case _ => true
+      case _: DecimalType => true
+      case VarcharType(_) => true
+      case TimestampType => true
+      case CharType(_) => true
+      case StringType => true
+      case DateType => true
+      case _ => false
     }
   }
 
@@ -1068,11 +1083,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     conf
   }
 
-  private val intervalStructType = new StructType()
-      .add("_days", IntegerType)
-      .add("_months", IntegerType)
-      .add("_ms", LongType)
-
   def getBytesAllowedPerBatch(conf: SQLConf): Long = {
     val gpuBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     // we are rough estimating 0.5% as meta_data_size. we can do better estimation in future
@@ -1324,44 +1334,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
   val mapping = new mutable.HashMap[DataType, DataType]()
 
-  def getSupportedDataType(curId: AtomicLong, dataType: DataType): DataType = {
-    dataType match {
-      case CalendarIntervalType =>
-        intervalStructType
-      case NullType =>
-        ByteType
-      case s: StructType =>
-        val newStructType = StructType(
-          s.indices.map { index =>
-            StructField(curId.getAndIncrement().toString,
-              getSupportedDataType(curId, s.fields(index).dataType), s.fields(index).nullable,
-              s.fields(index).metadata)
-          })
-        mapping.put(s, newStructType)
-        newStructType
-      case a@ArrayType(elementType, nullable) =>
-        val newArrayType =
-          ArrayType(getSupportedDataType(curId, elementType), nullable)
-        mapping.put(a, newArrayType)
-        newArrayType
-      case m@MapType(keyType, valueType, nullable) =>
-        val newKeyType = getSupportedDataType(curId, keyType)
-        val newValueType = getSupportedDataType(curId, valueType)
-        val mapType = MapType(newKeyType, newValueType, nullable)
-        mapping.put(m, mapType)
-        mapType
-      case d: DecimalType if d.scale < 0 =>
-        val newType = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-          IntegerType
-        } else {
-          LongType
-        }
-        newType
-      case _ =>
-        dataType
-    }
-  }
-
   // We want to change the original schema to have the new names as well
   private def sanitizeColumnNames(originalSchema: Seq[Attribute],
       schemaToCopyNamesFrom: Seq[Attribute]): Seq[Attribute] = {
@@ -1374,27 +1346,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       cachedAttributes: Seq[Attribute],
       requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
 
-    // We only handle CalendarIntervalType, Decimals and NullType ATM convert it to a supported type
-    val curId = new AtomicLong()
-    val newCachedAttributes = cachedAttributes.map {
-      attribute => val name = s"_col${curId.getAndIncrement()}"
-        attribute.dataType match {
-          case CalendarIntervalType =>
-            AttributeReference(name, intervalStructType,
-              attribute.nullable, metadata = attribute.metadata)(attribute.exprId)
-                .asInstanceOf[Attribute]
-          case NullType =>
-            AttributeReference(name, DataTypes.ByteType,
-              nullable = true, metadata =
-                  attribute.metadata)(attribute.exprId).asInstanceOf[Attribute]
-          case StructType(_) | ArrayType(_, _) | MapType(_, _, _) | DecimalType() =>
-            AttributeReference(name,
-              getSupportedDataType(curId, attribute.dataType),
-              attribute.nullable, attribute.metadata)(attribute.exprId)
-          case _ =>
-            attribute.withName(name)
-        }
-    }
+    val newCachedAttributes =
+      PCBSSchemaConverter.getSupportedSchemaFromUnsupported(cachedAttributes, mapping)
 
     val newRequestedAttributes =
       getSelectedSchemaFromCachedSchema(requestedAttributes, newCachedAttributes)
