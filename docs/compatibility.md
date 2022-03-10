@@ -497,6 +497,9 @@ Spark version 3.3.0 and later.
 
 ## Regular Expressions
 
+Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors so
+this is disabled by default. To enable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=true`.
+
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
 - `RLIKE`
@@ -506,9 +509,6 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_replace`
 - `string_split`
 - `str_to_map`
-
-Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors. To 
-disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
 There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
 that a pattern is either unsupported or would produce incorrect results on the GPU.
