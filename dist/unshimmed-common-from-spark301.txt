@@ -6,6 +6,7 @@ com/nvidia/spark/ExclusiveModeGpuDiscoveryPlugin*
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
+com/nvidia/spark/rapids/DatabricksShimVersion*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
 com/nvidia/spark/rapids/ExplainPlan*
 com/nvidia/spark/rapids/GpuKryoRegistrator*
