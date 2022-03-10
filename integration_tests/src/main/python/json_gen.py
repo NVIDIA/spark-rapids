@@ -1,82 +1,103 @@
 # A JSON generator built based on the context free grammar from https://www.json.org/json-en.html
 
+
+import random
+from data_gen import *
+
+def schema_gen():
+    fields = random.randint(1, 5)
+    name_gen = StringGen(nullable= False)
+    name_gen.start(random)
+    return StructType([StructField(name_gen.gen(), StringType()) for _ in range(fields)])
+
 # This is just a simple prototype of JSON generator.
 # Run
 # ```python
+# schema = schema_gen()
 # with open("./temp.json", 'w') as f:
-#     for t in json_gen():
+#     for t in json_gen(schema):
 #         f.write(t)
 # ```
 # to generate a random JSON file.
-
-import random
-
-def json_gen():
+def json_gen(schema):
     """
     JSON -> ELEMENT
     """
-    for t in element_gen():
+    for t in element_gen(schema):
         yield t
 
-def element_gen():
+def element_gen(schema: DataType):
     """
     ELEMENT -> WHITESPACE VALUE WHITESPACE
     """
     for t in whitespace_gen():
         yield t
-    for t in value_gen():
+    for t in value_gen(schema):
         yield t
     for t in whitespace_gen():
         yield t
 
-def value_gen():
+def value_gen(schema: DataType):
     """
     VALUE -> OBJECT 
            | ARRAY (todo) 
            | STRING (todo) 
            | NUMBER (todo) 
-           | BOOL
+           | BOOL (todo)
     """
-    for t in random.choices([object_gen(), bool_gen()], weights=[70, 30], k=1)[0]:
-        yield t
+    if isinstance(schema, StructType):
+        for t in object_gen(schema):
+            yield t 
+    elif isinstance(schema, StringType):
+        for t in string_gen():
+            yield t
+    else:
+        raise Exception("not supported schema")
 
-def object_gen():
+def object_gen(schema: StructType):
     """
     OBJECT -> '{' WHITESPACE '}' 
             | '{' MEMBERS '}'
     """
     yield "{"
-    for t in random.choices([whitespace_gen(), members_gen()], weights=[30, 70], k=1)[0]:
-        yield t
+    if len(schema) == 0:
+        for t in whitespace_gen():
+            yield t
+    else:
+        for t in members_gen(schema.fields):
+                yield t
     yield "}"
 
-def members_gen():
+def members_gen(schema: list[StructField]):
     """
     MEMBERS -> MEMBER 
              | MEMBER ',' MEMBERS
     """
-    if random.randint(0,100) < 50:
-        for t in member_gen():
+    if len(schema) == 1:
+        for t in member_gen(schema[0]):
             yield t
     else:
-        for t in member_gen():
+        for t in member_gen(schema[0]):
             yield t
         yield ","
-        for t in members_gen():
+        for t in members_gen(schema[1:]):
             yield t
 
-def member_gen():
+def member_gen(schema: StructField):
     """
     MEMBER -> WHITESPACE STRING WHITESPACE ':' ELEMENT
     """
     for t in whitespace_gen():
         yield t
-    for t in string_gen():
-        yield t
+
+    yield schema.name
+
     for t in whitespace_gen():
         yield t
+
     yield ":"
-    for t in element_gen():
+
+    for t in element_gen(schema.dataType):
         yield t
 
 def string_gen():
