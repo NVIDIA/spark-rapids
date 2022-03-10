@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.v2
+package com.nvidia.spark.rapids.shims
 
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 

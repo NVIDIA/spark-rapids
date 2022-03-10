@@ -20,7 +20,7 @@ import scala.collection.mutable.ListBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.shims.v2.GpuTypeShims
+import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory

@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.shims.v2.GpuIntervalUtils
+import com.nvidia.spark.rapids.shims.GpuIntervalUtils
 
 import org.apache.spark.sql.types.DayTimeIntervalType
 
