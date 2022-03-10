@@ -1528,9 +1528,11 @@ case class GpuLag(input: Expression, offset: Expression, default: Expression)
 }
 
 /**
- * Technically, percent_rank() *is* a running window function, but because of 
- * the current implementation of CUDF, it cannot currently be run with a fixer.
- *   
+ * percent_rank() is a running window function in that it only operates on a window of unbounded
+ * preceding to current row. But, an entire window has to be in the batch because the rank is
+ * divided by the number of entries in the window to get the percent rank. We cannot know the number
+ * of entries in the window without the entire window. This is why it is not a
+ * `GpuBatchedRunningWindowWithFixer`.
  */
 case class GpuPercentRank(children: Seq[Expression]) extends GpuRunningWindowFunction {
   override def nullable: Boolean = false
