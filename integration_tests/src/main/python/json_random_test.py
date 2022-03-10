@@ -5,10 +5,13 @@ import random
 from data_gen import *
 
 def gen_schema():
+    """
+    So far, we only support generate elements with string type field
+    """
     fields = random.randint(1, 5)
     name_gen = StringGen(nullable= False)
     name_gen.start(random)
-    return StructType([StructField(name_gen.gen(), StringType()) for _ in range(fields)])
+    return StructType([StructField('"' + name_gen.gen() + '"', StringType()) for _ in range(fields)])
 
 # This is just a simple prototype of JSON generator.
 # Run
@@ -19,12 +22,16 @@ def gen_schema():
 #         f.write(t)
 # ```
 # to generate a random JSON file.
+
 def gen_json(schema: DataType):
     """
     JSON -> ELEMENT
     """
-    for t in gen_element(schema):
-        yield t
+    lines = random.randint(0, 10)
+    for _ in range(lines):
+        for t in gen_element(schema):
+            yield t
+        yield '\n'
 
 def gen_element(schema: DataType):
     """
@@ -189,11 +196,11 @@ def gen_whitespace():
     WHITESPACE -> '' 
                 | 0x0020 WHITESPACE 
                 | 0x000a WHITESPACE (todo)
-                | 0x000d WHITESPACE 
+                | 0x000d WHITESPACE (todo)
                 | 0x0009 WHITESPACE (todo)
     """
     if random.randint(0, 4) > 3:
-        yield chr(random.choice([0x20, 0xD]))
+        yield chr(random.choice([0x0020]))
         for t in gen_whitespace():
             yield t
     else:
@@ -210,4 +217,10 @@ def test_json_gen():
     with open("./temp.json", 'w') as f:
         for t in gen_json(schema):
             f.write(t)
+    
+    print("\n schema = \n {}".format(schema))
+    print("content = ")
+    with open("./temp.json", 'r') as f:
+        print(f.read())
+
     assert 1 == 2
