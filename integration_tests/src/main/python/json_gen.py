@@ -4,7 +4,7 @@
 import random
 from data_gen import *
 
-def schema_gen():
+def gen_schema():
     fields = random.randint(1, 5)
     name_gen = StringGen(nullable= False)
     name_gen.start(random)
@@ -13,31 +13,31 @@ def schema_gen():
 # This is just a simple prototype of JSON generator.
 # Run
 # ```python
-# schema = schema_gen()
+# schema = gen_schema()
 # with open("./temp.json", 'w') as f:
-#     for t in json_gen(schema):
+#     for t in gen_json(schema):
 #         f.write(t)
 # ```
 # to generate a random JSON file.
-def json_gen(schema):
+def gen_json(schema: DataType):
     """
     JSON -> ELEMENT
     """
-    for t in element_gen(schema):
+    for t in gen_element(schema):
         yield t
 
-def element_gen(schema: DataType):
+def gen_element(schema: DataType):
     """
     ELEMENT -> WHITESPACE VALUE WHITESPACE
     """
-    for t in whitespace_gen():
+    for t in gen_whitespace():
         yield t
-    for t in value_gen(schema):
+    for t in gen_value(schema):
         yield t
-    for t in whitespace_gen():
+    for t in gen_whitespace():
         yield t
 
-def value_gen(schema: DataType):
+def gen_value(schema: DataType):
     """
     VALUE -> OBJECT 
            | ARRAY (todo) 
@@ -46,70 +46,70 @@ def value_gen(schema: DataType):
            | BOOL (todo)
     """
     if isinstance(schema, StructType):
-        for t in object_gen(schema):
+        for t in gen_object(schema):
             yield t 
     elif isinstance(schema, StringType):
-        for t in string_gen():
+        for t in gen_string():
             yield t
     else:
         raise Exception("not supported schema")
 
-def object_gen(schema: StructType):
+def gen_object(schema: StructType):
     """
     OBJECT -> '{' WHITESPACE '}' 
             | '{' MEMBERS '}'
     """
     yield "{"
     if len(schema) == 0:
-        for t in whitespace_gen():
+        for t in gen_whitespace():
             yield t
     else:
-        for t in members_gen(schema.fields):
+        for t in gen_members(schema.fields):
                 yield t
     yield "}"
 
-def members_gen(schema: list[StructField]):
+def gen_members(schema: list[StructField]):
     """
     MEMBERS -> MEMBER 
              | MEMBER ',' MEMBERS
     """
     if len(schema) == 1:
-        for t in member_gen(schema[0]):
+        for t in gen_member(schema[0]):
             yield t
     else:
-        for t in member_gen(schema[0]):
+        for t in gen_member(schema[0]):
             yield t
         yield ","
-        for t in members_gen(schema[1:]):
+        for t in gen_members(schema[1:]):
             yield t
 
-def member_gen(schema: StructField):
+def gen_member(schema: StructField):
     """
     MEMBER -> WHITESPACE STRING WHITESPACE ':' ELEMENT
     """
-    for t in whitespace_gen():
+    for t in gen_whitespace():
         yield t
 
     yield schema.name
 
-    for t in whitespace_gen():
+    for t in gen_whitespace():
         yield t
 
     yield ":"
 
-    for t in element_gen(schema.dataType):
+    for t in gen_element(schema.dataType):
         yield t
 
-def string_gen():
+def gen_string():
     """
     STRING -> '"' CHARACTERS '"'
     """
     yield '"'
-    for t in characters_gen():
+    for t in gen_characters():
         yield t
     yield '"'
 
-def characters_gen():
+def gen_characters():
     """
     CHARACTERS -> '' 
                 | CHAR CHARACTERS
@@ -117,12 +117,12 @@ def characters_gen():
     if random.randint(0,100) < 30:
         yield ''
     else:
-        for t in char_gen():
+        for t in gen_char():
             yield t
-        for t in characters_gen():
+        for t in gen_characters():
             yield t
 
-def char_gen():
+def gen_char():
     """
     CHAR -> 0x0020 .. 0x10ffff (exclude 0x0022 and 0x005c) 
           | '\\' ESCAPE
@@ -135,11 +135,11 @@ def char_gen():
     
     else:
         yield '\\'
-        for t in escape_gen():
+        for t in gen_escape():
             yield t
     
 
-def escape_gen():
+def gen_escape():
     """
     ESCAPE -> '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't' 
             | 'u' HEX HEX HEX HEX
@@ -149,10 +149,10 @@ def escape_gen():
     else:
         yield 'u'
         for _ in range(4):
-            for t in hex_gen():
+            for t in gen_hex():
                 yield t
 
-def hex_gen():
+def gen_hex():
     """
     HEX -> DIGIT 
          | 'a' .. 'f' 
@@ -160,14 +160,14 @@ def hex_gen():
     """
     path = random.randint(0, 2)
     if path == 0:
-        for t in digit_gen():
+        for t in gen_digit():
             yield t
     elif path == 1:
         yield chr(random.randint(0x41, 0x46))
     else:
         yield chr(random.randint(0x61, 0x66))
 
-def digit_gen():
+def gen_digit():
     """
     DIGIT -> '0' 
            | ONENINE
@@ -175,16 +175,16 @@ def digit_gen():
     if random.randint(0, 9) == 0:
         yield '0'
     else:
-        for t in onenine_gen():
+        for t in gen_onenine():
             yield t
 
-def onenine_gen():
+def gen_onenine():
     """
     ONENINE -> '1' .. '9'
     """
     yield chr(random.randint(0x31, 0x39))
 
-def whitespace_gen():
+def gen_whitespace():
     """
     WHITESPACE -> '' 
                 | 0x0020 WHITESPACE 
@@ -194,13 +194,20 @@ def whitespace_gen():
     """
     if random.randint(0, 4) > 3:
         yield chr(random.choice([0x20, 0xD]))
-        for t in whitespace_gen():
+        for t in gen_whitespace():
             yield t
     else:
         yield ''
 
-def bool_gen():
+def gen_bool():
     """
     BOOL -> "true" | "null" | "false"
     """
     yield random.choice(["true", "null", "false"])
+
+def test_json_gen():
+    schema = gen_schema()
+    with open("./temp.json", 'w') as f:
+        for t in gen_json(schema):
+            f.write(t)
+    assert 1 == 2
