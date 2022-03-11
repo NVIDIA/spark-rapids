@@ -15,6 +15,7 @@ import math
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_sql_fallback_collect
+from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -455,7 +456,7 @@ def test_window_running_rank_no_part(data_gen):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=idfn)
 def test_window_running_rank(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -463,6 +464,10 @@ def test_window_running_rank(data_gen):
     query_parts = ['b', 'a',
             'rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
             'dense_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val']
+
+
+    if is_databricks_runtime() and data_gen == decimal_gen_128bit:
+      pytest.xfail("Decimal 128 in running window is not supported on Databricks")
 
     # When generating the ordering try really hard to have duplicate values
     assert_gpu_and_cpu_are_equal_sql(
@@ -481,7 +486,7 @@ def test_window_running_rank(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
-        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit]], ids=idfn)
+        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
@@ -497,6 +502,9 @@ def test_window_running(b_gen, c_gen, batch_size):
     # Decimal precision can grow too large. Float and Double can get odd results for Inf/-Inf because of ordering
     if isinstance(c_gen.data_type, NumericType) and (not isinstance(c_gen, FloatGen)) and (not isinstance(c_gen, DoubleGen)) and (not isinstance(c_gen, DecimalGen)):
         query_parts.append('sum(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
+
+    if is_databricks_runtime() and b_gen == decimal_gen_128bit:
+      pytest.xfail("Decimal 128 in running window is not supported on Databricks")
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : three_col_df(spark, LongRangeGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
