@@ -280,23 +280,6 @@ will produce a different result compared to the plugin.
 
 ## CSV Reading
 
-<<<<<<< HEAD
-Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
-Each data type can be enabled or disabled independently using the following configs.
-
- * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
-
-If you know that your particular data type will be parsed correctly enough, you may enable each
-type you expect to use. Often the performance improvement is so good that it is worth
-checking if it is parsed correctly.
-
-Spark is generally very strict when reading CSV and if the data does not conform with the 
-expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
-uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
-nulls.
-
-=======
->>>>>>> json-timestamp-wip2
 Spark allows for stripping leading and trailing white space using various options that are off by
 default. The plugin will strip leading and trailing space for all values except strings.
 
