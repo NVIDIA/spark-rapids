@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal, assert_collection_equal_ignore_order
 from data_gen import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_with_rapids_cache_serializer
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
 
@@ -287,11 +287,7 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
     assert_gpu_and_cpu_are_equal_collect(helper)
 
 
-# No need to run these tests without rapids cache serializer since the 'InMemoryTableScanExec'
-# node will fall back to CPU for such case. Then there is no GPU things joined in for the
-# cache/uncache operations.
-@pytest.mark.skipif(is_before_spark_330() or not is_with_rapids_cache_serializer(),
-    reason='DayTimeInterval is not supported before Spark3.3.0 or rapids cache serializer is not used')
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
 @ignore_order(local=True)
 def test_cache_daytimeinterval_input_row():
     assert_gpu_and_cpu_are_equal_collect(
@@ -299,8 +295,7 @@ def test_cache_daytimeinterval_input_row():
             DayTimeIntervalGen(), int_gen, null_gen).cache().selectExpr('b', 'a'))
 
 
-@pytest.mark.skipif(is_before_spark_330() or not is_with_rapids_cache_serializer(),
-    reason='DayTimeInterval is not supported before Spark3.3.0 or rapids cache serializer is not used')
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec")
 @pytest.mark.parametrize('alongside_gen', [int_gen, ArrayGen(int_gen)], ids=idfn)
 @pytest.mark.parametrize('with_rapids_memoryscan', ['true', 'false'],
