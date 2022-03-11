@@ -443,7 +443,6 @@ Spark will treat them as invalid inputs and will just return `null`.
 
 ### JSON Timestamps
 
-
 There is currently no support for reading numeric values as timestamps and null values are returned instead 
 ([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast 
 to timestamp.
