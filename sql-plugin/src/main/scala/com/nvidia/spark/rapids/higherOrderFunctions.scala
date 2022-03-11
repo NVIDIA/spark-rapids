@@ -206,6 +206,93 @@ trait GpuSimpleHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
   }
 }
 
+case class GpuArrayAggrgate(
+                              argument: Expression,
+                              function: Expression,
+                              isBound: Boolean = false,
+                              boundIntermediate: Seq[GpuExpression] = Seq.empty)
+  extends GpuSimpleHigherOrderFunction {
+
+  override def dataType: ArrayType = ArrayType(function.dataType, function.nullable)
+
+  override def prettyName: String = "aggregate"
+
+  private lazy val inputToLambda: Seq[DataType] = {
+    assert(isBound)
+    boundIntermediate.map(_.dataType) ++ lambdaFunction.arguments.map(_.dataType)
+  }
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuArrayTransform(boundArg, boundFunc, isBound = true, boundIntermediate)
+  }
+
+  private[this] def makeElementProjectBatch(
+                                             inputBatch: ColumnarBatch,
+                                             listColumn: cudf.ColumnVector): ColumnarBatch = {
+    assert(listColumn.getType.equals(DType.LIST))
+    assert(isBound, "Trying to execute an un-bound transform expression")
+
+    if (function.asInstanceOf[GpuLambdaFunction].arguments.length >= 2) {
+      // Need to do an explodePosition
+      val boundProject = boundIntermediate :+ argument
+      val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
+        projectedBatch =>
+          withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+            projectedTable.explodePosition(boundIntermediate.length)
+          }
+      }
+      val reorderedTable = withResource(explodedTable) { explodedTable =>
+        // The column order is wrong after an explodePosition. It is
+        // [other_columns*, position, entry]
+        // but we want
+        // [other_columns*, entry, position]
+        // So we have to remap it
+        val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns)
+        val numOtherColumns = explodedTable.getNumberOfColumns - 2
+        (0 until numOtherColumns).foreach { index =>
+          cols(index) = explodedTable.getColumn(index)
+        }
+        cols(numOtherColumns) = explodedTable.getColumn(numOtherColumns + 1)
+        cols(numOtherColumns + 1) = explodedTable.getColumn(numOtherColumns)
+
+        new cudf.Table(cols: _*)
+      }
+      withResource(reorderedTable) { reorderedTable =>
+        GpuColumnVector.from(reorderedTable, inputToLambda.toArray)
+      }
+    } else {
+      // Need to do an explode
+      val boundProject = boundIntermediate :+ argument
+      val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
+        projectedBatch =>
+          withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+            projectedTable.explode(boundIntermediate.length)
+          }
+      }
+      withResource(explodedTable) { explodedTable =>
+        GpuColumnVector.from(explodedTable, inputToLambda.toArray)
+      }
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
+      val dataCol = withResource(
+        makeElementProjectBatch(batch, arg.getBase)) { cb =>
+        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+      }
+      withResource(dataCol) { dataCol =>
+        withResource(GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)) {
+          retView =>
+            GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+        }
+      }
+    }
+  }
+}
+
 case class GpuArrayTransform(
     argument: Expression,
     function: Expression,
