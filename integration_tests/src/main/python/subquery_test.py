@@ -20,6 +20,7 @@ from marks import *
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_scalar_subquery_basics(data_gen):
+    # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, [('a', data_gen)], num_slices=1),
         'table',
@@ -34,6 +35,7 @@ def test_scalar_subquery_struct(basic_gen):
     # single-level struct
     gen = [('ss', StructGen([['a', basic_gen], ['b', basic_gen]]))]
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, num_slices=1),
         'table',
         '''select ss, (select last(ss) from table)
@@ -43,6 +45,7 @@ def test_scalar_subquery_struct(basic_gen):
     # nested struct
     gen = [('ss', StructGen([['child', StructGen([['c0', basic_gen]])]]))]
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, num_slices=1),
         'table',
         '''select ss, (select last(ss) from table)
@@ -52,6 +55,7 @@ def test_scalar_subquery_struct(basic_gen):
     # struct of array
     gen = [('ss', StructGen([['arr', ArrayGen(basic_gen)]]))]
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, length=100, num_slices=1),
         'table',
         '''select sort_array(ss.arr), sort_array((select last(ss) from table)['arr'])
@@ -64,6 +68,7 @@ def test_scalar_subquery_struct(basic_gen):
 def test_scalar_subquery_array(basic_gen):
     # single-level array
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', ArrayGen(basic_gen))], num_slices=1),
         'table',
         '''select sort_array(arr),
@@ -73,6 +78,7 @@ def test_scalar_subquery_array(basic_gen):
         ''')
     # nested array
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', ArrayGen(ArrayGen(basic_gen)))]
                              , length=100
                              , num_slices=1),
@@ -84,6 +90,7 @@ def test_scalar_subquery_array(basic_gen):
         ''')
     # array of struct
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', ArrayGen(StructGen([['a', basic_gen]])))]
                              , length=100
                              , num_slices=1),
@@ -97,6 +104,7 @@ def test_scalar_subquery_array(basic_gen):
 def test_scalar_subquery_map():
     map_gen = map_string_string_gen[0]
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('kv', map_gen)], length=100, num_slices=1),
         'table',
         '''select kv['key_0'],
@@ -106,6 +114,7 @@ def test_scalar_subquery_map():
         ''')
     # array of map
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', ArrayGen(map_gen))], length=100, num_slices=1),
         'table',
         '''select arr[0]['key_0'],
@@ -115,6 +124,7 @@ def test_scalar_subquery_map():
         ''')
     # struct of map
     assert_gpu_and_cpu_are_equal_sql(
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('ss', StructGen([['kv', map_gen]]))], length=100, num_slices=1),
         'table',
         '''select ss['kv']['key_0'],

@@ -3326,9 +3326,7 @@ object GpuOverrides extends Logging {
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-                        TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
+            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Nil, None),
       (a, conf, p, r) =>
