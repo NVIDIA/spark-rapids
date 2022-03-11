@@ -547,7 +547,6 @@ object GpuTextBasedDateUtils {
    * - `%Y-%m-%d`
    * - `%Y-%m-%dT%H:%M`
    * - `%Y-%m-%dT%H:%M:%S`
-   * - `%Y-%m-%dT%H:%M.%f`
    * - `%Y-%m-%dT%H:%M:%S.%f`
    */
   def toCudfFormats(sparkFormat: String, parseString: Boolean): Seq[String] = {
@@ -601,7 +600,7 @@ object GpuTextBasedDateUtils {
     // the order is important here
     val formats = ListBuffer[String]()
     for (fmt <- formatsIncludingDateOnly) {
-      if (fmt.contains(":%S")) {
+      if (fmt.contains(":%S") && !fmt.contains("%f")) {
         formats += fmt.replace(":%S", "")
       }
       formats += fmt
