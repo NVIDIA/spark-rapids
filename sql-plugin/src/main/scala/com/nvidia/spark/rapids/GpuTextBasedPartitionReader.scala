@@ -511,13 +511,13 @@ object GpuTextBasedDateUtils {
     } else {
       val parts = sparkFormat.split("'T'", 2)
       if (parts.isEmpty) {
-        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported [1]")
+        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported")
       }
       if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported [2]")
+        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported")
       }
       if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported [3]")
+        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported")
       }
       try {
         // try and convert the format to cuDF format - this will throw an exception if

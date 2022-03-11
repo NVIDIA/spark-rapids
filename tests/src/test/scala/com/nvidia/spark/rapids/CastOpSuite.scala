@@ -1108,12 +1108,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */
 object CastOpSuite {
 
-  def main(args: Array[String]): Unit = {
-    val cv = ColumnVector.fromStrings("2022-02-22T12:34:56.12")
-    val ts = cv.asTimestampMicroseconds("%Y-%m-%dT%H:%M:%S.%f")
-    GpuColumnVector.debug("ts", ts)
-  }
-
   def doublesAsStrings(session: SparkSession): DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DoubleType), false)
     val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
