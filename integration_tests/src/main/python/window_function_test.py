@@ -455,7 +455,7 @@ def test_window_running_rank_no_part(data_gen):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit], ids=idfn)
 def test_window_running_rank(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -481,7 +481,7 @@ def test_window_running_rank(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
-        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit]], ids=idfn)
+        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
