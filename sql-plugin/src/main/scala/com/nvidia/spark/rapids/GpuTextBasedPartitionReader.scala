@@ -268,30 +268,36 @@ abstract class GpuTextBasedPartitionReader(
       sparkFormat: String,
       dtype: DType): ColumnVector = {
 
-    val regexRoot = sparkFormat.replace("yyyy", raw"\d{4}")
-      .replace("MM", raw"\d{2}")
-      .replace("dd", raw"\d{2}")
+    val optionalSeconds = raw"(?:\:\d{2})?"
+    val optionalMicros = raw"(?:\.\d{1,6})?"
+    val twoDigits = raw"\d{2}"
+    val fourDigits = raw"\d{4}"
+
+    val regexRoot = sparkFormat
       .replace("'T'", "T")
-      .replace("HH", raw"\d{2}")
-      .replace("mm", raw"\d{2}")
-      .replace("[:ss]", raw"(?:\:\d{2})?")
-      .replace(":ss", raw"(?:\:\d{2})?") // Spark treats seconds portion as optional always
-      .replace("[.SSSXXX]", raw"(?:\.\d{1,6})?")
-      .replace("[.SSS][XXX]", raw"(?:\.\d{1,6})?")
-      .replace("[.SSS]", raw"(?:\.\d{1,6})?")
-      .replace("[.SSSSSS]", raw"(?:\.\d{1,6})?")
-      .replace(".SSSXXX", raw"(?:\.\d{1,6})?")
-      .replace(".SSSSSS", raw"(?:\.\d{1,6})?")
-      .replace(".SSS", raw"(?:\.\d{1,6})?")
+      .replace("yyyy", fourDigits)
+      .replace("MM", twoDigits)
+      .replace("dd", twoDigits)
+      .replace("HH", twoDigits)
+      .replace("mm", twoDigits)
+      .replace("[:ss]", optionalSeconds)
+      .replace(":ss", optionalSeconds) // Spark always treats seconds portion as optional
+      .replace("[.SSSXXX]", optionalMicros)
+      .replace("[.SSS][XXX]", optionalMicros)
+      .replace("[.SSS]", optionalMicros)
+      .replace("[.SSSSSS]", optionalMicros)
+      .replace(".SSSXXX", optionalMicros)
+      .replace(".SSSSSS", optionalMicros)
+      .replace(".SSS", optionalMicros)
 
     // Spark treats timestamp portion as optional always
-    val x = regexRoot.split('T') match {
+    val regexOptionalTime = regexRoot.split('T') match {
       case Array(d, t) =>
         d + "(?:T" + t + ")?"
       case _ =>
         regexRoot
     }
-    val regex = x + raw"Z?\Z"
+    val regex = regexOptionalTime + raw"Z?\Z"
 
     // get a list of all possible cuDF formats that we need to check for
     val cudfFormats = GpuTextBasedDateUtils.toCudfFormats(sparkFormat, parseString = true)
@@ -530,13 +536,27 @@ object GpuTextBasedDateUtils {
     }
   }
 
+  /**
+   * Get the list of all cuDF formats that need to be checked for when parsing timestamps. The
+   * returned formats must be ordered such that the first format is the most lenient and the
+   * last is the least lenient.
+   *
+   * For example, the spark format `yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]` would result in the
+   * following cuDF formats being returned, in this order:
+   *
+   * - `%Y-%m-%d`
+   * - `%Y-%m-%dT%H:%M`
+   * - `%Y-%m-%dT%H:%M:%S`
+   * - `%Y-%m-%dT%H:%M.%f`
+   * - `%Y-%m-%dT%H:%M:%S.%f`
+   */
   def toCudfFormats(sparkFormat: String, parseString: Boolean): Seq[String] = {
 
     val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]")
     val fractional = Seq(".SSSXXX", ".SSS")
 
     val hasZsuffix = sparkFormat.endsWith("Z")
-    val x = if (hasZsuffix) {
+    val formatRoot = if (hasZsuffix) {
       sparkFormat.substring(0, sparkFormat.length-1)
     } else {
       sparkFormat
@@ -544,7 +564,7 @@ object GpuTextBasedDateUtils {
 
     // strip off suffixes that cuDF will not recognize
     // the order is important here
-    val str = x
+    val str = formatRoot
       .replace("'T'", "T")
       .replace("[.SSSXXX]", "")
       .replace("[.SSS][XXX]", "")
@@ -557,13 +577,13 @@ object GpuTextBasedDateUtils {
     val cudfFormat = toStrf(str, parseString)
     val suffix = if (hasZsuffix) "Z" else ""
 
-    val baseFormats = if (optionalFractional.exists(x.endsWith) ||
-      fractional.exists(x.endsWith)) {
+    val baseFormats = if (optionalFractional.exists(formatRoot.endsWith) ||
+      fractional.exists(formatRoot.endsWith)) {
       // the order is important here
       val cudfFormat1 = cudfFormat + suffix
       val cudfFormat2 = cudfFormat + ".%f" + suffix
       Seq(cudfFormat1, cudfFormat2)
-    } else if (x.endsWith("[:ss]")) {
+    } else if (formatRoot.endsWith("[:ss]")) {
       Seq(cudfFormat + ":%S" + suffix)
     } else {
       Seq(cudfFormat)
