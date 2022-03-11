@@ -292,7 +292,7 @@ abstract class GpuTextBasedPartitionReader(
     // Spark treats timestamp portion as optional always
     val regexOptionalTime = regexRoot.split('T') match {
       case Array(d, t) =>
-        d + "(?:T" + t + ")?"
+        d + "(?:[ T]" + t + ")?"
       case _ =>
         regexRoot
     }
@@ -323,9 +323,27 @@ abstract class GpuTextBasedPartitionReader(
       }
     }
 
+    def isTimestamp(fmt: String): ColumnVector = {
+      val pos = fmt.indexOf('T')
+      if (pos == -1) {
+        sanitized.isTimestamp(fmt)
+      } else {
+        // Spark supports both ` ` and `T` as the delimiter so we have to test
+        // for both formats when calling `isTimestamp` in cuDF but the
+        // `asTimestamp` method ignores the delimiter so we only need to call that
+        // with one format
+        val withSpaceDelim = fmt.substring(0, pos) + ' ' + fmt.substring(pos + 1)
+        withResource(sanitized.isTimestamp(fmt)) { isValidFmt1 =>
+          withResource(sanitized.isTimestamp(withSpaceDelim)) { isValidFmt2 =>
+            isValidFmt1.or(isValidFmt2)
+          }
+        }
+      }
+    }
+
     def asTimestampOrNull(fmt: String): ColumnVector = {
       withResource(Scalar.fromNull(dtype)) { nullScalar =>
-        withResource(sanitized.isTimestamp(fmt)) { isValid =>
+        withResource(isTimestamp(fmt)) { isValid =>
           withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
             isValid.ifElse(ts, nullScalar)
           }
@@ -335,7 +353,7 @@ abstract class GpuTextBasedPartitionReader(
 
     def asTimestampOr(fmt: String, orValue: ColumnVector): ColumnVector = {
       withResource(orValue) { _ =>
-        withResource(sanitized.isTimestamp(fmt)) { isValid =>
+        withResource(isTimestamp(fmt)) { isValid =>
           withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
             isValid.ifElse(ts, orValue)
           }
