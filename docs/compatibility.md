@@ -283,7 +283,6 @@ will produce a different result compared to the plugin.
 Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
 Each data type can be enabled or disabled independently using the following configs.
 
- * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
  * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
 
 If you know that your particular data type will be parsed correctly enough, you may enable each
@@ -310,8 +309,6 @@ Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
 
 ### CSV Dates
-Parsing a `timestamp` as a `date` does not work. The details are documented in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/869).
 
 Only a limited set of formats are supported when parsing dates.
 
@@ -323,16 +320,8 @@ Only a limited set of formats are supported when parsing dates.
 * `"MM/yyyy"`
 * `"MM-dd-yyyy"`
 * `"MM/dd/yyyy"`
-
-The reality is that all of these formats are supported at the same time. The plugin will only
-disable itself if you set a format that it does not support.
-
-As a workaround you can parse the column as a timestamp and then cast it to a date.
-
-Invalid dates in Spark, values that have the correct format, but the numbers produce invalid dates,
-can result in an exception by default, and how they are parsed can be controlled through a config.
-The RAPIDS Accelerator does not support any of this and will produce an incorrect date. Typically,
-one that overflowed.
+* `"dd-MM-yyyy"`
+* `"dd/MM/yyyy"`
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,

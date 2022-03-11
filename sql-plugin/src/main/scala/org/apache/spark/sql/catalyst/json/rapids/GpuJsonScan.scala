@@ -31,7 +31,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
+import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -148,11 +148,8 @@ object GpuJsonScan {
     })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      SparkShimImpl.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
-      }
+      DateUtils.tagAndGetCudfFormat(meta,
+        GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {
@@ -413,5 +410,7 @@ class JsonPartitionReader(
       super.castStringToDecimal(sanitizedInput, dt)
     }
   }
+
+  override def dateFormat: String = GpuJsonUtils.dateFormatInRead(parsedOptions)
 
 }

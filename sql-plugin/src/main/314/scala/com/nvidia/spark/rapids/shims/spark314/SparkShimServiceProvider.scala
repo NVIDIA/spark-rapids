@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.catalyst.json.rapids.shims
+package com.nvidia.spark.rapids.shims.spark314
 
-import com.nvidia.spark.rapids.shims.Spark321PlusShims
+import com.nvidia.spark.rapids.SparkShimVersion
 
-import org.apache.spark.sql.catalyst.csv.CSVOptions
-import org.apache.spark.sql.catalyst.json.JSONOptions
+object SparkShimServiceProvider {
+  val VERSION = SparkShimVersion(3, 1, 4)
+  val VERSIONNAMES = Seq(s"$VERSION", s"$VERSION-SNAPSHOT")
+}
 
-trait Spark33XFileOptionsShims extends Spark321PlusShims {
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
-  def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case csvOpts: CSVOptions => csvOpts.dateFormatInRead
-      case jsonOpts: JSONOptions => jsonOpts.dateFormatInRead
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+
+  def matchesVersion(version: String): Boolean = {
+    SparkShimServiceProvider.VERSIONNAMES.contains(version)
   }
-
 }

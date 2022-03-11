@@ -47,7 +47,6 @@ class MortgageSparkSuite extends FunSuite {
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.hasNans", false)
-      .config("spark.rapids.sql.csv.read.date.enabled", true)
     val rapidsShuffle = ShimLoader.getRapidsShuffleManagerClass
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {

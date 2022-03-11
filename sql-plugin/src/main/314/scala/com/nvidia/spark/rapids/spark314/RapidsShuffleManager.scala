@@ -14,21 +14,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.catalyst.json.rapids.shims
+package com.nvidia.spark.rapids.spark314
 
-import com.nvidia.spark.rapids.shims.Spark321PlusShims
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.shims.spark314.ProxyRapidsShuffleInternalManager
 
-import org.apache.spark.sql.catalyst.csv.CSVOptions
-import org.apache.spark.sql.catalyst.json.JSONOptions
-
-trait Spark33XFileOptionsShims extends Spark321PlusShims {
-
-  def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case csvOpts: CSVOptions => csvOpts.dateFormatInRead
-      case jsonOpts: JSONOptions => jsonOpts.dateFormatInRead
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
-  }
-
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
 }

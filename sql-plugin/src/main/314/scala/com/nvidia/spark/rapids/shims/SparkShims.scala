@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,16 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
-/**
- * Shim base class that can be compiled with every supported 3.2.2+
- */
-trait Spark322PlusShims extends Spark320PlusShims with RebaseShims with Logging {
+object SparkShimImpl extends Spark31XShims with Spark30Xuntil33XShims {
+
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
@@ -37,8 +37,12 @@ trait Spark322PlusShims extends Spark320PlusShims with RebaseShims with Logging 
       lookupFileMeta: String => String,
       dateTimeRebaseModeFromConf: String): ParquetFilters = {
     val datetimeRebaseMode = DataSourceUtils
-      .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
+      .datetimeRebaseMode(lookupFileMeta, dateTimeRebaseModeFromConf)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
+
+  override def hasCastFloatTimestampUpcast: Boolean = true
+
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 }

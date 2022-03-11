@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, date_add, lit}
 
 class CsvScanSuite extends SparkQueryCompareTestSuite {
   testExpectedException[IllegalArgumentException]("Test CSV projection including unsupported types",
@@ -60,5 +60,19 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Invoke", "AttributeReference", "Literal"),
     conf = new SparkConf()) {
     frame => frame.select(col("*"))
+  }
+
+  testSparkResultsAreEqual(
+    "Test CSV parse dates",
+    datesCsvDf,
+    conf=new SparkConf()) {
+    df => df.withColumn("next_day", date_add(col("dates"), lit(1)))
+  }
+
+  testSparkResultsAreEqual(
+    "Test CSV parse timestamps as dates",
+    timestampsAsDatesCsvDf,
+    conf=new SparkConf()) {
+    df => df.withColumn("next_day", date_add(col("dates"), lit(1)))
   }
 }

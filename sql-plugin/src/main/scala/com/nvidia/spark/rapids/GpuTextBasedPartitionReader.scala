@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.DateTimeException
+
 import scala.collection.mutable.ListBuffer
 import scala.math.max
 
@@ -29,6 +31,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
+import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -173,7 +176,7 @@ abstract class GpuTextBasedPartitionReader(
             f.dataType match {
               case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
                    DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
-                   DataTypes.DoubleType | _: DecimalType =>
+                   DataTypes.DoubleType | _: DecimalType | DataTypes.DateType =>
                 f.copy(dataType = DataTypes.StringType)
               case other if GpuTypeShims.supportCsvRead(other) =>
                 f.copy(dataType = DataTypes.StringType)
@@ -217,6 +220,8 @@ abstract class GpuTextBasedPartitionReader(
                   castStringToFloat(table.getColumn(i), DType.FLOAT64)
                 case dt: DecimalType =>
                   castStringToDecimal(table.getColumn(i), dt)
+                case DataTypes.DateType =>
+                  castStringToDate(table.getColumn(i))
                 case other if GpuTypeShims.supportCsvRead(other) =>
                   GpuTypeShims.csvRead(table.getColumn(i), other)
                 case _ =>
@@ -232,6 +237,26 @@ abstract class GpuTextBasedPartitionReader(
       }
     } finally {
       dataBuffer.close()
+    }
+  }
+
+  def dateFormat: String
+
+  def castStringToDate(input: ColumnVector): ColumnVector = {
+    val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
+    withResource(input.isTimestamp(cudfFormat)) { isDate =>
+      if (GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
+        withResource(isDate.all()) { all =>
+          if (all.isValid && !all.getBoolean) {
+            throw new DateTimeException("One or more values is not a valid date")
+          }
+        }
+      }
+      withResource(input.asTimestamp(DType.TIMESTAMP_DAYS, cudfFormat)) { asDate =>
+        withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+          isDate.ifElse(asDate, nullScalar)
+        }
+      }
     }
   }
 

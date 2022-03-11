@@ -97,20 +97,25 @@ def test_size_of_map(data_gen, size_of_null):
             lambda spark: unary_op_df(spark, data_gen).selectExpr('size(a)'),
             conf={'spark.sql.legacy.sizeOfNull': size_of_null})
 
-@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
-@pytest.mark.parametrize('is_ascending', [True, False], ids=idfn)
-def test_sort_array(data_gen, is_ascending):
+_sort_array_gens = non_nested_array_gens + [
+        ArrayGen(all_basic_struct_gen, max_length=6),
+        ArrayGen(StructGen([['b', byte_gen], ['s', StructGen([['c', byte_gen], ['d', byte_gen]])]]), max_length=10)
+        ]
+
+@pytest.mark.parametrize('data_gen', _sort_array_gens, ids=idfn)
+def test_sort_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).select(
-            f.sort_array(f.col('a'), is_ascending)))
+            f.sort_array(f.col('a'), True),
+            f.sort_array(f.col('a'), False)))
 
-@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
-@pytest.mark.parametrize('is_ascending', [True, False], ids=idfn)
-def test_sort_array_lit(data_gen, is_ascending):
+@pytest.mark.parametrize('data_gen', _sort_array_gens, ids=idfn)
+def test_sort_array_lit(data_gen):
     array_lit = gen_scalar(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=10).select(
-            f.sort_array(f.lit(array_lit), is_ascending)))
+            f.sort_array(f.lit(array_lit), True),
+            f.sort_array(f.lit(array_lit), False)))
 
 # For functionality test, the sequence length in each row should be limited,
 # to avoid the exception as below,
