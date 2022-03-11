@@ -280,6 +280,7 @@ will produce a different result compared to the plugin.
 
 ## CSV Reading
 
+<<<<<<< HEAD
 Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
 Each data type can be enabled or disabled independently using the following configs.
 
@@ -294,6 +295,8 @@ expected format exactly it will result in a `null` value. The underlying parser 
 uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
 nulls.
 
+=======
+>>>>>>> json-timestamp-wip2
 Spark allows for stripping leading and trailing white space using various options that are off by
 default. The plugin will strip leading and trailing space for all values except strings.
 
@@ -335,6 +338,7 @@ portion followed by one of the following formats:
 
 * `HH:mm:ss.SSSXXX`
 * `HH:mm:ss[.SSS][XXX]`
+* `HH:mm:ss[.SSSXXX]`
 * `HH:mm`
 * `HH:mm:ss`
 * `HH:mm[:ss]`

@@ -69,6 +69,9 @@ _decimal_10_3_schema = StructType([
 _date_schema = StructType([
     StructField('number', DateType())])
 
+_timestamp_schema = StructType([
+    StructField('number', TimestampType())])
+
 _string_schema = StructType([
     StructField('a', StringType())])
 
@@ -144,7 +147,7 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
             conf=updated_conf)
 
 json_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
-        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
+        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 @pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
@@ -171,7 +174,6 @@ json_supported_ts_parts = ['', # Just the date
         "'T'HH:mm:ss",
         "'T'HH:mm[:ss]",
         "'T'HH:mm"]
-
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
@@ -210,9 +212,8 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'dates.json',
     'dates_invalid.json',
 ])
-@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, \
-                                    _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, \
-                                    _date_schema])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema,
+    _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, _date_schema, _timestamp_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
@@ -243,8 +244,7 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
 def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
-                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy,
-                                    'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     f = read_func(std_input_path + '/' + filename, schema, {})
     if time_parser_policy == 'LEGACY' and ansi_enabled == 'true':
         assert_gpu_fallback_collect(
@@ -283,6 +283,25 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
             conf=updated_conf)
     else:
         assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'timestamps.json',
+])
+@pytest.mark.parametrize('schema', [_timestamp_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy):
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                                   {'spark.sql.ansi.enabled': ansi_enabled,
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+    f = read_func(std_input_path + '/' + filename, schema, {})
+    assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
 
 @pytest.mark.parametrize('schema', [_string_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])

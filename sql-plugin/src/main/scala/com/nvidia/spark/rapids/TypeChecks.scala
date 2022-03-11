@@ -2119,17 +2119,7 @@ object SupportedOpsForTools {
         val read = ioMap(ReadFileOp)
         // we have lots of configs for various operations, just try to get the main ones
         val readOps = types.map { t =>
-          val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
-            t.toString match {
-              case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
-              case _ => true
-            }
-          } else {
-            t.toString match {
-              case _ => true
-            }
-          }
-          if (!formatEnabled || !typeEnabled) {
+          if (!formatEnabled) {
             // indicate configured off by default
             "CO"
           } else {
