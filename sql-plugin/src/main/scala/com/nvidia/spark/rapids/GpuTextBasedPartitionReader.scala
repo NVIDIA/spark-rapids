@@ -244,7 +244,6 @@ abstract class GpuTextBasedPartitionReader(
   def dateFormat: String
   def timestampFormat: String
 
-
   def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
     val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
     withResource(input.isTimestamp(cudfFormat)) { isDate =>
@@ -344,11 +343,13 @@ abstract class GpuTextBasedPartitionReader(
       }
     }
 
-    if (cudfFormats.length == 1) {
-      asTimestampOrNull(cudfFormats.head)
-    } else {
-      cudfFormats.tail.foldLeft(asTimestampOrNull(cudfFormats.head)) { (input, fmt) =>
-        asTimestampOr(fmt, input)
+    withResource(sanitized) { _ =>
+      if (cudfFormats.length == 1) {
+        asTimestampOrNull(cudfFormats.head)
+      } else {
+        cudfFormats.tail.foldLeft(asTimestampOrNull(cudfFormats.head)) { (input, fmt) =>
+          asTimestampOr(fmt, input)
+        }
       }
     }
   }
@@ -551,8 +552,8 @@ object GpuTextBasedDateUtils {
    */
   def toCudfFormats(sparkFormat: String, parseString: Boolean): Seq[String] = {
 
-    val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]")
-    val fractional = Seq(".SSSXXX", ".SSS")
+    val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]",
+      ".SSSXXX", ".SSS")
 
     val hasZsuffix = sparkFormat.endsWith("Z")
     val formatRoot = if (hasZsuffix) {
@@ -562,7 +563,6 @@ object GpuTextBasedDateUtils {
     }
 
     // strip off suffixes that cuDF will not recognize
-    // the order is important here
     val str = formatRoot
       .replace("'T'", "T")
       .replace("[.SSSXXX]", "")
@@ -576,9 +576,7 @@ object GpuTextBasedDateUtils {
     val cudfFormat = toStrf(str, parseString)
     val suffix = if (hasZsuffix) "Z" else ""
 
-    val baseFormats = if (optionalFractional.exists(formatRoot.endsWith) ||
-      fractional.exists(formatRoot.endsWith)) {
-      // the order is important here
+    val baseFormats = if (optionalFractional.exists(formatRoot.endsWith)) {
       val cudfFormat1 = cudfFormat + suffix
       val cudfFormat2 = cudfFormat + ".%f" + suffix
       Seq(cudfFormat1, cudfFormat2)
@@ -592,12 +590,10 @@ object GpuTextBasedDateUtils {
     val formatsIncludingDateOnly = if (pos == -1) {
       baseFormats
     } else {
-      // the order is important here
       Seq(baseFormats.head.substring(0, pos)) ++ baseFormats
     }
 
     // seconds are always optional in Spark
-    // the order is important here
     val formats = ListBuffer[String]()
     for (fmt <- formatsIncludingDateOnly) {
       if (fmt.contains(":%S") && !fmt.contains("%f")) {
