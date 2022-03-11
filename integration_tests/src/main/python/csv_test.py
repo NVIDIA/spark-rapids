@@ -266,29 +266,7 @@ csv_supported_gens = [
         pytest.param(double_gen),
         pytest.param(FloatGen(no_nans=False)),
         pytest.param(float_gen),
-        TimestampGen(),
-        # 365 days * 5000 is about 5000 years
-        DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000, allow_negative=True),
-        DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000),
-]
+        TimestampGen()]
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
@@ -507,3 +485,40 @@ def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
         do_csv_scan,
         exist_classes= "FileSourceScanExec",
         non_exist_classes= "GpuBatchScanExec")
+
+csv_interval_gens = [
+    # 365 days * 5000 is about 5000 years
+    DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000, allow_negative=True),
+    DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000),
+    DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000),
+]
+@pytest.mark.skipif(is_before_spark_330(), reason='Reading day-time interval type is supported from Spark3.3.0')
+@pytest.mark.parametrize('data_gen', csv_interval_gens, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_round_trip_for_interval(spark_tmp_path, data_gen, v1_enabled_list):
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen).write.csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).csv(data_path),
+        conf=updated_conf)

@@ -627,7 +627,7 @@ class NullGen(DataGen):
 # Note: 106751991/365 = 292471 years which is much bigger than 9999 year
 class DayTimeIntervalGen(DataGen):
     """Generate DayTimeIntervalType values"""
-    def __init__(self, max_days=None, start_field="day", end_field="second", allow_negative=False, nullable=True,
+    def __init__(self, max_days=None, start_field="day", end_field="second", allow_negative=True, nullable=True,
                  special_cases=[timedelta(seconds=0)]):
         super().__init__(DayTimeIntervalType(), nullable=nullable, special_cases=special_cases)
         if max_days is None:
