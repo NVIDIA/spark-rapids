@@ -1110,6 +1110,17 @@ object GpuOverrides extends Logging {
       (denseRank, conf, p, r) => new ExprMeta[DenseRank](denseRank, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuDenseRank(childExprs.map(_.convertToGpu()))
       }),
+    expr[PercentRank](
+      "Window function that returns the percent rank value within the aggregation window",
+      ExprChecks.windowOnly(TypeSig.DOUBLE, TypeSig.DOUBLE,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
+            TypeSig.all))),
+      (percentRank, conf, p, r) => new ExprMeta[PercentRank](percentRank, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuPercentRank(childExprs.map(_.convertToGpu()))
+      }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
       ExprChecks.windowOnly(
