@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal, assert_collection_equal_ignore_order
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330

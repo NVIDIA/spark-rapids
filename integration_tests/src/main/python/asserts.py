@@ -109,11 +109,6 @@ def assert_equal(cpu, gpu):
       print("GPU OUTPUT: %s" % gpu)
       raise
 
-def assert_collection_equal_ignore_order(cpu, gpu):
-    sorted_cpu = cpu.sort(key=_RowCmp)
-    sorted_gpu = gpu.sort(key=_RowCmp)
-    assert_equal(sorted_cpu, sorted_gpu)
-
 def _has_incompat_conf(conf):
     return ('spark.rapids.sql.incompatibleOps.enabled' in conf and
             conf['spark.rapids.sql.incompatibleOps.enabled'].lower() == 'true')
