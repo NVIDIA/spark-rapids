@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.shims.GpuIntervalUtils
 
-import org.apache.spark.sql.types.DayTimeIntervalType
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.types.{DayTimeIntervalType, StructField, StructType}
 
 class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
   test("test castStringToDTInterval format valid") {
@@ -546,5 +547,91 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
           assert(actualCV.isNull.getScalarElement(i).getBoolean)
       }
     }
+  }
+
+  def readCsv(spark: SparkSession, path: String): DataFrame = {
+    def dayTime(s: Byte, e: Byte): DayTimeIntervalType = DayTimeIntervalType(s, e)
+
+    val schema = StructType(Seq(
+      StructField("c01", dayTime(DayTimeIntervalType.DAY, DayTimeIntervalType.DAY)),
+      StructField("c02", dayTime(DayTimeIntervalType.DAY, DayTimeIntervalType.HOUR)),
+      StructField("c03", dayTime(DayTimeIntervalType.DAY, DayTimeIntervalType.MINUTE)),
+      StructField("c04", dayTime(DayTimeIntervalType.DAY, DayTimeIntervalType.SECOND)),
+      StructField("c05", dayTime(DayTimeIntervalType.HOUR, DayTimeIntervalType.HOUR)),
+      StructField("c06", dayTime(DayTimeIntervalType.HOUR, DayTimeIntervalType.MINUTE)),
+      StructField("c07", dayTime(DayTimeIntervalType.HOUR, DayTimeIntervalType.SECOND)),
+      StructField("c08", dayTime(DayTimeIntervalType.MINUTE, DayTimeIntervalType.MINUTE)),
+      StructField("c09", dayTime(DayTimeIntervalType.MINUTE, DayTimeIntervalType.SECOND)),
+      StructField("c10", dayTime(DayTimeIntervalType.SECOND, DayTimeIntervalType.SECOND))
+    ))
+    fromCsvDf(path, schema)(spark)
+  }
+
+  testSparkResultsAreEqual(
+    "test read day-time interval csv file",
+    spark => readCsv(spark, "day-time-interval.csv")
+  ) {
+    df => df
+  }
+
+  /**
+   * TODO: Blocked by Spark overflow issue: https://issues.apache.org/jira/browse/SPARK-38520
+   *
+   *    // days overflow
+   *    scala> val schema = StructType(Seq(StructField("c1",
+   *      DayTimeIntervalType(DayTimeIntervalType.DAY, DayTimeIntervalType.DAY))))
+   *    scala> spark.read.csv(path).show(false)
+   *    +------------------------+
+   *    |_c0                     |
+   *    +------------------------+
+   *    |interval '106751992' day|
+   *    +------------------------+
+   *    scala> spark.read.schema(schema).csv(path).show(false)
+   *    +-------------------------+
+   *    |c1                       |
+   *    +-------------------------+
+   *    |INTERVAL '-106751990' DAY|
+   *    +-------------------------+
+   *
+   *     // hour overflow
+   *    scala> val schema = StructType(Seq(StructField("c1",
+   *      DayTimeIntervalType(DayTimeIntervalType.HOUR, DayTimeIntervalType.HOUR))))
+   *    scala> spark.read.csv(path).show(false)
+   *    +----------------------------+
+   *    |_c0                         |
+   *    +----------------------------+
+   *    |INTERVAL +'+2562047789' hour|
+   *    +----------------------------+
+   *    scala> spark.read.schema(schema).csv(path).show(false)
+   *    +---------------------------+
+   *    |c1                         |
+   *    +---------------------------+
+   *    |INTERVAL '-2562047787' HOUR|
+   *    +---------------------------+
+   *
+   *    // minute overflow
+   *    scala> val schema = StructType(Seq(StructField("c1",
+   *      DayTimeIntervalType(DayTimeIntervalType.MINUTE, DayTimeIntervalType.MINUTE))))
+   *    scala> spark.read.csv(path).show(false)
+   *    +------------------------------+
+   *    |_c0                           |
+   *    +------------------------------+
+   *    |interval '153722867281' minute|
+   *    +------------------------------+
+   *    scala> spark.read.schema(schema).csv(path).show(false)
+   *    +-------------------------------+
+   *    |c1                             |
+   *    +-------------------------------+
+   *    |INTERVAL '-153722867280' MINUTE|
+   *    +-------------------------------+
+   *
+   */
+  testSparkResultsAreEqual(
+    "test read day-time interval overflow file",
+    spark => readCsv(spark, "day-time-interval-to-be-fix.csv"),
+    assumeCondition = _ => (false,
+        "check if issue is fixed: https://issues.apache.org/jira/browse/SPARK-38520")
+  ) {
+    df => df
   }
 }
