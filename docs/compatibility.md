@@ -438,8 +438,15 @@ versions prior to 3.3.0 only supported the `"Infinity"` and `"-Infinity"` repres
 support `"+INF"`, `"-INF"`, or `"+Infinity"`, which Spark considers valid when unquoted. The GPU JSON reader is 
 consistent with the behavior in Spark 3.3.0 and later.
 
-Another limitation of the GPU JSON reader is that it will parse strings containing boolean or numeric values where
+Another limitation of the GPU JSON reader is that it will parse strings containing non-string boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
+
+### JSON Timestamps
+
+
+There is currently no support for reading numeric values as timestamps and null values are returned instead 
+([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast 
+to timestamp.
 
 ### JSON Schema discovery
 

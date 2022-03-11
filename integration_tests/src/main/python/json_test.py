@@ -174,6 +174,7 @@ json_supported_ts_parts = ['', # Just the date
         "'T'HH:mm:ss",
         "'T'HH:mm[:ss]",
         "'T'HH:mm"]
+
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
@@ -212,8 +213,9 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
     'dates.json',
     'dates_invalid.json',
 ])
-@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema,
-    _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, _date_schema, _timestamp_schema])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, \
+                                    _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, \
+                                    _date_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
