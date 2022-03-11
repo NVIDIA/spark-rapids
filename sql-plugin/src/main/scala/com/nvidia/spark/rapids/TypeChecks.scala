@@ -890,7 +890,7 @@ object FileFormatChecks {
  * The namedChecks map can be used to provide checks for specific groups of expressions.
  */
 class ExecChecks private(
-    check: TypeSig,
+    val check: TypeSig,
     sparkSig: TypeSig,
     val namedChecks: Map[String, InputCheck],
     override val shown: Boolean = true)
