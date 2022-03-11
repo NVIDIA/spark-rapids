@@ -296,6 +296,7 @@ def test_cache_daytimeinterval_input_row():
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
+@ignore_order(local=True)
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec")
 @pytest.mark.parametrize('alongside_gen', [int_gen, ArrayGen(int_gen)], ids=idfn)
 @pytest.mark.parametrize('with_rapids_memoryscan', ['true', 'false'],
@@ -304,19 +305,14 @@ def test_cache_daytimeinterval_input_row():
                          ids=["rapids_reader_on", "rapids_reader_off"])
 def test_cache_daytimeinterval_input_columnar(spark_tmp_path, alongside_gen,
                                               with_rapids_memoryscan, with_rapids_reader):
-    # 'alongside_gen' and 'with_rapids_memoryscan' are used to cover the two output paths
-    # (columnar or row) for columnar input.
-    # 'rapids_reader_on' is used to cover the path of copying spark columns to rapids columns.
     tmp_data_path = spark_tmp_path + '/PARQUET_DATA'
-    # create the test data
-    with_cpu_session(
-        lambda spark: two_col_df(spark,
-            DayTimeIntervalGen(), alongside_gen).write.mode("overwrite").parquet(tmp_data_path))
-    # build the config, copied some of them from 'test_cache_columnar', but updated them
-    # according to the warning message:
-    #     WARN SQLConf: The SQL config 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite'
-    #                   has been deprecated in Spark v3.2 and may be removed in the future.
-    #                   Use 'spark.sql.parquet.datetimeRebaseModeInWrite' instead.
+    def test_func(spark):
+        two_col_df(spark,
+            DayTimeIntervalGen(), alongside_gen).write.mode("overwrite").parquet(tmp_data_path)
+        df = spark.read.parquet(tmp_data_path)
+        df.cache().count()
+        return df.selectExpr('b', 'a')
+
     test_conf = {
         # rapids-spark doesn't support LEGACY read for parquet, also set the int96 rebase mode
         # values because LEGACY in databricks which will preclude this op from running on GPU.
@@ -325,22 +321,5 @@ def test_cache_daytimeinterval_input_columnar(spark_tmp_path, alongside_gen,
         'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
         'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED',
         'spark.rapids.sql.format.parquet.read.enabled': with_rapids_reader,
-        'spark.rapids.sql.exec.InMemoryTableScanExec': with_rapids_memoryscan,
-        "spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"}
-    # try to let the whole cache process is columnar for CPU memory table scan. Since collecting
-    # the result will always lead to converting cached data to internal rows, not column batches.
-    def test_func(spark, out_path):
-        spark.read.parquet(tmp_data_path).cache()\
-             .selectExpr('a', 'b').write.parquet(spark_tmp_path + out_path),
-    with_cpu_session(lambda spark: test_func(spark, "/out_cpu"), test_conf)
-    with_gpu_session(lambda spark: test_func(spark, "/out_gpu"), test_conf)
-
-    # both CPU and GPU result should be equal to the original data
-    def assert_output(spark):
-        original = spark.read.parquet(tmp_data_path).collect()
-        cpu_out = spark.read.parquet(spark_tmp_path + "/out_cpu").collect()
-        gpu_out = spark.read.parquet(spark_tmp_path + "/out_gpu").collect()
-        assert_collection_equal_ignore_order(original, cpu_out)
-        assert_collection_equal_ignore_order(original, gpu_out)
-
-    with_cpu_session(assert_output)
+        'spark.rapids.sql.exec.InMemoryTableScanExec': with_rapids_memoryscan}
+    assert_gpu_and_cpu_are_equal_collect(test_func, test_conf)
