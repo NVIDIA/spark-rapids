@@ -803,6 +803,12 @@ private case class GpuOrcFileFilterHandler(
         val requestedMapping = if (canPruneCols) {
           None
         } else {
+          // Following SPARK-35783, set requested columns as OrcConf. This setting may not make
+          // any difference. Just in case it might be important for the ORC methods called by us,
+          // either today or in the future.
+          val includeColumns = requestedColIds.filter(_ != -1).sorted.mkString(",")
+          conf.set(OrcConf.INCLUDE_COLUMNS.getAttribute, includeColumns)
+
           Some(requestedColIds)
         }
         val fullSchema = StructType(dataSchema ++ partitionSchema)
