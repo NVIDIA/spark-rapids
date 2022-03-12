@@ -467,7 +467,8 @@ def test_window_running_rank(data_gen):
 
 
     if is_databricks_runtime() and data_gen == decimal_gen_128bit:
-      pytest.xfail("Decimal 128 in running window is not supported on Databricks")
+      # See https://github.com/NVIDIA/spark-rapids/issues/4936
+      pytest.xfail("Decimal 128 for rank aggregations in running window is not supported on Databricks")
 
     # When generating the ordering try really hard to have duplicate values
     assert_gpu_and_cpu_are_equal_sql(
@@ -504,7 +505,8 @@ def test_window_running(b_gen, c_gen, batch_size):
         query_parts.append('sum(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
 
     if is_databricks_runtime() and b_gen == decimal_gen_128bit:
-      pytest.xfail("Decimal 128 in running window is not supported on Databricks")
+      # See https://github.com/NVIDIA/spark-rapids/issues/4936
+      pytest.xfail("Decimal 128 for rank aggregations in running window is not supported on Databricks")
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : three_col_df(spark, LongRangeGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
