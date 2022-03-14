@@ -196,8 +196,6 @@ def read_csv_sql(data_path, schema, options = {}):
     ('date.csv', _date_schema, {}),
     ('ts.csv', _ts_schema, {}),
     ('str.csv', _ts_schema, {}),
-    pytest.param('simple_int_values.csv', _ts_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4943')),
-    pytest.param('simple_float_values.csv', _ts_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4943')),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
     ('str.csv', _good_str_schema, {'header': 'true'}),
     ('no-comments.csv', _three_str_schema, {}),
