@@ -22,7 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Coalesce, DynamicPruningExpression, Expression, MetadataAttribute, TimeAdd}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Coalesce, DynamicPruningExpression, Expression, FileSourceMetadataAttribute, TimeAdd}
 import org.apache.spark.sql.catalyst.json.rapids.shims.Spark33XFileOptionsShims
 import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
@@ -69,10 +69,10 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   }
 
   override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (meta.wrapped.expressions.exists(expr => expr match {
-      case MetadataAttribute(expr) => true
+    if (meta.wrapped.expressions.exists {
+      case FileSourceMetadataAttribute(_) => true
       case _ => false
-    })) {
+    }) {
       meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
     }
     super.tagFileSourceScanExec(meta)
