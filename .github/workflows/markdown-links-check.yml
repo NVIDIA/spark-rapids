@@ -28,5 +28,6 @@ jobs:
       with:
         max-depth: -1
         use-verbose-mode: 'yes'
+        check-modified-files-only: 'yes'
         config-file: '.github/workflows/markdown-links-check/markdown-links-check-config.json'
         
