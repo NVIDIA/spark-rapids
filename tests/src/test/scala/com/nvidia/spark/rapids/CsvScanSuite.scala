@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.{col, date_add, lit}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 
 class CsvScanSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Test CSV projection with whitespace delimiter between date and time",
@@ -71,4 +73,29 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
     conf=new SparkConf()) {
     df => df.withColumn("next_day", date_add(col("dates"), lit(1)))
   }
+
+  testSparkResultsAreEqual(
+    "Test CSV parse ints as timestamps ansiEnabled=false",
+    intsAsTimestampsFromCsv,
+    conf=new SparkConf().set(SQLConf.ANSI_ENABLED.key, "false")) {
+    df => df
+  }
+
+  testSparkResultsAreEqual(
+    "Test CSV parse ints as timestamps ansiEnabled=true",
+    intsAsTimestampsFromCsv,
+    conf=new SparkConf().set(SQLConf.ANSI_ENABLED.key, "true")) {
+    df => df
+  }
+
+  private def intsAsTimestampsFromCsv = {
+    fromCsvDf("ints.csv", StructType(Array(
+      StructField("ints_1", TimestampType),
+      StructField("ints_2", TimestampType),
+      StructField("ints_3", TimestampType),
+      StructField("ints_4", TimestampType)
+    )))(_)
+  }
+
+
 }
