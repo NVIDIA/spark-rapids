@@ -1,10 +1,5 @@
 {
-  "ignorePatterns": [
-    {
-      "pattern": "http:\/\/RM_hostname"
-    }
-  ],
   "timeout": "5s",
   "retryCount":10,
-  "aliveStatusCodes": [302, 200, 429]
+  "aliveStatusCodes": [0, 200, 302, 400, 403, 429]
 } 
