@@ -1492,14 +1492,23 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
   lazy val rmmPool: String = {
-    val pool = get(RMM_POOL)
-    if ("ASYNC".equalsIgnoreCase(pool) &&
-        (Cuda.getRuntimeVersion < 11020 || Cuda.getDriverVersion < 11020)) {
-      logWarning("CUDA runtime/driver does not support the ASYNC allocator, falling back to ARENA")
-      "ARENA"
-    } else {
-      pool
+    var pool = get(RMM_POOL)
+    val driverVersion = Cuda.getDriverVersion
+    val runtimeVersion = Cuda.getRuntimeVersion
+    var fallbackMessage: Option[String] = None
+    if ("ASYNC".equalsIgnoreCase(pool)) {
+      if (runtimeVersion < 11020 || driverVersion < 11020) {
+        fallbackMessage = Some("CUDA runtime/driver does not support the ASYNC allocator")
+      } else if (driverVersion < 11050) {
+        fallbackMessage = Some("CUDA drivers before 11.5 have known incompatibilities with " +
+          "the ASYNC allocator")
+      }
+      if (fallbackMessage.isDefined) {
+        logWarning(s"${fallbackMessage.get}, falling back to ARENA")
+        pool = "ARENA"
+      }
     }
+    pool
   }
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
