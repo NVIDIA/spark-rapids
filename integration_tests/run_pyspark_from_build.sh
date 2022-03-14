@@ -63,45 +63,31 @@ else
     fi
     if [[ "${TEST_PARALLEL}" == "" ]];
     then
+        # For integration tests we want to have at least
+        #  - 2 GiB of GPU memory
+        #  - 5 GiB of host memory
+        #  - 1 CPU core
+        # per Spark application. And we want to reserve 2 GiB of GPU memory for CUDA/etc.
+
         # For now just assume that we are going to use the GPU on the
-        # system with the most free memory and then divide it up into chunks.
+        # system with the most free memory.
         # We use free memory to try and avoid issues if the GPU also is working
         # on graphics, which happens some times.
-        # We subtract one for the main controlling process that will still
-        # launch an application.  It will not run thing on the GPU but it needs
-        # to still launch a spark application.
-        TEST_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2.3 * 1024)) - 1}'`
+        # we also reserve 2 GiB for CUDA/CUDF overhead on the GPU.
+        
+        GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024)/ ((1.5 * 1024) + 750))}'`
+        CPU_CORES=`nproc` 
+        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024))}'`
+        TMP_PARALLEL=$(( $GPU_MEM_PARALLEL>$CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
+        TMP_PARALLEL=$(( $TMP_PARALLEL>$HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
+        if [[ $TMP_PARALLEL -gt 1 ]];
+        then
+            TEST_PARALLEL=$(( $TMP_PARALLEL - 1 ))
+        else
+            TEST_PARALLEL=1
+        fi
+
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
-
-        # adjust TEST_PARALLEL according to cpu cores and free memory;
-        # first read from ENV; Note it's hardly to get CPU cores and real free memory in docker.
-        # So in docker Env, Please set TEST_PARALLEL or set PYSP_TEST_CPU_CORES and PYSP_TEST_FREE_MEMORY
-        if [[ "${PYSP_TEST_CPU_CORES}" != "" ]]; then
-          cpu_cores=${PYSP_TEST_CPU_CORES}
-        else
-          # "nproc" get the number of processing units available
-          # "nproc" will get right number in docker created by "docker run --cpuset-cpus" command,
-          # but not work with "--cpus" or "--cpu-period" or "--cpu-quota".
-          cpu_cores=$(nproc)
-        fi
-        if [[ "${PYSP_TEST_FREE_MEMORY}" != "" ]]; then
-          free_mem_mib=${PYSP_TEST_FREE_MEMORY}
-        else
-          free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
-        fi
-
-        # reserve one to avoid 100% usages of all CPU cores
-        max_parallel_for_cpu_cores=$((${cpu_cores} - 1))
-        # default heap size for spark is 1G, add reserve 50M for other processes in OS.
-        max_parallel_for_free_memory=$(( (${free_mem_mib} - 50) / 1024 ))
-        if [[ TEST_PARALLEL -gt $max_parallel_for_cpu_cores ]]; then
-          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_cpu_cores according to cpu cores $cpu_cores"
-          TEST_PARALLEL=${max_parallel_for_cpu_cores}
-        fi
-        if [[ TEST_PARALLEL -gt ${max_parallel_for_free_memory} ]]; then
-          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_free_memory according to free memory $free_mem_mib mib"
-          TEST_PARALLEL=${max_parallel_for_free_memory}
-        fi
     fi
     if python -c 'import findspark';
     then
@@ -129,9 +115,7 @@ else
         # With xdist 0 and 1 are the same parallelsm but
         # 0 is more effecient
         TEST_PARALLEL_OPTS=()
-        MEMORY_FRACTION='1'
     else
-        MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
     RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
@@ -172,9 +156,12 @@ else
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
-    export PYSP_TEST_spark_sql_shuffle_partitions='12'
+    export PYSP_TEST_spark_sql_shuffle_partitions='4'
     # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
+    export PYSP_TEST_spark_rapids_memory_host_spillStorageSize='100m'
+    # Not the default 2G but should be large enough for a single batch for all data
+    export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.
@@ -199,23 +186,24 @@ else
     if ((NUM_LOCAL_EXECS > 0)); then
       export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
     else
-      # If a master is not specified, use "local[*, $SPARK_TASK_MAXFAILURES]"
+      # If a master is not specified, use "local[cores, $SPARK_TASK_MAXFAILURES]"
       if [ -z "${PYSP_TEST_spark_master}" ] && [[ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]]; then
-        export PYSP_TEST_spark_master="local[*,$SPARK_TASK_MAXFAILURES]"
+        CPU_CORES=`nproc` 
+        LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
+        export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
 
+    # CUDA + RAPIDS has a faiurly large overhead (over 500 MiB) so we keep the memory limit 750 MiB < what we checked for
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
-        export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
-        export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
-        # when running tests in parallel, we allocate less than the default minAllocFraction per test
-        # so we need to override this setting here
-        export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
+        export PYSP_TEST_spark_rapids_memory_gpu_allocSize='1536m'
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
-            $SPARK_SUBMIT_FLAGS "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
+            $SPARK_SUBMIT_FLAGS \
+            --conf 'spark.rapids.memory.gpu.allocSize=1536m' \
+            "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
