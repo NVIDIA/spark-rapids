@@ -46,4 +46,14 @@ object GpuTypeShims {
    * @return the cuDF type if the Shim supports
    */
   def toRapidsOrNull(t: DataType): DType = null
+
+  /**
+   * Whether this Shim supports convert this type to GPU Scalar
+   * @param t
+   */
+  def supportToScalarForType(t: DataType): Boolean = false
+
+  def toScalarForType(t: DataType, v: Any) = {
+    throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
+  }
 }

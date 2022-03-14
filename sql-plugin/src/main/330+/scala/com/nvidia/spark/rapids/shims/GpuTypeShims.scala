@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.DType
+import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
@@ -91,6 +91,29 @@ object GpuTypeShims {
         DType.INT64
       case _ =>
         null
+    }
+  }
+
+  /**
+   * Whether this Shim supports convert this type to GPU Scalar
+   * @param t
+   */
+  def supportToScalarForType(t: DataType): Boolean = {
+    t match {
+      case _: DayTimeIntervalType => true
+      case _ => false
+    }
+  }
+
+  def toScalarForType(t: DataType, v: Any) = {
+    t match {
+      case _: DayTimeIntervalType => v match {
+        case l: Long => Scalar.fromLong(l)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+            s" for LongType, expecting Long")
+      }
+      case _ =>
+        throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
     }
   }
 }
