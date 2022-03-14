@@ -367,11 +367,11 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
       GpuOverrides.exec[FilterExec](
         "The backend for most filter statements",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(), TypeSig.all),
         (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
           override def convertToGpu(): GpuExec =
             GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
-        }),
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ map
   }
