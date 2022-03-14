@@ -15,9 +15,7 @@
 # A workflow to check if PR got broken hyperlinks
 name: Check Markdown links
 
-on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+on: push
 
 jobs:
   markdown-link-check:
@@ -30,4 +28,6 @@ jobs:
         use-verbose-mode: 'yes'
         check-modified-files-only: 'yes'
         config-file: '.github/workflows/markdown-links-check/markdown-links-check-config.json'
+        base-branch: 'gh-pages'
+        
         
