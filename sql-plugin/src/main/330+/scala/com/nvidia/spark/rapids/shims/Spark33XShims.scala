@@ -70,10 +70,10 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   }
 
   override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (meta.wrapped.expressions.exists(expr => expr match {
-      case MetadataAttribute(expr) => true
+    if (meta.wrapped.expressions.exists {
+      case FileSourceMetadataAttribute(_) => true
       case _ => false
-    })) {
+    }) {
       meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
     }
     super.tagFileSourceScanExec(meta)
