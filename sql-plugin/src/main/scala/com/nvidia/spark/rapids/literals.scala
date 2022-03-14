@@ -372,6 +372,11 @@ object GpuScalar extends Arm with Logging {
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
           s" for LongType, expecting Long, or Int.")
     }
+    case _: DayTimeIntervalType => v match {
+      case l: Long => Scalar.fromLong(l)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for LongType, expecting Long")
+    }
     case _ => throw new UnsupportedOperationException(s"${v.getClass} '$v' is not supported" +
         s" as a Scalar yet")
   }
