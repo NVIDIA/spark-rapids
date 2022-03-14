@@ -18,7 +18,7 @@ name: Check Markdown links
 on:
   push:
     branches:
-      - gh-pages
+      - gh-page-markdown-link-check
 
 jobs:
   markdown-link-check:
