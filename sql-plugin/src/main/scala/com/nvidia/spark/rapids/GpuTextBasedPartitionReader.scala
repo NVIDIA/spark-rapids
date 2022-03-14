@@ -246,17 +246,19 @@ abstract class GpuTextBasedPartitionReader(
 
   def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
     val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
-    withResource(input.isTimestamp(cudfFormat)) { isDate =>
-      if (failOnInvalid && GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
-        withResource(isDate.all()) { all =>
-          if (all.isValid && !all.getBoolean) {
-            throw new DateTimeException("One or more values is not a valid date")
+    withResource(input.strip()) { stripped =>
+      withResource(stripped.isTimestamp(cudfFormat)) { isDate =>
+        if (failOnInvalid && GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
+          withResource(isDate.all()) { all =>
+            if (all.isValid && !all.getBoolean) {
+              throw new DateTimeException("One or more values is not a valid date")
+            }
           }
         }
-      }
-      withResource(input.asTimestamp(dt, cudfFormat)) { asDate =>
-        withResource(Scalar.fromNull(dt)) { nullScalar =>
-          isDate.ifElse(asDate, nullScalar)
+        withResource(stripped.asTimestamp(dt, cudfFormat)) { asDate =>
+          withResource(Scalar.fromNull(dt)) { nullScalar =>
+            isDate.ifElse(asDate, nullScalar)
+          }
         }
       }
     }
@@ -301,10 +303,13 @@ abstract class GpuTextBasedPartitionReader(
     // get a list of all possible cuDF formats that we need to check for
     val cudfFormats = GpuTextBasedDateUtils.toCudfFormats(sparkFormat, parseString = true)
 
+
     // filter by regexp first to eliminate invalid entries
-    val regexpFiltered = withResource(lhs.matchesRe(regex)) { matchesRe =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        matchesRe.ifElse(lhs, nullString)
+    val regexpFiltered = withResource(lhs.strip()) { stripped =>
+      withResource(stripped.matchesRe(regex)) { matchesRe =>
+        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+          matchesRe.ifElse(stripped, nullString)
+        }
       }
     }
 
