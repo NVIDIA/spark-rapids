@@ -33,6 +33,11 @@ import org.apache.spark.util.SerializableConfiguration
  * A FileFormat that allows reading Avro files with the GPU.
  */
 class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMetrics {
+
+
+  @scala.annotation.nowarn(
+    "msg=ignoreExtension in AvroOptions is deprecated"
+  )
   override def buildReaderWithPartitionValuesAndMetrics(
       sparkSession: SparkSession,
       dataSchema: StructType,
@@ -47,6 +52,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
     val parsedOptions = new AvroOptions(options, hadoopConf)
+    val ignoreExtension = true // parsedOptions.ignoreExtension
 
     val factory = GpuAvroPartitionReaderFactory(
       sqlConf,
@@ -55,6 +61,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       requiredSchema,
       partitionSchema,
       new RapidsConf(sqlConf),
+      ignoreExtension,
       metrics)
     PartitionReaderIterator.buildReader(factory)
   }
@@ -65,7 +72,9 @@ object GpuReadAvroFileFormat {
     val fsse = meta.wrapped
     GpuAvroScan.tagSupport(
       SparkShimImpl.sessionFromPlan(fsse),
-      null, null, null, null
+      fsse.requiredSchema,
+      fsse.relation.options,
+      meta
     )
   }
 }
