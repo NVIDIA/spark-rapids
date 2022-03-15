@@ -33,30 +33,28 @@ def gen_json(schema: DataType):
             yield t
         yield '\n'
 
-def gen_element(schema: DataType):
-    """
-    ELEMENT -> WHITESPACE VALUE WHITESPACE
-    """
-    for t in gen_whitespace():
-        yield t
-    for t in gen_value(schema):
-        yield t
-    for t in gen_whitespace():
-        yield t
-
 def gen_value(schema: DataType):
     """
     VALUE -> OBJECT 
-           | ARRAY (todo) 
-           | STRING (todo) 
-           | NUMBER (todo) 
-           | BOOL (todo)
+           | ARRAY
+           | STRING
+           | NUMBER
+           | BOOL
     """
     if isinstance(schema, StructType):
         for t in gen_object(schema):
             yield t 
+    elif isinstance(schema, ArrayType):
+        for t in gen_array(schema.elementType):
+            yield t
     elif isinstance(schema, StringType):
         for t in gen_string():
+            yield t
+    elif isinstance(schema, BooleanType):
+        for t in gen_bool():
+            yield t 
+    elif isinstance(schema, (FloatType, DoubleType)):
+        for t in gen_number():
             yield t
     else:
         raise Exception("not supported schema")
@@ -72,8 +70,11 @@ def gen_object(schema: StructType):
             yield t
     else:
         for t in gen_members(schema.fields):
-                yield t
+            yield t
     yield "}"
+
+
+
 
 def gen_members(schema: list[StructField]):
     """
@@ -106,6 +107,29 @@ def gen_member(schema: StructField):
 
     for t in gen_element(schema.dataType):
         yield t
+
+def gen_array(schema: DataType):
+    yield '['
+
+    for t in random.choices([gen_whitespace(), gen_elements()], [10, 90], k=1)[0]:
+        yield t
+
+    yield ']'
+
+def gen_elements(schema: DataType):
+    yield None
+
+def gen_element(schema: DataType):
+    """
+    ELEMENT -> WHITESPACE VALUE WHITESPACE
+    """
+    for t in gen_whitespace():
+        yield t
+    for t in gen_value(schema):
+        yield t
+    for t in gen_whitespace():
+        yield t
+
 
 def gen_string():
     """
@@ -174,6 +198,30 @@ def gen_hex():
     else:
         yield chr(random.randint(0x61, 0x66))
 
+def gen_number():
+    """
+    NUMBER -> INTEGER FRACTION EXPONENT
+    """
+    for t in gen_integer():
+        yield t 
+    for t in gen_fraction():
+        yield t 
+    for t in gen_exponent():
+        yield t 
+    yield None
+
+def gen_integer():
+    """
+    INTEGER -> DIGIT 
+             | ONENINE DIGITS 
+             | '-' DIGIT 
+             | '-' ONENINE DIGITS
+    """
+    if random.randint(1, 100) <= 50:
+        yield '-'
+    
+    
+
 def gen_digit():
     """
     DIGIT -> '0' 
@@ -190,6 +238,15 @@ def gen_onenine():
     ONENINE -> '1' .. '9'
     """
     yield chr(random.randint(0x31, 0x39))
+
+def gen_fraction():
+    yield None
+
+def gen_exponent():
+    yield None
+
+def gen_sign():
+    yield None
 
 def gen_whitespace():
     """
@@ -208,7 +265,9 @@ def gen_whitespace():
 
 def gen_bool():
     """
-    BOOL -> "true" | "null" | "false"
+    BOOL -> "true" 
+          | "null" 
+          | "false"
     """
     yield random.choice(["true", "null", "false"])
 
