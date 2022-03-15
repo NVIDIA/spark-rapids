@@ -22,14 +22,8 @@ pytestmark = pytest.mark.nightly_resource_consuming_test
 
 def read_avro_df(data_path):
     return lambda spark : spark.read.format("avro").load(data_path)
-'''
-def read_avro_sql(data_path):
-    return lambda spark : spark.sql('select * from avro.`{}`'.format(data_path))
-'''
-# test with original avro file reader, the multi-file parallel reader for cloud
+
 original_avro_file_reader_conf = {'spark.rapids.sql.format.avro.reader.type': 'PERFILE'}
-#multithreaded_avro_file_reader_conf = {'spark.rapids.sql.format.avro.reader.type': 'MULTITHREADED'}
-#coalescing_avro_file_reader_conf = {'spark.rapids.sql.format.avro.reader.type': 'COALESCING'}
 reader_opt_confs = [original_avro_file_reader_conf]
 
 @pytest.mark.parametrize('name', ['simple.avro'])
