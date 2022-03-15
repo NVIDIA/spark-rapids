@@ -15,9 +15,9 @@
 # A workflow to check if PR got broken hyperlinks
 name: Check Markdown links
 
-on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+on: push
+#  pull_request_target:
+#    types: [opened, synchronize, reopened]
 
 jobs:
   markdown-link-check:
