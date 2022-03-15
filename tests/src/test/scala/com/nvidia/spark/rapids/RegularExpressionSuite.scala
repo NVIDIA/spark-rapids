@@ -23,6 +23,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   private val conf = new SparkConf()
+    .set(RapidsConf.ENABLE_REGEXP.key, "true")
 
   testGpuFallback(
     "String regexp_replace replace str columnar fall back",
