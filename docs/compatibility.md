@@ -401,9 +401,9 @@ file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.
 
 **Limitations With RAPIDS**
 
-[CUDF](https://github.com/rapidsai/cudf) still does not support writing the whole file statistcis into ORC file. The status of this feature request
-can be tracked through the following tickets: [CUDF-FEA-10075](https://github.com/rapidsai/cudf/issues/10075) and
-[CUDF-BUG-5826](https://github.com/rapidsai/cudf/issues/5826).
+RAPIDS does not support whole file statistics in ORC file. We are working with
+[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
+[here](https://github.com/rapidsai/cudf/issues/5826).
 
 *Writing ORC Files*
 
