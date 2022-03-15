@@ -1,13 +1,44 @@
+/*
+ * Copyright (c) 2022, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{Arm, ColumnarPartitionReaderWithPartitionValues, FilePartitionReaderBase, GpuMetric, PartitionReaderWithBytesRead, RapidsConf, RapidsMeta}
-import org.apache.hadoop.conf.Configuration
+import java.io.OutputStream
+import java.net.URI
 
+import scala.annotation.tailrec
+import scala.collection.mutable.ArrayBuffer
+import scala.math.max
+
+import ai.rapids.cudf.{AvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.{Arm, ColumnarPartitionReaderWithPartitionValues, FilePartitionReaderBase, GpuBatchUtils, GpuColumnVector, GpuMetric, GpuSemaphore, HostMemoryOutputStream, NvtxWithMetrics, PartitionReaderWithBytesRead, RapidsConf, RapidsMeta}
+import org.apache.avro.file.DataFileConstants.SYNC_SIZE
+import org.apache.avro.mapred.FsInput
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FSDataInputStream, Path}
+
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.avro.AvroOptions
+import org.apache.spark.sql.avro.rapids.{AvroDataFileReader, BlockInfo, Header}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
+import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.internal.SQLConf
@@ -33,9 +64,12 @@ case class GpuAvroPartitionReaderFactory(
   dataSchema: StructType,
   readDataSchema: StructType,
   partitionSchema: StructType,
-  parsedOptions: AvroOptions,
   @transient rapidsConf: RapidsConf,
-  metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory {
+  metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Logging {
+
+  private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
+  private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
+  private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -43,13 +77,14 @@ case class GpuAvroPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val reader = new PartitionReaderWithBytesRead(new AvroPartitionReader(conf, partFile,
-      dataSchema, readDataSchema, metrics))
+    val blockMeta = GpuAvroFileFilterHandler(sqlConf, broadcastedConf,
+      true, broadcastedConf.value.value).filterBlocks(partFile)
+    val reader = new PartitionReaderWithBytesRead(new AvroPartitionReader(conf, partFile, blockMeta,
+      dataSchema, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
+      maxReadBatchSizeBytes, metrics))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
-
-case class AvroBlockRange(start: Long, length: Long)
 
 /**
  * A tool to filter Avro blocks
@@ -59,20 +94,266 @@ case class AvroBlockRange(start: Long, length: Long)
  */
 private case class GpuAvroFileFilterHandler(
   @transient sqlConf: SQLConf,
-  broadcastedConf: Broadcast[SerializableConfiguration]) extends Arm {
+  broadcastedConf: Broadcast[SerializableConfiguration],
+  ignoreExtension: Boolean,
+  hadoopConf: Configuration) extends Arm with Logging {
 
-  def filterBlocks(partFile: PartitionedFile): BufferedIterator[AvroBlockRange] = {
-    Iterator.empty.buffered
+  def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
+
+    def passSync(blockStart: Long, position: Long): Boolean = {
+        blockStart >= position + SYNC_SIZE
+    }
+
+    if (ignoreExtension || partFile.filePath.endsWith(".avro")) {
+      val in = new FsInput(new Path(new URI(partFile.filePath)), hadoopConf)
+      closeOnExcept(in) { _ =>
+        withResource(AvroDataFileReader.openReader(in)) { reader =>
+          val blocks = reader.getBlocks()
+
+          val filteredBlocks = new ArrayBuffer[BlockInfo]()
+
+          blocks.foreach(block => {
+            if (partFile.start <= block.blockStart - SYNC_SIZE &&
+              !passSync(block.blockStart, partFile.start + partFile.length)) {
+              filteredBlocks.append(block)
+            }
+          })
+
+          AvroBlockMeta(reader.getHeader(), filteredBlocks)
+        }
+      }
+    } else {
+      AvroBlockMeta(new Header(), Seq.empty)
+    }
   }
-
 }
+
+case class AvroBlockMeta(header: Header, blocks: Seq[BlockInfo])
+
+case class CopyRange(offset: Long, length: Long)
 
 class AvroPartitionReader(
   conf: Configuration,
   partFile: PartitionedFile,
+  blockMeta: AvroBlockMeta,
   dataSchema: StructType,
   readDataSchema: StructType,
+  debugDumpPrefix: String,
+  maxReadBatchSizeRows: Integer,
+  maxReadBatchSizeBytes: Long,
   execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics) {
 
-  override def next(): Boolean = false
+  val filePath = new Path(new URI(partFile.filePath))
+  private val blockIterator: BufferedIterator[BlockInfo] = blockMeta.blocks.iterator.buffered
+
+  override def next(): Boolean = {
+    batch.foreach(_.close())
+    batch = None
+    if (!isDone) {
+      if (!blockIterator.hasNext) {
+        isDone = true
+        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
+      } else {
+        batch = readBatch()
+      }
+    }
+
+    // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
+    // We are not acquiring the semaphore here since this next() is getting called from
+    // the `PartitionReaderIterator` which implements a standard iterator pattern, and
+    // advertises `hasNext` as false when we return false here. No downstream tasks should
+    // try to call next after `hasNext` returns false, and any task that produces some kind of
+    // data when `hasNext` is false is responsible to get the semaphore themselves.
+    batch.isDefined
+  }
+
+  private def readBatch(): Option[ColumnarBatch] = {
+    withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
+      val currentChunkedBlocks = populateCurrentBlockChunk(blockIterator,
+        maxReadBatchSizeRows, maxReadBatchSizeBytes)
+      if (readDataSchema.isEmpty) {
+        // not reading any data, so return a degenerate ColumnarBatch with the row count
+        val numRows = currentChunkedBlocks.map(_.count).sum.toInt
+        if (numRows == 0) {
+          None
+        } else {
+          Some(new ColumnarBatch(Array.empty, numRows.toInt))
+        }
+      } else {
+        val table = readToTable(currentChunkedBlocks)
+        try {
+          val colTypes = readDataSchema.fields.map(f => f.dataType)
+          val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes))
+          maybeBatch.foreach { batch =>
+            logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
+          }
+          maybeBatch
+        } finally {
+          table.foreach(_.close())
+        }
+      }
+    }
+  }
+
+  private def readToTable(currentChunkedBlocks: Seq[BlockInfo]): Option[Table] = {
+    if (currentChunkedBlocks.isEmpty) {
+      return None
+    }
+    val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks, filePath)
+    try {
+      if (dataSize == 0) {
+        None
+      } else {
+
+        // Dump parquet data into a file
+        dumpDataToFile(dataBuffer, dataSize, Array(partFile), Option(debugDumpPrefix), Some("avro"))
+
+        val includeColumns = readDataSchema.fieldNames.toSeq
+
+        val parseOpts = AvroOptions.builder()
+          .includeColumn(includeColumns: _*).build()
+
+        // about to start using the GPU
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+
+        val table = withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
+          metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readAvro(parseOpts, dataBuffer, 0, dataSize)
+        }
+        closeOnExcept(table) { _ =>
+          maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
+          if (readDataSchema.length < table.getNumberOfColumns) {
+            throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+              s"but read ${table.getNumberOfColumns} from $filePath")
+          }
+        }
+        metrics(NUM_OUTPUT_BATCHES) += 1
+        Some(table)
+      }
+    } finally {
+      dataBuffer.close()
+    }
+  }
+
+  protected def copyDataRange(
+    range: CopyRange,
+    in: FSDataInputStream,
+    out: OutputStream,
+    copyBuffer: Array[Byte]): Unit = {
+    var readTime = 0L
+    var writeTime = 0L
+    if (in.getPos != range.offset) {
+      in.seek(range.offset)
+    }
+    var bytesLeft = range.length
+    while (bytesLeft > 0) {
+      // downcast is safe because copyBuffer.length is an int
+      val readLength = Math.min(bytesLeft, copyBuffer.length).toInt
+      val start = System.nanoTime()
+      in.readFully(copyBuffer, 0, readLength)
+      val mid = System.nanoTime()
+      out.write(copyBuffer, 0, readLength)
+      val end = System.nanoTime()
+      readTime += (mid - start)
+      writeTime += (end - mid)
+      bytesLeft -= readLength
+    }
+    execMetrics.get(READ_FS_TIME).foreach(_.add(readTime))
+    execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(writeTime))
+  }
+
+  private def combineBlocks(blocks: Seq[BlockInfo],
+    blocksRange: ArrayBuffer[CopyRange]) = {
+    var currentCopyStart = 0L
+    var currentCopyEnd = 0L
+
+    // Combine the meta and blocks into a seq to get the copy range
+    val metaAndBlocks: Seq[BlockInfo] =
+      Seq(BlockInfo(0, blockMeta.header.getFirstBlockStart, 0, 0)) ++ blocks
+
+    metaAndBlocks.foreach { block =>
+      if (currentCopyEnd != block.blockStart) {
+        if (currentCopyEnd != 0) {
+          blocksRange.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
+        }
+        currentCopyStart = block.blockStart
+        currentCopyEnd = currentCopyStart
+      }
+      currentCopyEnd += block.blockLength
+    }
+
+    if (currentCopyEnd != currentCopyStart) {
+      blocksRange.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
+    }
+  }
+
+  protected def readPartFile(
+    blocks: Seq[BlockInfo],
+    filePath: Path): (HostMemoryBuffer, Long) = {
+    withResource(new NvtxWithMetrics("Parquet buffer file split", NvtxColor.YELLOW,
+      metrics("bufferTime"))) { _ =>
+      withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
+        val estTotalSize = calculateOutputSize(blocks)
+
+        closeOnExcept(HostMemoryBuffer.allocate(estTotalSize)) { hmb =>
+          val out = new HostMemoryOutputStream(hmb)
+          val copyRanges = new ArrayBuffer[CopyRange]()
+          combineBlocks(blocks, copyRanges)
+          val copyBuffer = new Array[Byte](8 * 1024 * 1024)
+          copyRanges.foreach(copyRange => copyDataRange(copyRange, in, out, copyBuffer))
+          // check we didn't go over memory
+          if (out.getPos > estTotalSize) {
+            throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
+              s"small, actual written: ${out.getPos}")
+          }
+          (hmb, out.getPos)
+        }
+      }
+    }
+  }
+
+  protected def calculateOutputSize(currentChunkedBlocks: Seq[BlockInfo]): Long = {
+    var totalSize: Long = 0;
+    // For simplicity, we just copy the whole meta of AVRO
+    totalSize += blockMeta.header.getFirstBlockStart
+    // Add all blocks
+    totalSize += currentChunkedBlocks.map(_.blockLength).sum
+    totalSize
+  }
+
+  protected def populateCurrentBlockChunk(
+    blockIter: BufferedIterator[BlockInfo],
+    maxReadBatchSizeRows: Int,
+    maxReadBatchSizeBytes: Long): Seq[BlockInfo] = {
+    val currentChunk = new ArrayBuffer[BlockInfo]
+    var numRows: Long = 0
+    var numBytes: Long = 0
+    var numParquetBytes: Long = 0
+
+    @tailrec
+    def readNextBatch(): Unit = {
+      if (blockIter.hasNext) {
+        val peekedRowGroup = blockIter.head
+        if (peekedRowGroup.count > Integer.MAX_VALUE) {
+          throw new UnsupportedOperationException("Too many rows in split")
+        }
+        if (numRows == 0 || numRows + peekedRowGroup.count <= maxReadBatchSizeRows) {
+          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema,
+            peekedRowGroup.count)
+          if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
+            currentChunk += blockIter.next()
+            numRows += currentChunk.last.count
+            numParquetBytes += currentChunk.last.count
+            numBytes += estimatedBytes
+            readNextBatch()
+          }
+        }
+      }
+    }
+
+    readNextBatch()
+    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
+      s"Estimated GPU bytes: $numBytes")
+    currentChunk
+  }
 }

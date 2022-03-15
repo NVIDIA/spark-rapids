@@ -54,7 +54,6 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       dataSchema,
       requiredSchema,
       partitionSchema,
-      parsedOptions,
       new RapidsConf(sqlConf),
       metrics)
     PartitionReaderIterator.buildReader(factory)
