@@ -35,14 +35,10 @@ reader_opt_confs = [original_avro_file_reader_conf]
 @pytest.mark.parametrize('name', ['alltypes_plain.avro'])
 @pytest.mark.parametrize('read_func', [read_avro_df])
 @pytest.mark.parametrize('v1_enabled_list', ["avro"])
-@pytest.mark.parametrize('avro_impl', ["native"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
-@allow_non_gpu("FileSourceScanExec")
-def test_basic_read(std_input_path, name, read_func, v1_enabled_list, avro_impl, reader_confs):
+def test_basic_read(std_input_path, name, read_func, v1_enabled_list, reader_confs):
     all_confs = copy_and_update(reader_confs, {
-        'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.avro.impl': avro_impl})
-    assert_gpu_fallback_collect(
+        'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
             read_func(std_input_path + '/' + name),
-            "FileSourceScanExec",
             conf=all_confs)
