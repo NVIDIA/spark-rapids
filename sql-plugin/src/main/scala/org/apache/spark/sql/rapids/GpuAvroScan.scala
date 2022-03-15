@@ -57,6 +57,16 @@ object GpuAvroScan {
 
     val parsedOptions = new AvroOptions(options, new Configuration())
 
+    if (!meta.conf.isAvroEnabled) {
+      meta.willNotWorkOnGpu("Avro input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_AVRO} to true")
+    }
+
+    if (!meta.conf.isAvroReadEnabled) {
+      meta.willNotWorkOnGpu("Avro input has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_AVRO_READ} to true")
+    }
+
     if (parsedOptions.positionalFieldMatching) {
       meta.willNotWorkOnGpu("GpuAvroScan does not support positionalFieldMatching")
     }
