@@ -57,7 +57,7 @@ import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.{ParquetR
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
-import org.apache.spark.sql.rapids.PCBSSchemaConverter
+import org.apache.spark.sql.rapids.PCBSSchemaHelper
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
@@ -267,18 +267,10 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
   override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall { f =>
     // only check spark b/c if we are on the GPU then we will be calling the gpu method regardless
-    isTypeSupportedByColumnarSparkParquetWriter(f.dataType) || f.dataType == DataTypes.NullType
+    PCBSSchemaHelper.isTypeSupportedByColumnarSparkParquetWriter(f.dataType) ||
+        f.dataType == DataTypes.NullType
   }
 
-  private def isTypeSupportedByColumnarSparkParquetWriter(dataType: DataType): Boolean = {
-    // Columnar writer in Spark only supports AtomicTypes ATM
-    dataType match {
-      case TimestampType | StringType | BooleanType | DateType | BinaryType |
-           DoubleType | FloatType | ByteType | IntegerType | LongType | ShortType => true
-      case _: DecimalType => true
-      case _ => false
-    }
-  }
 
   def isSchemaSupportedByCudf(schema: Seq[Attribute]): Boolean = {
     schema.forall(field => isSupportedByCudf(field.dataType))
@@ -290,39 +282,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       case s: StructType => s.forall(field => isSupportedByCudf(field.dataType))
       case m: MapType => isSupportedByCudf(m.keyType) && isSupportedByCudf(m.valueType)
       case _ => GpuColumnVector.isNonNestedSupportedType(dataType)
-    }
-  }
-
-  /**
-   * This method checks if the datatype passed is officially supported by parquet.
-   *
-   * Please refer to https://github.com/apache/parquet-format/blob/master/LogicalTypes.md to see
-   * the what types are supported by parquet
-   */
-  def isTypeSupportedByParquet(dataType: DataType): Boolean = {
-    dataType match {
-      case CalendarIntervalType | NullType => false
-      case s: StructType => s.forall(field => isTypeSupportedByParquet(field.dataType))
-      case ArrayType(elementType, _) => isTypeSupportedByParquet(elementType)
-      case MapType(keyType, valueType, _) => isTypeSupportedByParquet(keyType) &&
-          isTypeSupportedByParquet(valueType)
-      //Atomic Types
-      case BinaryType => true
-      case BooleanType => true
-      case ByteType => true
-      case ShortType => true
-      case IntegerType => true
-      case LongType => true
-      case FloatType => true
-      case DoubleType => true
-      case d: DecimalType if d.scale < 0 => false
-      case _: DecimalType => true
-      case VarcharType(_) => true
-      case TimestampType => true
-      case CharType(_) => true
-      case StringType => true
-      case DateType => true
-      case _ => false
     }
   }
 
@@ -760,7 +719,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
             val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
             val hasUnsupportedType = origCacheSchema.exists { field =>
-              !isTypeSupportedByParquet(field.dataType)
+              !PCBSSchemaHelper.isTypeSupportedByParquet(field.dataType)
             }
 
             val unsafeRows = new ArrayBuffer[InternalRow]
@@ -1134,7 +1093,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
       // is there a type that spark doesn't support by default in the schema?
       val hasUnsupportedType: Boolean = origCachedAttributes.exists { attribute =>
-        !isTypeSupportedByParquet(attribute.dataType)
+        !PCBSSchemaHelper.isTypeSupportedByParquet(attribute.dataType)
       }
 
       def getIterator: Iterator[InternalRow] = {
@@ -1347,7 +1306,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
 
     val newCachedAttributes =
-      PCBSSchemaConverter.getSupportedSchemaFromUnsupported(cachedAttributes, mapping)
+      PCBSSchemaHelper.getSupportedSchemaFromUnsupported(cachedAttributes, mapping)
 
     val newRequestedAttributes =
       getSelectedSchemaFromCachedSchema(requestedAttributes, newCachedAttributes)

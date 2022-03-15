@@ -21,13 +21,41 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
-import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, DataTypes, Decimal, DecimalType, IntegerType, LongType, MapType, NullType, StructField, StructType, UserDefinedType}
+import org.apache.spark.sql.types.{ArrayType, AtomicType, ByteType, CalendarIntervalType, DataType, DataTypes, Decimal, DecimalType, IntegerType, LongType, MapType, NullType, StructField, StructType, UserDefinedType}
 
-object PCBSSchemaConverter {
+object PCBSSchemaHelper {
   val intervalStructType = new StructType()
       .add("_days", IntegerType)
       .add("_months", IntegerType)
       .add("_ms", LongType)
+
+  /**
+   * This method checks if the datatype passed is officially supported by parquet.
+   *
+   * Please refer to https://github.com/apache/parquet-format/blob/master/LogicalTypes.md to see
+   * the what types are supported by parquet
+   */
+  def isTypeSupportedByParquet(dataType: DataType): Boolean = {
+    dataType match {
+      case CalendarIntervalType | NullType => false
+      case s: StructType => s.forall(field => isTypeSupportedByParquet(field.dataType))
+      case ArrayType(elementType, _) => isTypeSupportedByParquet(elementType)
+      case MapType(keyType, valueType, _) => isTypeSupportedByParquet(keyType) &&
+          isTypeSupportedByParquet(valueType)
+      case d: DecimalType if d.scale < 0 => false
+      //Atomic Types
+      case _: AtomicType => true
+      case _ => false
+    }
+  }
+
+  def isTypeSupportedByColumnarSparkParquetWriter(dataType: DataType): Boolean = {
+    // Columnar writer in Spark only supports AtomicTypes ATM
+    dataType match {
+      case _: AtomicType => true
+      case _ => false
+    }
+  }
 
   def getSupportedDataType(
       curId: AtomicLong,
