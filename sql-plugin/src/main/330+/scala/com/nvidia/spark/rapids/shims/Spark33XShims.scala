@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
@@ -25,6 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Coalesce, DynamicPruningExpression, Expression, FileSourceMetadataAttribute, TimeAdd}
 import org.apache.spark.sql.catalyst.json.rapids.shims.Spark33XFileOptionsShims
 import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -261,6 +263,11 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
               wrapped.disableBucketedScan)(conf)
           }
         }),
+      GpuOverrides.exec[InMemoryTableScanExec](
+        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
+        // NullType is actually supported
+        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.DAYTIME, TypeSig.all),
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[ProjectExec](
         "The backend for most select, withColumn and dropColumn statements",
         ExecChecks(

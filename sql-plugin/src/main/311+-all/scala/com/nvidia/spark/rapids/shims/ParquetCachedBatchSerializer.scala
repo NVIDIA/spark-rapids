@@ -271,7 +271,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         f.dataType == DataTypes.NullType
   }
 
-
   def isSchemaSupportedByCudf(schema: Seq[Attribute]): Boolean = {
     schema.forall(field => isSupportedByCudf(field.dataType))
   }
@@ -308,10 +307,14 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         isSchemaSupportedByCudf(schema)) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
-          val s: StructType = structSchema
-          val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows()).build(batch.numRows())
-          batch.close()
-          gpuCB
+          // The input batch from CPU must NOT be closed, because the columns inside it
+          // will be reused, and Spark expects the producer to close its batches.
+          val numRows = batch.numRows()
+          val gcbBuilder = new GpuColumnarBatchBuilder(structSchema, numRows)
+          for (i <- 0 until batch.numCols()) {
+            gcbBuilder.copyColumnar(batch.column(i), i, structSchema(i).nullable, numRows)
+          }
+          gcbBuilder.build(numRows)
         } else {
           batch
         }
@@ -1012,7 +1015,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         if (!cbIter.hasNext) {
           Iterator.empty
         } else {
-            new CurrentBatchIterator(cbIter.next().asInstanceOf[ParquetCachedBatch])
+          new CurrentBatchIterator(cbIter.next().asInstanceOf[ParquetCachedBatch])
         }
       }
 
@@ -1345,6 +1348,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       ParquetProperties.WriterVersion.PARQUET_1_0.toString)
 
     ParquetWriteSupport.setSchema(requestedSchema, hadoopConf)
+
+    // From 3.3.0, Spark will check this filed ID config
+    ParquetFieldIdShims.setupParquetFieldIdWriteConfig(hadoopConf, sqlConf)
 
     hadoopConf
   }

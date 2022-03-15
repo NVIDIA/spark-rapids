@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
 import pyspark.mllib.linalg as mllib
@@ -301,3 +301,13 @@ def test_cache_udt():
     # assert_gpu_and_cpu_are_equal_collect method doesn't handle UDT so we just write a single
     # statement here to compare
     assert cpu_result == gpu_result, "not equal"
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@ignore_order(local=True)
+def test_cache_daytimeinterval(enable_vectorized_conf):
+    def test_func(spark):
+        df = two_col_df(spark, DayTimeIntervalGen(), int_gen)
+        df.cache().count()
+        return df.selectExpr("b", "a")
+    assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)

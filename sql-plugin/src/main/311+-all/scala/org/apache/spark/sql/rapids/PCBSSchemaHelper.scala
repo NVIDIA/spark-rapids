@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.shims.GpuTypeShims
+
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.types.{ArrayType, AtomicType, ByteType, CalendarIntervalType, DataType, DataTypes, Decimal, DecimalType, IntegerType, LongType, MapType, NullType, StructField, StructType, UserDefinedType}
 
@@ -53,6 +55,7 @@ object PCBSSchemaHelper {
     // Columnar writer in Spark only supports AtomicTypes ATM
     dataType match {
       case _: AtomicType => true
+      case other if GpuTypeShims.isParquetColumnarWriterSupportedForType(other) => true
       case _ => false
     }
   }
