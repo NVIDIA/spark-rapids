@@ -2122,7 +2122,6 @@ object SupportedOpsForTools {
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
             t.toString match {
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
-              case "DATE" => conf.isCsvDateReadEnabled
               case _ => true
             }
           } else {

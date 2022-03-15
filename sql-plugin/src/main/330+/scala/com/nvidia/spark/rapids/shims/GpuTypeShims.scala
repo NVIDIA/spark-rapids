@@ -16,9 +16,11 @@
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.ColumnarCopyHelper
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
+import org.apache.spark.sql.vectorized.ColumnVector
 
 /**
  * Spark stores ANSI YearMonthIntervalType as int32 and ANSI DayTimeIntervalType as int64
@@ -92,5 +94,28 @@ object GpuTypeShims {
       case _ =>
         null
     }
+  }
+
+  /** Whether the Shim supports columnar copy for the given type */
+  def isColumnarCopySupportedForType(colType: DataType): Boolean = colType match {
+    case DayTimeIntervalType(_, _) => true
+    case _ => false
+  }
+
+  /**
+   * Copy a column for computing on GPU.
+   * Better to check if the type is supported first by calling 'isColumnarCopySupportedForType'
+   */
+  def columnarCopy(cv: ColumnVector,
+      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = cv.dataType() match {
+    case DayTimeIntervalType(_, _) =>
+      ColumnarCopyHelper.longCopy(cv, b, rows)
+    case t =>
+      throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
+  }
+
+  def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = colType match {
+    case DayTimeIntervalType(_, _) => true
+    case _ => false
   }
 }

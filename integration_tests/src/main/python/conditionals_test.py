@@ -199,17 +199,21 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
 def test_conditional_with_side_effects_cast(data_gen):
+    test_conf=copy_and_update(
+        ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
-            conf = ansi_enabled_conf)
+            conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
 def test_conditional_with_side_effects_case_when(data_gen):
+    test_conf=copy_and_update(
+        ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'CASE \
                 WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
                 WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
                 ELSE -1 END'),
-                conf = ansi_enabled_conf)
+                conf = test_conf)
