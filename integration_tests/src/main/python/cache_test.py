@@ -288,38 +288,12 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order(local=True)
-def test_cache_daytimeinterval_input_row():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark,
-            DayTimeIntervalGen(), int_gen, null_gen).cache().selectExpr('b', 'a'))
-
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
-@ignore_order(local=True)
-@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec")
-@pytest.mark.parametrize('alongside_gen', [int_gen, ArrayGen(int_gen)], ids=idfn)
-@pytest.mark.parametrize('with_rapids_memoryscan', ['true', 'false'],
-                         ids=["rapids_memoryscan_on", "rapids_memoryscan_off"])
-@pytest.mark.parametrize('with_rapids_reader', ['true', 'false'],
-                         ids=["rapids_reader_on", "rapids_reader_off"])
-def test_cache_daytimeinterval_input_columnar(spark_tmp_path, alongside_gen,
-                                              with_rapids_memoryscan, with_rapids_reader):
-    tmp_data_path = spark_tmp_path + '/PARQUET_DATA'
+def test_cache_daytimeinterval(enable_vectorized_conf):
     def test_func(spark):
-        two_col_df(spark,
-            DayTimeIntervalGen(), alongside_gen).write.mode("overwrite").parquet(tmp_data_path)
-        df = spark.read.parquet(tmp_data_path)
+        df = two_col_df(spark, DayTimeIntervalGen(), int_gen)
         df.cache().count()
-        return df.selectExpr('b', 'a')
+        return df.selectExpr("b", "a")
+    assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)
 
-    test_conf = {
-        # rapids-spark doesn't support LEGACY read for parquet, also set the int96 rebase mode
-        # values because LEGACY in databricks which will preclude this op from running on GPU.
-        'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-        'spark.sql.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
-        'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
-        'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.rapids.sql.format.parquet.read.enabled': with_rapids_reader,
-        'spark.rapids.sql.exec.InMemoryTableScanExec': with_rapids_memoryscan}
-    assert_gpu_and_cpu_are_equal_collect(test_func, test_conf)
