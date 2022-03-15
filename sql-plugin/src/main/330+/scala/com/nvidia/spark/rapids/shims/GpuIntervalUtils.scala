@@ -518,19 +518,22 @@ object GpuIntervalUtils extends Arm {
    */
   private def multiple(
       sign: ColumnVector, base: ColumnVector, multiple: Long, maxInBase: Long): ColumnVector = {
-    withResource(base.castTo(DType.INT64)) { baseLong =>
-      withResource(Scalar.fromLong(maxInBase)) { maxScalar =>
-        withResource(baseLong.greaterThan(maxScalar)) { greater =>
-          withResource(Scalar.fromNull(DType.INT64)) { nullScalar =>
-            withResource(greater.ifElse(nullScalar, baseLong)) { baseWithFix =>
-              withResource(baseWithFix.mul(sign)) { baseWithSign =>
-                withResource(Scalar.fromLong(multiple)) { multipleScalar =>
-                  baseWithSign.mul(multipleScalar)
-                }
-              }
-            }
+    // check max limit, set null if exceeds the max value
+    val baseWithFixCv = withResource(Scalar.fromLong(maxInBase)) { maxScalar =>
+      withResource(Scalar.fromNull(DType.INT64)) { nullScalar =>
+        withResource(base.castTo(DType.INT64)) { baseLong =>
+          withResource(baseLong.greaterThan(maxScalar)) { greater =>
+            greater.ifElse(nullScalar, baseLong)
           }
         }
+      }
+    }
+    val baseWithSignCv = withResource(baseWithFixCv) { baseWithFix =>
+      baseWithFix.mul(sign)
+    }
+    withResource(baseWithSignCv) { baseWithSign =>
+      withResource(Scalar.fromLong(multiple)) { multipleScalar =>
+        baseWithSign.mul(multipleScalar)
       }
     }
   }
@@ -545,11 +548,12 @@ object GpuIntervalUtils extends Arm {
    */
   private def multiple(
       sign: ColumnVector, groupInTable: ColumnVector, multiple: Long): ColumnVector = {
-    withResource(groupInTable.castTo(DType.INT64)) { baseLong =>
-      withResource(baseLong.mul(sign)) { baseWithSign =>
-        withResource(Scalar.fromLong(multiple)) { multipleScalar =>
-          baseWithSign.mul(multipleScalar)
-        }
+    val baseWithSignCv = withResource(groupInTable.castTo(DType.INT64)) { baseLong =>
+      baseLong.mul(sign)
+    }
+    withResource(baseWithSignCv) { baseWithSign =>
+      withResource(Scalar.fromLong(multiple)) { multipleScalar =>
+        baseWithSign.mul(multipleScalar)
       }
     }
   }
