@@ -32,7 +32,7 @@ original_avro_file_reader_conf = {'spark.rapids.sql.format.avro.reader.type': 'P
 #coalescing_avro_file_reader_conf = {'spark.rapids.sql.format.avro.reader.type': 'COALESCING'}
 reader_opt_confs = [original_avro_file_reader_conf]
 
-@pytest.mark.parametrize('name', ['alltypes_plain.avro'])
+@pytest.mark.parametrize('name', ['simple.avro'])
 @pytest.mark.parametrize('read_func', [read_avro_df])
 @pytest.mark.parametrize('v1_enabled_list', ["avro"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)

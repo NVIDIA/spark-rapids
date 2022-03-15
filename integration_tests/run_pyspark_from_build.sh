@@ -215,7 +215,7 @@ else
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-            --packages org.apache.spark:spark-avro_2.12:3.2.0 \
+            --packages org.apache.spark:spark-avro_2.12:"$VERSION_STRING" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
