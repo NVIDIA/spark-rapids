@@ -20,11 +20,12 @@ import java.io.OutputStream
 import java.net.URI
 
 import scala.annotation.tailrec
+import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.ArrayBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, ColumnarPartitionReaderWithPartitionValues, FilePartitionReaderBase, GpuBatchUtils, GpuColumnVector, GpuMetric, GpuSemaphore, HostMemoryOutputStream, NvtxWithMetrics, PartitionReaderWithBytesRead, RapidsConf, RapidsMeta}
+import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.rapids.{Arm, AvroFormatType, ColumnarPartitionReaderWithPartitionValues, FileFormatChecks, FilePartitionReaderBase, GpuBatchUtils, GpuColumnVector, GpuMetric, GpuSemaphore, HostMemoryOutputStream, NvtxWithMetrics, PartitionReaderWithBytesRead, RapidsConf, RapidsMeta, ReadFileOp, ScanMeta, ScanWithMetrics}
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.avro.mapred.FsInput
@@ -38,16 +39,29 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.avro.AvroOptions
 import org.apache.spark.sql.avro.rapids.{AvroDataFileReader, BlockInfo, Header}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.connector.read.PartitionReader
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 object GpuAvroScan {
+
+  def tagSupport(scanMeta: ScanMeta[AvroScan]) : Unit = {
+    val scan = scanMeta.wrapped
+    tagSupport(
+      scan.sparkSession,
+      scan.readDataSchema,
+      scan.options.asScala.toMap,
+      scanMeta)
+  }
 
   def tagSupport(
       sparkSession: SparkSession,
@@ -55,7 +69,8 @@ object GpuAvroScan {
       options: Map[String, String],
       meta: RapidsMeta[_, _, _]): Unit = {
 
-    val parsedOptions = new AvroOptions(options, new Configuration())
+    val hadoopConf = sparkSession.sessionState.newHadoopConfWithOptions(options)
+    val parsedOptions = new AvroOptions(options, hadoopConf)
 
     if (!meta.conf.isAvroEnabled) {
       meta.willNotWorkOnGpu("Avro input and output has been disabled. To enable set " +
@@ -70,8 +85,61 @@ object GpuAvroScan {
     if (parsedOptions.positionalFieldMatching) {
       meta.willNotWorkOnGpu("GpuAvroScan does not support positionalFieldMatching")
     }
+
+    FileFormatChecks.tag(meta, readSchema, AvroFormatType, ReadFileOp)
   }
 
+}
+
+case class GpuAvroScan(
+    sparkSession: SparkSession,
+    fileIndex: PartitioningAwareFileIndex,
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    readPartitionSchema: StructType,
+    options: CaseInsensitiveStringMap,
+    pushedFilters: Array[Filter],
+    rapidsConf: RapidsConf,
+    partitionFilters: Seq[Expression] = Seq.empty,
+    dataFilters: Seq[Expression] = Seq.empty) extends FileScan with ScanWithMetrics {
+  override def isSplitable(path: Path): Boolean = true
+
+  override def createReaderFactory(): PartitionReaderFactory = {
+    val caseSensitiveMap = options.asCaseSensitiveMap.asScala.toMap
+    // Hadoop Configurations are case sensitive.
+    val hadoopConf = sparkSession.sessionState.newHadoopConfWithOptions(caseSensitiveMap)
+    val broadcastedConf = sparkSession.sparkContext.broadcast(
+      new SerializableConfiguration(hadoopConf))
+    // The partition values are already truncated in `FileScan.partitions`.
+    // We should use `readPartitionSchema` as the partition schema here.
+    GpuAvroPartitionReaderFactory(
+      sparkSession.sessionState.conf,
+      broadcastedConf,
+      dataSchema,
+      readDataSchema,
+      readPartitionSchema,
+      rapidsConf,
+      true,
+      metrics)
+  }
+
+  override def withFilters(
+    partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+
+  override def equals(obj: Any): Boolean = obj match {
+    case a: AvroScan => super.equals(a) && dataSchema == a.dataSchema && options == a.options &&
+      equivalentFilters(pushedFilters, a.pushedFilters)
+    case _ => false
+  }
+
+  override def description(): String = {
+    super.description() + ", PushedFilters: " + pushedFilters.mkString("[", ", ", "]")
+  }
+
+  override def getMetaData(): Map[String, String] = {
+    super.getMetaData() ++ Map("PushedFilters" -> seqToString(pushedFilters))
+  }
 }
 
 /** Avro partition reader factory to build columnar reader */
@@ -247,7 +315,7 @@ class AvroPartitionReader(
 
         val includeColumns = readDataSchema.fieldNames.toSeq
 
-        val parseOpts = AvroOptions.builder()
+        val parseOpts = CudfAvroOptions.builder()
           .includeColumn(includeColumns: _*).build()
 
         // about to start using the GPU
