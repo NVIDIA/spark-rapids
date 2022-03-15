@@ -64,24 +64,32 @@ else
     if [[ "${TEST_PARALLEL}" == "" ]];
     then
         # For integration tests we want to have at least
-        #  - 2 GiB of GPU memory
-        #  - 5 GiB of host memory
+        #  - 1.5 GiB of GPU memory for the tests and 750 MiB for loading CUDF + CUDA.
+        #    From profiling we saw that tests allocated under 200 MiB of GPU memory and
+        #    1.5 GiB felt like it gave us plenty of room to grow.
+        #  - 5 GiB of host memory. In testing with a limited number of tasks (4) we saw
+        #    the amount of host memory not go above 3 GiB so 5 felt like a good number
+        #    for future growth.
         #  - 1 CPU core
-        # per Spark application. And we want to reserve 2 GiB of GPU memory for CUDA/etc.
+        # per Spark application. We reserve 2 GiB of GPU memory for general overhead also.
 
-        # For now just assume that we are going to use the GPU on the
-        # system with the most free memory.
-        # We use free memory to try and avoid issues if the GPU also is working
-        # on graphics, which happens some times.
-        # we also reserve 2 GiB for CUDA/CUDF overhead on the GPU.
-        
-        GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024)/ ((1.5 * 1024) + 750))}'`
+        # For now just assume that we are going to use the GPU on the system with the most
+        # free memory. We use free memory to try and avoid issues if the GPU also is working
+        # on graphics, which happens with many workstation GPUs. We also reserve 2 GiB for
+        # CUDA/CUDF overhead which can be used because of JIT or launching large kernels.
+       
+        # If you need to increase the amount of GPU memory you need to change it here and
+        # below where the processes are launched.
+        GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
         CPU_CORES=`nproc` 
         HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024))}'`
-        TMP_PARALLEL=$(( $GPU_MEM_PARALLEL>$CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
-        TMP_PARALLEL=$(( $TMP_PARALLEL>$HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
+        TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
+        TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
         if [[ $TMP_PARALLEL -gt 1 ]];
         then
+            # We subtract 1 from the parallel number because xdist launches a process to
+            # control and monitor the other processes. It takes up one available parallel
+            # slot, even if it is not truly using all of the resources we give it.
             TEST_PARALLEL=$(( $TMP_PARALLEL - 1 ))
         else
             TEST_PARALLEL=1
@@ -160,7 +168,8 @@ else
     # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
     export PYSP_TEST_spark_rapids_memory_host_spillStorageSize='100m'
-    # Not the default 2G but should be large enough for a single batch for all data
+    # Not the default 2G but should be large enough for a single batch for all data (we found
+    # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
@@ -189,21 +198,28 @@ else
       # If a master is not specified, use "local[cores, $SPARK_TASK_MAXFAILURES]"
       if [ -z "${PYSP_TEST_spark_master}" ] && [[ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]]; then
         CPU_CORES=`nproc` 
+        # We are limiting the number of tasks in local mode to 4 because it helps to reduce the
+        # total memory usage, especially host memory usage because when copying data to the GPU
+        # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
         LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
 
-    # CUDA + RAPIDS has a faiurly large overhead (over 500 MiB) so we keep the memory limit 750 MiB < what we checked for
+    # If you want to change the amount of GPU memory allocated you have to change it here 
+    # and where TEST_PARALLEL is calculated
+    export PYSP_TEST_spark_rapids_memory_gpu_allocSize='1536m'
+
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
-        export PYSP_TEST_spark_rapids_memory_gpu_allocSize='1536m'
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
+        # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
+        # because it helps us have consistent test runs.
         exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS \
-            --conf 'spark.rapids.memory.gpu.allocSize=1536m' \
+            --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
