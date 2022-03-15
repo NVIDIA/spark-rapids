@@ -4,17 +4,55 @@
 import random
 from data_gen import *
 
-def gen_schema():
+def gen_schema(depth):
     """
-    So far, we only support generate elements with string type field
+    Abstruct data type of JSON schema
+    type Schema = Object of Fields 
+                | Array of Schema 
+                | String
+                | Number 
+                | Bool
+    type Fields = Field list
+    type Field = {Name, Schema}
+    type Name = String
     """
-    fields = random.randint(1, 5)
+    if depth > 1 and random.randint(1, 100) < 90:
+        return random.choice([gen_object_type, gen_array_type])(depth)
+    else:
+        return random.choice([gen_string_type, gen_number_type, gen_bool_type])()
+
+
+def gen_object_type(depth):
+    return StructType(gen_fields_type(depth-1))
+
+def gen_array_type(depth):
+    return ArrayType(gen_schema(depth-1))
+
+def gen_fields_type(depth):
+    length = random.randint(0, 5)
+    return [gen_field_type(depth) for _ in range(length)]
+
+def gen_field_type(depth):
+    return StructField(gen_name(), gen_schema(depth-1))
+
+def gen_string_type():
+    return StringType()
+
+def gen_number_type():
+    return random.choice([IntegerType(), FloatType(), DoubleType()])
+
+def gen_bool_type():
+    return BooleanType()
+
+def gen_name():
     name_gen = StringGen(nullable= False)
     name_gen.start(random)
-    return StructType([StructField('"' + name_gen.gen() + '"', StringType()) for _ in range(fields)])
+    return name_gen.gen()
 
 # This is just a simple prototype of JSON generator.
-# Run
+# You need to generate a JSON schema before using it.
+#
+# #Example
 # ```python
 # schema = gen_schema()
 # with open("./temp.json", 'w') as f:
@@ -52,6 +90,9 @@ def gen_value(schema: DataType):
             yield t
     elif isinstance(schema, BooleanType):
         for t in gen_bool():
+            yield t 
+    elif isinstance(schema, IntegerType):
+        for t in gen_integer():
             yield t 
     elif isinstance(schema, (FloatType, DoubleType)):
         for t in gen_number():
@@ -111,13 +152,23 @@ def gen_member(schema: StructField):
 def gen_array(schema: DataType):
     yield '['
 
-    for t in random.choices([gen_whitespace(), gen_elements()], [10, 90], k=1)[0]:
+    for t in random.choices([gen_whitespace(), gen_elements(schema)], [10, 90], k=1)[0]:
         yield t
 
     yield ']'
 
 def gen_elements(schema: DataType):
-    yield None
+    """
+    ELEMENTS -> ELEMENT 
+              | ELEMENT ',' ELEMENTS
+    """
+    for t in gen_element(schema):
+        yield t 
+    
+    if random.randint(1, 100) < 80:
+        yield ','
+        for t in gen_elements(schema):
+            yield t 
 
 def gen_element(schema: DataType):
     """
@@ -208,7 +259,6 @@ def gen_number():
         yield t 
     for t in gen_exponent():
         yield t 
-    yield None
 
 def gen_integer():
     """
@@ -220,7 +270,26 @@ def gen_integer():
     if random.randint(1, 100) <= 50:
         yield '-'
     
-    
+    if random.randint(1, 100) <= 50:
+        for t in gen_digit():
+            yield t 
+    else:
+        for t in gen_onenine():
+            yield t 
+        for t in gen_digits():
+            yield t 
+
+def gen_digits():
+    """
+    DIGITS -> DIGIT 
+            | DIGIT DIGITS
+    """
+    for t in gen_digit():
+        yield t 
+
+    if random.randint(1, 100) < 70:
+        for t in gen_digits():
+            yield t 
 
 def gen_digit():
     """
@@ -240,13 +309,38 @@ def gen_onenine():
     yield chr(random.randint(0x31, 0x39))
 
 def gen_fraction():
-    yield None
+    """
+    FRACTION -> "" | '.' DIGITS
+    """
+    if random.randint(1, 100) < 50:
+        yield ""
+    else:
+        yield '.'
+        for t in gen_digits():
+            yield t 
 
 def gen_exponent():
-    yield None
+    """
+    EXPONENT -> "" 
+              | 'E' SIGN DIGITS 
+              | 'e' SIGN DIGITS
+    """
+    if random.randint(1, 100) < 20:
+        yield ""
+    else:
+        yield random.choice(['E', 'e'])
+        for t in gen_sign():
+            yield t 
+        for t in gen_digits():
+            yield t 
 
 def gen_sign():
-    yield None
+    """
+    SIGN -> "" 
+          | '+' 
+          | '-'
+    """
+    yield random.choice(["", '+', '-'])
 
 def gen_whitespace():
     """
@@ -271,8 +365,10 @@ def gen_bool():
     """
     yield random.choice(["true", "null", "false"])
 
+
+
 def test_json_gen():
-    schema = gen_schema()
+    schema = gen_schema(5)
     with open("./temp.json", 'w') as f:
         for t in gen_json(schema):
             f.write(t)
