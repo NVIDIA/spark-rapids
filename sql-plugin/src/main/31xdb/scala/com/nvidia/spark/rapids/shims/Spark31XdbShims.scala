@@ -363,7 +363,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all,
           Map("partitionSpec" ->
-              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
                 TypeSig.all))),
           (runningWindowFunctionExec, conf, p, r) =>
             new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
