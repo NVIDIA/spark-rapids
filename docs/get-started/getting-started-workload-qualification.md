@@ -188,7 +188,21 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 
 4. Run the function `explainPotentialGpuPlan` on the query DataFrame.
 
-   For example:
+   Scala API:
+   ```scala
+   val output=com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df)
+   ```
+
+   Python API:
+   ```python
+   output = sparkSession._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+   ```
+   The parameters are:
+     - First parameter, `df` is the Spark DataFrame to get the query plan from.
+     - Second parameter, `ALL` returns all the explain data, you can change to `NOT_ON_GPU` to return just what
+       does not work on the GPU. The scala API, ALL is the default when second parameter is not specified.
+
+   Example:
 
    ```scala
    val jdbcDF = spark.read.format("jdbc").
@@ -210,8 +224,7 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
    ```
    ! <RowDataSourceScanExec> cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.RowDataSourceScanExec
    ```
-
-This log can show you which operators (on what data type) can not run on GPU and the reason.
+The output will show you which operators (on what data type) can not run on GPU and the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
 you should first understand the risk and applicability of that parameter based on 
 [configs doc](../configs.md) and then enable that parameter and try the tool again.
