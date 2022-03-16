@@ -175,7 +175,7 @@ output = sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df.
 
 Parameters:  
 `df` - The Spark DataFrame to get the query plan from  
-`explain` - If `ALL` returns all the explain data, otherwise just returns what does not
+`explain` - If ALL returns all the explain data, otherwise just returns what does not
           work on the GPU. Default is ALL.
 
 Returns:  
