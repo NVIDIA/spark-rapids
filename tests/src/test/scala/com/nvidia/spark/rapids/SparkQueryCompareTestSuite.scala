@@ -150,7 +150,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def enableCsvConf(): SparkConf = {
     new SparkConf()
-        .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat
@@ -1736,6 +1735,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def datesCsvDf= {
     fromCsvDf("dates.csv", StructType(Array(
+      StructField("dates", DateType, false),
+      StructField("ints", IntegerType, false)
+    )))(_)
+  }
+
+  def timestampsAsDatesCsvDf= {
+    fromCsvDf("timestamps.csv", StructType(Array(
       StructField("dates", DateType, false),
       StructField("ints", IntegerType, false)
     )))(_)

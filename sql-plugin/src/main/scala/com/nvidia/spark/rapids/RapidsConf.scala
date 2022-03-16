@@ -890,11 +890,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val ENABLE_READ_CSV_DATES = conf("spark.rapids.sql.csv.read.date.enabled")
-      .doc("Parsing invalid CSV dates produces different results from Spark")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -940,10 +935,11 @@ object RapidsConf {
 
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
-      "can cause out of memory issues. Setting this config to false will make any operation " +
-      "using regular expressions fall back to CPU.")
+      "can cause out of memory issues so this is disabled by default. Setting this config to " +
+      "true will make supported regular expressions run on the GPU. See the compatibility " +
+      "guide for more information about which regular expressions are supported on the GPU.")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -1496,14 +1492,23 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
   lazy val rmmPool: String = {
-    val pool = get(RMM_POOL)
-    if ("ASYNC".equalsIgnoreCase(pool) &&
-        (Cuda.getRuntimeVersion < 11020 || Cuda.getDriverVersion < 11020)) {
-      logWarning("CUDA runtime/driver does not support the ASYNC allocator, falling back to ARENA")
-      "ARENA"
-    } else {
-      pool
+    var pool = get(RMM_POOL)
+    if ("ASYNC".equalsIgnoreCase(pool)) {
+      val driverVersion = Cuda.getDriverVersion
+      val runtimeVersion = Cuda.getRuntimeVersion
+      var fallbackMessage: Option[String] = None
+      if (runtimeVersion < 11020 || driverVersion < 11020) {
+        fallbackMessage = Some("CUDA runtime/driver does not support the ASYNC allocator")
+      } else if (driverVersion < 11050) {
+        fallbackMessage = Some("CUDA drivers before 11.5 have known incompatibilities with " +
+          "the ASYNC allocator")
+      }
+      if (fallbackMessage.isDefined) {
+        logWarning(s"${fallbackMessage.get}, falling back to ARENA")
+        pool = "ARENA"
+      }
     }
+    pool
   }
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
@@ -1585,8 +1590,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
-
-  lazy val isCsvDateReadEnabled: Boolean = get(ENABLE_READ_CSV_DATES)
 
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
