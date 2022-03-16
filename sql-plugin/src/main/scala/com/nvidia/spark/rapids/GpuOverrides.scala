@@ -62,6 +62,7 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
 /**
@@ -428,6 +429,9 @@ object OrcFormatType extends FileFormatType {
 }
 object JsonFormatType extends FileFormatType {
   override def toString = "JSON"
+}
+object AvroFormatType extends FileFormatType {
+  override def toString = "Avro"
 }
 
 sealed trait FileFormatOp
@@ -823,6 +827,11 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        TypeSig.UDT).nested())),
+    (AvroFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
@@ -3443,6 +3452,23 @@ object GpuOverrides extends Logging {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes)
+      }),
+    GpuOverrides.scan[AvroScan](
+      "Avro parsing",
+      (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuAvroScan.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuAvroScan(a.sparkSession,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.pushedFilters,
+            conf,
+            a.partitionFilters,
+            a.dataFilters)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
