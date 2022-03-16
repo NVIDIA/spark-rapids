@@ -197,10 +197,9 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
    ```python
    output = sparkSession._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
    ```
-   The parameters are:
      - First parameter, `df` is the Spark DataFrame to get the query plan from.
      - Second parameter, `ALL` returns all the explain data, you can change to `NOT_ON_GPU` to return just what
-       does not work on the GPU. The scala API, ALL is the default when second parameter is not specified.
+       does not work on the GPU. The Scala API, ALL is the default when second parameter is not specified.
 
    Example:
 
