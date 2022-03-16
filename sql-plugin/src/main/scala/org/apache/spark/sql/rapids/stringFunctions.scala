@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
@@ -1341,18 +1341,19 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
       } else {
         if (utf8Str.numChars() == 0) {
           willNotWorkOnGpu("An empty delimiter pattern is not supported")
-        } else {
-          val str = utf8Str.toString
-          isRegExp = RegexParser.isRegExpString(str)
-          if (isRegExp) {
+        }
+        val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+        transpiler.transpileToSplittableString(utf8Str.toString) match {
+          case Some(simplified) =>
+            pattern = simplified
+          case None =>
             try {
-              pattern = new CudfRegexTranspiler(RegexSplitMode).transpile(str)
+              pattern = transpiler.transpile(utf8Str.toString)
+              isRegExp = true
             } catch {
-              case e: RegexUnsupportedException => willNotWorkOnGpu(e.getMessage)
+              case e: RegexUnsupportedException =>
+                willNotWorkOnGpu(e.getMessage)
             }
-          } else {
-            pattern = str
-          }
         }
       }
     }

@@ -143,7 +143,7 @@ pipeline {
                         echo "failed to try abort duplicate builds: " + e.toString()
                     }
 
-                    def title = githubHelper.getIssue().title
+                    def title = githubHelper.getIssue().title.toLowerCase()
                     if (title ==~ /.*\[skip ci\].*/) {
                         githubHelper.updateCommitStatus("$BUILD_URL", "Skipped", GitHubCommitState.SUCCESS)
                         currentBuild.result == "SUCCESS"

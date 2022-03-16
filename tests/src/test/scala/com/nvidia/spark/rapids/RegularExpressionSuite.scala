@@ -15,12 +15,15 @@
  */
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   private val conf = new SparkConf()
+    .set(RapidsConf.ENABLE_REGEXP.key, "true")
 
   testGpuFallback(
     "String regexp_replace replace str columnar fall back",
@@ -38,7 +41,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => {
       // this test is only valid in Spark 3.0.x because the expression is NullIntolerant
       // since Spark 3.1.0 and gets replaced with a null literal instead
-      val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
+      val isValidTestForSparkVersion = SparkShimImpl.getSparkShimVersion match {
         case SparkShimVersion(major, minor, _) => major == 3 && minor == 0
         case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor == 0

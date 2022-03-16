@@ -115,6 +115,7 @@ trait SparkShims {
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+  def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()
 
   def getScalaUDFAsExpression(
     function: AnyRef,
@@ -302,9 +303,6 @@ trait SparkShims {
   * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
   */
   def getLegacyStatisticalAggregate(): Boolean
-
-
-  def dateFormatInRead(fileOptions: Serializable): Option[String]
 
   def timestampFormatInRead(fileOptions: Serializable): Option[String]
 

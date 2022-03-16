@@ -20,7 +20,7 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
+import com.nvidia.spark.rapids.shims.TypeSigUtil
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
@@ -667,6 +667,12 @@ object TypeSig {
   val comparable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL_128 + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
       UDT).nested()
+
+  /**
+   * commonCudfTypes plus decimal, null and nested types.
+   */
+  val commonCudfTypesWithNested: TypeSig = (commonCudfTypes + DECIMAL_128 + NULL +
+      ARRAY + STRUCT + MAP).nested()
 
   /**
    * Different types of Pandas UDF support different sets of output type. Please refer to
@@ -2116,7 +2122,6 @@ object SupportedOpsForTools {
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
             t.toString match {
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
-              case "DATE" => conf.isCsvDateReadEnabled
               case _ => true
             }
           } else {

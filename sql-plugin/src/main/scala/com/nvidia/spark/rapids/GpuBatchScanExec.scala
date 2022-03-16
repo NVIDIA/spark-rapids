@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -29,7 +30,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.csv.CSVOptions
+import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
@@ -39,6 +40,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -211,15 +213,14 @@ object GpuCSVScan {
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      if (!meta.conf.isCsvDateReadEnabled) {
-        meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading dates. " +
-            s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DATES} to true.")
+      if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+        // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
+        // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
+        // so we fall back to CPU
+        meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
       }
-      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
-      }
+      DateUtils.tagAndGetCudfFormat(meta,
+        GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {
@@ -230,7 +231,7 @@ object GpuCSVScan {
       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+      SparkShimImpl.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
         val parts = tsFormat.split("'T'", 2)
         if (parts.isEmpty) {
           meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
@@ -412,4 +413,5 @@ class CSVPartitionReader(
     }
   }
 
+  override def dateFormat: String = GpuCsvUtils.dateFormatInRead(parsedOptions)
 }

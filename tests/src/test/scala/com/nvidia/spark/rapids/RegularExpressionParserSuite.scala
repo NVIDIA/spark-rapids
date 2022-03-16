@@ -124,6 +124,11 @@ class RegularExpressionParserSuite extends FunSuite {
       RegexSequence(ListBuffer(RegexHexDigit("FF"))))
   }
 
+  test("variable length hex digit") {
+    assert(parse(raw"\x{ABC}") ===
+      RegexSequence(ListBuffer(RegexHexDigit("ABC"))))
+  }
+
   test("octal digit") {
     val digits = Seq("0", "01", "076", "077", "0123", "0177", "0377")
     for (digit <- digits) {

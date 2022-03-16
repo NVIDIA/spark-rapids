@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
-import com.nvidia.spark.rapids.shims.v2.ParquetFieldIdShims
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -44,6 +44,9 @@ object GpuParquetFileFormat {
       schema: StructType): Option[GpuParquetFileFormat] = {
 
     val sqlConf = spark.sessionState.conf
+
+    ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema, sqlConf)
+
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
     if (!meta.conf.isParquetEnabled) {
@@ -88,7 +91,7 @@ object GpuParquetFileFormat {
     }
 
 
-    ShimLoader.getSparkShims.int96ParquetRebaseWrite(sqlConf) match {
+    SparkShimImpl.int96ParquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" =>
       case "CORRECTED" =>
       case "LEGACY" =>
@@ -99,7 +102,7 @@ object GpuParquetFileFormat {
         meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
     }
 
-    ShimLoader.getSparkShims.parquetRebaseWrite(sqlConf) match {
+    SparkShimImpl.parquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" => //Good
       case "CORRECTED" => //Good
       case "LEGACY" =>
@@ -158,15 +161,15 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     val outputTimestampType = sqlConf.parquetOutputTimestampType
     val dateTimeRebaseException = "EXCEPTION".equals(
-      sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
+      sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
     // prior to spark 311 int96 don't check for rebase exception
     // https://github.com/apache/spark/blob/068465d016447ef0dbf7974b1a3f992040f4d64d/sql/core/src/
     // main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetWriteSupport.scala#L195
-    val hasSeparateInt96RebaseConf = ShimLoader.getSparkShims.hasSeparateINT96RebaseConf
+    val hasSeparateInt96RebaseConf = SparkShimImpl.hasSeparateINT96RebaseConf
     val timestampRebaseException =
       outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
           "EXCEPTION".equals(sparkSession.sqlContext
-              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey)) &&
+              .getConf(SparkShimImpl.int96ParquetRebaseWriteKey)) &&
           hasSeparateInt96RebaseConf ||
           !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
 

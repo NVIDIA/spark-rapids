@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode, SparkShimImpl}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
@@ -32,6 +32,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
@@ -93,12 +94,12 @@ object HostColumnarToGpu extends Logging {
     }
 
     val nullCount = valVector.getNullCount()
-    val dataBuf = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowDataBuf(valVector))
-    val validity = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowValidityBuf(valVector))
+    val dataBuf = getBufferAndAddReference(SparkShimImpl.getArrowDataBuf(valVector))
+    val validity = getBufferAndAddReference(SparkShimImpl.getArrowValidityBuf(valVector))
     // this is a bit ugly, not all Arrow types have the offsets buffer
     var offsets: ByteBuffer = null
     try {
-      offsets = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector))
+      offsets = getBufferAndAddReference(SparkShimImpl.getArrowOffsetsBuf(valVector))
     } catch {
       case _: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer
@@ -128,12 +129,27 @@ object HostColumnarToGpu extends Logging {
         ColumnarCopyHelper.doubleCopy(cv, b, rows)
       case StringType =>
         ColumnarCopyHelper.stringCopy(cv, b, rows)
-      case dt: DecimalType if DecimalType.is32BitDecimalType(dt) =>
-        ColumnarCopyHelper.decimal32Copy(cv, b, rows, dt.precision, dt.scale)
-      case dt: DecimalType if DecimalType.is64BitDecimalType(dt) =>
-        ColumnarCopyHelper.decimal64Copy(cv, b, rows, dt.precision, dt.scale)
       case dt: DecimalType =>
-        ColumnarCopyHelper.decimal128Copy(cv, b, rows, dt.precision, dt.scale)
+        cv match {
+          case wcv: WritableColumnVector =>
+            if (DecimalType.is32BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal32Copy(wcv, b, rows)
+            } else if (DecimalType.is64BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal64Copy(wcv, b, rows)
+            } else {
+              ColumnarCopyHelper.decimal128Copy(wcv, b, rows)
+            }
+          case _ =>
+            if (DecimalType.is32BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal32Copy(cv, b, rows, dt.precision, dt.scale)
+            } else if (DecimalType.is64BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal64Copy(cv, b, rows, dt.precision, dt.scale)
+            } else {
+              ColumnarCopyHelper.decimal128Copy(cv, b, rows, dt.precision, dt.scale)
+            }
+        }
+      case other if GpuTypeShims.isColumnarCopySupportedForType(other) =>
+        GpuTypeShims.columnarCopy(cv, b, rows)
       case t =>
         throw new UnsupportedOperationException(
           s"Converting to GPU for $t is not currently supported")

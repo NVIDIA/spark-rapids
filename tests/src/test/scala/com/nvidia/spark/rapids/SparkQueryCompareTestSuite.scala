@@ -20,10 +20,10 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.scalatest.{Assertion, FunSuite}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
-
-import org.scalatest.{Assertion, FunSuite}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -150,7 +150,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def enableCsvConf(): SparkConf = {
     new SparkConf()
-        .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat
@@ -1741,6 +1740,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
+  def timestampsAsDatesCsvDf= {
+    fromCsvDf("timestamps.csv", StructType(Array(
+      StructField("dates", DateType, false),
+      StructField("ints", IntegerType, false)
+    )))(_)
+  }
+
   private def setNullableStateForAllColumns(df: DataFrame, nullable: Boolean) : DataFrame = {
     // get schema
     val schema = df.schema
@@ -1833,7 +1839,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     assume(!VersionUtils.isSpark311OrLater, "Spark version not before 3.1.1")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val sparkShimVersion = SparkShimImpl.getSparkShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)

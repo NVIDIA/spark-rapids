@@ -612,6 +612,33 @@ class NullGen(DataGen):
             return None
         self._start(rand, make_null)
 
+# DayTimeIntervalGen is for Spark 3.3.0+
+# DayTimeIntervalType(startField, endField): Represents a day-time interval which is made up of a contiguous subset of the following fields:
+#   SECOND, seconds within minutes and possibly fractions of a second [0..59.999999],
+#   MINUTE, minutes within hours [0..59],
+#   HOUR, hours within days [0..23],
+#   DAY, days in the range [0..106751991].
+# For more details: https://spark.apache.org/docs/latest/sql-ref-datatypes.html
+# Note: 106751991/365 = 292471 years which is much bigger than 9999 year, seems something is wrong
+class DayTimeIntervalGen(DataGen):
+    """Generate DayTimeIntervalType values"""
+    def __init__(self, max_days = None, nullable=True, special_cases =[timedelta(seconds = 0)]):
+        super().__init__(DayTimeIntervalType(), nullable=nullable, special_cases=special_cases)
+        if max_days is None:
+            self._max_days = 106751991
+        else:
+            self._max_days = max_days
+    def start(self, rand):
+        self._start(rand,
+            lambda : timedelta(
+                microseconds = rand.randint(0, 999999),
+                seconds = rand.randint(0, 59),
+                minutes = rand.randint(0, 59),
+                hours = rand.randint(0, 23),
+                days = rand.randint(0, self._max_days),
+            )
+        )
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
@@ -931,6 +958,8 @@ decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for g
 map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
+nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}

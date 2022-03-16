@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,6 @@ package com.nvidia.spark.rapids
  * A Spark version shim layer interface.
  */
 trait SparkShimServiceProvider {
+  def getShimVersion: ShimVersion
   def matchesVersion(version:String): Boolean
-  def buildShim: SparkShims
 }

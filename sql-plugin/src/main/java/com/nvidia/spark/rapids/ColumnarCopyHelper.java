@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.HostColumnVector.ColumnBuilder;
 
+import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.vectorized.ColumnVector;
 
 /**
@@ -162,7 +163,30 @@ public class ColumnarCopyHelper {
     }
   }
 
-  // TODO: https://github.com/NVIDIA/spark-rapids/issues/4784
+  public static void decimal32Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
+    intCopy(cv, b, rows);
+  }
+
+  public static void decimal64Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
+    longCopy(cv, b, rows);
+  }
+
+  public static void decimal128Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
+    if (!cv.hasNull()) {
+      for (int i = 0; i < rows; i++) {
+        b.appendDecimal128(cv.getBinary(i));
+      }
+      return;
+    }
+    for (int i = 0; i < rows; i++) {
+      if (cv.isNullAt(i)) {
+        b.appendNull();
+      } else {
+        b.appendDecimal128(cv.getBinary(i));
+      }
+    }
+  }
+
   public static void decimal32Copy(ColumnVector cv, ColumnBuilder b, int rows,
       int precision, int scale) {
     if (!cv.hasNull()) {

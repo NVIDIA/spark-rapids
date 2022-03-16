@@ -17,15 +17,14 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
 
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
 
-# cache does not work with 128-bit decimals, see https://github.com/NVIDIA/spark-rapids/issues/4826
-_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit]
+_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
 _cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_null + _cache_decimal_gens]
 
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(_cache_decimal_gens)])
@@ -286,3 +285,15 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
         return df.selectExpr("a")
 
     assert_gpu_and_cpu_are_equal_collect(helper)
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@ignore_order(local=True)
+def test_cache_daytimeinterval(enable_vectorized_conf):
+    def test_func(spark):
+        df = two_col_df(spark, DayTimeIntervalGen(), int_gen)
+        df.cache().count()
+        return df.selectExpr("b", "a")
+    assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)
+
