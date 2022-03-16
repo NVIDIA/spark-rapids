@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.DType
+import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.ColumnarCopyHelper
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
 
@@ -117,5 +117,30 @@ object GpuTypeShims {
   def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = colType match {
     case DayTimeIntervalType(_, _) => true
     case _ => false
+  }
+
+  /**
+   * Whether the Shim supports converting the given type to GPU Scalar
+   */
+  def supportToScalarForType(t: DataType): Boolean = {
+    t match {
+      case _: DayTimeIntervalType => true
+      case _ => false
+    }
+  }
+
+  /**
+   * Convert the given value to Scalar
+   */
+  def toScalarForType(t: DataType, v: Any) = {
+    t match {
+      case _: DayTimeIntervalType => v match {
+        case l: Long => Scalar.fromLong(l)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+            s" for LongType, expecting Long")
+      }
+      case _ =>
+        throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
+    }
   }
 }

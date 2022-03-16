@@ -62,4 +62,16 @@ object GpuTypeShims {
   }
 
   def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = false
+
+  /**
+   * Whether the Shim supports converting the given type to GPU Scalar
+   */
+  def supportToScalarForType(t: DataType): Boolean = false
+
+  /**
+   * Convert the given value to Scalar
+   */
+  def toScalarForType(t: DataType, v: Any) = {
+    throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
+  }
 }
