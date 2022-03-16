@@ -101,12 +101,16 @@ case class GpuAvroScan(
     dataFilters: Seq[Expression] = Seq.empty) extends FileScan with ScanWithMetrics {
   override def isSplitable(path: Path): Boolean = true
 
+  @scala.annotation.nowarn(
+    "msg=value ignoreExtension in class AvroOptions is deprecated*"
+  )
   override def createReaderFactory(): PartitionReaderFactory = {
     val caseSensitiveMap = options.asCaseSensitiveMap.asScala.toMap
     // Hadoop Configurations are case sensitive.
     val hadoopConf = sparkSession.sessionState.newHadoopConfWithOptions(caseSensitiveMap)
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
+    val parsedOptions = new AvroOptions(caseSensitiveMap, hadoopConf)
     // The partition values are already truncated in `FileScan.partitions`.
     // We should use `readPartitionSchema` as the partition schema here.
     GpuAvroPartitionReaderFactory(
@@ -116,7 +120,7 @@ case class GpuAvroScan(
       readDataSchema,
       readPartitionSchema,
       rapidsConf,
-      true,
+      parsedOptions.ignoreExtension,
       metrics)
   }
 

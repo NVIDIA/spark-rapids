@@ -34,9 +34,8 @@ import org.apache.spark.util.SerializableConfiguration
  */
 class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMetrics {
 
-
   @scala.annotation.nowarn(
-    "msg=ignoreExtension in AvroOptions is deprecated"
+    "msg=value ignoreExtension in class AvroOptions is deprecated*"
   )
   override def buildReaderWithPartitionValuesAndMetrics(
       sparkSession: SparkSession,
@@ -52,7 +51,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
     val parsedOptions = new AvroOptions(options, hadoopConf)
-    val ignoreExtension = true // parsedOptions.ignoreExtension
+    val ignoreExtension = parsedOptions.ignoreExtension
 
     val factory = GpuAvroPartitionReaderFactory(
       sqlConf,
