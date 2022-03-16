@@ -17,20 +17,24 @@
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
+
+import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Coalesce, DynamicPruningExpression, Expression, MetadataAttribute, RoundCeil, RoundFloor, TimeAdd}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.json.rapids.shims.Spark33XFileOptionsShims
-import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, FilterExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuCeil, GpuFileSourceScanExec, GpuFloor, GpuFloorCeil}
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -70,10 +74,10 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
   }
 
   override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (meta.wrapped.expressions.exists(expr => expr match {
-      case MetadataAttribute(expr) => true
+    if (meta.wrapped.expressions.exists {
+      case FileSourceMetadataAttribute(_) => true
       case _ => false
-    })) {
+    }) {
       meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
     }
     super.tagFileSourceScanExec(meta)
@@ -215,6 +219,101 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuTimeAdd(lhs, rhs)
+        }),
+      GpuOverrides.expr[IsNull](
+        "Checks if a value is null",
+        ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
+              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+          TypeSig.all),
+        (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
+        }),
+      GpuOverrides.expr[IsNotNull](
+        "Checks if a value is not null",
+        ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
+              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+          TypeSig.all),
+        (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
+        }),
+      GpuOverrides.expr[EqualNullSafe](
+        "Check if the values are equal including nulls <=>",
+        ExprChecks.binaryProject(
+          TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.comparable),
+          ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.comparable)),
+        (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuEqualNullSafe(lhs, rhs)
+        }),
+      GpuOverrides.expr[EqualTo](
+        "Check if the values are equal",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.comparisonAstTypes,
+          TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.comparable),
+          ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.comparable)),
+        (a, conf, p, r) => new BinaryAstExprMeta[EqualTo](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuEqualTo(lhs, rhs)
+        }),
+      GpuOverrides.expr[GreaterThan](
+        "> operator",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.comparisonAstTypes,
+          TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable),
+          ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable)),
+        (a, conf, p, r) => new BinaryAstExprMeta[GreaterThan](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuGreaterThan(lhs, rhs)
+        }),
+      GpuOverrides.expr[GreaterThanOrEqual](
+        ">= operator",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.comparisonAstTypes,
+          TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable),
+          ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable)),
+        (a, conf, p, r) => new BinaryAstExprMeta[GreaterThanOrEqual](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuGreaterThanOrEqual(lhs, rhs)
+        }),
+      GpuOverrides.expr[LessThan](
+        "< operator",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.comparisonAstTypes,
+          TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable),
+          ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable)),
+        (a, conf, p, r) => new BinaryAstExprMeta[LessThan](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuLessThan(lhs, rhs)
+        }),
+      GpuOverrides.expr[LessThanOrEqual](
+        "<= operator",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.comparisonAstTypes,
+          TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+          ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable),
+          ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.DAYTIME,
+              TypeSig.orderable)),
+        (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuLessThanOrEqual(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map
@@ -324,13 +423,26 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
               wrapped.disableBucketedScan)(conf)
           }
         }),
+      GpuOverrides.exec[InMemoryTableScanExec](
+        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
+        // NullType is actually supported
+        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.DAYTIME, TypeSig.all),
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[ProjectExec](
         "The backend for most select, withColumn and dropColumn statements",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
               TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
           TypeSig.all),
-        (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r))
+        (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
+      GpuOverrides.exec[FilterExec](
+        "The backend for most filter statements",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(), TypeSig.all),
+        (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
+          override def convertToGpu(): GpuExec =
+            GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ map
   }

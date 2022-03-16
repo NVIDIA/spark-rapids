@@ -283,7 +283,6 @@ will produce a different result compared to the plugin.
 Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
 Each data type can be enabled or disabled independently using the following configs.
 
- * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
  * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
 
 If you know that your particular data type will be parsed correctly enough, you may enable each
@@ -310,8 +309,6 @@ Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
 
 ### CSV Dates
-Parsing a `timestamp` as a `date` does not work. The details are documented in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/869).
 
 Only a limited set of formats are supported when parsing dates.
 
@@ -323,16 +320,8 @@ Only a limited set of formats are supported when parsing dates.
 * `"MM/yyyy"`
 * `"MM-dd-yyyy"`
 * `"MM/dd/yyyy"`
-
-The reality is that all of these formats are supported at the same time. The plugin will only
-disable itself if you set a format that it does not support.
-
-As a workaround you can parse the column as a timestamp and then cast it to a date.
-
-Invalid dates in Spark, values that have the correct format, but the numbers produce invalid dates,
-can result in an exception by default, and how they are parsed can be controlled through a config.
-The RAPIDS Accelerator does not support any of this and will produce an incorrect date. Typically,
-one that overflowed.
+* `"dd-MM-yyyy"`
+* `"dd/MM/yyyy"`
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
@@ -381,6 +370,54 @@ to work for dates after the epoch as described
 The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
  CPU when reading an unsupported compression format, and will error out in that case.
+
+### Push Down Aggreates for ORC
+
+Spark-3.3.0+ pushes down certain aggregations (`MIN`/`MAX`/`COUNT`) into ORC when the user-config
+`spark.sql.orc.aggregatePushdown` is set to true.  
+By enabling this feature, aggregate query performance will improve as it takes advantage of the
+statistics information.
+
+**Caution**
+
+Spark ORC reader/writer assumes that all ORC files must have valid column statistics. This assumption
+deviates from the [ORC-specification](https://orc.apache.org/specification) which states that statistics
+are optional.  
+When a Spark-3.3.0+ job reads an ORC file with empty file-statistics, it fails while throwing the following
+runtime exception:
+
+```bash
+org.apache.spark.SparkException: Cannot read columns statistics in file: /PATH_TO_ORC_FILE
+E    Caused by: java.util.NoSuchElementException
+E        at java.util.LinkedList.removeFirst(LinkedList.java:270)
+E        at java.util.LinkedList.remove(LinkedList.java:685)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcFooterReader.convertStatistics(OrcFooterReader.java:54)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcFooterReader.readStatistics(OrcFooterReader.java:45)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcUtils$.createAggInternalRowFromFooter(OrcUtils.scala:428)
+```
+
+The Spark community is planning to work on a runtime fallback to read from actual rows when ORC
+file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.org/jira/browse/SPARK-34960)).  
+
+**Limitations With RAPIDS**
+
+RAPIDS does not support whole file statistics in ORC file. We are working with
+[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
+[here](https://github.com/rapidsai/cudf/issues/5826).
+
+*Writing ORC Files*
+
+Without CUDF support to file statistics, all ORC files written by
+the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
+In order to prevent job failures, `spark.sql.orc.aggregatePushdown` should be disabled while reading ORC files
+that were written by the GPU.
+
+*Reading ORC Files*
+
+To take advantage of the aggregate optimization, the plugin falls back to the CPU as it is a meta data only query.
+As long as the ORC file has valid statistics (written by the CPU), then the pushing down aggregates to the ORC layer
+should be successful.  
+Otherwise, reading an ORC file written by the GPU requires `aggregatePushdown` to be disabled.
 
 ## Parquet
 
@@ -497,6 +534,9 @@ Spark version 3.3.0 and later.
 
 ## Regular Expressions
 
+Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors so
+this is disabled by default. To enable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=true`.
+
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
 - `RLIKE`
@@ -506,9 +546,6 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_replace`
 - `string_split`
 - `str_to_map`
-
-Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors. To 
-disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
 There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
 that a pattern is either unsupported or would produce incorrect results on the GPU.

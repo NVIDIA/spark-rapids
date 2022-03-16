@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_write, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
 from conftest import get_non_gpu_allowed
 from datetime import datetime, timezone
 from data_gen import *
@@ -167,17 +168,9 @@ _empty_double_schema = StructType([
     StructField('ignored_b', StringType())])
 
 _enable_all_types_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true',
-        'spark.rapids.sql.csv.read.bool.enabled': 'true',
-        'spark.rapids.sql.csv.read.date.enabled': 'true',
-        'spark.rapids.sql.csv.read.byte.enabled': 'true',
-        'spark.rapids.sql.csv.read.short.enabled': 'true',
-        'spark.rapids.sql.csv.read.integer.enabled': 'true',
-        'spark.rapids.sql.csv.read.long.enabled': 'true',
-        'spark.rapids.sql.csv.read.float.enabled': 'true',
-        'spark.rapids.sql.csv.read.double.enabled': 'true',
-        'spark.sql.legacy.timeParserPolicy': 'Corrected'}
+        'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
-def read_csv_df(data_path, schema, options = {}):
+def read_csv_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
     def read_impl(spark):
         reader = spark.read
         if not schema is None:
@@ -187,21 +180,21 @@ def read_csv_df(data_path, schema, options = {}):
         return debug_df(reader.csv(data_path))
     return read_impl
 
-def read_csv_sql(data_path, schema, options = {}):
+def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     opts = options
     if not schema is None:
         opts = copy_and_update(options, {'schema': schema})
     def read_impl(spark):
-        spark.sql('DROP TABLE IF EXISTS `TMP_CSV_TABLE`')
-        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', path=data_path, **opts)
+        tmp_name = spark_tmp_table_factory.get()
+        return spark.catalog.createTable(tmp_name, source='csv', path=data_path, **opts)
     return read_impl
 
 @approximate_float
 @pytest.mark.parametrize('name,schema,options', [
     ('Acquisition_2007Q3.txt', _acq_schema, {'sep': '|'}),
     ('Performance_2007Q3.txt_0', _perf_schema, {'sep': '|'}),
-    pytest.param('ts.csv', _date_schema, {}),
-    pytest.param('date.csv', _date_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1111')),
+    ('ts.csv', _date_schema, {}),
+    ('date.csv', _date_schema, {}),
     ('ts.csv', _ts_schema, {}),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
     ('str.csv', _good_str_schema, {'header': 'true'}),
@@ -253,12 +246,12 @@ def read_csv_sql(data_path, schema, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled):
+def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
     updated_conf=copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.ansi.enabled': ansi_enabled
     })
-    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
             conf=updated_conf)
 
 csv_supported_gens = [
@@ -292,7 +285,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
 @allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
-def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
+def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_factory):
     data_gens =[
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
@@ -303,7 +296,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     schema = gen.data_type
     updated_conf = copy_and_update(_enable_all_types_conf, {disable_conf: 'false'})
 
-    reader = read_func(data_path, schema)
+    reader = read_func(data_path, schema, spark_tmp_table_factory)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
@@ -316,20 +309,72 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    updated_conf = copy_and_update(_enable_all_types_conf,
+       {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled,
+        'spark.rapids.sql.incompatibleDateFormats.enabled': True,
+        'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write\
                     .option('dateFormat', date_format)\
                     .csv(data_path))
-    assert_gpu_and_cpu_are_equal_collect(
+    if time_parser_policy == 'LEGACY':
+        expected_class = 'FileSourceScanExec'
+        if v1_enabled_list == '':
+            expected_class = 'BatchScanExec'
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read \
+                .schema(schema) \
+                .option('dateFormat', date_format) \
+                .csv(data_path),
+            expected_class,
+            conf=updated_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\
                     .option('dateFormat', date_format)\
                     .csv(data_path),
+            conf=updated_conf)
+
+@pytest.mark.parametrize('filename', ["date.csv"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list, ansi_enabled, time_parser_policy):
+    data_path = std_input_path + '/' + filename
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                                   {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                    'spark.sql.ansi.enabled': ansi_enabled,
+                                    'spark.rapids.sql.incompatibleDateFormats.enabled': True,
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+    if time_parser_policy == 'EXCEPTION':
+        assert_gpu_and_cpu_error(
+            lambda spark : spark.read \
+                .schema(_date_schema) \
+                .csv(data_path)
+                .collect(),
+            conf=updated_conf,
+            error_message='DateTimeException')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read \
+                .schema(_date_schema) \
+                .csv(data_path),
             conf=updated_conf)
 
 csv_supported_ts_parts = ['', # Just the date
