@@ -72,7 +72,7 @@ _date_schema = StructType([
 _string_schema = StructType([
     StructField('a', StringType())])
 
-def read_json_df(data_path, schema, options = {}):
+def read_json_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
     def read_impl(spark):
         reader = spark.read
         if not schema is None:
@@ -82,13 +82,13 @@ def read_json_df(data_path, schema, options = {}):
         return debug_df(reader.json(data_path))
     return read_impl
 
-def read_json_sql(data_path, schema, options = {}):
+def read_json_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     opts = options
     if not schema is None:
         opts = copy_and_update(options, {'schema': schema})
     def read_impl(spark):
-        spark.sql('DROP TABLE IF EXISTS `TMP_json_TABLE`')
-        return spark.catalog.createTable('TMP_json_TABLE', source='json', path=data_path, **opts)
+        tmp_name = spark_tmp_table_factory.get()
+        return spark.catalog.createTable(tmp_name, source='json', path=data_path, **opts)
     return read_impl
 
 @approximate_float
@@ -217,13 +217,14 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, allow_numeric_leading_zeros, ansi_enabled):
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
         {'spark.sql.ansi.enabled': ansi_enabled,
          'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
         schema,
+        spark_tmp_table_factory,
         { "allowNonNumericNumbers": allow_non_numeric_numbers,
           "allowNumericLeadingZeros": allow_numeric_leading_zeros}),
         conf=updated_conf)
@@ -240,12 +241,12 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
     'CORRECTED',
     'EXCEPTION'
 ])
-def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy):
+def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy,
                                     'spark.rapids.sql.incompatibleDateFormats.enabled': True})
-    f = read_func(std_input_path + '/' + filename, schema, {})
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
     if time_parser_policy == 'LEGACY' and ansi_enabled == 'true':
         assert_gpu_fallback_collect(
             f,
@@ -266,11 +267,11 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
     'CORRECTED',
     'EXCEPTION'
 ])
-def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy):
+def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy })
-    f = read_func(std_input_path + '/' + filename, schema, {})
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
     if time_parser_policy == 'EXCEPTION':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: f(spark).collect(),
@@ -288,10 +289,11 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('allow_unquoted_chars', ["true"])
 @pytest.mark.parametrize('filename', ['unquotedChars.json'])
-def test_json_unquotedCharacters(std_input_path, filename, schema, read_func, allow_unquoted_chars):
+def test_json_unquotedCharacters(std_input_path, filename, schema, read_func, allow_unquoted_chars, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
         schema,
+        spark_tmp_table_factory,
         {"allowUnquotedControlChars": allow_unquoted_chars}),
         conf=_enable_all_types_conf)
 
