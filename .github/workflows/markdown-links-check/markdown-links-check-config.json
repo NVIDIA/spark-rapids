@@ -5,10 +5,13 @@
     },
     {
       "pattern": "https://github.com/NVIDIA/spark-rapids/issues/*"
+    },
+    {
+      "pattern": "/docs/archives"
     }
   ],
   "timeout": "5s",
-  "retryCount":10,
   "retryOn429": true,
+  "retryCount":10,
   "aliveStatusCodes": [200, 403]
 } 
