@@ -484,6 +484,18 @@ parse some variants of `NaN` and `Infinity` even when this option is disabled
 ([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with
 Spark version 3.3.0 and later.
 
+## Avro
+
+The Avro format read is a very experimental feature which is expected to have some issues, so we disable
+it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.avro.enabled` and 
+`spark.rapids.sql.format.avro.read.enabled`.
+
+Currently, the GPU accelerated Avro reader doesn't support reading the Avro version 1.2 files.
+
+### Avro supporting types
+
+The nested types(array, map and struct) are not supported yet in current version.
+
 ## Regular Expressions
 
 Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors so
