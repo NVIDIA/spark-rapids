@@ -74,16 +74,22 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
     df => df.withColumn("next_day", date_add(col("dates"), lit(1)))
   }
 
+  // Fails with Spark 3.2.0 and later - see https://github.com/NVIDIA/spark-rapids/issues/4940
   testSparkResultsAreEqual(
     "Test CSV parse ints as timestamps ansiEnabled=false",
     intsAsTimestampsFromCsv,
+    assumeCondition = _ => (!VersionUtils.isSpark320OrLater,
+      "https://github.com/NVIDIA/spark-rapids/issues/4940"),
     conf=new SparkConf().set(SQLConf.ANSI_ENABLED.key, "false")) {
     df => df
   }
 
+  // Fails with Spark 3.2.0 and later - see https://github.com/NVIDIA/spark-rapids/issues/4940
   testSparkResultsAreEqual(
     "Test CSV parse ints as timestamps ansiEnabled=true",
     intsAsTimestampsFromCsv,
+    assumeCondition = _ => (!VersionUtils.isSpark320OrLater,
+      "https://github.com/NVIDIA/spark-rapids/issues/4940"),
     conf=new SparkConf().set(SQLConf.ANSI_ENABLED.key, "true")) {
     df => df
   }
