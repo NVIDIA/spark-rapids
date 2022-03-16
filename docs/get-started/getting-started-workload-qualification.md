@@ -147,7 +147,9 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 
 #### Function Documentation
 
+```scala
 explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL")
+```
 
 Looks at the CPU plan associated with the dataframe and outputs information
 about which parts of the query the RAPIDS Accelerator for Apache Spark
@@ -172,16 +174,20 @@ output = sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df.
 ```
 
 Parameters:
+
 `df` - The Spark DataFrame to get the query plan from
+
 `explain` - If `ALL` returns all the explain data, otherwise just returns what does not
           work on the GPU. Default is ALL.
 
 Returns:
+
 String containing the explain output.
 
 Throws:
-java.lang.IllegalArgumentException - if an argument is invalid or it is unable to determine the Spark version
-java.lang.IllegalStateException - if the plugin gets into an invalid state while trying
+`java.lang.IllegalArgumentException` - if an argument is invalid or it is unable to determine the Spark version
+
+`java.lang.IllegalStateException` - if the plugin gets into an invalid state while trying
        to process the plan or there is an unexepected exception.
 
 #### Usage
