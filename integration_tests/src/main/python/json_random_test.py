@@ -3,6 +3,7 @@
 
 import random
 from data_gen import *
+from asserts import assert_gpu_and_cpu_are_equal_collect
 
 def gen_schema(depth):
     """
@@ -367,15 +368,26 @@ def gen_bool():
 
 
 
-def test_json_gen():
-    schema = gen_schema(5)
-    with open("./temp.json", 'w') as f:
-        for t in gen_json(schema):
-            f.write(t)
-    
-    print("\n schema = \n {}".format(schema))
-    print("content = ")
-    with open("./temp.json", 'r') as f:
-        print(f.read())
+_enable_all_types_conf = {
+    'spark.rapids.sql.format.json.enabled': 'true',
+    'spark.rapids.sql.format.json.read.enabled': 'true'}
 
-    assert 1 == 2
+def test_json_read_fuzz(spark_tmp_path):
+    depth = random.randint(1, 5)
+    schema = gen_schema(depth)
+    data_path = spark_tmp_path + '/JSON_FUZZ_DATA'
+    json_string = "".join(gen_json(schema))
+
+    with open(data_path, 'w') as f:
+        f.write(json_string)
+
+    if isinstance(schema, StructType):
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.schema(schema).json(data_path).cache(),
+            _enable_all_types_conf
+        )
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.json(data_path).cache(),
+            _enable_all_types_conf
+        )
