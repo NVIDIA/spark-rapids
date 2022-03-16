@@ -120,8 +120,7 @@ object GpuTypeShims {
   }
 
   /**
-   * Whether this Shim supports convert this type to GPU Scalar
-   * @param t
+   * Whether the Shim supports converting the given type to GPU Scalar
    */
   def supportToScalarForType(t: DataType): Boolean = {
     t match {
@@ -130,6 +129,9 @@ object GpuTypeShims {
     }
   }
 
+  /**
+   * Convert the given value to Scalar
+   */
   def toScalarForType(t: DataType, v: Any) = {
     t match {
       case _: DayTimeIntervalType => v match {
