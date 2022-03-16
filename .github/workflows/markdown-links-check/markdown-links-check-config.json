@@ -1,12 +1,14 @@
 {
   "ignorePatterns": [
     {
-      "pattern": "CHANGELOG*"
+      "pattern": "https://github.com/NVIDIA/spark-rapids/pull/*"
+    },
+    {
+      "pattern": "https://github.com/NVIDIA/spark-rapids/issues/*"
     }
   ],
   "timeout": "5s",
   "retryCount":10,
   "retryOn429": true,
-  "fallbackRetryDelay": "10s",
   "aliveStatusCodes": [0, 200, 302, 400, 403]
 } 
