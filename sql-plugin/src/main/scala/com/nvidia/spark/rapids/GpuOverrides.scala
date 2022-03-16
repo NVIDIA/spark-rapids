@@ -3465,7 +3465,6 @@ object GpuOverrides extends Logging {
             a.readDataSchema,
             a.readPartitionSchema,
             a.options,
-            a.pushedFilters,
             conf,
             a.partitionFilters,
             a.dataFilters)

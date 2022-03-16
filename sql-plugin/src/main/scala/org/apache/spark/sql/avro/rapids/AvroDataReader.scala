@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.avro.{InvalidAvroMagicException, Schema}
+import org.apache.avro.{Schema}
 import org.apache.avro.file.{DataFileConstants, SeekableInput}
 import org.apache.avro.file.DataFileConstants.{MAGIC, SYNC_SIZE}
 import org.apache.avro.io.{BinaryData, BinaryDecoder, DecoderFactory}
@@ -116,7 +116,7 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
       case Array(79, 98, 106, 1) => // current avro format
       case Array(79, 98, 106, 0) => // old format
         throw new UnsupportedOperationException("avro 1.2 format is not support by GPU")
-      case _ => throw new InvalidAvroMagicException("Not an Avro data file.")
+      case _ => throw new RuntimeException("Not an Avro data file.")
     }
 
     var l = vin.readMapStart().toInt

@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.rapids.shims.AvroUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.v2.avro.AvroScan
@@ -82,9 +82,7 @@ object GpuAvroScan {
         s"${RapidsConf.ENABLE_AVRO_READ} to true")
     }
 
-    if (parsedOptions.positionalFieldMatching) {
-      meta.willNotWorkOnGpu("GpuAvroScan does not support positionalFieldMatching")
-    }
+    AvroUtils.tagSupport(parsedOptions, meta)
 
     FileFormatChecks.tag(meta, readSchema, AvroFormatType, ReadFileOp)
   }
@@ -98,7 +96,6 @@ case class GpuAvroScan(
     readDataSchema: StructType,
     readPartitionSchema: StructType,
     options: CaseInsensitiveStringMap,
-    pushedFilters: Array[Filter],
     rapidsConf: RapidsConf,
     partitionFilters: Seq[Expression] = Seq.empty,
     dataFilters: Seq[Expression] = Seq.empty) extends FileScan with ScanWithMetrics {
@@ -127,19 +124,6 @@ case class GpuAvroScan(
     partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 
-  override def equals(obj: Any): Boolean = obj match {
-    case a: AvroScan => super.equals(a) && dataSchema == a.dataSchema && options == a.options &&
-      equivalentFilters(pushedFilters, a.pushedFilters)
-    case _ => false
-  }
-
-  override def description(): String = {
-    super.description() + ", PushedFilters: " + pushedFilters.mkString("[", ", ", "]")
-  }
-
-  override def getMetaData(): Map[String, String] = {
-    super.getMetaData() ++ Map("PushedFilters" -> seqToString(pushedFilters))
-  }
 }
 
 /** Avro partition reader factory to build columnar reader */
