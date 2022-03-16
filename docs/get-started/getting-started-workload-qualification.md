@@ -158,7 +158,7 @@ with adaptive query execution enable, it will not be able to show any changes
 in the plan due to that.
 
 This is very similar output you would get by running the query with the
-Rapids Accelerator enabled and with the config `spark.rapids.sql.enabled` enabled.
+RAPIDS Accelerator enabled and with the config `spark.rapids.sql.enabled` enabled.
 
 Requires the RAPIDS Accelerator for Apache Spark jar and RAPIDS cudf jar be included
 in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
