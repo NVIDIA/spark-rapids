@@ -169,7 +169,7 @@ _empty_double_schema = StructType([
 
 _enable_all_types_conf = {'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
-def read_csv_df(data_path, schema, options = {}):
+def read_csv_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
     def read_impl(spark):
         reader = spark.read
         if not schema is None:
@@ -179,13 +179,13 @@ def read_csv_df(data_path, schema, options = {}):
         return debug_df(reader.csv(data_path))
     return read_impl
 
-def read_csv_sql(data_path, schema, options = {}):
+def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     opts = options
     if not schema is None:
         opts = copy_and_update(options, {'schema': schema})
     def read_impl(spark):
-        spark.sql('DROP TABLE IF EXISTS `TMP_CSV_TABLE`')
-        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', path=data_path, **opts)
+        tmp_name = spark_tmp_table_factory.get()
+        return spark.catalog.createTable(tmp_name, source='csv', path=data_path, **opts)
     return read_impl
 
 @approximate_float
@@ -246,12 +246,12 @@ def read_csv_sql(data_path, schema, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled):
+def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
     updated_conf=copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.ansi.enabled': ansi_enabled
     })
-    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
             conf=updated_conf)
 
 csv_supported_gens = [
@@ -285,7 +285,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
 @allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
-def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
+def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_factory):
     data_gens =[
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
@@ -296,7 +296,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     schema = gen.data_type
     updated_conf = copy_and_update(_enable_all_types_conf, {disable_conf: 'false'})
 
-    reader = read_func(data_path, schema)
+    reader = read_func(data_path, schema, spark_tmp_table_factory)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
