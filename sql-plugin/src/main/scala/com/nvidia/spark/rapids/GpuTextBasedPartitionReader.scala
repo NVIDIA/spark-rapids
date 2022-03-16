@@ -315,9 +315,12 @@ abstract class GpuTextBasedPartitionReader(
 
     // fix timestamps that have milliseconds but no microseconds
     // example ".296" => ".296000"
-    val placeholder = "@@@"
     val sanitized = withResource(regexpFiltered) { _ =>
-      // cannot replace with back-refs directly because cuDF cannot support "\1000\2"
+      // cannot replace with back-refs directly because cuDF cannot support "\1000\2" so we
+      // first substitute with a placeholder and then replace that. The placeholder value
+      // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
+      // date/time formats that contain the `@` character
+      val placeholder = "@"
       withResource(regexpFiltered.stringReplaceWithBackrefs(
         raw"(\.\d{3})(Z?)\Z", raw"\1$placeholder\2")) { tmp =>
         withResource(Scalar.fromString(placeholder)) { from =>
@@ -574,10 +577,6 @@ object GpuTextBasedDateUtils {
    * - `%Y-%m-%dT%H:%M:%S.%f`
    */
   def toCudfFormats(sparkFormat: String, parseString: Boolean): Seq[String] = {
-
-    val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]",
-      ".SSSXXX", ".SSS")
-
     val hasZsuffix = sparkFormat.endsWith("Z")
     val formatRoot = if (hasZsuffix) {
       sparkFormat.substring(0, sparkFormat.length-1)
@@ -599,6 +598,8 @@ object GpuTextBasedDateUtils {
     val cudfFormat = toStrf(str, parseString)
     val suffix = if (hasZsuffix) "Z" else ""
 
+    val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]",
+      ".SSSXXX", ".SSS")
     val baseFormats = if (optionalFractional.exists(formatRoot.endsWith)) {
       val cudfFormat1 = cudfFormat + suffix
       val cudfFormat2 = cudfFormat + ".%f" + suffix
