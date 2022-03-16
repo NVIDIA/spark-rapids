@@ -85,9 +85,9 @@ def test_get_map_value_string_keys(data_gen):
                 'a["key_5"]'))
 
 
-numeric_key_gens = [key(nullable=False) if key in [FloatGen, DoubleGen]
+numeric_key_gens = [key(nullable=False) if key in [FloatGen, DoubleGen, DecimalGen]
                     else key(nullable=False, min_val=0, max_val=100)
-                    for key in [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen]]
+                    for key in [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DecimalGen]]
 
 numeric_key_map_gens = [MapGen(key, value(), max_length=6)
                         for key in numeric_key_gens for value in map_value_gens]
