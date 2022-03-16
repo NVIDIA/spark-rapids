@@ -37,7 +37,7 @@ DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$AR
 DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
 DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"true"}
 if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]]; then
-    DIST_PROFILE_OPT="$DIST_PROFILE_OPT,301db,312db"
+    DIST_PROFILE_OPT="$DIST_PROFILE_OPT,312db"
 fi
 
 # Make sure that the local m2 repo on the build machine has the same pom

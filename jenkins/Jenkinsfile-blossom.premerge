@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,13 +71,6 @@ ID_INITSCRIPTS = 2
 ID_PROFILES = 3
 ID_INSTALL = 4
 RUNTIME_MAP = [
-        '7.3': [
-                '7.3.x-gpu-ml-scala2.12',
-                '3.0.1',
-                'init_cudf_udf.sh,init_cuda11_runtime.sh',
-                'databricks301,!snapshot-shims',
-                '3.0.1'
-        ],
         '9.1': [
                 '9.1.x-gpu-ml-scala2.12',
                 '3.1.2',
@@ -325,9 +318,6 @@ pipeline {
                                               sourcePattern         : 'shuffle-plugin/src/main/scala/,' +
                                                                       'udf-compiler/src/main/scala/,sql-plugin/src/main/java/,' +
                                                                       'sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,' +
-                                                                      'shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,' +
-                                                                      'shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,' +
-                                                                      'shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,' +
                                                                       'shims/spark313/src/main/scala/'
                                         ])
                                     } finally {

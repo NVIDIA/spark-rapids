@@ -18,7 +18,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_311
+from spark_session import with_cpu_session, with_gpu_session
 
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
@@ -152,7 +152,6 @@ def test_explain_bucket_disabled_by_conf(spark_tmp_table_factory):
 
 
 @allow_non_gpu(any=True)
-@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.0+ does the `GpuFileSourceScanExec` have the attribute `disableBucketedScan`")
 def test_explain_bucket_disabled_by_query_planner(spark_tmp_table_factory):
     """
     Test the physical plan includes the info of disabling bucketed scan and the reason.
