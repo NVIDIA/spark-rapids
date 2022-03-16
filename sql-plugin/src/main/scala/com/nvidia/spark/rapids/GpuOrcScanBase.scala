@@ -788,27 +788,27 @@ private case class GpuOrcFileFilterHandler(
 
     // After getting the necessary information from ORC reader, we must close the ORC reader
     OrcShims.withReader(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
-    val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
-        readDataSchema, orcReader)
+    val resultedColPruneInfo = requestedColumnIds(dataSchema, readDataSchema, orcReader)
       if (resultedColPruneInfo.isEmpty) {
         // Be careful when the OrcPartitionReaderContext is null, we should change
         // reader to EmptyPartitionReader for throwing exception
         null
       } else {
-        val (requestedColIds, canPruneCols) = resultedColPruneInfo.get
+        val requestedColIds = resultedColPruneInfo.get
+        val canPruneCols = requestedColIds.isEmpty
         orcResultSchemaString(canPruneCols, dataSchema, readDataSchema, partitionSchema, conf)
         assert(requestedColIds.length == readDataSchema.length,
           "[BUG] requested column IDs do not match required schema")
         // Only need to filter ORC's schema evolution if it cannot prune directly
         val requestedMapping = if (canPruneCols) {
-          None
-        } else {
           // Following SPARK-35783, set requested columns as OrcConf. This setting may not make
           // any difference. Just in case it might be important for the ORC methods called by us,
           // either today or in the future.
           val includeColumns = requestedColIds.filter(_ != -1).sorted.mkString(",")
           conf.set(OrcConf.INCLUDE_COLUMNS.getAttribute, includeColumns)
 
+          None
+        } else {
           Some(requestedColIds)
         }
         val fullSchema = StructType(dataSchema ++ partitionSchema)
@@ -840,68 +840,38 @@ private case class GpuOrcFileFilterHandler(
 
 
   /**
-   * @return Returns the combination of requested column ids from the given ORC file and
-   *         boolean flag to find if the pruneCols is allowed or not. Requested Column id can be
+   * @return Returns requested column ids from the given ORC file. Requested Column id can be
    *         -1, which means the requested column doesn't exist in the ORC file. Returns None
-   *         if the given ORC file is empty.
+   *         if the given ORC file is empty. Returns empty array if columns can be prune.
    */
   def requestedColumnIds(
-      isCaseSensitive: Boolean,
       dataSchema: StructType,
       requiredSchema: StructType,
-      reader: Reader): Option[(Array[Int], Boolean)] = {
+      reader: Reader): Option[Array[Int]] = {
     val orcFieldNames = reader.getSchema.getFieldNames.asScala
     if (orcFieldNames.isEmpty) {
       // SPARK-8501: Some old empty ORC files always have an empty schema stored in their footer.
       None
+    } else if (!orcFieldNames.forall(_.startsWith("_col"))) {
+      Some(Array())
     } else {
-      if (orcFieldNames.forall(_.startsWith("_col"))) {
-        // This is a ORC file written by Hive, no field names in the physical schema, assume the
-        // physical schema maps to the data scheme by index.
-        assert(orcFieldNames.length <= dataSchema.length, "The given data schema " +
+      // This is a ORC file written by Hive, no field names in the physical schema, assume the
+      // physical schema maps to the data scheme by index.
+      assert(orcFieldNames.length <= dataSchema.length, "The given data schema " +
           s"${dataSchema.catalogString} has less fields than the actual ORC physical schema, " +
           "no idea which columns were dropped, fail to read.")
-        // for ORC file written by Hive, no field names
-        // in the physical schema, there is a need to send the
-        // entire dataSchema instead of required schema.
-        // So pruneCols is not done in this case
-        Some((requiredSchema.fieldNames.map { name =>
-          val index = dataSchema.fieldIndex(name)
-          if (index < orcFieldNames.length) {
-            index
-          } else {
-            -1
-          }
-        }, false))
-      } else {
-        if (isCaseSensitive) {
-          Some((requiredSchema.fieldNames.zipWithIndex.map { case (name, idx) =>
-            if (orcFieldNames.indexWhere(caseSensitiveResolution(_, name)) != -1) {
-              idx
-            } else {
-              -1
-            }
-          }, true))
+      // for ORC file written by Hive, no field names
+      // in the physical schema, there is a need to send the
+      // entire dataSchema instead of required schema.
+      // So pruneCols is not done in this case
+      Some(requiredSchema.fieldNames.map { name =>
+        val index = dataSchema.fieldIndex(name)
+        if (index < orcFieldNames.length) {
+          index
         } else {
-          // Do case-insensitive resolution only if in case-insensitive mode
-          val caseInsensitiveOrcFieldMap = orcFieldNames.groupBy(_.toLowerCase(Locale.ROOT))
-          Some((requiredSchema.fieldNames.zipWithIndex.map { case (requiredFieldName, idx) =>
-            caseInsensitiveOrcFieldMap
-              .get(requiredFieldName.toLowerCase(Locale.ROOT))
-              .map { matchedOrcFields =>
-                if (matchedOrcFields.size > 1) {
-                  // Need to fail if there is ambiguity, i.e. more than one field is matched.
-                  val matchedOrcFieldsString = matchedOrcFields.mkString("[", ", ", "]")
-                  OrcShims.closeReader(reader)
-                  throw new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """
-                    + s"$matchedOrcFieldsString in case-insensitive mode")
-                } else {
-                  idx
-                }
-              }.getOrElse(-1)
-          }, true))
+          -1
         }
-      }
+      })
     }
   }
 
