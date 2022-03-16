@@ -16,22 +16,23 @@
 
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Coalesce, DynamicPruningExpression, Expression, MetadataAttribute, TimeAdd}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Coalesce, DynamicPruningExpression, Expression, MetadataAttribute, RoundCeil, RoundFloor, TimeAdd}
 import org.apache.spark.sql.catalyst.json.rapids.shims.Spark33XFileOptionsShims
 import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.{GpuCeil, GpuFileSourceScanExec, GpuFloor, GpuFloorCeil}
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
-import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, StructType}
+import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 trait Spark33XShims extends Spark33XFileOptionsShims {
@@ -126,6 +127,68 @@ trait Spark33XShims extends Spark33XFileOptionsShims {
               super.print(append, depth, all)
             }
           }
+        }),
+      GpuOverrides.expr[RoundCeil](
+        "Computes the ceiling of the given expression to d decimal places",
+        ExprChecks.binaryProject(
+          TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+          ("value", TypeSig.gpuNumeric +
+              TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+              TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+              TypeSig.cpuNumeric),
+          ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+        (ceil, conf, p, r) => new BinaryExprMeta[RoundCeil](ceil, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            ceil.child.dataType match {
+              case dt: DecimalType =>
+                val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
+                if (precision > DType.DECIMAL128_MAX_PRECISION) {
+                  willNotWorkOnGpu(s"output precision $precision would require overflow " +
+                      s"checks, which are not supported yet")
+                }
+              case _ => // NOOP
+            }
+            GpuOverrides.extractLit(ceil.scale).foreach { scale =>
+              if (scale.value != null &&
+                  scale.value.asInstanceOf[Integer] != 0) {
+                willNotWorkOnGpu("Scale other than 0 is not supported")
+              }
+            }
+          }
+
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuCeil(lhs)
+        }),
+      GpuOverrides.expr[RoundFloor](
+        "Computes the floor of the given expression to d decimal places",
+        ExprChecks.binaryProject(
+          TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+          ("value", TypeSig.gpuNumeric +
+              TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+              TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+              TypeSig.cpuNumeric),
+          ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+        (floor, conf, p, r) => new BinaryExprMeta[RoundFloor](floor, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            floor.child.dataType match {
+              case dt: DecimalType =>
+                val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
+                if (precision > DType.DECIMAL128_MAX_PRECISION) {
+                  willNotWorkOnGpu(s"output precision $precision would require overflow " +
+                      s"checks, which are not supported yet")
+                }
+              case _ => // NOOP
+            }
+            GpuOverrides.extractLit(floor.scale).foreach { scale =>
+              if (scale.value != null &&
+                  scale.value.asInstanceOf[Integer] != 0) {
+                willNotWorkOnGpu("Scale other than 0 is not supported")
+              }
+            }
+          }
+
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuFloor(lhs)
         }),
       GpuOverrides.expr[TimeAdd](
         "Adds interval to timestamp",
