@@ -62,11 +62,17 @@ def test_map_entries(data_gen):
                 'map_entries(a)'))
 
 
-map_value_gens = [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, StringGen, DateGen, TimestampGen]
+def simple_struct_gen():
+    return StructGen([["child", IntegerGen()]])
+
+
+map_value_gens = [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, StringGen, DateGen,
+                  TimestampGen, DecimalGen, simple_struct_gen]
 
 
 @pytest.mark.parametrize('data_gen',
-                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value()) for value in map_value_gens],
+                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
+                          for value in map_value_gens],
                          ids=idfn)
 def test_get_map_value_string_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -83,7 +89,8 @@ numeric_key_gens = [key(nullable=False) if key in [FloatGen, DoubleGen]
                     else key(nullable=False, min_val=0, max_val=100)
                     for key in [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen]]
 
-numeric_key_map_gens = [MapGen(key, value()) for key in numeric_key_gens for value in map_value_gens]
+numeric_key_map_gens = [MapGen(key, value(), max_length=6)
+                        for key in numeric_key_gens for value in map_value_gens]
 
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
@@ -97,7 +104,9 @@ def test_get_map_value_numeric_keys(data_gen):
                 'a[999]'))
 
 
-@pytest.mark.parametrize('data_gen', [MapGen(DateGen(nullable=False), value()) for value in map_value_gens], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [MapGen(DateGen(nullable=False), value(), max_length=6)
+                          for value in map_value_gens], ids=idfn)
 def test_get_map_value_date_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -106,7 +115,9 @@ def test_get_map_value_date_keys(data_gen):
             'a[null]'))
 
 
-@pytest.mark.parametrize('data_gen', [MapGen(TimestampGen(nullable=False), value()) for value in map_value_gens], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [MapGen(TimestampGen(nullable=False), value(), max_length=6)
+                          for value in map_value_gens], ids=idfn)
 def test_get_map_value_timestamp_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -294,7 +305,8 @@ def test_map_get_map_value_ansi_not_fail(data_gen):
 
 
 @pytest.mark.parametrize('data_gen',
-                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value()) for value in map_value_gens],
+                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
+                          for value in map_value_gens],
                          ids=idfn)
 def test_element_at_map_string_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -320,7 +332,9 @@ def test_element_at_map_numeric_keys(data_gen):
         conf={'spark.sql.ansi.enabled': False})
 
 
-@pytest.mark.parametrize('data_gen', [MapGen(DateGen(nullable=False), value()) for value in map_value_gens], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [MapGen(DateGen(nullable=False), value(), max_length=6)
+                          for value in map_value_gens], ids=idfn)
 def test_element_at_map_date_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -331,7 +345,8 @@ def test_element_at_map_date_keys(data_gen):
 
 
 @pytest.mark.parametrize('data_gen',
-                         [MapGen(TimestampGen(nullable=False), value()) for value in map_value_gens],
+                         [MapGen(TimestampGen(nullable=False), value(), max_length=6)
+                          for value in map_value_gens],
                          ids=idfn)
 def test_element_at_map_timestamp_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
