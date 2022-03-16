@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{DType, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import ai.rapids.cudf.{ColumnVector, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 
@@ -50,6 +50,9 @@ object JoinTypeChecks {
       case LeftAnti if !conf.areLeftAntiJoinsEnabled =>
         meta.willNotWorkOnGpu("left anti joins have been disabled. To enable set " +
             s"${RapidsConf.ENABLE_LEFT_ANTI_JOIN.key} to true")
+      case ExistenceJoin(_) if !conf.areExistenceJoinsEnabled =>
+        meta.willNotWorkOnGpu("existence joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_EXISTENCE_JOIN.key} to true")
       case _ => // not disabled
     }
   }
@@ -107,7 +110,7 @@ object GpuHashJoin extends Arm {
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
       case FullOuter =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
@@ -507,6 +510,148 @@ class ConditionalHashJoinIterator(
   }
 }
 
+
+class ExistenceJoinIterator(
+  spillableBuiltBatch: LazySpillableColumnarBatch,
+  boundBuildKeys: Seq[GpuExpression],
+  lazyStream: Iterator[LazySpillableColumnarBatch],
+  boundStreamKeys: Seq[GpuExpression],
+  boundCondition: Option[GpuExpression],
+  numFirstConditionTableColumns: Int,
+  compareNullsEqual: Boolean,
+  opTime: GpuMetric,
+  joinTime: GpuMetric
+) extends Iterator[ColumnarBatch]()
+    with TaskAutoCloseableResource with Arm {
+
+  use(spillableBuiltBatch)
+  val compiledConditionRes: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
+    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+  }
+
+  override def hasNext: Boolean = {
+    val streamHasNext = lazyStream.hasNext
+    if (!streamHasNext) {
+      close()
+    }
+    streamHasNext
+  }
+
+  override def next(): ColumnarBatch = {
+    withResource(lazyStream.next()) { lazyBatch =>
+      withResource(new NvtxWithMetrics("existence join batch", NvtxColor.ORANGE, joinTime)) { _ =>
+        opTime.ns {
+          val ret = existenceJoinNextBatch(lazyBatch.getBatch)
+          spillableBuiltBatch.allowSpilling()
+          ret
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    opTime.ns {
+      super.close()
+    }
+  }
+
+  private def leftKeysTable(leftColumnarBatch: ColumnarBatch): Table = {
+    withResource(GpuProjectExec.project(leftColumnarBatch, boundStreamKeys)) {
+      GpuColumnVector.from(_)
+    }
+  }
+
+  private def rightKeysTable(): Table = {
+    withResource(GpuProjectExec.project(spillableBuiltBatch.getBatch, boundBuildKeys)) {
+      GpuColumnVector.from(_)
+    }
+  }
+
+  private def conditionalBatchLeftSemiJoin(
+    leftColumnarBatch: ColumnarBatch,
+    leftKeysTab: Table,
+    rightKeysTab: Table,
+    compiledCondition: CompiledExpression): GatherMap = {
+    withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
+      withResource(GpuColumnVector.from(spillableBuiltBatch.getBatch)) { rightTab =>
+        Table.mixedLeftSemiJoinGatherMap(
+          leftKeysTab,
+          rightKeysTab,
+          leftTab,
+          rightTab,
+          compiledCondition,
+          if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL)
+        }
+    }
+  }
+
+  private def unconditionalBatchLeftSemiJoin(
+    leftKeysTab: Table,
+    rightKeysTab: Table
+  ): GatherMap = {
+    leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
+  }
+
+  /*
+   * This method uses a left semijoin to construct a map of all indices
+   * into the left table batch pointing to rows that have a join partner on the
+   * right-hand side.
+   *
+   * Given Boolean column FC totaling as many rows as leftColumnarBatch, all having
+   * the value "false", scattering "true" into column FC will produce the "exists"
+   * column of ExistenceJoin
+   */
+  private def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
+    withResource(
+      new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)
+    ) { _ =>
+      withResource(leftKeysTable(leftColumnarBatch)) { leftKeysTab =>
+        withResource(rightKeysTable()) { rightKeysTab =>
+          compiledConditionRes.map { compiledCondition =>
+            conditionalBatchLeftSemiJoin(leftColumnarBatch, leftKeysTab, rightKeysTab,
+              compiledCondition)
+          }.getOrElse {
+            unconditionalBatchLeftSemiJoin(leftKeysTab, rightKeysTab)
+          }
+        }
+      }
+    }
+  }
+
+  private def falseColumnTable(numLeftRows: Int): Table = {
+    withResource(Scalar.fromBool(false)) { falseScalar =>
+      withResource(ColumnVector.fromScalar(falseScalar, numLeftRows)) {
+        new Table(_)
+      }
+    }
+  }
+
+  private def existsColumn(leftColumnarBatch: ColumnarBatch): ColumnVector = {
+    withResource(existsScatterMap(leftColumnarBatch)) { existsScatterMap =>
+      val numLeftRows = leftColumnarBatch.numRows
+      withResource(falseColumnTable(numLeftRows)) { allFalseTable =>
+        val numExistsTrueRows = existsScatterMap.getRowCount.toInt
+        withResource(existsScatterMap.toColumnView(0, numExistsTrueRows)) { existsView =>
+          withResource(Scalar.fromBool(true)) { trueScalar =>
+            withResource(Table.scatter(Array(trueScalar), existsView, allFalseTable, false)) {
+              _.getColumn(0).incRefCount()
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private def existenceJoinNextBatch(leftColumnarBatch: ColumnarBatch): ColumnarBatch = {
+    // left columns with exists
+    withResource(existsColumn(leftColumnarBatch)) { existsColumn =>
+      val resCols = GpuColumnVector.extractBases(leftColumnarBatch)  :+ existsColumn
+      val resTypes = GpuColumnVector.extractTypes(leftColumnarBatch) :+ BooleanType
+      withResource(new Table(resCols: _*))(resTab => GpuColumnVector.from(resTab, resTypes))
+    }
+  }
+}
+
 trait GpuHashJoin extends GpuExec {
   def left: SparkPlan
   def right: SparkPlan
@@ -657,17 +802,31 @@ trait GpuHashJoin extends GpuExec {
 
     // The HashJoinIterator takes ownership of the built keys and built data. It will close
     // them when it is done
-    val joinIterator = if (boundCondition.isDefined) {
-      // ConditionalHashJoinIterator will close the compiled condition
-      val compiledCondition =
-        boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
-      new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
-        boundStreamKeys, streamedPlan.output, compiledCondition,
-        realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
-    } else {
-      new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
-        streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
-        opTime, joinTime)
+    val joinIterator = joinType match {
+      case ExistenceJoin(_) =>
+        new ExistenceJoinIterator(
+          spillableBuiltBatch,
+          boundBuildKeys,
+          lazyStream,
+          boundStreamKeys,
+          boundCondition,
+          numFirstConditionTableColumns,
+          compareNullsEqual,
+          opTime,
+          joinTime)
+      case _ =>
+        if (boundCondition.isDefined) {
+          // ConditionalHashJoinIterator will close the compiled condition
+          val compiledCondition =
+            boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
+          new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
+            boundStreamKeys, streamedPlan.output, compiledCondition,
+            realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+        } else {
+          new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
+            streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
+            opTime, joinTime)
+        }
     }
 
     joinIterator.map { cb =>
