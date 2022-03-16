@@ -11,28 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from spark_session import with_cpu_session
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
-pytestmark = pytest.mark.nightly_resource_consuming_test
+support_gens = numeric_gens + [string_gen, boolean_gen]
 
-def read_avro_df(data_path):
-    return lambda spark : spark.read.format("avro").load(data_path)
+_enable_all_types_conf = {
+    'spark.rapids.sql.format.avro.enabled': 'true',
+    'spark.rapids.sql.format.avro.read.enabled': 'true'}
 
-original_avro_file_reader_conf = {'spark.rapids.sql.format.avro.reader.type': 'PERFILE'}
-reader_opt_confs = [original_avro_file_reader_conf]
+@pytest.mark.parametrize('gen', support_gens)
+@pytest.mark.parametrize('v1_enabled_list', ["avro", ""])
+def test_basic_read(spark_tmp_path, gen, v1_enabled_list):
 
-@pytest.mark.parametrize('name', ['simple.avro'])
-@pytest.mark.parametrize('read_func', [read_avro_df])
-@pytest.mark.parametrize('v1_enabled_list', ["avro"])
-@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
-def test_basic_read(std_input_path, name, read_func, v1_enabled_list, reader_confs):
-    all_confs = copy_and_update(reader_confs, {
+    all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+    data_path = spark_tmp_path + '/AVRO_DATA'
+
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, gen).write.format("avro").save(data_path)
+    )
+
     assert_gpu_and_cpu_are_equal_collect(
-            read_func(std_input_path + '/' + name),
-            conf=all_confs)
+        lambda spark : spark.read.format("avro").load(data_path),
+        conf=all_confs)
