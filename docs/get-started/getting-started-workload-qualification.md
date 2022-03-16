@@ -173,20 +173,16 @@ Calling from PySpark:
 output = sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
 ```
 
-Parameters:
-
-`df` - The Spark DataFrame to get the query plan from
-
+Parameters:  
+`df` - The Spark DataFrame to get the query plan from  
 `explain` - If `ALL` returns all the explain data, otherwise just returns what does not
           work on the GPU. Default is ALL.
 
-Returns:
-
+Returns:  
 String containing the explain output.
 
-Throws:
-`java.lang.IllegalArgumentException` - if an argument is invalid or it is unable to determine the Spark version
-
+Throws:  
+`java.lang.IllegalArgumentException` - if an argument is invalid or it is unable to determine the Spark version  
 `java.lang.IllegalStateException` - if the plugin gets into an invalid state while trying
        to process the plan or there is an unexepected exception.
 
