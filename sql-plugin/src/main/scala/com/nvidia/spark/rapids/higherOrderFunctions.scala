@@ -334,10 +334,19 @@ case class GpuArrayExists(
   override protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView): GpuColumnVector = {
     withResource(lambdaTransformedCV) { cv =>
+      // TODO this is not right logic
+      // fix empty array handling
+      // fix three value logic
+      val nullPolicy = if (followThreeValuedLogic) {
+        cudf.NullPolicy.INCLUDE
+      } else {
+        cudf.NullPolicy.EXCLUDE
+      }
+
       GpuColumnVector.from(
         cv.listReduce(
-          cudf.SegmentedReductionAggregation.max(),
-          cudf.NullPolicy.INCLUDE,
+          cudf.SegmentedReductionAggregation.any(),
+          nullPolicy,
           DType.BOOL8
         ),
         dataType
