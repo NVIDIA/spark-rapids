@@ -147,15 +147,6 @@ trait SparkShims {
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 
-  def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
-
-  def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
-  def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
-  def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
-  def getPartitionSplitFiles(
-      partitions: Array[PartitionDirectory],
-      maxSplitBytes: Long,
-      relation: HadoopFsRelation): Array[PartitionedFile]
   def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],

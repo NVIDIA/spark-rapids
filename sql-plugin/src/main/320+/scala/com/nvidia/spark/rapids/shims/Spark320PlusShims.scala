@@ -44,7 +44,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command._
@@ -671,51 +671,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "CSV parsing",
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getPartitionFileNames(
-      partitions: Seq[PartitionDirectory]): Seq[String] = {
-    val files = partitions.flatMap(partition => partition.files)
-    files.map(_.getPath.getName)
-  }
-
-  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
-    partitions.map(_.files.map(_.getLen).sum).sum
-  }
-
-  override def getPartitionedFiles(
-      partitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
-    partitions.flatMap { p =>
-      p.files.map { f =>
-        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-      }
-    }
-  }
-
-  override def getPartitionSplitFiles(
-      partitions: Array[PartitionDirectory],
-      maxSplitBytes: Long,
-      relation: HadoopFsRelation): Array[PartitionedFile] = {
-    partitions.flatMap { partition =>
-      partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
-        val filePath = file.getPath
-        val isSplitable = relation.fileFormat.isSplitable(
-          relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtil.splitFiles(
-          sparkSession = relation.sparkSession,
-          file = file,
-          filePath = filePath,
-          isSplitable = isSplitable,
-          maxSplitBytes = maxSplitBytes,
-          partitionValues = partition.values
-        )
-      }
-    }
-  }
-
-  override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
-    FilePartition(index, files)
-  }
 
   override def copyBatchScanExec(
       batchScanExec: GpuBatchScanExec,
