@@ -14,27 +14,65 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids
+package org.apache.spark.sql.rapids
 
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{GpuOverrides, ScanMeta, ScanRule}
+import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.avro.AvroFileFormat
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.rapids.GpuAvroScan
+import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.util.Utils
 
-object ExternalUtils {
+object ExternalSource {
 
-  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
+  lazy val hasSparkAvroJar = {
     val loader = Utils.getContextOrSparkClassLoader
 
     /** spark-avro is an optional package for spark, so we should keep in mind that rapids can
      * run successfully even without it */
     Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
-      case Failure(_) => Map.empty
-      case Success(_) => Seq(
+      case Failure(_) => false
+      case Success(_) => true
+    }
+  }
+
+  def tagSupportForGpuFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    if (hasSparkAvroJar) {
+      meta.wrapped.relation.fileFormat match {
+        case _: AvroFileFormat => GpuReadAvroFileFormat.tagSupport(meta)
+        case f =>
+          meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
+      }
+    } else {
+      meta.wrapped.relation.fileFormat match {
+        case f =>
+          meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
+      }
+    }
+  }
+
+  def convertFileFormatForGpuFileSourceScanExec(format: FileFormat): FileFormat = {
+    if (hasSparkAvroJar) {
+      format match {
+        case _: AvroFileFormat => new GpuReadAvroFileFormat
+        case f =>
+          throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
+      }
+    } else {
+      format match {
+        case f =>
+          throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
+      }
+    }
+  }
+
+  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
+    if (hasSparkAvroJar) {
+      Seq(
         GpuOverrides.scan[AvroScan](
           "Avro parsing",
           (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
@@ -52,7 +90,7 @@ object ExternalUtils {
                 a.dataFilters)
           })
       ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-    }
+    } else Map.empty
   }
 
 }
