@@ -799,16 +799,17 @@ private case class GpuOrcFileFilterHandler(
         orcResultSchemaString(canPruneCols, dataSchema, readDataSchema, partitionSchema, conf)
         assert(requestedColIds.length == readDataSchema.length,
           "[BUG] requested column IDs do not match required schema")
+
+        // Following SPARK-35783, set requested columns as OrcConf. This setting may not make
+        // any difference. Just in case it might be important for the ORC methods called by us,
+        // either today or in the future.
+        val includeColumns = requestedColIds.filter(_ != -1).sorted.mkString(",")
+        conf.set(OrcConf.INCLUDE_COLUMNS.getAttribute, includeColumns)
+
         // Only need to filter ORC's schema evolution if it cannot prune directly
         val requestedMapping = if (canPruneCols) {
           None
         } else {
-          // Following SPARK-35783, set requested columns as OrcConf. This setting may not make
-          // any difference. Just in case it might be important for the ORC methods called by us,
-          // either today or in the future.
-          val includeColumns = requestedColIds.filter(_ != -1).sorted.mkString(",")
-          conf.set(OrcConf.INCLUDE_COLUMNS.getAttribute, includeColumns)
-
           Some(requestedColIds)
         }
         val fullSchema = StructType(dataSchema ++ partitionSchema)
