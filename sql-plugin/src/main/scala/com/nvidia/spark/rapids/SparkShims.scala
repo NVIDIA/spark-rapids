@@ -297,13 +297,6 @@ trait SparkShims {
 
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 
-  /**
-  * This Boolean variable set to `true` for Spark < 3.1.0, and set to
-  * `SQLConf.get.legacyStatisticalAggregate` otherwise.
-  * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
-  */
-  def getLegacyStatisticalAggregate(): Boolean
-
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 
   /**

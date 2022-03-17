@@ -817,9 +817,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     adaptivePlan.inputPlan
   }
 
-  override def getLegacyStatisticalAggregate(): Boolean =
-    SQLConf.get.legacyStatisticalAggregate
-
   override def supportsColumnarAdaptivePlans: Boolean = false
 
   override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan = {

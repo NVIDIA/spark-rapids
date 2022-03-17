@@ -3259,7 +3259,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[StddevPop](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
+          val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
           GpuStddevPop(childExprs.head, !legacyStatisticalAggregate)
         }
       }),
@@ -3271,7 +3271,7 @@ object GpuOverrides extends Logging {
             TypeSig.DOUBLE))),
         (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
           override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-            val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
+            val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
             GpuStddevSamp(childExprs.head, !legacyStatisticalAggregate)
           }
         }),
@@ -3282,7 +3282,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[VariancePop](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
+          val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
           GpuVariancePop(childExprs.head, !legacyStatisticalAggregate)
         }
       }),
@@ -3293,7 +3293,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[VarianceSamp](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = SparkShimImpl.getLegacyStatisticalAggregate
+          val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
           GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
         }
       }),

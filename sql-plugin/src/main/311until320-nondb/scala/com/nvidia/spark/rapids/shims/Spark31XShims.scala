@@ -892,9 +892,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     adaptivePlan.inputPlan
   }
 
-  override def getLegacyStatisticalAggregate(): Boolean =
-    SQLConf.get.legacyStatisticalAggregate
-
   override def hasCastFloatTimestampUpcast: Boolean = false
 
   override def isCastingStringToNegDecimalScaleSupported: Boolean = false

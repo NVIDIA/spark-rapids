@@ -143,10 +143,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
 
-  override def getLegacyStatisticalAggregate(): Boolean =
-    SQLConf.get.legacyStatisticalAggregate
-
-
   override def getScalaUDFAsExpression(
       function: AnyRef,
       dataType: DataType,
