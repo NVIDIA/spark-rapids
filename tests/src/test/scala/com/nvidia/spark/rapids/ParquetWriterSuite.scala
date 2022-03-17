@@ -16,13 +16,15 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{File, FilenameFilter}
 import java.nio.charset.StandardCharsets
 
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.commons.io.filefilter.WildcardFileFilter
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.util.HadoopInputFile
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -32,9 +34,6 @@ import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 /**
  * Tests for writing Parquet files with the GPU.
  */
-@scala.annotation.nowarn(
-  "msg=method readFooters in class ParquetFileReader is deprecated"
-)
 class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   test("file metadata") {
     val tempFile = File.createTempFile("stats", ".parquet")
@@ -42,12 +41,13 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       withGpuSparkSession(spark => {
         val df = mixedDfWithNulls(spark)
         df.write.mode("overwrite").parquet(tempFile.getAbsolutePath)
+        val filter: FilenameFilter = new WildcardFileFilter("*.parquet")
+        val inputFile = HadoopInputFile.fromPath(
+          new Path(tempFile.listFiles(filter)(0).getAbsolutePath),
+          spark.sparkContext.hadoopConfiguration)
+        val parquetMeta = ParquetFileReader.open(inputFile).getFooter
 
-        val footer = ParquetFileReader.readFooters(spark.sparkContext.hadoopConfiguration,
-          new Path(tempFile.getAbsolutePath)).get(0)
-
-        val parquetMeta = footer.getParquetMetadata
-        val fileMeta = footer.getParquetMetadata.getFileMetaData
+        val fileMeta = parquetMeta.getFileMetaData
         val extra = fileMeta.getKeyValueMetaData
         assert(extra.containsKey("org.apache.spark.version"))
         assert(extra.containsKey("org.apache.spark.sql.parquet.row.metadata"))
