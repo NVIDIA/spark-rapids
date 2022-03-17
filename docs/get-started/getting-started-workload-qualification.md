@@ -145,6 +145,47 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 - Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 22.02 or newer
 
+#### Function Documentation
+
+```scala
+explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL")
+```
+
+Looks at the CPU plan associated with the dataframe and outputs information
+about which parts of the query the RAPIDS Accelerator for Apache Spark
+could place on the GPU. This only applies to the initial plan, so if running
+with adaptive query execution enable, it will not be able to show any changes
+in the plan due to that.
+
+This is very similar output you would get by running the query with the
+RAPIDS Accelerator enabled and with the config `spark.rapids.sql.enabled` enabled.
+
+Requires the RAPIDS Accelerator for Apache Spark jar and RAPIDS cudf jar be included
+in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
+
+Calling from Scala:
+```scala
+val output = com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df)
+```
+
+Calling from PySpark:
+```python
+output = sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+```
+
+Parameters:  
+`df` - The Spark DataFrame to get the query plan from  
+`explain` - If ALL returns all the explain data, otherwise just returns what does not
+          work on the GPU. Default is ALL.
+
+Returns:  
+String containing the explain output.
+
+Throws:  
+`java.lang.IllegalArgumentException` - if an argument is invalid or it is unable to determine the Spark version  
+`java.lang.IllegalStateException` - if the plugin gets into an invalid state while trying
+       to process the plan or there is an unexepected exception.
+
 #### Usage
 
 1. In `spark-shell`, add the necessary jars into --jars option or put them in the
@@ -210,8 +251,7 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
    ```
    ! <RowDataSourceScanExec> cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.RowDataSourceScanExec
    ```
-
-This log can show you which operators (on what data type) can not run on GPU and the reason.
+The output will show you which operators (on what data type) can not run on GPU and the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
 you should first understand the risk and applicability of that parameter based on 
 [configs doc](../configs.md) and then enable that parameter and try the tool again.
