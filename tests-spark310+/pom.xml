@@ -45,6 +45,12 @@
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-avro_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- use aggregator jar because accessing internal classes -->
         <dependency>
             <groupId>com.nvidia</groupId>
