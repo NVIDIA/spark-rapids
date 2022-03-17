@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -807,3 +807,14 @@ def test_parquet_read_daytime_interval_gpu_file(spark_tmp_path):
     with_gpu_session(lambda spark :gen_df(spark, gen_list).coalesce(1).write.mode("overwrite").parquet(data_path))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: spark.read.parquet(data_path))
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_parquet_push_down_on_interval_type(spark_tmp_path):
+    gen_list = [('_c1', DayTimeIntervalGen())]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.read.parquet(data_path),
+        "testData",
+        "select * from testData where _c1 > interval '10 0:0:0' day to second")
