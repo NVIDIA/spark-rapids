@@ -490,27 +490,16 @@ def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
     csv_interval_gens = [
-        # 365 days * 5000 is about 5000 years
-        DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000, allow_negative=False),
-        DayTimeIntervalGen(start_field="day", end_field="day", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="day", end_field="hour", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="day", end_field="minute", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="day", end_field="second", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="hour", end_field="hour", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="hour", end_field="minute", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="hour", end_field="second", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="minute", end_field="minute", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="minute", end_field="second", max_days=365 * 5000),
-        DayTimeIntervalGen(start_field="second", end_field="second", max_days=365 * 5000),
+        DayTimeIntervalGen(start_field="day", end_field="day"),
+        DayTimeIntervalGen(start_field="day", end_field="hour"),
+        DayTimeIntervalGen(start_field="day", end_field="minute"),
+        DayTimeIntervalGen(start_field="day", end_field="second"),
+        DayTimeIntervalGen(start_field="hour", end_field="hour"),
+        DayTimeIntervalGen(start_field="hour", end_field="minute"),
+        DayTimeIntervalGen(start_field="hour", end_field="second"),
+        DayTimeIntervalGen(start_field="minute", end_field="minute"),
+        DayTimeIntervalGen(start_field="minute", end_field="second"),
+        DayTimeIntervalGen(start_field="second", end_field="second"),
     ]
 
     gen = StructGen([('_c' + str(i), csv_interval_gens[i]) for i in range(0, len(csv_interval_gens))], nullable=False)

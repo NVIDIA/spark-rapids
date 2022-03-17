@@ -624,43 +624,32 @@ class NullGen(DataGen):
 #   If hour is start field, its max value is long.max / microseconds in one hour
 #   DAY, days in the range [0..106751991]. 106751991 is long.max / microseconds in one day
 # For more details: https://spark.apache.org/docs/latest/sql-ref-datatypes.html
-MICROS_PER_DAY = 86400 * 1000000
+MIN_DAY_TIME_INTERVAL = timedelta(microseconds=-pow(2, 63))
+MAX_DAY_TIME_INTERVAL = timedelta(microseconds=(pow(2, 63) - 1))
 class DayTimeIntervalGen(DataGen):
     """Generate DayTimeIntervalType values"""
-    def __init__(self, max_days=None, start_field="day", end_field="second", allow_negative=True, nullable=True,
-                 special_cases=[timedelta(seconds=0)]):
-        super().__init__(DayTimeIntervalType(), nullable=nullable, special_cases=special_cases)
-        if max_days is None:
-            self._max_days = 106751991
-        else:
-            assert 106751991 >= max_days > 0
-            self._max_days = max_days
-        self._allow_negative = allow_negative
-        self._start_field = start_field
-        self._end_field = end_field
-
+    def __init__(self, min_value=MIN_DAY_TIME_INTERVAL, max_value=MAX_DAY_TIME_INTERVAL, start_field="day", end_field="second",
+                 nullable=True, special_cases=[timedelta(seconds=0)]):
+        # Note the nano seconds are truncated for min_value and max_value
+        self._min_micros = (math.floor(min_value.total_seconds()) * 1000000) + min_value.microseconds
+        self._max_micros = (math.floor(max_value.total_seconds()) * 1000000) + max_value.microseconds
         fields = ["day", "hour", "minute", "second"]
         start_index = fields.index(start_field)
         end_index = fields.index(end_field)
         if start_index > end_index:
-            raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field should <= end field'.format(start_field, end_field, fields))
-
+            raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field index should <= end '
+                               'field index'.format(start_field, end_field, fields))
         super().__init__(DayTimeIntervalType(start_index, end_index), nullable=nullable, special_cases=special_cases)
 
-    def _gen_random(self, rand, start_field, end_field):
-        max_micros = self._max_days * MICROS_PER_DAY
-        micros = rand.randint(0, max_micros)
-
-        if self._allow_negative:
-            sign = 1 if (rand.randint(0, 1) == 0) else -1
-        else:
-            sign = 1
-        # The library will truncate microseconds according to (start_field, end_field) in the schema
-        # Code is like: spark.createDataFrame(SparkContext.getOrCreate().parallelize(data), schema)
-        return timedelta(microseconds=micros * sign)
+    def _gen_random(self, rand):
+        micros = rand.randint(self._min_micros, self._max_micros)
+        # issue: Interval types are not truncated to the expected endField when creating a DataFrame via Duration
+        # https://issues.apache.org/jira/browse/SPARK-38577
+        # If above issue is fixed, should update this DayTimeIntervalGen.
+        return timedelta(microseconds=micros)
 
     def start(self, rand):
-        self._start(rand, lambda: self._gen_random(rand, self._start_field, self._end_field))
+        self._start(rand, lambda: self._gen_random(rand))
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
