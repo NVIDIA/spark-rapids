@@ -331,11 +331,30 @@ case class GpuArrayExists(
     GpuArrayExists(boundArg, boundFunc, followThreeValuedLogic, isBound = true, boundIntermediate)
   }
 
+  // exists is false for empty arrays
+  // post process empty arrays until cudf allows specifying
+  // a default value for an empty list reduction (i.e. similar to Scala fold)
+  //
+  private def imputeFalseForEmptyArrays(
+    transformedCV: cudf.ColumnView,
+    result: cudf.ColumnView
+    ): cudf.ColumnVector = {
+
+    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+      withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
+        withResource(transformedCV.countElements()) { elementCounts =>
+          withResource(elementCounts.equalTo(zeroScalar)) { isEmptyList =>
+            isEmptyList.ifElse(falseScalar, result)
+          }
+        }
+      }
+    }
+  }
+
   override protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView): GpuColumnVector = {
     withResource(lambdaTransformedCV) { cv =>
-      // TODO this is not right logic
-      // fix empty array handling
+      // GpuColumnVector.debug("AFTER lambda", cv)
       // fix three value logic
       val nullPolicy = if (followThreeValuedLogic) {
         cudf.NullPolicy.INCLUDE
@@ -343,14 +362,12 @@ case class GpuArrayExists(
         cudf.NullPolicy.EXCLUDE
       }
 
-      GpuColumnVector.from(
-        cv.listReduce(
-          cudf.SegmentedReductionAggregation.any(),
-          nullPolicy,
-          DType.BOOL8
-        ),
-        dataType
-      )
+      withResource(cv.listReduce(
+        cudf.SegmentedReductionAggregation.any(),
+        nullPolicy,
+        DType.BOOL8)) { reducedCV =>
+        GpuColumnVector.from(imputeFalseForEmptyArrays(cv, reducedCV), dataType)
+      }
     }
   }
 }
