@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.ExternalUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -62,7 +63,6 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
 /**
@@ -3452,26 +3452,10 @@ object GpuOverrides extends Logging {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes)
-      }),
-    GpuOverrides.scan[AvroScan](
-      "Avro parsing",
-      (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuAvroScan.tagSupport(this)
-
-        override def convertToGpu(): Scan =
-          GpuAvroScan(a.sparkSession,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            conf,
-            a.partitionFilters,
-            a.dataFilters)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
-    commonScans ++ SparkShimImpl.getScans
+    commonScans ++ SparkShimImpl.getScans ++ ExternalUtils.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,
