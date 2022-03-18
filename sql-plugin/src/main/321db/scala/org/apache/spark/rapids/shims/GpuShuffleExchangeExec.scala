@@ -38,6 +38,14 @@ case class GpuShuffleExchangeExec(
 
   override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
+  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
+  override def mapOutputStatisticsFuture: Future[MapOutputStatistics] =
+    if (inputBatchRDD.getNumPartitions == 0) {
+      Future.successful(null)
+    } else {
+      sparkContext.submitMapStage(shuffleDependencyColumnar)
+    }
+
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 
   override def numPartitions: Int = shuffleDependencyColumnar.partitioner.numPartitions
