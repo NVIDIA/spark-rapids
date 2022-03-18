@@ -364,8 +364,8 @@ e.g.:
 
 interval string in csv | Spark reads to | Plugin reads to | comments
 -----|---------------------------|-----------------|-----------
-interval '106751992' day| INTERVAL '-106751990' DAY | NULL            | Spark issue
-interval '2562047789' hour| INTERVAL '-2562047787' HOUR | NULL            | Spark issue
+interval '106751992' day| INTERVAL '-106751990' DAY | NULL| Spark issue
+interval '2562047789' hour| INTERVAL '-2562047787' HOUR | NULL| Spark issue
 
 There are two valid textual representations in CSV, take DAY TO SECOND interval for example:   
 INTERVAL '100 10:30:40.999999' DAY TO SECOND   
