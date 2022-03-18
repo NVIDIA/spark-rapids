@@ -50,7 +50,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_RE
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAbs, GpuAnsi, GpuAverage, GpuElementAt, GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuGetMapValue, GpuGetMapValueMeta}
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
@@ -616,17 +616,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "CSV parsing",
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getGpuColumnarToRowTransition(plan: SparkPlan,
-      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
-    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = ShimLoader.loadClass(serName)
-    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
-    } else {
-      GpuColumnarToRowExec(plan, exportColumnRdd)
-    }
-  }
 
   override def getGpuShuffleExchangeExec(
       gpuOutputPartitioning: GpuPartitioning,

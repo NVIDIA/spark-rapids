@@ -49,7 +49,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.rapids.execution.python._
@@ -477,17 +477,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
-  }
-
-  override def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
-    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = ShimLoader.loadClass(serName)
-    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
-    } else {
-      GpuColumnarToRowExec(plan, exportColumnRdd)
-    }
   }
 
   override def getGpuShuffleExchangeExec(

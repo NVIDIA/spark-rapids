@@ -105,8 +105,6 @@ trait SparkShims {
 
   def isWindowFunctionExec(plan: SparkPlan): Boolean
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
-  def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
   def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()

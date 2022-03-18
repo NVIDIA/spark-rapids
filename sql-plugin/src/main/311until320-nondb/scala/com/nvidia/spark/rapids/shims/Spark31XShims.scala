@@ -50,11 +50,11 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_RE
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.{GpuColumnarToRowTransitionExec, HadoopFSUtilsShim}
+import org.apache.spark.sql.rapids.shims.HadoopFSUtilsShim
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -586,17 +586,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-  }
-
-  override def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
-    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = ShimLoader.loadClass(serName)
-    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
-    } else {
-      GpuColumnarToRowExec(plan, exportColumnRdd)
-    }
   }
 
   override def getGpuShuffleExchangeExec(
