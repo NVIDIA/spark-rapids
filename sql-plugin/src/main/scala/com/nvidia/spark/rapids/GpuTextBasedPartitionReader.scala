@@ -590,7 +590,7 @@ object GpuTextBasedDateUtils {
     }
 
     // strip off suffixes that cuDF will not recognize
-    val str = formatRoot
+    val cudfSupportedFormat = formatRoot
       .replace("'T'", "T")
       .replace("[.SSSXXX]", "")
       .replace("[.SSS][XXX]", "")
@@ -600,7 +600,7 @@ object GpuTextBasedDateUtils {
       .replace(".SSS", "")
       .replace("[:ss]", "")
 
-    val cudfFormat = toStrf(str, parseString)
+    val cudfFormat = toStrf(cudfSupportedFormat, parseString)
     val suffix = if (hasZsuffix) "Z" else ""
 
     val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]",
