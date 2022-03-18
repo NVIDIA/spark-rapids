@@ -617,7 +617,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       dataType match {
         case s@StructType(_) =>
           val listBuffer = new ListBuffer[InternalRow]()
-          val supportedSchema = mapping(dataType).asInstanceOf[StructType]
+          val supportedSchema =
+            PCBSSchemaHelper.getOriginalDataType(dataType).asInstanceOf[StructType]
           arrayData.foreach(supportedSchema, (_, data) => {
             val structRow =
               handleStruct(data.asInstanceOf[InternalRow], s, s)
@@ -780,8 +781,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                     newRow: InternalRow): Unit = {
                   schema.indices.foreach { index =>
                     val dataType = schema(index).dataType
-                    if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                        dataType == NullType ||
+                    if (PCBSSchemaHelper.wasOriginalTypeConverted(dataType) ||
+                        dataType == CalendarIntervalType || dataType == NullType ||
                         (dataType.isInstanceOf[DecimalType]
                             && dataType.asInstanceOf[DecimalType].scale < 0)) {
                       if (row.isNullAt(index)) {
@@ -789,7 +790,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                       } else {
                         dataType match {
                           case s@StructType(_) =>
-                            val supportedSchema = mapping(dataType)
+                            val supportedSchema = PCBSSchemaHelper.getOriginalDataType(dataType)
                                 .asInstanceOf[StructType]
                             val structRow =
                               handleStruct(row.getStruct(index, supportedSchema.size), s, s)
@@ -1138,8 +1139,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                 newRow: InternalRow): Unit = {
               schema.indices.foreach { index =>
                 val dataType = schema(index).dataType
-                if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                    dataType == NullType ||
+                if (PCBSSchemaHelper.wasOriginalTypeConverted(dataType) ||
+                    dataType == CalendarIntervalType || dataType == NullType ||
                     (dataType.isInstanceOf[DecimalType]
                         && dataType.asInstanceOf[DecimalType].scale < 0)) {
                   if (row.isNullAt(index)) {
@@ -1147,7 +1148,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                   } else {
                     dataType match {
                       case s@StructType(_) =>
-                        val newSchema = mapping(dataType).asInstanceOf[StructType]
+                        val newSchema = PCBSSchemaHelper.getOriginalDataType(dataType)
+                            .asInstanceOf[StructType]
                         val structRow =
                           handleStruct(row.getStruct(index, s.fields.length), s, newSchema)
                         newRow.update(index, structRow)
@@ -1294,8 +1296,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
   }
 
-  val mapping = new mutable.HashMap[DataType, DataType]()
-
   // We want to change the original schema to have the new names as well
   private def sanitizeColumnNames(originalSchema: Seq[Attribute],
       schemaToCopyNamesFrom: Seq[Attribute]): Seq[Attribute] = {
@@ -1309,7 +1309,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
 
     val newCachedAttributes =
-      PCBSSchemaHelper.getSupportedSchemaFromUnsupported(cachedAttributes, mapping)
+      PCBSSchemaHelper.getSupportedSchemaFromUnsupported(cachedAttributes)
 
     val newRequestedAttributes =
       getSelectedSchemaFromCachedSchema(requestedAttributes, newCachedAttributes)
