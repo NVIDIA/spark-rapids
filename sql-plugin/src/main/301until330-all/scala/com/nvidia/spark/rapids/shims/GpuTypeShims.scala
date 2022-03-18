@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
 
@@ -74,4 +75,9 @@ object GpuTypeShims {
   def toScalarForType(t: DataType, v: Any) = {
     throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
   }
+
+  def supportCsvRead(dt: DataType) : Boolean = false
+
+  def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
+    throw new RuntimeException(s"Not support type $dt.")
 }
