@@ -17,11 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.net.URI
-import java.nio.ByteBuffer
 
 import com.esotericsoftware.kryo.Kryo
-import org.apache.arrow.memory.ReferenceManager
-import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
@@ -168,10 +165,6 @@ trait SparkShims {
   def shouldIgnorePath(path: String): Boolean
 
   def getLegacyComplexTypeToString(): Boolean
-
-  def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
-  def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
-  def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
 
   def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,

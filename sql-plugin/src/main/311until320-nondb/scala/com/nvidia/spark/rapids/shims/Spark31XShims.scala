@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims
 
 import java.net.URI
-import java.nio.ByteBuffer
 
 import scala.collection.mutable.ListBuffer
 
@@ -25,8 +24,6 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
-import org.apache.arrow.memory.ReferenceManager
-import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.SparkEnv
@@ -179,16 +176,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
-  }
-
-  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getValidityBuffer
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
-  }
-
-  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getOffsetBuffer
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   override def replaceWithAlluxioPathIfNeeded(
@@ -739,12 +726,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
 
   override def getLegacyComplexTypeToString(): Boolean = {
     SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
-  }
-
-  // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getDataBuffer()
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   /** matches SPARK-33008 fix in 3.1.1 */

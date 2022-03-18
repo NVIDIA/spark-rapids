@@ -17,15 +17,12 @@
 package com.nvidia.spark.rapids.shims
 
 import java.net.URI
-import java.nio.ByteBuffer
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
-import org.apache.arrow.memory.ReferenceManager
-import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -527,17 +524,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
   }
 
-  // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getDataBuffer()
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
-  }
-
-  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getValidityBuffer
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
-  }
-
   override def createTable(table: CatalogTable,
     sessionCatalog: SessionCatalog,
     tableLocation: Option[URI],
@@ -550,11 +536,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       schema = result.schema)
     // Table location is already validated. No need to check it again during table creation.
     sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
-  }
-
-  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getOffsetBuffer
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   /** matches SPARK-33008 fix in 3.1.1 */
