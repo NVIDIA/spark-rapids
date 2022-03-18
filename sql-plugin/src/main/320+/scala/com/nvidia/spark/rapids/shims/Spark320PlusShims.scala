@@ -35,7 +35,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, DynamicPruningExpression, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
@@ -672,25 +671,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-  override def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scanCopy = batchScanExec.scan match {
-      case parquetScan: GpuParquetScan =>
-        parquetScan.copy(queryUsesInputFile = queryUsesInputFile)
-      case orcScan: GpuOrcScan =>
-        orcScan.copy(queryUsesInputFile = queryUsesInputFile)
-      case _ => throw new RuntimeException("Wrong format") // never reach here
-    }
-    batchScanExec.copy(scan = scanCopy)
-  }
-
-  override def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile = queryUsesInputFile)(scanExec.rapidsConf)
-  }
-
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
       exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
@@ -700,13 +680,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     } else {
       GpuColumnarToRowExec(plan, exportColumnRdd)
     }
-  }
-
-  override def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
   override def getGpuShuffleExchangeExec(

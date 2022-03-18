@@ -34,7 +34,6 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
@@ -532,25 +531,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scanCopy = batchScanExec.scan match {
-      case parquetScan: GpuParquetScan =>
-        parquetScan.copy(queryUsesInputFile=queryUsesInputFile)
-      case orcScan: GpuOrcScan =>
-        orcScan.copy(queryUsesInputFile=queryUsesInputFile)
-      case _ => throw new RuntimeException("Wrong format") // never reach here
-    }
-    batchScanExec.copy(scan=scanCopy)
-  }
-
-  override def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
-  }
-
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
@@ -560,13 +540,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     } else {
       GpuColumnarToRowExec(plan, exportColumnRdd)
     }
-  }
-
-  override def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
   override def getGpuShuffleExchangeExec(

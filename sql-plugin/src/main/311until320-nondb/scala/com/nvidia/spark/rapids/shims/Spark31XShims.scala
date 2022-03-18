@@ -35,7 +35,6 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
@@ -62,7 +61,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims._
-import org.apache.spark.sql.rapids.shims.{GpuColumnarToRowTransitionExec, GpuSchemaUtils, HadoopFSUtilsShim}
+import org.apache.spark.sql.rapids.shims.{GpuColumnarToRowTransitionExec, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -181,32 +180,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
-  }
-
-  override def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scanCopy = batchScanExec.scan match {
-      case parquetScan: GpuParquetScan =>
-        parquetScan.copy(queryUsesInputFile = queryUsesInputFile)
-      case orcScan: GpuOrcScan =>
-        orcScan.copy(queryUsesInputFile = queryUsesInputFile)
-      case _ => throw new RuntimeException("Wrong format") // never reach here
-    }
-    batchScanExec.copy(scan = scanCopy)
-  }
-
-  override def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile = queryUsesInputFile)(scanExec.rapidsConf)
-  }
-
-  override def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
   override def alias(child: Expression, name: String)(
