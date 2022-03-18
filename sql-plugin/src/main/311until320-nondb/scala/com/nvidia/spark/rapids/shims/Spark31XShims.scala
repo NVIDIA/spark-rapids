@@ -198,8 +198,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     case _ => false
   }
 
-  override def hasSeparateINT96RebaseConf: Boolean = true
-
   override def getScalaUDFAsExpression(
       function: AnyRef,
       dataType: DataType,

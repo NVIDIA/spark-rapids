@@ -81,7 +81,6 @@ trait SparkShims {
   def parquetRebaseRead(conf: SQLConf): String
   def parquetRebaseWrite(conf: SQLConf): String
   def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
-  def hasSeparateINT96RebaseConf: Boolean
   def int96ParquetRebaseRead(conf: SQLConf): String
   def int96ParquetRebaseWrite(conf: SQLConf): String
   def int96ParquetRebaseReadKey: String
