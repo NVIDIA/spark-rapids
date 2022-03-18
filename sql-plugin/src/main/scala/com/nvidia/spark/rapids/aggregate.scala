@@ -811,7 +811,7 @@ object GpuBaseAggregateMeta {
     currentMeta match {
       case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
         List[GpuBaseAggregateMeta[_]](aggMeta) ++
-            getAggregateOfAllStages(aggMeta.childPlans.head, logical)
+          getAggregateOfAllStages(aggMeta.childPlans.head, logical)
       case shuffleMeta: GpuShuffleMeta =>
         getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
       case sortMeta: GpuSortMeta =>

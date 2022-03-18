@@ -16,12 +16,10 @@
 
 package org.apache.spark.sql.catalyst.json.rapids.shims
 
-import com.nvidia.spark.rapids.SparkShims
-
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.json.JSONOptions
 
-trait Spark30Xuntil33XFileOptionsShims extends SparkShims {
+object FileOptionsShims {
 
   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {

@@ -16,17 +16,15 @@
 
 package org.apache.spark.sql.catalyst.json.rapids.shims
 
-import com.nvidia.spark.rapids.shims.{Spark320PlusNonDBShims, Spark321PlusShims}
-
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.json.JSONOptions
 
-trait Spark33XFileOptionsShims extends Spark321PlusShims with Spark320PlusNonDBShims {
+object FileOptionsShims {
 
   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {
-      case csvOpts: CSVOptions => csvOpts.dateFormatInRead
-      case jsonOpts: JSONOptions => jsonOpts.dateFormatInRead
+      case csvOpts: CSVOptions => Option(csvOpts.timestampFormat)
+      case jsonOpts: JSONOptions => Option(jsonOpts.timestampFormat)
       case _ => throw new RuntimeException("Wrong file options.")
     }
   }

@@ -26,7 +26,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.json.rapids.shims.Spark30Xuntil33XFileOptionsShims
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
@@ -38,7 +37,7 @@ import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.shims.GpuFileScanRDD
 import org.apache.spark.sql.types._
 
-object SparkShimImpl extends Spark321PlusShims with Spark30Xuntil33XFileOptionsShims {
+object SparkShimImpl extends Spark321PlusShims {
 
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 

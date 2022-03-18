@@ -19,11 +19,10 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.json.rapids.shims.Spark30Xuntil33XFileOptionsShims
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2._
 
-trait Spark30Xuntil33XShims extends Spark30Xuntil33XFileOptionsShims {
+trait Spark30Xuntil33XShims extends SparkShims {
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
     GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")
