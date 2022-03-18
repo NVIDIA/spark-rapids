@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URI
 
 import com.esotericsoftware.kryo.Kryo
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
@@ -35,7 +35,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.internal.SQLConf
@@ -165,16 +165,6 @@ trait SparkShims {
   def shouldIgnorePath(path: String): Boolean
 
   def getLegacyComplexTypeToString(): Boolean
-
-  def replaceWithAlluxioPathIfNeeded(
-      conf: RapidsConf,
-      relation: HadoopFsRelation,
-      partitionFilters: Seq[Expression],
-      dataFilters: Seq[Expression]): FileIndex
-
-  def replacePartitionDirectoryFiles(
-    partitionDir: PartitionDirectory,
-    replaceFunc: Path => Path): Seq[Path]
 
   def shouldFailDivByZero(): Boolean
 

@@ -426,7 +426,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = replaceWithAlluxioPathIfNeeded(
+            val location = AlluxioUtils.replacePathIfNeeded(
               conf,
               wrapped.relation,
               partitionFilters,

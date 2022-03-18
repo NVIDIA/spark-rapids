@@ -24,7 +24,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
@@ -46,7 +46,6 @@ import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
@@ -178,94 +177,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def replaceWithAlluxioPathIfNeeded(
-      conf: RapidsConf,
-      relation: HadoopFsRelation,
-      partitionFilters: Seq[Expression],
-      dataFilters: Seq[Expression]): FileIndex = {
-
-    val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
-
-    if (alluxioPathsReplace.isDefined) {
-      // alluxioPathsReplace: Seq("key->value", "key1->value1")
-      // turn the rules to the Map with eg
-      // { s3:/foo -> alluxio://0.1.2.3:19998/foo,
-      //   gs:/bar -> alluxio://0.1.2.3:19998/bar,
-      //   /baz -> alluxio://0.1.2.3:19998/baz }
-      val replaceMapOption = alluxioPathsReplace.map(rules => {
-        rules.map(rule => {
-          val split = rule.split("->")
-          if (split.size == 2) {
-            split(0).trim -> split(1).trim
-          } else {
-            throw new IllegalArgumentException(s"Invalid setting for " +
-                s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
-          }
-        }).toMap
-      })
-
-      replaceMapOption.map(replaceMap => {
-
-        def isDynamicPruningFilter(e: Expression): Boolean =
-          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
-
-        val partitionDirs = relation.location.listFiles(
-          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-
-        // replacement func to check if the file path is prefixed with the string user configured
-        // if yes, replace it
-        val replaceFunc = (f: Path) => {
-          val pathStr = f.toString
-          val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
-          if (matchedSet.size > 1) {
-            // never reach here since replaceMap is a Map
-            throw new IllegalArgumentException(s"Found ${matchedSet.size} same replacing rules " +
-              s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule for each " +
-              s"file path")
-          } else if (matchedSet.size == 1) {
-            new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
-          } else {
-            f
-          }
-        }
-
-        // replace all of input files
-        val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
-          replacePartitionDirectoryFiles(partitionDir, replaceFunc)
-        })
-
-        // replace all of rootPaths which are already unique
-        val rootPaths = relation.location.rootPaths.map(replaceFunc)
-
-        val parameters: Map[String, String] = relation.options
-
-        // infer PartitionSpec
-        val partitionSpec = GpuPartitioningUtils.inferPartitioning(
-          relation.sparkSession,
-          rootPaths,
-          inputFiles,
-          parameters,
-          Option(relation.dataSchema),
-          replaceFunc)
-
-        // generate a new InMemoryFileIndex holding paths with alluxio schema
-        new InMemoryFileIndex(
-          relation.sparkSession,
-          inputFiles,
-          parameters,
-          Option(relation.dataSchema),
-          userSpecifiedPartitionSpec = Some(partitionSpec))
-      }).getOrElse(relation.location)
-
-    } else {
-      relation.location
-    }
-  }
-
-  override def replacePartitionDirectoryFiles(partitionDir: PartitionDirectory,
-      replaceFunc: Path => Path): Seq[Path] = {
-    partitionDir.files.map(f => replaceFunc(f.getPath))
-  }
 
   override def hasAliasQuoteFix: Boolean = false
 
@@ -652,7 +563,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = replaceWithAlluxioPathIfNeeded(
+            val location = AlluxioUtils.replacePathIfNeeded(
               conf,
               wrapped.relation,
               partitionFilters,
