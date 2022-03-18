@@ -19,8 +19,6 @@ package com.nvidia.spark.rapids.shims
 import java.net.URI
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
@@ -53,7 +51,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.sources.BaseRelation

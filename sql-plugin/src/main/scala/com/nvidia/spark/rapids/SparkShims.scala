@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 
-import com.esotericsoftware.kryo.Kryo
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
@@ -246,8 +245,6 @@ trait SparkShims {
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
-
-  def registerKryoClasses(kryo: Kryo): Unit
 
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 

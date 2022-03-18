@@ -20,8 +20,6 @@ import java.net.URI
 
 import scala.collection.mutable.ListBuffer
 
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
@@ -724,13 +722,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {
     case _: CommandResultExec => true
     case _ => false
-  }
-
-  override def registerKryoClasses(kryo: Kryo): Unit = {
-    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
-      new KryoJavaSerializer())
-    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
-      new KryoJavaSerializer())
   }
 
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {

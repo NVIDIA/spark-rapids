@@ -20,8 +20,6 @@ import java.net.URI
 
 import scala.collection.mutable.ListBuffer
 
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
@@ -54,7 +52,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.{GpuColumnarToRowTransitionExec, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
@@ -179,13 +177,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
 
 
   override def hasAliasQuoteFix: Boolean = false
-
-  override def registerKryoClasses(kryo: Kryo): Unit = {
-    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
-      new KryoJavaSerializer())
-    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
-      new KryoJavaSerializer())
-  }
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
