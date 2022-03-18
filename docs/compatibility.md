@@ -357,6 +357,21 @@ Also parsing of some values will not produce bit for bit identical results to wh
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
 then results in a number being returned when the CPU would have returned null.
 
+### CSV ANSI day time interval
+Apache Spark has an overflow issue when reading ANSI day time interval, the plugin fixed it on GPU.
+The issue is https://issues.apache.org/jira/browse/SPARK-38520.   
+e.g.:   
+
+interval string in csv | Spark reads to | Plugin reads to | comments
+-----|---------------------------|-----------------|-----------
+interval '106751992' day| INTERVAL '-106751990' DAY | NULL            | Spark issue
+interval '2562047789' hour| INTERVAL '-2562047787' HOUR | NULL            | Spark issue
+
+There are two valid textual representations in CSV, take DAY TO SECOND interval for example:   
+INTERVAL '100 10:30:40.999999' DAY TO SECOND   
+100 10:30:40.999999  
+Currently only supports the first one which is the default when Apache Spark writing.
+
 ## ORC
 
 The ORC format has fairly complete support for both reads and writes. There are only a few known
