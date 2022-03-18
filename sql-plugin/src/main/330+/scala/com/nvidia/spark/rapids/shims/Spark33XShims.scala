@@ -24,7 +24,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, FilterExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
@@ -38,7 +38,7 @@ import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-trait Spark33XShims extends Spark321PlusShims {
+trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
   /**
    * For spark3.3+ optionally return null if element not exists.

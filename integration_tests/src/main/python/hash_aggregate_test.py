@@ -24,7 +24,7 @@ from functools import reduce
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311, with_cpu_session
+from spark_session import is_before_spark_311, is_databricks104_or_later, with_cpu_session
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -421,6 +421,7 @@ def test_hash_grpby_avg(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [
     StructGen(children=[('a', int_gen), ('b', int_gen)],nullable=False,
         special_cases=[((None, None), 400.0), ((None, -1542301795), 100.0)])], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
 def test_hash_avg_nulls_partial_only(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=2).agg(f.avg('b')),
@@ -791,6 +792,7 @@ _replace_modes_single_distinct = [
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
                                                                      aqe_enabled,
@@ -1668,6 +1670,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
 def test_groupby_std_variance_partial_replace_fallback(data_gen,
                                                        conf,
                                                        replace_mode,

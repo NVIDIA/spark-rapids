@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
@@ -74,6 +74,8 @@ import org.apache.spark.unsafe.types.CalendarInterval
  */
 trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
+  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression]
+
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
@@ -82,12 +84,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override final def sessionFromPlan(plan: SparkPlan): SparkSession = {
     plan.session
-  }
-
-  override final def filesFromFileIndex(
-      fileIndex: PartitioningAwareFileIndex
-  ): Seq[FileStatus] = {
-    fileIndex.allFiles()
   }
 
   override def isEmptyRelation(relation: Any): Boolean = relation match {
@@ -99,14 +95,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = {
     Some(broadcastModeTransform(mode, Array.empty)).filter(isEmptyRelation)
   }
-
-  override final def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
-    mode.transform(rows)
-
-  override final def newBroadcastQueryStageExec(
-      old: BroadcastQueryStageExec,
-      newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old._canonicalized)
 
   override final def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
@@ -512,7 +500,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-            winPy.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            getWindowExpressions(winPy).map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
