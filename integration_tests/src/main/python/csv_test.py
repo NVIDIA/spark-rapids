@@ -484,3 +484,29 @@ def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
         do_csv_scan,
         exist_classes= "FileSourceScanExec",
         non_exist_classes= "GpuBatchScanExec")
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Reading day-time interval type is supported from Spark3.3.0')
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
+    csv_interval_gens = [
+        DayTimeIntervalGen(start_field="day", end_field="day"),
+        DayTimeIntervalGen(start_field="day", end_field="hour"),
+        DayTimeIntervalGen(start_field="day", end_field="minute"),
+        DayTimeIntervalGen(start_field="day", end_field="second"),
+        DayTimeIntervalGen(start_field="hour", end_field="hour"),
+        DayTimeIntervalGen(start_field="hour", end_field="minute"),
+        DayTimeIntervalGen(start_field="hour", end_field="second"),
+        DayTimeIntervalGen(start_field="minute", end_field="minute"),
+        DayTimeIntervalGen(start_field="minute", end_field="second"),
+        DayTimeIntervalGen(start_field="second", end_field="second"),
+    ]
+
+    gen = StructGen([('_c' + str(i), csv_interval_gens[i]) for i in range(0, len(csv_interval_gens))], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen).write.csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).csv(data_path),
+        conf=updated_conf)

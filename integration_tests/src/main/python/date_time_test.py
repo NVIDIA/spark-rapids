@@ -45,9 +45,9 @@ def test_timeadd(data_gen):
 def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000
-        ('t', TimestampGen(end = datetime(1000, 1, 1, tzinfo=timezone.utc))),
+        ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
         # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(max_days = 8000 * 365))]
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
