@@ -142,16 +142,16 @@ def is_before_spark_330():
 def is_spark_330_or_later():
     return spark_version() >= "3.3.0"
 
-def databricks_version_or_later(major, minor):
+def is_databricks_version_or_later(major, minor):
     spark = get_spark_i_know_what_i_am_doing()
-    version = spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "")
+    version = spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "0.0")
     parts = version.split(".")
     if (len(parts) < 2):
-        raise "Unable to determine Databricks version from version string: " + version
+        raise RuntimeError("Unable to determine Databricks version from version string: " + version)
     return int(parts[0]) >= major and int(parts[1]) >= minor
 
 def is_databricks91_or_later():
-    return databricks_version_or_later(9, 1)
+    return is_databricks_version_or_later(9, 1)
 
 def is_databricks104_or_later():
-    return databricks_version_or_later(10, 4)
+    return is_databricks_version_or_later(10, 4)
