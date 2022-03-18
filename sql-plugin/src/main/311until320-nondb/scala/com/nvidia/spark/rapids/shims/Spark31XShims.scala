@@ -182,13 +182,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
-    Alias(child, name)(exprId, qualifier, explicitMetadata)
-  }
-
   override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getValidityBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)

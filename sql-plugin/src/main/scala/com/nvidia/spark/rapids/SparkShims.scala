@@ -30,7 +30,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
@@ -164,11 +164,6 @@ trait SparkShims {
       nullOrdering: NullOrdering): SortOrder
 
   def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder
-
-  def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String] = Seq.empty,
-      explicitMetadata: Option[Metadata] = None): Alias
 
   def shouldIgnorePath(path: String): Boolean
 
