@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.shims
 
-import java.net.URI
-
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.InMemoryTableScanMeta
@@ -29,7 +27,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
@@ -55,7 +52,6 @@ import org.apache.spark.sql.rapids.{GpuAbs, GpuAnsi, GpuAverage, GpuElementAt, G
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
-import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -646,20 +642,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def getLegacyComplexTypeToString(): Boolean = {
     SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
-  }
-
-  override def createTable(table: CatalogTable,
-      sessionCatalog: SessionCatalog,
-      tableLocation: Option[URI],
-      result: BaseRelation) = {
-    val newTable = table.copy(
-      storage = table.storage.copy(locationUri = tableLocation),
-      // We will use the schema of resolved.relation as the schema of the table (instead of
-      // the schema of df). It is important since the nullability may be changed by the relation
-      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
-      schema = result.schema)
-    // Table location is already validated. No need to check it again during table creation.
-    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
   /** matches SPARK-33008 fix in 3.1.1 */

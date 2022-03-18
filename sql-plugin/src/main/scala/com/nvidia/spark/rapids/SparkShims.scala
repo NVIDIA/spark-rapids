@@ -16,15 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import java.net.URI
-
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -39,7 +36,6 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
-import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -178,11 +174,6 @@ trait SparkShims {
    * in array/map.
    */
   def shouldFailOnElementNotExists(): Boolean = false
-
-  def createTable(table: CatalogTable,
-    sessionCatalog: SessionCatalog,
-    tableLocation: Option[URI],
-    result: BaseRelation): Unit
 
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
 
