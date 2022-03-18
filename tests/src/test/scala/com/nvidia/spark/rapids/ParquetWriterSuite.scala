@@ -45,7 +45,12 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         val inputFile = HadoopInputFile.fromPath(
           new Path(tempFile.listFiles(filter)(0).getAbsolutePath),
           spark.sparkContext.hadoopConfiguration)
-        val parquetMeta = ParquetFileReader.open(inputFile).getFooter
+        val file = ParquetFileReader.open(inputFile)
+        val parquetMeta = try {
+          file.getFooter
+        } finally {
+          file.close()
+        }
 
         val fileMeta = parquetMeta.getFileMetaData
         val extra = fileMeta.getKeyValueMetaData
