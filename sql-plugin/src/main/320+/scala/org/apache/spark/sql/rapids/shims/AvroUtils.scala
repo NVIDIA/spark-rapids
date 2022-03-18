@@ -27,7 +27,7 @@ object AvroUtils {
     meta: RapidsMeta[_, _, _]): Unit = {
 
     if (parsedOptions.positionalFieldMatching) {
-      meta.willNotWorkOnGpu("GpuAvroScan does not support positionalFieldMatching")
+      meta.willNotWorkOnGpu("positional field matching is not supported")
     }
   }
 

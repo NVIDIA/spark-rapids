@@ -32,8 +32,8 @@ object ExternalSource {
   lazy val hasSparkAvroJar = {
     val loader = Utils.getContextOrSparkClassLoader
 
-    /** spark-avro is an optional package for spark, so we should keep in mind that rapids can
-     * run successfully even without it */
+    /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
+     * must run successfully without it. */
     Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
       case Failure(_) => false
       case Success(_) => true

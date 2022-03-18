@@ -492,9 +492,9 @@ it by default. If you would like to test it, you need to enable `spark.rapids.sq
 
 Currently, the GPU accelerated Avro reader doesn't support reading the Avro version 1.2 files.
 
-### Avro supporting types
+### Supported types
 
-The nested types(array, map and struct) are not supported yet in current version.
+The boolean, byte, short, int, long, float, double, string are supported in current version.
 
 ## Regular Expressions
 

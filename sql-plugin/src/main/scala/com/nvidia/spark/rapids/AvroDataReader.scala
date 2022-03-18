@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.avro.rapids
+package com.nvidia.spark.rapids
 
 import java.io.{InputStream, IOException}
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.avro.{Schema}
+import org.apache.avro.Schema
 import org.apache.avro.file.{DataFileConstants, SeekableInput}
 import org.apache.avro.file.DataFileConstants.{MAGIC, SYNC_SIZE}
 import org.apache.avro.io.{BinaryData, BinaryDecoder, DecoderFactory}
 
-private[sql] class SeekableInputStream(in: SeekableInput) extends InputStream with SeekableInput {
+private class SeekableInputStream(in: SeekableInput) extends InputStream with SeekableInput {
   var oneByte = new Array[Byte](1)
 
   override def read(): Int = {
@@ -61,14 +61,14 @@ private[sql] class SeekableInputStream(in: SeekableInput) extends InputStream wi
 /**
  * The header information of Avro file
  */
-private[sql] class Header {
+class Header {
   var meta = Map[String, Array[Byte]]()
   var metaKeyList = ArrayBuffer[String]()
   var sync = new Array[Byte](DataFileConstants.SYNC_SIZE)
   var schema: Schema = _
   private var firstBlockStart: Long = _
 
-  private[avro] def update(schemaValue: String, firstBlockStart: Long) = {
+  private[rapids] def update(schemaValue: String, firstBlockStart: Long) = {
     schema = new Schema.Parser().setValidate(false).setValidateDefaults(false)
       .parse(schemaValue)
     this.firstBlockStart = firstBlockStart

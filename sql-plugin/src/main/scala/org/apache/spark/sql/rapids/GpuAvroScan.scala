@@ -25,7 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, AvroFormatType, ColumnarPartitionReaderWithPartitionValues, FileFormatChecks, FilePartitionReaderBase, GpuBatchUtils, GpuColumnVector, GpuMetric, GpuSemaphore, HostMemoryOutputStream, NvtxWithMetrics, PartitionReaderWithBytesRead, RapidsConf, RapidsMeta, ReadFileOp, ScanMeta, ScanWithMetrics}
+import com.nvidia.spark.rapids.{Arm, AvroDataFileReader, AvroFormatType, BlockInfo, ColumnarPartitionReaderWithPartitionValues, FileFormatChecks, FilePartitionReaderBase, GpuBatchUtils, GpuColumnVector, GpuMetric, GpuSemaphore, Header, HostMemoryOutputStream, NvtxWithMetrics, PartitionReaderWithBytesRead, RapidsConf, RapidsMeta, ReadFileOp, ScanMeta, ScanWithMetrics}
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.avro.mapred.FsInput
@@ -37,7 +37,6 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.avro.AvroOptions
-import org.apache.spark.sql.avro.rapids.{AvroDataFileReader, BlockInfo, Header}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
@@ -123,6 +122,7 @@ case class GpuAvroScan(
       parsedOptions.ignoreExtension,
       metrics)
   }
+
   // overrides nothing in 330
   def withFilters(
     partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
@@ -210,8 +210,8 @@ case class AvroBlockMeta(header: Header, blocks: Seq[BlockInfo])
 /**
  * CopyRange to indicate from where to copy.
  *
- * @param offset
- * @param length
+ * @param offset from where to copy
+ * @param length how many bytes to copy
  */
 case class CopyRange(offset: Long, length: Long)
 
