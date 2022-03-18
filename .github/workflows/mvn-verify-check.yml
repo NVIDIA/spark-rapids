@@ -37,4 +37,4 @@ jobs:
 
       # this step includes style and doc-gen checks of default shim
       - name: mvn verify check
-        run: mvn verify -pl dist -am -DskipTests -Dskip -Dmaven.javadoc.skip
+        run: mvn verify -P pre-merge -pl dist -am -DskipTests -Dskip -Dmaven.javadoc.skip
