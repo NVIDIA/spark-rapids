@@ -50,6 +50,7 @@ import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsComman
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.execution.datasources.v2.ShowCurrentNamespaceExec
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
@@ -820,4 +821,13 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     AvoidAdaptiveTransitionToRow(GpuRowToColumnarExec(a, goal))
   }
 
+  def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
+    GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")
+  }
+}
+
+// First, Last and Collect have mistakenly been marked as non-deterministic until Spark-3.3.
+// They are actually deterministic iff their child expression is deterministic.
+trait GpuDeterministicFirstLastCollectShim extends Expression {
+  override lazy val deterministic = false
 }

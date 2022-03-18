@@ -285,19 +285,20 @@ In this section, we are using a docker container built using the sample dockerfi
 1. Choose the version of the shuffle manager that matches your Spark version.
    Currently we support:
 
-    | Spark Shim    | spark.shuffle.manager value                              |
-    | --------------| -------------------------------------------------------- |
-    | 3.0.1         | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
-    | 3.0.2         | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
-    | 3.0.3         | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
-    | 3.1.1         | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
-    | 3.1.1 CDH     | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
-    | 3.1.2         | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
-    | 3.1.3         | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
-    | 3.2.0         | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
-    | 3.2.1         | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
-    | Databricks 7.3| com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
-    | Databricks 9.1| com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
+   | Spark Shim      | spark.shuffle.manager value                              |
+   | --------------- | -------------------------------------------------------- |
+   | 3.0.1           | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
+   | 3.0.2           | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
+   | 3.0.3           | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
+   | 3.1.1           | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+   | 3.1.1 CDH       | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
+   | 3.1.2           | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
+   | 3.1.3           | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
+   | 3.2.0           | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
+   | 3.2.1           | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
+   | Databricks 7.3  | com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
+   | Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
+   | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 
 2. Settings for UCX 1.11.2+:
 
