@@ -18,23 +18,12 @@ package org.apache.spark.sql.rapids
 
 import java.util.concurrent.atomic.AtomicLong
 
-import scala.collection.mutable
-
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.types.{ArrayType, AtomicType, ByteType, CalendarIntervalType, DataType, DataTypes, Decimal, DecimalType, IntegerType, LongType, MapType, NullType, StructField, StructType, UserDefinedType}
 
 object PCBSSchemaHelper {
-  private val mapping = new mutable.HashMap[DataType, DataType]()
-
-  def getOriginalDataType(dataType: DataType): DataType = {
-    mapping.getOrElse(dataType,
-      throw new NoSuchElementException("Can't find original type in conversion map"))
-  }
-
-  def wasOriginalTypeConverted(dataType: DataType): Boolean = mapping.contains(dataType)
-
   val calendarIntervalStructType = new StructType()
       .add("_days", IntegerType)
       .add("_months", IntegerType)
@@ -74,9 +63,7 @@ object PCBSSchemaHelper {
    * e.g. CalendarIntervalType is converted to a struct with a struct of two integer types and a
    * long type.
    */
-  def getSupportedDataType(
-      curId: AtomicLong,
-      dataType: DataType): DataType = {
+  def getSupportedDataType(dataType: DataType): DataType = {
     dataType match {
       case CalendarIntervalType =>
         calendarIntervalStructType
@@ -85,22 +72,19 @@ object PCBSSchemaHelper {
       case s: StructType =>
         val newStructType = StructType(
           s.indices.map { index =>
-            StructField(curId.getAndIncrement().toString,
-              getSupportedDataType(curId, s.fields(index).dataType),
+            StructField(s.fields(index).name,
+              getSupportedDataType(s.fields(index).dataType),
               s.fields(index).nullable, s.fields(index).metadata)
           })
-        mapping.put(s, newStructType)
         newStructType
-      case a@ArrayType(elementType, nullable) =>
+      case _@ArrayType(elementType, nullable) =>
         val newArrayType =
-          ArrayType(getSupportedDataType(curId, elementType), nullable)
-        mapping.put(a, newArrayType)
+          ArrayType(getSupportedDataType(elementType), nullable)
         newArrayType
-      case m@MapType(keyType, valueType, nullable) =>
-        val newKeyType = getSupportedDataType(curId, keyType)
-        val newValueType = getSupportedDataType(curId, valueType)
+      case _@MapType(keyType, valueType, nullable) =>
+        val newKeyType = getSupportedDataType(keyType)
+        val newValueType = getSupportedDataType(valueType)
         val mapType = MapType(newKeyType, newValueType, nullable)
-        mapping.put(m, mapType)
         mapType
       case d: DecimalType if d.scale < 0 =>
         val newType = if (d.precision <= Decimal.MAX_INT_DIGITS) {
@@ -137,11 +121,11 @@ object PCBSSchemaHelper {
                 attribute.metadata)(attribute.exprId).asInstanceOf[Attribute]
           case StructType(_) | ArrayType(_, _) | MapType(_, _, _) | DecimalType() =>
             AttributeReference(name,
-              getSupportedDataType(curId, attribute.dataType),
+              getSupportedDataType(attribute.dataType),
               attribute.nullable, attribute.metadata)(attribute.exprId)
           case udt: UserDefinedType[_] =>
             AttributeReference(name,
-              getSupportedDataType(curId, udt.sqlType),
+              getSupportedDataType(udt.sqlType),
               attribute.nullable, attribute.metadata)(attribute.exprId)
           case _ =>
             attribute.withName(name)

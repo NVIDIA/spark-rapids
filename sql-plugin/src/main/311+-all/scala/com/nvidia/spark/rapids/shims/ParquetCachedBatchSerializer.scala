@@ -618,7 +618,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         case s@StructType(_) =>
           val listBuffer = new ListBuffer[InternalRow]()
           val supportedSchema =
-            PCBSSchemaHelper.getOriginalDataType(dataType).asInstanceOf[StructType]
+            PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
           arrayData.foreach(supportedSchema, (_, data) => {
             val structRow =
               handleStruct(data.asInstanceOf[InternalRow], s, s)
@@ -781,55 +781,48 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                     newRow: InternalRow): Unit = {
                   schema.indices.foreach { index =>
                     val dataType = schema(index).dataType
-                    if (PCBSSchemaHelper.wasOriginalTypeConverted(dataType) ||
-                        dataType == CalendarIntervalType || dataType == NullType ||
-                        (dataType.isInstanceOf[DecimalType]
-                            && dataType.asInstanceOf[DecimalType].scale < 0)) {
-                      if (row.isNullAt(index)) {
-                        newRow.setNullAt(index)
-                      } else {
-                        dataType match {
-                          case s@StructType(_) =>
-                            val supportedSchema = PCBSSchemaHelper.getOriginalDataType(dataType)
-                                .asInstanceOf[StructType]
-                            val structRow =
-                              handleStruct(row.getStruct(index, supportedSchema.size), s, s)
-                            newRow.update(index, structRow)
-
-                          case a@ArrayType(_, _) =>
-                            val arrayData = row.getArray(index)
-                            newRow.update(index, handleArray(a.elementType, arrayData))
-
-                          case MapType(keyType, valueType, _) =>
-                            val mapData = row.getMap(index)
-                            newRow.update(index, handleMap(keyType, valueType, mapData))
-
-                          case CalendarIntervalType =>
-                            val interval = handleInterval(row, index)
-                            if (interval == null) {
-                              newRow.setNullAt(index)
-                            } else {
-                              newRow.setInterval(index, interval)
-                            }
-                          case d: DecimalType =>
-                            if (row.isNullAt(index)) {
-                              newRow.setDecimal(index, null, d.precision)
-                            } else {
-                              val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-                                Decimal(row.getInt(index).toLong, d.precision, d.scale)
-                              } else {
-                                Decimal(row.getLong(index), d.precision, d.scale)
-                              }
-                              newRow.update(index, dec)
-                            }
-                          case NullType =>
-                            newRow.setNullAt(index)
-                          case _ =>
-                            newRow.update(index, row.get(index, dataType))
-                        }
-                      }
+                    if (row.isNullAt(index)) {
+                      newRow.setNullAt(index)
                     } else {
-                      newRow.update(index, row.get(index, dataType))
+                      dataType match {
+                        case s@StructType(_) =>
+                          val supportedSchema =
+                            PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
+                          val structRow =
+                            handleStruct(row.getStruct(index, supportedSchema.size), s, s)
+                          newRow.update(index, structRow)
+
+                        case a@ArrayType(_, _) =>
+                          val arrayData = row.getArray(index)
+                          newRow.update(index, handleArray(a.elementType, arrayData))
+
+                        case MapType(keyType, valueType, _) =>
+                          val mapData = row.getMap(index)
+                          newRow.update(index, handleMap(keyType, valueType, mapData))
+
+                        case CalendarIntervalType =>
+                          val interval = handleInterval(row, index)
+                          if (interval == null) {
+                            newRow.setNullAt(index)
+                          } else {
+                            newRow.setInterval(index, interval)
+                          }
+                        case d: DecimalType =>
+                          if (row.isNullAt(index)) {
+                            newRow.setDecimal(index, null, d.precision)
+                          } else {
+                            val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
+                              Decimal(row.getInt(index).toLong, d.precision, d.scale)
+                            } else {
+                              Decimal(row.getLong(index), d.precision, d.scale)
+                            }
+                            newRow.update(index, dec)
+                          }
+                        case NullType =>
+                          newRow.setNullAt(index)
+                        case _ =>
+                          newRow.update(index, row.get(index, dataType))
+                      }
                     }
                   }
                 }
@@ -1139,54 +1132,47 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                 newRow: InternalRow): Unit = {
               schema.indices.foreach { index =>
                 val dataType = schema(index).dataType
-                if (PCBSSchemaHelper.wasOriginalTypeConverted(dataType) ||
-                    dataType == CalendarIntervalType || dataType == NullType ||
-                    (dataType.isInstanceOf[DecimalType]
-                        && dataType.asInstanceOf[DecimalType].scale < 0)) {
-                  if (row.isNullAt(index)) {
-                    newRow.setNullAt(index)
-                  } else {
-                    dataType match {
-                      case s@StructType(_) =>
-                        val newSchema = PCBSSchemaHelper.getOriginalDataType(dataType)
-                            .asInstanceOf[StructType]
-                        val structRow =
-                          handleStruct(row.getStruct(index, s.fields.length), s, newSchema)
-                        newRow.update(index, structRow)
-
-                      case ArrayType(arrayDataType, _) =>
-                        val arrayData = row.getArray(index)
-                        val newArrayData = handleArray(arrayDataType, arrayData)
-                        newRow.update(index, newArrayData)
-
-                      case MapType(keyType, valueType, _) =>
-                        val mapData = row.getMap(index)
-                        val map = handleMap(keyType, valueType, mapData)
-                        newRow.update(index, map)
-
-                      case CalendarIntervalType =>
-                        val structData: InternalRow = handleInterval(row, index)
-                        if (structData == null) {
-                          newRow.setNullAt(index)
-                        } else {
-                          newRow.update(index, structData)
-                        }
-
-                      case d: DecimalType if d.scale < 0 =>
-                        if (d.precision <= Decimal.MAX_INT_DIGITS) {
-                          newRow.update(index, row.getDecimal(index, d.precision, d.scale)
-                              .toUnscaledLong.toInt)
-                        } else {
-                          newRow.update(index, row.getDecimal(index, d.precision, d.scale)
-                              .toUnscaledLong)
-                        }
-
-                      case _ =>
-                        newRow.update(index, row.get(index, dataType))
-                    }
-                  }
+                if (row.isNullAt(index)) {
+                  newRow.setNullAt(index)
                 } else {
-                  newRow.update(index, row.get(index, dataType))
+                  dataType match {
+                    case s@StructType(_) =>
+                      val newSchema =
+                        PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
+                      val structRow =
+                        handleStruct(row.getStruct(index, s.fields.length), s, newSchema)
+                      newRow.update(index, structRow)
+
+                    case ArrayType(arrayDataType, _) =>
+                      val arrayData = row.getArray(index)
+                      val newArrayData = handleArray(arrayDataType, arrayData)
+                      newRow.update(index, newArrayData)
+
+                    case MapType(keyType, valueType, _) =>
+                      val mapData = row.getMap(index)
+                      val map = handleMap(keyType, valueType, mapData)
+                      newRow.update(index, map)
+
+                    case CalendarIntervalType =>
+                      val structData: InternalRow = handleInterval(row, index)
+                      if (structData == null) {
+                        newRow.setNullAt(index)
+                      } else {
+                        newRow.update(index, structData)
+                      }
+
+                    case d: DecimalType if d.scale < 0 =>
+                      if (d.precision <= Decimal.MAX_INT_DIGITS) {
+                        newRow.update(index, row.getDecimal(index, d.precision, d.scale)
+                            .toUnscaledLong.toInt)
+                      } else {
+                        newRow.update(index, row.getDecimal(index, d.precision, d.scale)
+                            .toUnscaledLong)
+                      }
+
+                    case _ =>
+                      newRow.update(index, row.get(index, dataType))
+                  }
                 }
               }
             }
