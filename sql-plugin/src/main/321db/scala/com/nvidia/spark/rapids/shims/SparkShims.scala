@@ -54,6 +54,9 @@ object SparkShimImpl extends Spark321PlusShims with Spark30Xuntil33XFileOptionsS
   }
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any = {
+    // In some cases we can be asked to transform when there's no task context, which appears to
+    // be new behavior since Databricks 10.4. A task memory manager must be passed, so if one is
+    // not available we construct one from the main memory manager using a task attempt ID of 0.
     val memoryManager = Option(TaskContext.get).map(_.taskMemoryManager()).getOrElse {
       new TaskMemoryManager(SparkEnv.get.memoryManager, 0)
     }

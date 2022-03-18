@@ -122,7 +122,7 @@ case class GpuFlatMapGroupsInPandasExec(
     val pythonOutputSchema = StructType(
         StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
-    // Configs from DB 9.1 runtime
+    // Configs from DB 10.4 runtime
     val maxBytes = conf.pandasZeroConfConversionMaxBytesPerSlice
     val zeroConfEnabled = conf.pandasZeroConfConversionEnabled
 
