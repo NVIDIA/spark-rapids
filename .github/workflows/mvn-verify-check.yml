@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# A workflow to check if generated docs are up to date
-name: doc-gen check
+# A workflow to run mvn verify check
+name: mvn-verify check
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docgen-check:
+  mvn-verify-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
@@ -35,11 +35,6 @@ jobs:
           distribution: adopt
           java-version: 8
 
-      - name: build deps
-        run: mvn install -pl 'aggregator' -am -DskipTests
-
-      - name: doc-gen
-        run: mvn antrun:run@update_config_docs -pl dist
-
-      - name: check if existing modified files
-        run: mvn exec:exec@if_modified_files -P pre-merge -pl dist
+      # this step includes style and doc-gen checks of default shim
+      - name: mvn verify check
+        run: mvn verify -pl dist -am -DskipTests -Dskip -Dmaven.javadoc.skip
