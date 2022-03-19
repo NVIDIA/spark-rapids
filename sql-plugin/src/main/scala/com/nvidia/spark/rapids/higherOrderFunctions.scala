@@ -311,7 +311,6 @@ case class GpuArrayTransform(
 case class GpuArrayExists(
     argument: Expression,
     function: Expression,
-    followThreeValuedLogic: Boolean,
     isBound: Boolean = false,
     boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
 
@@ -319,16 +318,11 @@ case class GpuArrayExists(
 
   override def prettyName: String = "exists"
 
-  override def nullable: Boolean =
-    if (followThreeValuedLogic) {
-      super.nullable || function.nullable
-    } else {
-      super.nullable
-    }
+  override def nullable: Boolean = super.nullable || function.nullable
 
   override def bind(input: AttributeSeq): GpuExpression = {
     val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
-    GpuArrayExists(boundArg, boundFunc, followThreeValuedLogic, isBound = true, boundIntermediate)
+    GpuArrayExists(boundArg, boundFunc, isBound = true, boundIntermediate)
   }
 
   // exists is false for empty arrays
@@ -351,25 +345,29 @@ case class GpuArrayExists(
     }
   }
 
-  override protected def transformListColumnView(
-    lambdaTransformedCV: cudf.ColumnView): GpuColumnVector = {
-    withResource(lambdaTransformedCV) { cv =>
-      // GpuColumnVector.debug("AFTER lambda", cv)
-      // fix three value logic
-      val nullPolicy = if (followThreeValuedLogic) {
-        cudf.NullPolicy.INCLUDE
-      } else {
-        cudf.NullPolicy.EXCLUDE
-      }
+  private def existsReduce(columnView: cudf.ColumnView, nullPolicy: cudf.NullPolicy) = {
+    columnView.listReduce(
+      cudf.SegmentedReductionAggregation.any(),
+      nullPolicy,
+      DType.BOOL8)
+  }
 
-      withResource(cv.listReduce(
-        cudf.SegmentedReductionAggregation.any(),
-        nullPolicy,
-        DType.BOOL8)) { reducedCV =>
-        GpuColumnVector.from(imputeFalseForEmptyArrays(cv, reducedCV), dataType)
+  override protected def transformListColumnView(
+    lambdaTransformedCV: cudf.ColumnView
+  ): GpuColumnVector = {
+    withResource(lambdaTransformedCV) { cv =>
+      withResource(existsReduce(cv, cudf.NullPolicy.EXCLUDE)) { existsNullsExcludedCV =>
+        withResource(existsReduce(cv, cudf.NullPolicy.INCLUDE)) { existsNullsIncludedCV =>
+          withResource(existsNullsExcludedCV.ifElse(
+            existsNullsExcludedCV,
+            existsNullsIncludedCV)) { reducedCV =>
+              GpuColumnVector.from(imputeFalseForEmptyArrays(cv, reducedCV), dataType)
+          }
+        }
       }
     }
   }
+
 }
 
 trait GpuMapSimpleHigherOrderFunction extends GpuSimpleHigherOrderFunction with GpuBind {
