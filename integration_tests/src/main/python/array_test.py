@@ -334,7 +334,7 @@ def test_get_array_struct_fields(data_gen):
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(string_gen), ArrayGen(int_gen)])
 @pytest.mark.parametrize('threeVL', [
-    pytest.param(False, id='3VL:off', marks=pytest.mark.xfail(reason='TODO')),
+    pytest.param(False, id='3VL:off'),
     pytest.param(True, id='3VL:on'),
 ])
 def test_array_exists(data_gen, threeVL):

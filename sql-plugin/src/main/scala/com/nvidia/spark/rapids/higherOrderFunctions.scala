@@ -311,6 +311,7 @@ case class GpuArrayTransform(
 case class GpuArrayExists(
     argument: Expression,
     function: Expression,
+    followThreeValuedLogic: Boolean,
     isBound: Boolean = false,
     boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
 
@@ -322,7 +323,7 @@ case class GpuArrayExists(
 
   override def bind(input: AttributeSeq): GpuExpression = {
     val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
-    GpuArrayExists(boundArg, boundFunc, isBound = true, boundIntermediate)
+    GpuArrayExists(boundArg, boundFunc,  followThreeValuedLogic,isBound = true, boundIntermediate)
   }
 
   // exists is false for empty arrays
@@ -332,8 +333,7 @@ case class GpuArrayExists(
   private def imputeFalseForEmptyArrays(
     transformedCV: cudf.ColumnView,
     result: cudf.ColumnView
-    ): GpuColumnVector = {
-
+  ): GpuColumnVector = {
     withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
       withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
         withResource(transformedCV.countElements()) { elementCounts =>
@@ -352,18 +352,40 @@ case class GpuArrayExists(
       DType.BOOL8)
   }
 
+  private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(cv.getChildColumnView(0)) { nestedView =>
+      withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+        withResource(nestedView.replaceNulls(falseScalar)) { nonNullListCol =>
+          withResource(cv.replaceListChild(nonNullListCol)) { reduceInput =>
+            existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+          }
+        }
+      }
+    }
+  }
+
+  private def threeValueExists(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(existsReduce(cv, cudf.NullPolicy.EXCLUDE)) { existsNullsExcludedCV =>
+      withResource(existsReduce(cv, cudf.NullPolicy.INCLUDE)) { existsNullsIncludedCV =>
+        existsNullsExcludedCV.ifElse(existsNullsExcludedCV, existsNullsIncludedCV)
+      }
+    }
+  }
+
+  private def exists(cv: cudf.ColumnView) = {
+    if (followThreeValuedLogic) {
+      threeValueExists(cv)
+    } else {
+      legacyExists(cv)
+    }
+  }
+
   override protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView
   ): GpuColumnVector = {
     withResource(lambdaTransformedCV) { cv =>
-      withResource(existsReduce(cv, cudf.NullPolicy.EXCLUDE)) { existsNullsExcludedCV =>
-        withResource(existsReduce(cv, cudf.NullPolicy.INCLUDE)) { existsNullsIncludedCV =>
-          withResource(
-            existsNullsExcludedCV.ifElse(existsNullsExcludedCV, existsNullsIncludedCV)
-          ) {
-            reducedCV => imputeFalseForEmptyArrays(cv, reducedCV)
-          }
-        }
+      withResource(exists(cv)) { reducedCV =>
+        imputeFalseForEmptyArrays(cv, reducedCV)
       }
     }
   }

@@ -2871,16 +2871,11 @@ object GpuOverrides extends Logging {
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
             TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[ArrayExists](in, conf, p, r) {
-        override def tagExprForGpu() = {
-          if (!SQLConf.get.getConf(SQLConf.LEGACY_ARRAY_EXISTS_FOLLOWS_THREE_VALUED_LOGIC)) {
-            willNotWorkOnGpu("because the default " +
-             s"${SQLConf.LEGACY_ARRAY_EXISTS_FOLLOWS_THREE_VALUED_LOGIC.key} is disabled")
-          }
-        }
         override def convertToGpu(): GpuExpression = {
           GpuArrayExists(
             childExprs.head.convertToGpu(),
-            childExprs(1).convertToGpu()
+            childExprs(1).convertToGpu(),
+            SQLConf.get.getConf(SQLConf.LEGACY_ARRAY_EXISTS_FOLLOWS_THREE_VALUED_LOGIC)
           )
         }
       }),
