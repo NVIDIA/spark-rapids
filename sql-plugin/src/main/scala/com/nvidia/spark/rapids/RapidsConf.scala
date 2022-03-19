@@ -340,6 +340,13 @@ object RapidsConf {
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
 
+  val RMM_EXACT_ALLOC = conf("spark.rapids.memory.gpu.allocSize")
+      .doc("The exact size in byte that RMM should allocate. This is intended to only be " +
+          "used for testing.")
+      .internal() // If this becomes public we need to add in checks for the value when it is used.
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional
+
   val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
         s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
@@ -1510,6 +1517,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     }
     pool
   }
+
+  lazy val rmmExactAlloc: Option[Long] = get(RMM_EXACT_ALLOC)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 

@@ -22,6 +22,7 @@ import scala.collection.mutable.ListBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -177,6 +178,8 @@ abstract class GpuTextBasedPartitionReader(
                    DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
                    DataTypes.DoubleType | _: DecimalType | DataTypes.DateType =>
                 f.copy(dataType = DataTypes.StringType)
+              case other if GpuTypeShims.supportCsvRead(other) =>
+                f.copy(dataType = DataTypes.StringType)
               case _ =>
                 f
             }
@@ -219,6 +222,8 @@ abstract class GpuTextBasedPartitionReader(
                   castStringToDecimal(table.getColumn(i), dt)
                 case DataTypes.DateType =>
                   castStringToDate(table.getColumn(i))
+                case other if GpuTypeShims.supportCsvRead(other) =>
+                  GpuTypeShims.csvRead(table.getColumn(i), other)
                 case _ =>
                   table.getColumn(i).incRefCount()
               }
