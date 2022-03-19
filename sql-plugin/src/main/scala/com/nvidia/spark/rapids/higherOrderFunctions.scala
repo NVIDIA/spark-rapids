@@ -326,10 +326,6 @@ case class GpuArrayExists(
     GpuArrayExists(boundArg, boundFunc,  followThreeValuedLogic,isBound = true, boundIntermediate)
   }
 
-  // exists is false for empty arrays
-  // post process empty arrays until cudf allows specifying
-  // a default value for an empty list reduction (i.e. similar to Scala fold)
-  //
   private def imputeFalseForEmptyArrays(
     transformedCV: cudf.ColumnView,
     result: cudf.ColumnView
@@ -352,18 +348,35 @@ case class GpuArrayExists(
       DType.BOOL8)
   }
 
-  private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
-    withResource(cv.getChildColumnView(0)) { nestedView =>
-      withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
-        withResource(nestedView.replaceNulls(falseScalar)) { nonNullListCol =>
-          withResource(cv.replaceListChild(nonNullListCol)) { reduceInput =>
-            existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
-          }
+  private def replaceChildNullsByFalse(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+      withResource(cv.getChildColumnView(0)) { childView =>
+        withResource(childView.replaceNulls(falseScalar)) { noNullsChildView =>
+            cv.replaceListChild(noNullsChildView)
         }
       }
     }
   }
 
+  /*
+   * The difference between legacyExists and EXCLUDE nulls reduction
+   * is that the list without valid values (all nulls) should produce false
+   * which is equivalent to replacing nulls with false after lambda prior
+   * to aggregation
+   */
+  private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(replaceChildNullsByFalse(cv)) { reduceInput =>
+      existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+    }
+  }
+
+  /*
+   * 3VL is true if EXCLUDE nulls reduce is true
+   * 3VL is false if INCLUDE nulls reduce is false
+   * 3VL is null if
+   *    EXCLUDE null reduce is false and
+   *    INCLUDE nulls reduce is null
+   */
   private def threeValueExists(cv: cudf.ColumnView): cudf.ColumnView = {
     withResource(existsReduce(cv, cudf.NullPolicy.EXCLUDE)) { existsNullsExcludedCV =>
       withResource(existsReduce(cv, cudf.NullPolicy.INCLUDE)) { existsNullsIncludedCV =>
@@ -384,8 +397,12 @@ case class GpuArrayExists(
     lambdaTransformedCV: cudf.ColumnView
   ): GpuColumnVector = {
     withResource(lambdaTransformedCV) { cv =>
-      withResource(exists(cv)) { reducedCV =>
-        imputeFalseForEmptyArrays(cv, reducedCV)
+      withResource(exists(cv)) { existsCV =>
+        // exists is false for empty arrays
+        // post process empty arrays until cudf allows specifying
+        // the initial value for a list reduction (i.e. similar to Scala fold)
+        // https://github.com/rapidsai/cudf/issues/10455
+        imputeFalseForEmptyArrays(cv, existsCV)
       }
     }
   }
