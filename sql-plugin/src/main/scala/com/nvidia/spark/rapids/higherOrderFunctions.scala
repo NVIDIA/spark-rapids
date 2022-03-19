@@ -332,13 +332,13 @@ case class GpuArrayExists(
   private def imputeFalseForEmptyArrays(
     transformedCV: cudf.ColumnView,
     result: cudf.ColumnView
-    ): cudf.ColumnVector = {
+    ): GpuColumnVector = {
 
     withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
       withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
         withResource(transformedCV.countElements()) { elementCounts =>
           withResource(elementCounts.equalTo(zeroScalar)) { isEmptyList =>
-            isEmptyList.ifElse(falseScalar, result)
+            GpuColumnVector.from(isEmptyList.ifElse(falseScalar, result), dataType)
           }
         }
       }
@@ -358,10 +358,10 @@ case class GpuArrayExists(
     withResource(lambdaTransformedCV) { cv =>
       withResource(existsReduce(cv, cudf.NullPolicy.EXCLUDE)) { existsNullsExcludedCV =>
         withResource(existsReduce(cv, cudf.NullPolicy.INCLUDE)) { existsNullsIncludedCV =>
-          withResource(existsNullsExcludedCV.ifElse(
-            existsNullsExcludedCV,
-            existsNullsIncludedCV)) { reducedCV =>
-              GpuColumnVector.from(imputeFalseForEmptyArrays(cv, reducedCV), dataType)
+          withResource(
+            existsNullsExcludedCV.ifElse(existsNullsExcludedCV, existsNullsIncludedCV)
+          ) {
+            reducedCV => imputeFalseForEmptyArrays(cv, reducedCV)
           }
         }
       }
