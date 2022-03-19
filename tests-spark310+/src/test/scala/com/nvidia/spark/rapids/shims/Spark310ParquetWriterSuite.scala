@@ -149,7 +149,8 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
         Array(StructField("empty", ByteType, false),
           StructField("empty", ByteType, false),
           StructField("empty", ByteType, false)))
-      ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema, BYTES_ALLOWED_PER_BATCH)
+      ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
+        BYTES_ALLOWED_PER_BATCH, false)
       theTableMock.close()
     }
   }
