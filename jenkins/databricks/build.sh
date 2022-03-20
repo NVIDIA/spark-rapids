@@ -68,80 +68,119 @@ CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VER
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 JARDIR=/databricks/jars
 # install the Spark pom file so we get dependencies
-SQLJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
-CATALYSTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
-ANNOTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
-COREJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
+case "$BASE_SPARK_VERSION" in
+    "3.2.1")
+        COMMONS_LANG3_VERSION=3.12.0
+        COMMONS_IO_VERSION=2.8.0
+        DB_VERSION=-0003
+        FASTERXML_JACKSON_VERSION=2.12.3
+        HADOOP_VERSION=3.2
+        HIVE_FULL_VERSION=2.3.9
+        JSON4S_VERSION=3.7.0-M11
+        ORC_VERSION=1.6.12
+        PARQUET_VERSION=1.12.0
+        ;;
+    "3.1.2")
+        COMMONS_LANG3_VERSION=3.10
+        COMMONS_IO_VERSION=2.4
+        DB_VERSION=9
+        FASTERXML_JACKSON_VERSION=2.10.0
+        HADOOP_VERSION=2.7
+        HIVE_FULL_VERSION=2.3.7
+        JSON4S_VERSION=3.7.0-M5
+        ORC_VERSION=1.5.12
+        PARQUET_VERSION=1.10.1
+        ;;
+    "3.0.1")
+        COMMONS_LANG3_VERSION=3.9
+        COMMONS_IO_VERSION=2.4
+        DB_VERSION=6
+        FASTERXML_JACKSON_VERSION=2.10.0
+        HADOOP_VERSION=2.7
+        HIVE_FULL_VERSION=2.3.7
+        JSON4S_VERSION=3.6.6
+        ORC_VERSION=1.5.10
+        PARQUET_VERSION=1.10.1
+        ;;
+    *) echo "Unexpected Spark version: $BASE_SPARK_VERSION"; exit 1;;
+esac
+
+SQLJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--core--core-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+CATALYSTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--catalyst--catalyst-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+ANNOTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--tags--tags-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+COREJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--core--core-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+
 COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_VERSION}.pom
-HIVEJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--hive--hive_2.12_deploy_shaded.jar
-COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
-
-# We may ened to come up with way to specify versions but for now hardcode and deal with for next Databricks version
-HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
-HIVESERDEJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-serde--org.apache.hive__hive-serde__2.3.7.jar
-HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.2.jar
-
-if [[ $BASE_SPARK_VERSION == "3.1.2" ]]
+if [[ $BASE_SPARK_VERSION == "3.2.1" ]]
 then
-    PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks9.jar
-    PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks9.jar
-    PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks9.jar
-    ORC_CORE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.12.jar
-    ORC_SHIM_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.12.jar
-    ORC_MAPREDUCE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.12.jar
+    HIVEJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--hive--hive-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy_shaded.jar
 else
-    PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks6.jar
-    PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks6.jar
-    PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks6.jar
-    ORC_CORE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.10.jar
-    ORC_SHIM_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.10.jar
-    ORC_MAPREDUCE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.10.jar
+    HIVEJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--hive--hive_${SCALA_VERSION}_deploy_shaded.jar
 fi
 
-PROTOBUF_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
-PARQUETFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
+COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
 
-NETWORKCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--network-common--network-common-hive-2.3__hadoop-2.7_2.12_deploy.jar
-COMMONUNSAFE=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--unsafe--unsafe-hive-2.3__hadoop-2.7_2.12_deploy.jar
-LAUNCHER=----workspace_${SPARK_MAJOR_VERSION_STRING}--launcher--launcher-hive-2.3__hadoop-2.7_2.12_deploy.jar
+# We may need to come up with way to specify versions but for now hardcode and deal with for next Databricks version
+HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__${HIVE_FULL_VERSION}.jar
+HIVESERDEJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hive--hive-serde--org.apache.hive__hive-serde__${HIVE_FULL_VERSION}.jar
+HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.2.jar
 
-KRYO=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.esotericsoftware--kryo-shaded--com.esotericsoftware__kryo-shaded__4.0.2.jar
+PARQUETHADOOPJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__${PARQUET_VERSION}-databricks${DB_VERSION}.jar
+PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__${PARQUET_VERSION}-databricks${DB_VERSION}.jar
+PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__${PARQUET_VERSION}-databricks${DB_VERSION}.jar
+ORC_CORE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.orc--orc-core--org.apache.orc__orc-core__${ORC_VERSION}.jar
+ORC_SHIM_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.orc--orc-shims--org.apache.orc__orc-shims__${ORC_VERSION}.jar
+ORC_MAPREDUCE_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__${ORC_VERSION}.jar
 
-APACHECOMMONS=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--commons-io--commons-io--commons-io__commons-io__2.4.jar
+PROTOBUF_JAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
+if [[ $BASE_SPARK_VERSION == "3.2.1" ]]
+then
+    PARQUETFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.parquet--parquet-format-structures--org.apache.parquet__parquet-format-structures__${PARQUET_VERSION}-databricks${DB_VERSION}.jar
+else
+    PARQUETFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
+fi
+
+NETWORKCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--network-common--network-common-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+NETWORKSHUFFLE=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--network-shuffle--network-shuffle-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+COMMONUNSAFE=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--unsafe--unsafe-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+LAUNCHER=----workspace_${SPARK_MAJOR_VERSION_STRING}--launcher--launcher-hive-2.3__hadoop-${HADOOP_VERSION}_${SCALA_VERSION}_deploy.jar
+
+KRYO=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--com.esotericsoftware--kryo-shaded--com.esotericsoftware__kryo-shaded__4.0.2.jar
+
+APACHECOMMONS=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--commons-io--commons-io--commons-io__commons-io__${COMMONS_IO_VERSION}.jar
+APACHECOMMONSLANG3=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__${COMMONS_LANG3_VERSION}.jar
 
 if [[ $BASE_SPARK_VERSION == "3.0.1" ]]
 then
-    JSON4S=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__3.6.6.jar
-    APACHECOMMONSLANG3=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__3.9.jar
-    HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.1.jar
-    ARROWFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__0.15.1.jar
-    ARROWMEMORYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory--org.apache.arrow__arrow-memory__0.15.1.jar
-    ARROWVECTORJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__0.15.1.jar
+    HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.1.jar
+    ARROWFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__0.15.1.jar
+    ARROWMEMORYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-memory--org.apache.arrow__arrow-memory__0.15.1.jar
+    ARROWVECTORJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__0.15.1.jar
     HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--patched-hive-with-glue--hive-exec-core_shaded.jar
 else
-    JSON4S=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__3.7.0-M5.jar
-    APACHECOMMONSLANG3=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__3.10.jar
-    HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.2.jar
-    if [[ $BASE_SPARK_VERSION == "3.1.2" ]]; then
-      HIVEEXECJAR=----workspace_spark_3_1--patched-hive-with-glue--hive-exec-core_shaded.jar
+    HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.2.jar
+    if [[ $BASE_SPARK_VERSION != "3.0.1" ]]; then
+      HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--patched-hive-with-glue--hive-exec-core_shaded.jar
     else
-      HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
+      HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
     fi
-    ARROWFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__2.0.0.jar
-    ARROWMEMORYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory-core--org.apache.arrow__arrow-memory-core__2.0.0.jar
-    ARROWMEMORYNETTYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory-netty--org.apache.arrow__arrow-memory-netty__2.0.0.jar
-    ARROWVECTORJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__2.0.0.jar
+    ARROWFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__2.0.0.jar
+    ARROWMEMORYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-memory-core--org.apache.arrow__arrow-memory-core__2.0.0.jar
+    ARROWMEMORYNETTYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-memory-netty--org.apache.arrow__arrow-memory-netty__2.0.0.jar
+    ARROWVECTORJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__2.0.0.jar
 fi
 
-JAVAASSIST=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.javassist--javassist--org.javassist__javassist__3.25.0-GA.jar
+JSON4S=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__${JSON4S_VERSION}.jar
 
-PROTOBUFJAVA=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
+JAVAASSIST=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.javassist--javassist--org.javassist__javassist__3.25.0-GA.jar
 
-JACKSONCORE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__2.10.0.jar
-JACKSONANNOTATION=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__2.10.0.jar
+PROTOBUFJAVA=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 
-HADOOPCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-common--org.apache.hadoop__hadoop-common__2.7.4.jar
-HADOOPMAPRED=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-mapreduce-client-core--org.apache.hadoop__hadoop-mapreduce-client-core__2.7.4.jar
+JACKSONCORE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__${FASTERXML_JACKSON_VERSION}.jar
+JACKSONANNOTATION=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__${FASTERXML_JACKSON_VERSION}.jar
+
+HADOOPCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hadoop--hadoop-common--org.apache.hadoop__hadoop-common__2.7.4.jar
+HADOOPMAPRED=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-${HADOOP_VERSION}--org.apache.hadoop--hadoop-mapreduce-client-core--org.apache.hadoop__hadoop-mapreduce-client-core__2.7.4.jar
 AVROSPARKJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--vendor--avro--avro_2.12_deploy_shaded.jar
 AVROMAPRED=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.avro--avro-mapred-hadoop2--org.apache.avro__avro-mapred-hadoop2__1.8.2.jar
 AVROJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.avro--avro--org.apache.avro__avro__1.8.2.jar
@@ -295,6 +334,14 @@ mvn -B install:install-file \
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$NETWORKSHUFFLE \
+   -DgroupId=org.apache.spark \
+   -DartifactId=spark-network-shuffle_$SCALA_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COMMONUNSAFE\
    -DgroupId=org.apache.spark \
    -DartifactId=spark-unsafe_$SCALA_VERSION \
@@ -378,22 +425,6 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$ARROWVECTORJAR \
    -DgroupId=org.apache.arrow \
    -DartifactId=arrow-vector \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HADOOPCOMMON \
-   -DgroupId=org.apache.hadoop \
-   -DartifactId=hadoop-common \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HADOOPMAPRED \
-   -DgroupId=org.apache.hadoop \
-   -DartifactId=hadoop-mapreduce-client \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 

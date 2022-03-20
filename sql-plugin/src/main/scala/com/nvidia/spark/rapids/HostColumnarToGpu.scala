@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode, SparkShimImpl}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
@@ -148,6 +148,8 @@ object HostColumnarToGpu extends Logging {
               ColumnarCopyHelper.decimal128Copy(cv, b, rows, dt.precision, dt.scale)
             }
         }
+      case other if GpuTypeShims.isColumnarCopySupportedForType(other) =>
+        GpuTypeShims.columnarCopy(cv, b, rows)
       case t =>
         throw new UnsupportedOperationException(
           s"Converting to GPU for $t is not currently supported")

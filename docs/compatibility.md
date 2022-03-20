@@ -371,6 +371,54 @@ The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and wr
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
  CPU when reading an unsupported compression format, and will error out in that case.
 
+### Push Down Aggreates for ORC
+
+Spark-3.3.0+ pushes down certain aggregations (`MIN`/`MAX`/`COUNT`) into ORC when the user-config
+`spark.sql.orc.aggregatePushdown` is set to true.  
+By enabling this feature, aggregate query performance will improve as it takes advantage of the
+statistics information.
+
+**Caution**
+
+Spark ORC reader/writer assumes that all ORC files must have valid column statistics. This assumption
+deviates from the [ORC-specification](https://orc.apache.org/specification) which states that statistics
+are optional.  
+When a Spark-3.3.0+ job reads an ORC file with empty file-statistics, it fails while throwing the following
+runtime exception:
+
+```bash
+org.apache.spark.SparkException: Cannot read columns statistics in file: /PATH_TO_ORC_FILE
+E    Caused by: java.util.NoSuchElementException
+E        at java.util.LinkedList.removeFirst(LinkedList.java:270)
+E        at java.util.LinkedList.remove(LinkedList.java:685)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcFooterReader.convertStatistics(OrcFooterReader.java:54)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcFooterReader.readStatistics(OrcFooterReader.java:45)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcUtils$.createAggInternalRowFromFooter(OrcUtils.scala:428)
+```
+
+The Spark community is planning to work on a runtime fallback to read from actual rows when ORC
+file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.org/jira/browse/SPARK-34960)).  
+
+**Limitations With RAPIDS**
+
+RAPIDS does not support whole file statistics in ORC file. We are working with
+[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
+[here](https://github.com/rapidsai/cudf/issues/5826).
+
+*Writing ORC Files*
+
+Without CUDF support to file statistics, all ORC files written by
+the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
+In order to prevent job failures, `spark.sql.orc.aggregatePushdown` should be disabled while reading ORC files
+that were written by the GPU.
+
+*Reading ORC Files*
+
+To take advantage of the aggregate optimization, the plugin falls back to the CPU as it is a meta data only query.
+As long as the ORC file has valid statistics (written by the CPU), then the pushing down aggregates to the ORC layer
+should be successful.  
+Otherwise, reading an ORC file written by the GPU requires `aggregatePushdown` to be disabled.
+
 ## Parquet
 
 The Parquet format has more configs because there are multiple versions with some compatibility

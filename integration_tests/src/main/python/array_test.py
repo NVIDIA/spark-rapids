@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from spark_session import is_before_spark_311, is_before_spark_330
+from spark_session import is_before_spark_311, is_before_spark_330, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, isnan, element_at
@@ -78,7 +78,7 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
                     reason="Only in Spark [3.1.1, 3.3.0) with ANSI mode, it throws exceptions for invalid index")
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "java.lang.ArrayIndexOutOfBoundsException"
+    message = "SparkArrayIndexOutOfBoundsException" if is_databricks104_or_later() else "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:

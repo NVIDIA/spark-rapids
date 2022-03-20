@@ -15,10 +15,12 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
 
 import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.vectorized.ColumnVector
 
 object GpuTypeShims {
 
@@ -46,4 +48,36 @@ object GpuTypeShims {
    * @return the cuDF type if the Shim supports
    */
   def toRapidsOrNull(t: DataType): DType = null
+
+  /** Whether the Shim supports columnar copy for the given type */
+  def isColumnarCopySupportedForType(colType: DataType): Boolean = false
+
+  /**
+   * Copy a column for computing on GPU.
+   * Better to check if the type is supported first by calling 'isColumnarCopySupportedForType'
+   */
+  def columnarCopy(cv: ColumnVector,
+      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = {
+    val t = cv.dataType()
+    throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
+  }
+
+  def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = false
+
+  /**
+   * Whether the Shim supports converting the given type to GPU Scalar
+   */
+  def supportToScalarForType(t: DataType): Boolean = false
+
+  /**
+   * Convert the given value to Scalar
+   */
+  def toScalarForType(t: DataType, v: Any) = {
+    throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
+  }
+
+  def supportCsvRead(dt: DataType) : Boolean = false
+
+  def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
+    throw new RuntimeException(s"Not support type $dt.")
 }

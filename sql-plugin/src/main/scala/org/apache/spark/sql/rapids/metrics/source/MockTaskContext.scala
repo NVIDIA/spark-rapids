@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.metrics.source.Source
 import org.apache.spark.resource.ResourceInformation
+import org.apache.spark.scheduler.TaskLocality
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
@@ -78,5 +79,8 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
   override private[spark] def getLocalProperties = new Properties()
 
   def cpus(): Int = 2
-}
 
+  def numPartitions(): Int = 2
+
+  def taskLocality(): TaskLocality.TaskLocality = TaskLocality.ANY
+}

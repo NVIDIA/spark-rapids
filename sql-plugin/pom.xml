@@ -197,6 +197,12 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-network-shuffle_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
                     <artifactId>spark-launcher_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
@@ -275,14 +281,8 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-common</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-mapreduce-client</artifactId>
-                    <version>${spark.version}</version>
+                    <artifactId>hadoop-client</artifactId>
+                    <version>${hadoop.client.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>

@@ -208,8 +208,8 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-common</artifactId>
-                    <version>${spark.version}</version>
+                    <artifactId>hadoop-client</artifactId>
+                    <version>${hadoop.client.version}</version>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>

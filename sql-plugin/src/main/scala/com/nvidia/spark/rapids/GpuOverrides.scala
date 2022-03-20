@@ -2586,9 +2586,13 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[GetMapValue](
       "Gets Value from a Map based on a key",
-      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
-        ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
-        ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+      ExprChecks.binaryProject(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL_128 + TypeSig.MAP).nested(),
+        TypeSig.all,
+        ("map", TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
+          TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP), TypeSig.MAP.nested(TypeSig.all)),
+        ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
@@ -2598,14 +2602,12 @@ object GpuOverrides extends Logging {
           TypeSig.DECIMAL_128 + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP) +
-          TypeSig.MAP.nested(TypeSig.STRING)
-            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
+          TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
+            TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP)
+            .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.INT + TypeSig.lit(TypeEnum.STRING))
-          .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
-            "not as maps keys")
-          .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
-            "not array indexes"),
+        ("index/key", (TypeSig.INT + TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL))
+          .withPsNote(TypeEnum.INT, "Only ints are supported as array indexes"),
           TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2613,9 +2615,15 @@ object GpuOverrides extends Logging {
           val checks = in.left.dataType match {
             case _: MapType =>
               // Match exactly with the checks for GetMapValue
-              ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
-                ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
-                ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
+              ExprChecks.binaryProject(
+                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                  TypeSig.DECIMAL_128 + TypeSig.MAP).nested(),
+                TypeSig.all,
+                ("map",
+                  TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
+                    TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
+                  TypeSig.MAP.nested(TypeSig.all)),
+                ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all))
             case _: ArrayType =>
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProject(
