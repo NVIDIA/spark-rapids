@@ -48,7 +48,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.HadoopFSUtilsShim
 import org.apache.spark.sql.types._
 
 // 31x nondb shims, used by 311cdh and 31x
@@ -535,10 +534,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-  }
-
-  override def shouldIgnorePath(path: String): Boolean = {
-    HadoopFSUtilsShim.shouldIgnorePath(path)
   }
 
   override def getLegacyComplexTypeToString(): Boolean = {

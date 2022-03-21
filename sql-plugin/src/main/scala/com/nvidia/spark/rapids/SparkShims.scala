@@ -112,8 +112,6 @@ trait SparkShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
-  def shouldIgnorePath(path: String): Boolean
-
   def getLegacyComplexTypeToString(): Boolean
 
   def shouldFailDivByZero(): Boolean

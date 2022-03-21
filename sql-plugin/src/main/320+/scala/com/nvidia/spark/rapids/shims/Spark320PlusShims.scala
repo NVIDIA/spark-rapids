@@ -583,10 +583,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-  override def shouldIgnorePath(path: String): Boolean = {
-    HadoopFSUtilsShim.shouldIgnorePath(path)
-  }
-
   override def getLegacyComplexTypeToString(): Boolean = {
     SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
   }

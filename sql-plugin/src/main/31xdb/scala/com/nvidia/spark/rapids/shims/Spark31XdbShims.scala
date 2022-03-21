@@ -445,10 +445,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def shouldIgnorePath(path: String): Boolean = {
-    HadoopFSUtilsShim.shouldIgnorePath(path)
-  }
-
   override def getLegacyComplexTypeToString(): Boolean = {
     SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
   }
