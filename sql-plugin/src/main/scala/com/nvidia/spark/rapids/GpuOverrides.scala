@@ -2859,17 +2859,13 @@ object GpuOverrides extends Logging {
       }),
      expr[ArrayExists](
       "Return true if any element satisfies the predicate LambdaFunction",
-      ExprChecks.projectOnly(TypeSig.BOOLEAN,
-        TypeSig.ARRAY.nested(TypeSig.all),
+      ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         Seq(
           ParamCheck("argument",
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
-          ParamCheck("function",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
-            TypeSig.all))),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (in, conf, p, r) => new ExprMeta[ArrayExists](in, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuArrayExists(

@@ -349,11 +349,10 @@ def test_array_exists(data_gen, threeVL):
             ])
 
         if isinstance(element_type, StringType):
-            columns.extend(['exists(a, entry -> length(entry) > 5) as exists_upper_case'])
+            columns.extend(['exists(a, entry -> length(entry) > 5) as exists_longer_than_5'])
 
         return unary_op_df(spark, data_gen).selectExpr(columns)
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
         'spark.sql.legacy.followThreeValuedLogicInArrayExists' : threeVL,
-        'spark.rapids.sql.regexp.enabled'                      : True,
     })

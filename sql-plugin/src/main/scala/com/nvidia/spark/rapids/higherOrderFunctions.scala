@@ -265,6 +265,9 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
     }
   }
 
+  /*
+   * Post-process the column view of the array after applying the function parameter
+   */
   protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView): GpuColumnVector
 
@@ -276,7 +279,7 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
       }
       withResource(dataCol) { _ =>
         val cv = GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)
-        transformListColumnView(cv)
+        withResource(cv)(transformListColumnView(_))
       }
     }
   }
@@ -301,9 +304,7 @@ case class GpuArrayTransform(
 
   override protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView): GpuColumnVector = {
-    withResource(lambdaTransformedCV) { cv =>
-      GpuColumnVector.from(cv.copyToColumnVector(), dataType)
-    }
+    GpuColumnVector.from(lambdaTransformedCV.copyToColumnVector(), dataType)
   }
 }
 
@@ -348,7 +349,7 @@ case class GpuArrayExists(
       DType.BOOL8)
   }
 
-  private def replaceChildNullsByFalse(cv: cudf.ColumnView): cudf.ColumnView = {
+  private def replaceChildNullsByFalseView(cv: cudf.ColumnView): cudf.ColumnView = {
     withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
       withResource(cv.getChildColumnView(0)) { childView =>
         withResource(childView.replaceNulls(falseScalar)) { noNullsChildView =>
@@ -365,7 +366,7 @@ case class GpuArrayExists(
    * to aggregation
    */
   private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
-    withResource(replaceChildNullsByFalse(cv)) { reduceInput =>
+    withResource(replaceChildNullsByFalseView(cv)) { reduceInput =>
       existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
     }
   }
@@ -396,14 +397,12 @@ case class GpuArrayExists(
   override protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView
   ): GpuColumnVector = {
-    withResource(lambdaTransformedCV) { cv =>
-      withResource(exists(cv)) { existsCV =>
-        // exists is false for empty arrays
-        // post process empty arrays until cudf allows specifying
-        // the initial value for a list reduction (i.e. similar to Scala fold)
-        // https://github.com/rapidsai/cudf/issues/10455
-        imputeFalseForEmptyArrays(cv, existsCV)
-      }
+    withResource(exists(lambdaTransformedCV)) { existsCV =>
+      // exists is false for empty arrays
+      // post process empty arrays until cudf allows specifying
+      // the initial value for a list reduction (i.e. similar to Scala fold)
+      // https://github.com/rapidsai/cudf/issues/10455
+      imputeFalseForEmptyArrays(lambdaTransformedCV, existsCV)
     }
   }
 
