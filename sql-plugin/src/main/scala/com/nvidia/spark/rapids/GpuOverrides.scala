@@ -2597,7 +2597,10 @@ object GpuOverrides extends Logging {
         ("map", TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
-      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
+      (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
+        override def convertToGpu(map: Expression, key: Expression): GpuExpression =
+          GpuGetMapValue(map, key, in.failOnError)
+      }),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map",

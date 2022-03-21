@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayStructFields, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayStructFields, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -181,19 +181,6 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
-  }
-}
-
-class GpuGetMapValueMeta(
-  expr: GetMapValue,
-  conf: RapidsConf,
-  parent: Option[RapidsMeta[_, _, _]],
-  rule: DataFromReplacementRule)
-  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
-
-  override def convertToGpu(child: Expression, key: Expression): GpuExpression = {
-    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
-    GpuGetMapValue(child, key, failOnError = false)
   }
 }
 
