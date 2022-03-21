@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330
+from spark_session import is_before_spark_320, is_before_spark_330
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -75,7 +75,6 @@ struct_of_maps = StructGen([['child0', BooleanGen()]] + [
                                       # right_struct(child0 = missing map, child1 = Map[Boolean, Boolean])
                                       (StructGen([['child0', simple_string_to_string_map_gen]], nullable=False),
                                        StructGen([['child1', MapGen(BooleanGen(nullable=False), boolean_gen)]], nullable=False))], ids=idfn)
-@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of DF of structs with different types of cols as long as the struct itself
 # isn't null. This is a limitation in cudf because we don't support nested types as literals
 def test_union_struct_missing_children(data_gen):
@@ -112,7 +111,6 @@ def test_unionAll(data_gen):
                                       StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
                                                             StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]]),
                                       struct_of_maps], ids=idfn)
-@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
 def test_union_by_missing_col_name(data_gen):

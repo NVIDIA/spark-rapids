@@ -15,18 +15,24 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.orc.Reader
 
 object OrcShims extends OrcShims311until320Base {
 
-  // ORC Reader of the 311cdh Spark has no close method.
-  // The resource is closed internally.
-  def withReader[V](r: Reader)(block: Reader => V): V = {
-    block(r)
+  // the ORC Reader in non CDH Spark is closeable
+  def withReader[T <: AutoCloseable, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
   }
 
-  // empty
+  // the ORC Reader in non CDH Spark is closeable
   def closeReader(reader: Reader): Unit = {
+    if (reader != null) {
+      reader.close()
+    }
   }
-
 }
