@@ -23,14 +23,13 @@ import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
@@ -42,12 +41,11 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.v2.ShowCurrentNamespaceExec
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
@@ -445,20 +443,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
-  }
-
-  override def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: GpuPartitioning,
-      child: SparkPlan,
-      cpuOutputPartitioning: Partitioning,
-      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
-    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
-    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin)(cpuOutputPartitioning)
-  }
-
-  override def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
-    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
   override def sortOrder(

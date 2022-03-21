@@ -23,18 +23,17 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NullOrdering, SortDirection, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
-import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.types._
 
 /**
@@ -101,15 +100,6 @@ trait SparkShims {
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
   def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()
-
-  def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: GpuPartitioning,
-      child: SparkPlan,
-      cpuOutputPartitioning: Partitioning,
-      cpuShuffle: Option[ShuffleExchangeExec] = None): GpuShuffleExchangeExecBase
-
-  def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
 
   def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,

@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
@@ -107,11 +108,11 @@ class GpuShuffleMeta(
   }
 
   override def convertToGpu(): GpuExec =
-    SparkShimImpl.getGpuShuffleExchangeExec(
+    GpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
       childPlans.head.convertIfNeeded(),
-      shuffle.outputPartitioning,
-      Some(shuffle))
+      shuffle.shuffleOrigin
+    )(shuffle.outputPartitioning)
 }
 
 object GpuShuffleMeta {

@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -50,7 +51,7 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -3658,14 +3659,16 @@ object GpuOverrides extends Logging {
                 takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                SparkShimImpl.getGpuShuffleExchangeExec(
+                GpuShuffleExchangeExec(
                   GpuSinglePartitioning,
                   GpuTopN(
                     takeExec.limit,
                     so,
                     takeExec.child.output,
                     childPlans.head.convertIfNeeded())(takeExec.sortOrder),
-                  SinglePartition))(takeExec.sortOrder)
+                  ENSURE_REQUIREMENTS
+                )(SinglePartition)
+              )(takeExec.sortOrder)
             }
           }
         }),

@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric}
-import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -120,7 +120,7 @@ case class GpuCustomShuffleReaderExec(
     if (cachedShuffleRDD == null) {
       cachedShuffleRDD = child match {
         case stage: ShuffleQueryStageExec =>
-          val shuffle = SparkShimImpl.getGpuShuffleExchangeExec(stage)
+          val shuffle = stage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
           new ShuffledBatchRDD(
             shuffle.shuffleDependencyColumnar, shuffle.readMetrics ++ metrics,
             partitionSpecs.toArray)

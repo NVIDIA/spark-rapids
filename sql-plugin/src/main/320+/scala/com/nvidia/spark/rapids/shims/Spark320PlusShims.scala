@@ -23,12 +23,11 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
@@ -41,7 +40,7 @@ import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
@@ -583,20 +582,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "CSV parsing",
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: GpuPartitioning,
-      child: SparkPlan,
-      cpuOutputPartitioning: Partitioning,
-      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
-    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
-    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin)(cpuOutputPartitioning)
-  }
-
-  override def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
-    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
-  }
 
   override def sortOrder(
       child: Expression,
