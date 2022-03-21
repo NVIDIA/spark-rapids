@@ -488,7 +488,7 @@ Below are some troubleshooting tips on GPU query performance issue:
 
 * Identify the most time consuming part of the query. You can use 
   [Profiling tool](./spark-profiling-tool.md) to process the Spark eventlog to get more insights of 
-  the query performance. For example, if IO is the bottleneck, we suggest optimize the backend 
-  storage IO performance. It's because the most suitable query type is computation bound instead of 
-  IO or Network bound.
+  the query performance. For example, if I/O is the bottleneck, we suggest optimizing the backend 
+  storage I/O performance because the most suitable query type is computation bound instead of 
+  I/O or network bound.
   
