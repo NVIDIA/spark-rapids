@@ -22,7 +22,6 @@ import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -32,6 +31,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.json.rapids.shims.FileOptionsShims
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read._
@@ -231,7 +231,7 @@ object GpuCSVScan {
       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      SparkShimImpl.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+      FileOptionsShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
         val parts = tsFormat.split("'T'", 2)
         if (parts.isEmpty) {
           meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")

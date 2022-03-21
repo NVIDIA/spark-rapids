@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from spark_session import is_before_spark_311, is_before_spark_330
+from spark_session import is_before_spark_330, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, isnan, element_at
@@ -74,11 +74,11 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
 
 
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
-@pytest.mark.skipif(is_before_spark_311() or not is_before_spark_330(),
+@pytest.mark.skipif(not is_before_spark_330(),
                     reason="Only in Spark [3.1.1, 3.3.0) with ANSI mode, it throws exceptions for invalid index")
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "java.lang.ArrayIndexOutOfBoundsException"
+    message = "SparkArrayIndexOutOfBoundsException" if is_databricks104_or_later() else "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:
@@ -87,18 +87,6 @@ def test_array_item_ansi_fail_invalid_index(index):
         test_func,
         conf=ansi_enabled_conf,
         error_message=message)
-
-
-@pytest.mark.skipif(not is_before_spark_311(),
-                    reason="Only before Spark 3.1.1 with ANSI mode, it returns nulls for invalid index")
-def test_array_item_ansi_not_fail_invalid_index():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, ArrayGen(int_gen), array_neg_index_gen, array_out_index_gen).selectExpr(
-            'a[100]',
-            'a[-2]',
-            'a[b]',
-            'a[c]'),
-        conf=ansi_enabled_conf)
 
 
 def test_array_item_ansi_not_fail_all_null_data():
@@ -196,8 +184,6 @@ def test_array_element_at(data_gen):
 
 
 # No need tests for multiple data types for list data. Only one is enough.
-@pytest.mark.skipif(is_before_spark_311(),
-                    reason="Only for Spark 3.1.1+ with ANSI mode, it throws an exception for invalid index")
 @pytest.mark.parametrize('index', [100, array_out_index_gen], ids=idfn)
 def test_array_element_at_ansi_fail_invalid_index(index):
     message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() else "SparkArrayIndexOutOfBoundsException"
@@ -213,16 +199,6 @@ def test_array_element_at_ansi_fail_invalid_index(index):
         test_func,
         conf=test_conf,
         error_message=message)
-
-
-@pytest.mark.skipif(not is_before_spark_311(),
-                    reason="Only before Spark 3.1.1 with ANSI mode, it returns nulls for invalid index")
-def test_array_element_at_ansi_not_fail_invalid_index():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, ArrayGen(int_gen), array_out_index_gen).selectExpr(
-            'element_at(a, 100)',
-            'element_at(a, b)'),
-        conf=ansi_enabled_conf)
 
 
 def test_array_element_at_ansi_not_fail_all_null_data():

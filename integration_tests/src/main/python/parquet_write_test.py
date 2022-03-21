@@ -23,7 +23,6 @@ from spark_session import with_cpu_session, with_gpu_session, is_before_spark_33
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
-from spark_session import is_before_spark_311
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -238,27 +237,17 @@ def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, sp
     data_path = spark_tmp_path + '/PARQUET_DATA'
     int96_rebase = "EXCEPTION" if (ts_write == "INT96") else rebase
     date_time_rebase = "EXCEPTION" if (ts_write == "TIMESTAMP_MICROS") else rebase
-    if is_before_spark_311() and ts_write == 'INT96':
-        all_confs = {'spark.sql.parquet.outputTimestampType': ts_write}
-        all_confs.update({'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': date_time_rebase,
-                          'spark.sql.legacy.parquet.int96RebaseModeInWrite': int96_rebase})
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            conf=all_confs)
-    else:
-        with_gpu_session(
-            lambda spark : writeParquetUpgradeCatchException(spark,
-                                                             unary_op_df(spark, gen),
-                                                             data_path,
-                                                             spark_tmp_table_factory,
-                                                             int96_rebase, date_time_rebase, ts_write))
-        with_cpu_session(
-            lambda spark: writeParquetUpgradeCatchException(spark,
-                                                            unary_op_df(spark, gen), data_path,
-                                                            spark_tmp_table_factory,
-                                                            int96_rebase, date_time_rebase, ts_write))
+    with_gpu_session(
+        lambda spark : writeParquetUpgradeCatchException(spark,
+                                                         unary_op_df(spark, gen),
+                                                         data_path,
+                                                         spark_tmp_table_factory,
+                                                         int96_rebase, date_time_rebase, ts_write))
+    with_cpu_session(
+        lambda spark: writeParquetUpgradeCatchException(spark,
+                                                        unary_op_df(spark, gen), data_path,
+                                                        spark_tmp_table_factory,
+                                                        int96_rebase, date_time_rebase, ts_write))
 
 def writeParquetNoOverwriteCatchException(spark, df, data_path, table_name):
     with pytest.raises(Exception) as e_info:

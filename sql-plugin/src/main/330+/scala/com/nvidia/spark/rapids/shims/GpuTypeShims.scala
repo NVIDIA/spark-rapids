@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.ColumnarCopyHelper
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
@@ -143,4 +144,20 @@ object GpuTypeShims {
         throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
     }
   }
+
+
+  def supportCsvRead(dt: DataType) : Boolean = {
+    dt match {
+      case DayTimeIntervalType(_, _) => true
+      case _ => false
+    }
+  }
+
+  def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector  = {
+    dt match {
+      case d: DayTimeIntervalType => GpuIntervalUtils.castStringToDTInterval(cv, d)
+      case _ => throw new RuntimeException(s"Not support type $dt.")
+    }
+  }
+
 }

@@ -11,9 +11,9 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 9.1 ML with GPU
-    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2)
-    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2)
+    * Apache Spark 3.x running in Databricks Runtime 9.1 ML or 10.4 ML with GPU
+    * AWS: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1)
+    * Azure: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1)
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their

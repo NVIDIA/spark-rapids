@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320, is_before_spark_330, is_databricks91_or_later
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later
 import pyspark.sql.functions as f
 
 # No overflow gens here because we just focus on verifying the fallback to CPU when
@@ -757,7 +757,6 @@ def _test_div_by_zero(ansi_mode, expr):
 
 
 @pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
-@pytest.mark.xfail(condition=is_before_spark_311(), reason='https://github.com/apache/spark/pull/29882')
 def test_div_by_zero_ansi(expr):
     _test_div_by_zero(ansi_mode='ansi', expr=expr)
 

@@ -20,6 +20,8 @@ import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
+import pyspark.mllib.linalg as mllib
+import pyspark.ml.linalg as ml
 
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
@@ -286,6 +288,19 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
 
     assert_gpu_and_cpu_are_equal_collect(helper)
 
+def test_cache_udt():
+    def fun(spark):
+        df = spark.sparkContext.parallelize([
+            (mllib.DenseVector([1, ]), ml.DenseVector([1, ])),
+            (mllib.SparseVector(1, [0, ], [1, ]), ml.SparseVector(1, [0, ], [1, ]))
+        ]).toDF(["mllib_v", "ml_v"])
+        df.cache().count()
+        return df.selectExpr("mllib_v", "ml_v").collect()
+    cpu_result = with_cpu_session(fun)
+    gpu_result = with_gpu_session(fun)
+    # assert_gpu_and_cpu_are_equal_collect method doesn't handle UDT so we just write a single
+    # statement here to compare
+    assert cpu_result == gpu_result, "not equal"
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
@@ -296,4 +311,3 @@ def test_cache_daytimeinterval(enable_vectorized_conf):
         df.cache().count()
         return df.selectExpr("b", "a")
     assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)
-
