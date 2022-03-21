@@ -24,7 +24,7 @@ from functools import reduce
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311, is_databricks104_or_later, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_311, is_databricks104_or_later, with_cpu_session
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -1135,18 +1135,6 @@ def test_collect_empty():
         lambda spark: spark.sql("select collect_list(null)"))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("select collect_set(null)"))
-"""
-@ignore_order(local=True)
-def test_collect_set_struct():
-    gen = StructGen([['int', all_basic_struct_gen]])
-    while True:
-        sd = random.randint(0, 1000000)
-        print(sd)
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen,
-                                      length=30,
-                                      seed=sd).selectExpr('sort_array(collect_set(a))'))
-"""
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
