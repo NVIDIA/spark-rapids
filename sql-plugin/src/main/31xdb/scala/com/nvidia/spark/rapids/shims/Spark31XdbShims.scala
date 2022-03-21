@@ -338,8 +338,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
-      }),
-    GpuScalaUDFMeta.exprMeta
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {

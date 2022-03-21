@@ -493,8 +493,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
               TypeSig.DAYTIME, TypeSig.numericAndInterval))),
-      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
-    GpuScalaUDFMeta.exprMeta
+      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
