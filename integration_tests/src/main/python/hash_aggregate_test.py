@@ -1061,10 +1061,11 @@ def test_first_last_reductions_nested_types(data_gen):
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 def test_generic_reductions(data_gen):
+    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         # Coalesce and sort are to make sure that first and last, which are non-deterministic
         # become deterministic
-        lambda spark: unary_op_df(spark, data_gen) \
+        lambda spark : unary_op_df(spark, data_gen) \
             .coalesce(1).selectExpr(
             'min(a)',
             'max(a)',
@@ -1073,7 +1074,7 @@ def test_generic_reductions(data_gen):
             'count(a)',
             'count()',
             'count(1)'),
-        conf=_no_nans_float_conf)
+        conf=local_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
