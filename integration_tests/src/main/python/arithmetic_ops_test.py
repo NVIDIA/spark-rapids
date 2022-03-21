@@ -362,8 +362,8 @@ def test_floor_scale_zero(data_gen):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_floor_scale_nonzero(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, -1)'))
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
 
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_ceil(data_gen):
