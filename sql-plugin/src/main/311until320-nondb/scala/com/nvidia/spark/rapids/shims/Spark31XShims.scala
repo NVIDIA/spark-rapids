@@ -28,7 +28,6 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
@@ -171,7 +170,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-
   override def hasAliasQuoteFix: Boolean = false
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
@@ -196,19 +194,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     case EmptyHashedRelation => true
     case arr: Array[InternalRow] if arr.isEmpty => true
     case _ => false
-  }
-
-  override def getScalaUDFAsExpression(
-      function: AnyRef,
-      dataType: DataType,
-      children: Seq[Expression],
-      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-      outputEncoder: Option[ExpressionEncoder[_]] = None,
-      udfName: Option[String] = None,
-      nullable: Boolean = true,
-      udfDeterministic: Boolean = true): Expression = {
-    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
-      udfDeterministic)
   }
 
   override def getMapSizesByExecutorId(

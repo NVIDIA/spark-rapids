@@ -27,7 +27,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -129,19 +128,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 
   override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
-
-  override def getScalaUDFAsExpression(
-      function: AnyRef,
-      dataType: DataType,
-      children: Seq[Expression],
-      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-      outputEncoder: Option[ExpressionEncoder[_]] = None,
-      udfName: Option[String] = None,
-      nullable: Boolean = true,
-      udfDeterministic: Boolean = true): Expression = {
-    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
-      udfDeterministic)
-  }
 
   override def getMapSizesByExecutorId(
       shuffleId: Int,

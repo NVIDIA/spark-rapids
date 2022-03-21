@@ -22,7 +22,6 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
@@ -103,16 +102,6 @@ trait SparkShims {
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
   def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()
-
-  def getScalaUDFAsExpression(
-    function: AnyRef,
-    dataType: DataType,
-    children: Seq[Expression],
-    inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-    outputEncoder: Option[ExpressionEncoder[_]] = None,
-    udfName: Option[String] = None,
-    nullable: Boolean = true,
-    udfDeterministic: Boolean = true): Expression
 
   def getGpuShuffleExchangeExec(
       gpuOutputPartitioning: GpuPartitioning,

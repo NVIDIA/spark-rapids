@@ -27,7 +27,6 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
@@ -58,19 +57,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
-
-  override def getScalaUDFAsExpression(
-      function: AnyRef,
-      dataType: DataType,
-      children: Seq[Expression],
-      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-      outputEncoder: Option[ExpressionEncoder[_]] = None,
-      udfName: Option[String] = None,
-      nullable: Boolean = true,
-      udfDeterministic: Boolean = true): Expression = {
-    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
-      udfDeterministic)
-  }
 
   override def getMapSizesByExecutorId(
       shuffleId: Int,
