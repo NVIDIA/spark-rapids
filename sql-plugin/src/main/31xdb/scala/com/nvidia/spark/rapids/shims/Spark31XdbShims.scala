@@ -164,20 +164,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
       }),
-  GpuOverrides.expr[GetArrayItem](
-    "Gets the field at `ordinal` in the Array",
-    ExprChecks.binaryProject(
-      (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-        TypeSig.DECIMAL_128 + TypeSig.MAP).nested(),
-      TypeSig.all,
-      ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
-        TypeSig.ARRAY.nested(TypeSig.all)),
-      ("ordinal", TypeSig.INT, TypeSig.INT)),
-    (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
-      override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
-        GpuGetArrayItem(arr, ordinal, in.failOnError)
-    }),
     GpuOverrides.expr[GetMapValue](
       "Gets Value from a Map based on a key",
       ExprChecks.binaryProject(

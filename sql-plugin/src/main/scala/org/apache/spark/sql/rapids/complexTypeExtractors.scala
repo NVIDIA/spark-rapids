@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetArrayStructFields, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayStructFields, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -70,20 +70,6 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
       }
     }
   }
-}
-
-class GpuGetArrayItemMeta(
-    expr: GetArrayItem,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
-
-  override def convertToGpu(
-      arr: Expression,
-      ordinal: Expression): GpuExpression =
-    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
-    GpuGetArrayItem(arr, ordinal, failOnError = false)
 }
 
 /**
