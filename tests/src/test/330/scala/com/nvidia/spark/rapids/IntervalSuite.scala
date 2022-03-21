@@ -122,6 +122,6 @@ class IntervalSuite extends SparkQueryCompareTestSuite {
     "test ANSI interval read/write",
     getDF,
     (df, path) => df.coalesce(1).write.mode("overwrite").parquet(path),
-    (spark, path) => spark.read.parquet(path),
+    (spark, path) => spark.read.parquet(path)
   )
 }
