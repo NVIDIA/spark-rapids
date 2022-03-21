@@ -10,9 +10,9 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2 or 3.2.0 of
-Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
-be internal the code for those plans can change even between bug fix releases. As a part of our
+The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0 , 3.2.1 or 3.3.0
+of Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers 
+to be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
@@ -20,7 +20,7 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 7.3, 9.1](get-started/getting-started-databricks.md)
+- [Databricks Runtime 9.1, 10.4](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 
@@ -75,8 +75,9 @@ Turing or Ampere.
 
 Currently a limited set of SQL and DataFrame operations are supported, please see the
 [configs](configs.md) and [supported operations](supported_ops.md) for a more complete list of what
-is supported. Some of structured streaming is likely to be accelerated, but it has not been an area
-of focus right now. Other areas like MLLib, GraphX or RDDs are not accelerated.
+is supported. Some of the MLlib functions, such as `PCA` is supported.
+Some of structured streaming is likely to be accelerated, but it has not been an area
+of focus right now. Other areas like GraphX or RDDs are not accelerated.
 
 ### Is the Spark `Dataset` API supported?
 
@@ -470,3 +471,24 @@ later) finishes before the slow task that triggered speculation. If the speculat
 finishes first then that's good, it is working as intended. If many tasks are speculating, but the
 original task always finishes first then this is a pure loss, the speculation is adding load to
 the Spark cluster with no benefit.
+
+### Why is my query in GPU mode slower than CPU mode?
+
+Below are some troubleshooting tips on GPU query performance issue:
+* Make sure the query in GPU mode is fully on GPU. Please refer to
+  [Getting Started on Spark workload qualification](./get-started/getting-started-workload-qualification.md)
+  for more details. If there are some CPU fallbacks, check if those are some known features which
+  can be enabled by turning on some Spark RAPIDS parameters. If the features needed do not exsit in
+  the most recent release of Spark RAPIDS, please file 
+  [feature request](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce.
+
+* Tune the Spark and Spark RAPIDS parameters such as `spark.sql.shuffle.partitions`, 
+  `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` to get the best run.
+  Please refer to [Tuning Guide](./tuning-guide.md) for more details.
+
+* Identify the most time consuming part of the query. You can use 
+  [Profiling tool](./spark-profiling-tool.md) to process the spark eventlog to get more insights of 
+  the query performance. For example, if IO is the bottleneck, we suggest optimize the backend 
+  storage IO performance. It's because the most suitable query type is computation bound instead of 
+  IO or Network bound.
+  
