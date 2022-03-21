@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims
 import java.io.{InputStream, IOException}
 import java.lang.reflect.Method
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -58,6 +57,7 @@ import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.{ParquetR
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
+import org.apache.spark.sql.rapids.PCBSSchemaHelper
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
@@ -267,18 +267,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
   override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall { f =>
     // only check spark b/c if we are on the GPU then we will be calling the gpu method regardless
-    isTypeSupportedByColumnarSparkParquetWriter(f.dataType) || f.dataType == DataTypes.NullType
-  }
-
-  private def isTypeSupportedByColumnarSparkParquetWriter(dataType: DataType): Boolean = {
-    // Columnar writer in Spark only supports AtomicTypes ATM
-    dataType match {
-      case TimestampType | StringType | BooleanType | DateType | BinaryType |
-           DoubleType | FloatType | ByteType | IntegerType | LongType | ShortType => true
-      case _: DecimalType => true
-      case other if GpuTypeShims.isParquetColumnarWriterSupportedForType(other) => true
-      case _ => false
-    }
+    PCBSSchemaHelper.isTypeSupportedByColumnarSparkParquetWriter(f.dataType) ||
+        f.dataType == DataTypes.NullType
   }
 
   def isSchemaSupportedByCudf(schema: Seq[Attribute]): Boolean = {
@@ -291,24 +281,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       case s: StructType => s.forall(field => isSupportedByCudf(field.dataType))
       case m: MapType => isSupportedByCudf(m.keyType) && isSupportedByCudf(m.valueType)
       case _ => GpuColumnVector.isNonNestedSupportedType(dataType)
-    }
-  }
-
-  /**
-   * This method checks if the datatype passed is officially supported by parquet.
-   *
-   * Please refer to https://github.com/apache/parquet-format/blob/master/LogicalTypes.md to see
-   * the what types are supported by parquet
-   */
-  def isTypeSupportedByParquet(dataType: DataType): Boolean = {
-    dataType match {
-      case CalendarIntervalType | NullType => false
-      case s: StructType => s.forall(field => isTypeSupportedByParquet(field.dataType))
-      case ArrayType(elementType, _) => isTypeSupportedByParquet(elementType)
-      case MapType(keyType, valueType, _) => isTypeSupportedByParquet(keyType) &&
-          isTypeSupportedByParquet(valueType)
-      case d: DecimalType if d.scale < 0 => false
-      case _ => true
     }
   }
 
@@ -645,7 +617,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       dataType match {
         case s@StructType(_) =>
           val listBuffer = new ListBuffer[InternalRow]()
-          val supportedSchema = mapping(dataType).asInstanceOf[StructType]
+          val supportedSchema =
+            PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
           arrayData.foreach(supportedSchema, (_, data) => {
             val structRow =
               handleStruct(data.asInstanceOf[InternalRow], s, s)
@@ -750,7 +723,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
             val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
             val hasUnsupportedType = origCacheSchema.exists { field =>
-              !isTypeSupportedByParquet(field.dataType)
+              !PCBSSchemaHelper.isTypeSupportedByParquet(field.dataType)
             }
 
             val unsafeRows = new ArrayBuffer[InternalRow]
@@ -808,55 +781,48 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                     newRow: InternalRow): Unit = {
                   schema.indices.foreach { index =>
                     val dataType = schema(index).dataType
-                    if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                        dataType == NullType ||
-                        (dataType.isInstanceOf[DecimalType]
-                            && dataType.asInstanceOf[DecimalType].scale < 0)) {
-                      if (row.isNullAt(index)) {
-                        newRow.setNullAt(index)
-                      } else {
-                        dataType match {
-                          case s@StructType(_) =>
-                            val supportedSchema = mapping(dataType)
-                                .asInstanceOf[StructType]
-                            val structRow =
-                              handleStruct(row.getStruct(index, supportedSchema.size), s, s)
-                            newRow.update(index, structRow)
-
-                          case a@ArrayType(_, _) =>
-                            val arrayData = row.getArray(index)
-                            newRow.update(index, handleArray(a.elementType, arrayData))
-
-                          case MapType(keyType, valueType, _) =>
-                            val mapData = row.getMap(index)
-                            newRow.update(index, handleMap(keyType, valueType, mapData))
-
-                          case CalendarIntervalType =>
-                            val interval = handleInterval(row, index)
-                            if (interval == null) {
-                              newRow.setNullAt(index)
-                            } else {
-                              newRow.setInterval(index, interval)
-                            }
-                          case d: DecimalType =>
-                            if (row.isNullAt(index)) {
-                              newRow.setDecimal(index, null, d.precision)
-                            } else {
-                              val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-                                Decimal(row.getInt(index).toLong, d.precision, d.scale)
-                              } else {
-                                Decimal(row.getLong(index), d.precision, d.scale)
-                              }
-                              newRow.update(index, dec)
-                            }
-                          case NullType =>
-                            newRow.setNullAt(index)
-                          case _ =>
-                            newRow.update(index, row.get(index, dataType))
-                        }
-                      }
+                    if (row.isNullAt(index)) {
+                      newRow.setNullAt(index)
                     } else {
-                      newRow.update(index, row.get(index, dataType))
+                      dataType match {
+                        case s@StructType(_) =>
+                          val supportedSchema =
+                            PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
+                          val structRow =
+                            handleStruct(row.getStruct(index, supportedSchema.size), s, s)
+                          newRow.update(index, structRow)
+
+                        case a@ArrayType(_, _) =>
+                          val arrayData = row.getArray(index)
+                          newRow.update(index, handleArray(a.elementType, arrayData))
+
+                        case MapType(keyType, valueType, _) =>
+                          val mapData = row.getMap(index)
+                          newRow.update(index, handleMap(keyType, valueType, mapData))
+
+                        case CalendarIntervalType =>
+                          val interval = handleInterval(row, index)
+                          if (interval == null) {
+                            newRow.setNullAt(index)
+                          } else {
+                            newRow.setInterval(index, interval)
+                          }
+                        case d: DecimalType =>
+                          if (row.isNullAt(index)) {
+                            newRow.setDecimal(index, null, d.precision)
+                          } else {
+                            val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
+                              Decimal(row.getInt(index).toLong, d.precision, d.scale)
+                            } else {
+                              Decimal(row.getLong(index), d.precision, d.scale)
+                            }
+                            newRow.update(index, dec)
+                          }
+                        case NullType =>
+                          newRow.setNullAt(index)
+                        case _ =>
+                          newRow.update(index, row.get(index, dataType))
+                      }
                     }
                   }
                 }
@@ -1073,11 +1039,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     conf
   }
 
-  private val intervalStructType = new StructType()
-      .add("_days", IntegerType)
-      .add("_months", IntegerType)
-      .add("_ms", LongType)
-
   def getBytesAllowedPerBatch(conf: SQLConf): Long = {
     val gpuBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     // we are rough estimating 0.5% as meta_data_size. we can do better estimation in future
@@ -1129,7 +1090,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
       // is there a type that spark doesn't support by default in the schema?
       val hasUnsupportedType: Boolean = origCachedAttributes.exists { attribute =>
-        !isTypeSupportedByParquet(attribute.dataType)
+        !PCBSSchemaHelper.isTypeSupportedByParquet(attribute.dataType)
       }
 
       def getIterator: Iterator[InternalRow] = {
@@ -1171,53 +1132,47 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                 newRow: InternalRow): Unit = {
               schema.indices.foreach { index =>
                 val dataType = schema(index).dataType
-                if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                    dataType == NullType ||
-                    (dataType.isInstanceOf[DecimalType]
-                        && dataType.asInstanceOf[DecimalType].scale < 0)) {
-                  if (row.isNullAt(index)) {
-                    newRow.setNullAt(index)
-                  } else {
-                    dataType match {
-                      case s@StructType(_) =>
-                        val newSchema = mapping(dataType).asInstanceOf[StructType]
-                        val structRow =
-                          handleStruct(row.getStruct(index, s.fields.length), s, newSchema)
-                        newRow.update(index, structRow)
-
-                      case ArrayType(arrayDataType, _) =>
-                        val arrayData = row.getArray(index)
-                        val newArrayData = handleArray(arrayDataType, arrayData)
-                        newRow.update(index, newArrayData)
-
-                      case MapType(keyType, valueType, _) =>
-                        val mapData = row.getMap(index)
-                        val map = handleMap(keyType, valueType, mapData)
-                        newRow.update(index, map)
-
-                      case CalendarIntervalType =>
-                        val structData: InternalRow = handleInterval(row, index)
-                        if (structData == null) {
-                          newRow.setNullAt(index)
-                        } else {
-                          newRow.update(index, structData)
-                        }
-
-                      case d: DecimalType if d.scale < 0 =>
-                        if (d.precision <= Decimal.MAX_INT_DIGITS) {
-                          newRow.update(index, row.getDecimal(index, d.precision, d.scale)
-                              .toUnscaledLong.toInt)
-                        } else {
-                          newRow.update(index, row.getDecimal(index, d.precision, d.scale)
-                              .toUnscaledLong)
-                        }
-
-                      case _ =>
-                        newRow.update(index, row.get(index, dataType))
-                    }
-                  }
+                if (row.isNullAt(index)) {
+                  newRow.setNullAt(index)
                 } else {
-                  newRow.update(index, row.get(index, dataType))
+                  dataType match {
+                    case s@StructType(_) =>
+                      val newSchema =
+                        PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
+                      val structRow =
+                        handleStruct(row.getStruct(index, s.fields.length), s, newSchema)
+                      newRow.update(index, structRow)
+
+                    case ArrayType(arrayDataType, _) =>
+                      val arrayData = row.getArray(index)
+                      val newArrayData = handleArray(arrayDataType, arrayData)
+                      newRow.update(index, newArrayData)
+
+                    case MapType(keyType, valueType, _) =>
+                      val mapData = row.getMap(index)
+                      val map = handleMap(keyType, valueType, mapData)
+                      newRow.update(index, map)
+
+                    case CalendarIntervalType =>
+                      val structData: InternalRow = handleInterval(row, index)
+                      if (structData == null) {
+                        newRow.setNullAt(index)
+                      } else {
+                        newRow.update(index, structData)
+                      }
+
+                    case d: DecimalType if d.scale < 0 =>
+                      if (d.precision <= Decimal.MAX_INT_DIGITS) {
+                        newRow.update(index, row.getDecimal(index, d.precision, d.scale)
+                            .toUnscaledLong.toInt)
+                      } else {
+                        newRow.update(index, row.getDecimal(index, d.precision, d.scale)
+                            .toUnscaledLong)
+                      }
+
+                    case _ =>
+                      newRow.update(index, row.get(index, dataType))
+                  }
                 }
               }
             }
@@ -1327,46 +1282,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
   }
 
-  val mapping = new mutable.HashMap[DataType, DataType]()
-
-  def getSupportedDataType(curId: AtomicLong, dataType: DataType): DataType = {
-    dataType match {
-      case CalendarIntervalType =>
-        intervalStructType
-      case NullType =>
-        ByteType
-      case s: StructType =>
-        val newStructType = StructType(
-          s.indices.map { index =>
-            StructField(curId.getAndIncrement().toString,
-              getSupportedDataType(curId, s.fields(index).dataType), s.fields(index).nullable,
-              s.fields(index).metadata)
-          })
-        mapping.put(s, newStructType)
-        newStructType
-      case a@ArrayType(elementType, nullable) =>
-        val newArrayType =
-          ArrayType(getSupportedDataType(curId, elementType), nullable)
-        mapping.put(a, newArrayType)
-        newArrayType
-      case m@MapType(keyType, valueType, nullable) =>
-        val newKeyType = getSupportedDataType(curId, keyType)
-        val newValueType = getSupportedDataType(curId, valueType)
-        val mapType = MapType(newKeyType, newValueType, nullable)
-        mapping.put(m, mapType)
-        mapType
-      case d: DecimalType if d.scale < 0 =>
-        val newType = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-          IntegerType
-        } else {
-          LongType
-        }
-        newType
-      case _ =>
-        dataType
-    }
-  }
-
   // We want to change the original schema to have the new names as well
   private def sanitizeColumnNames(originalSchema: Seq[Attribute],
       schemaToCopyNamesFrom: Seq[Attribute]): Seq[Attribute] = {
@@ -1379,27 +1294,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       cachedAttributes: Seq[Attribute],
       requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
 
-    // We only handle CalendarIntervalType, Decimals and NullType ATM convert it to a supported type
-    val curId = new AtomicLong()
-    val newCachedAttributes = cachedAttributes.map {
-      attribute => val name = s"_col${curId.getAndIncrement()}"
-        attribute.dataType match {
-          case CalendarIntervalType =>
-            AttributeReference(name, intervalStructType,
-              attribute.nullable, metadata = attribute.metadata)(attribute.exprId)
-                .asInstanceOf[Attribute]
-          case NullType =>
-            AttributeReference(name, DataTypes.ByteType,
-              nullable = true, metadata =
-                  attribute.metadata)(attribute.exprId).asInstanceOf[Attribute]
-          case StructType(_) | ArrayType(_, _) | MapType(_, _, _) | DecimalType() =>
-            AttributeReference(name,
-              getSupportedDataType(curId, attribute.dataType),
-              attribute.nullable, attribute.metadata)(attribute.exprId)
-          case _ =>
-            attribute.withName(name)
-        }
-    }
+    val newCachedAttributes =
+      PCBSSchemaHelper.getSupportedSchemaFromUnsupported(cachedAttributes)
 
     val newRequestedAttributes =
       getSelectedSchemaFromCachedSchema(requestedAttributes, newCachedAttributes)

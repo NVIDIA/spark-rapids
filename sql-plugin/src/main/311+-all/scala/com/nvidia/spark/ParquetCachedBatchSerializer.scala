@@ -16,7 +16,7 @@
 
 package com.nvidia.spark
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -25,7 +25,7 @@ import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.shims.GpuInMemoryTableScanExec
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
 
@@ -46,6 +46,22 @@ class InMemoryTableScanMeta(
     extends SparkPlanMeta[InMemoryTableScanExec](imts, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
+    def stringifyTypeAttributeMap(groupedByType: Map[DataType, Set[String]]): String = {
+      groupedByType.map { case (dataType, nameSet) =>
+        dataType + " " + nameSet.mkString("[", ", ", "]")
+      }.mkString(", ")
+    }
+
+    val supportedTypeSig = rule.getChecks.get.asInstanceOf[ExecChecks]
+    val unsupportedTypes: Map[DataType, Set[String]] = imts.relation.output
+        .filterNot(attr => supportedTypeSig.check.isSupportedByPlugin(attr.dataType))
+        .groupBy(_.dataType)
+        .mapValues(_.map(_.name).toSet)
+
+    val msgFormat = "unsupported data types in output: %s"
+    if (unsupportedTypes.nonEmpty) {
+      willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
+    }
     if (!imts.relation.cacheBuilder.serializer
         .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
       willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
