@@ -783,6 +783,12 @@ sealed case class RegexCharacterClass(
   }
 }
 
+// TODO - need to make sure we are diffing these!!
+sealed trait RegexMode
+object RegexFindMode extends RegexMode
+object RegexReplaceMode extends RegexMode
+object RegexSplitMode extends RegexMode
+
 class RegexUnsupportedException(message: String, index: Option[Int] = None)
   extends SQLException {
   override def getMessage: String = {

@@ -100,4 +100,10 @@ object GpuRegExpUtils {
     b.toString
   }
 
+  def tagForRegExpEnabled(meta: ExprMeta[_]): Unit = {
+    if (!meta.conf.isRegExpEnabled) {
+      meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
+        s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
+    }
+  }
 }

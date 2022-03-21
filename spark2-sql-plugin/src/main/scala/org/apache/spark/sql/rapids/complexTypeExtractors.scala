@@ -26,17 +26,6 @@ class GpuGetArrayItemMeta(
     parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
     extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
-  import GpuOverrides._
-
-  override def tagExprForGpu(): Unit = {
-    extractLit(expr.ordinal).foreach { litOrd =>
-      // Once literal array/struct types are supported this can go away
-      val ord = litOrd.value
-      if ((ord == null || ord.asInstanceOf[Int] < 0) && DataTypeUtils.isNestedType(expr.dataType)) {
-        willNotWorkOnGpu("negative and null indexes are not supported for nested types")
-      }
-    }
-  }
 }
 
 class GpuGetMapValueMeta(
