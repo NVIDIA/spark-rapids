@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,23 @@ def minor_ver // minor version extracted from project version
 def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
 def TestResult1 // keep ci_1 pytest result files that's in JUnit-XML style
 def TestResult2 // keep ci_2 pytest result files that's in JUnit-XML style
+
+def sourcePattern30X =  'shims/spark301db/src/main/scala/,' +
+    'shims/spark301/src/main/scala/,' +
+    'shims/spark302/src/main/scala/,' +
+    'shims/spark303/src/main/scala/,' +
+    'shims/spark304/src/main/scala/'
+def sourcePattern31X = 'shims/spark311/src/main/scala/,' +
+    'shims/spark312/src/main/scala/,' +
+    'shims/spark313/src/main/scala/,' +
+    'shims/spark314/src/main/scala/'
+def sourcePattern32X = 'shims/spark320/src/main/scala/,' +
+    'shims/spark321/src/main/scala/,' +
+    'shims/spark322/src/main/scala/'
+def sourcePattern33X = 'shims/spark330/src/main/scala/'
+def sourcePattern31XPlus = sourcePattern31X + ',' + sourcePattern32X + ',' + sourcePattern33X
+def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
+    'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
 
 // constant parameters for aws and azure databricks cluster
 // CSP params
@@ -239,14 +256,20 @@ pipeline {
                     major_ver = versions[0].toInteger()
                     minor_ver = versions[1].toInteger()
 
+                    sourcePattern = sourcePattern + ',' + sourcePattern31XPlus
+                    // TODO: remove major version 21.XX pre-merge support
                     if (major_ver == 21) {
                         if (minor_ver == 8) {
                             PREMERGE_CI_2_ARGUMENT = "unit_test" // for '21.08' version
                         } else if (minor_ver >= 10) {
                             PREMERGE_CI_2_ARGUMENT = "ci_2" // for '21.10' or later version
                         }
+                        sourcePattern = sourcePattern + ',' + sourcePattern30X
                     } else if (major_ver >= 22) {
                         PREMERGE_CI_2_ARGUMENT = "ci_2"
+                        if (major_ver == 22 && minor_ver < 4) { // 22.02-
+                                sourcePattern = sourcePattern + ',' + sourcePattern30X
+                        }
                     } else {
                         error("Unsupported major version: $major_ver")
                     }
@@ -322,13 +345,7 @@ pipeline {
                                               execPattern           : '**/target/jacoco.exec',
                                               classPattern          : 'target/jacoco_classes/',
                                               sourceInclusionPattern: '**/*.java,**/*.scala',
-                                              sourcePattern         : 'shuffle-plugin/src/main/scala/,' +
-                                                                      'udf-compiler/src/main/scala/,sql-plugin/src/main/java/,' +
-                                                                      'sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,' +
-                                                                      'shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,' +
-                                                                      'shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,' +
-                                                                      'shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,' +
-                                                                      'shims/spark313/src/main/scala/'
+                                              sourcePattern         : sourcePattern
                                         ])
                                     } finally {
                                         // Save pytest result and publish to Jenkins at last
@@ -384,8 +401,9 @@ pipeline {
                 stage('DB runtime 7.3') {
                     when {
                         beforeAgent true
-                        expression {
-                            db_build && major_ver >= 21
+                        anyOf {
+                            expression { db_build && major_ver == 21 }
+                            expression { db_build && major_ver == 22 && minor_ver <= 2 }
                         }
                     }
 
