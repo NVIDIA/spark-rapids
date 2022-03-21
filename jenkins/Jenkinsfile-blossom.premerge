@@ -44,6 +44,23 @@ def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running fro
 def TestResult1 // keep ci_1 pytest result files that's in JUnit-XML style
 def TestResult2 // keep ci_2 pytest result files that's in JUnit-XML style
 
+def sourcePattern30X =  'shims/spark301db/src/main/scala/,' +
+    'shims/spark301/src/main/scala/,' +
+    'shims/spark302/src/main/scala/,' +
+    'shims/spark303/src/main/scala/,' +
+    'shims/spark304/src/main/scala/'
+def sourcePattern31X = 'shims/spark311/src/main/scala/,' +
+    'shims/spark312/src/main/scala/,' +
+    'shims/spark313/src/main/scala/,' +
+    'shims/spark314/src/main/scala/'
+def sourcePattern32X = 'shims/spark320/src/main/scala/,' +
+    'shims/spark321/src/main/scala/,' +
+    'shims/spark322/src/main/scala/'
+def sourcePattern33X = 'shims/spark330/src/main/scala/'
+def sourcePattern31XPlus = sourcePattern31X + ',' + sourcePattern32X + ',' + sourcePattern33X
+def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
+    'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
+
 // constant parameters for aws and azure databricks cluster
 // CSP params
 ID_HOST = 0
@@ -71,12 +88,26 @@ ID_INITSCRIPTS = 2
 ID_PROFILES = 3
 ID_INSTALL = 4
 RUNTIME_MAP = [
+        '7.3': [
+                '7.3.x-gpu-ml-scala2.12',
+                '3.0.1',
+                'init_cudf_udf.sh,init_cuda11_runtime.sh',
+                'databricks301,!snapshot-shims',
+                '3.0.1'
+        ],
         '9.1': [
                 '9.1.x-gpu-ml-scala2.12',
                 '3.1.2',
                 'init_cudf_udf.sh',
                 'databricks312,!snapshot-shims',
                 '3.1.2'
+        ],
+        '10.4': [
+                '10.4.x-gpu-ml-scala2.12',
+                '3.2.1',
+                'init_cudf_udf.sh',
+                'databricks321,!snapshot-shims',
+                '3.2.1'
         ]
 ]
 
@@ -232,14 +263,20 @@ pipeline {
                     major_ver = versions[0].toInteger()
                     minor_ver = versions[1].toInteger()
 
+                    sourcePattern = sourcePattern + ',' + sourcePattern31XPlus
+                    // TODO: remove major version 21.XX pre-merge support
                     if (major_ver == 21) {
                         if (minor_ver == 8) {
                             PREMERGE_CI_2_ARGUMENT = "unit_test" // for '21.08' version
                         } else if (minor_ver >= 10) {
                             PREMERGE_CI_2_ARGUMENT = "ci_2" // for '21.10' or later version
                         }
+                        sourcePattern = sourcePattern + ',' + sourcePattern30X
                     } else if (major_ver >= 22) {
                         PREMERGE_CI_2_ARGUMENT = "ci_2"
+                        if (major_ver == 22 && minor_ver < 4) { // 22.02-
+                                sourcePattern = sourcePattern + ',' + sourcePattern30X
+                        }
                     } else {
                         error("Unsupported major version: $major_ver")
                     }
@@ -315,10 +352,7 @@ pipeline {
                                               execPattern           : '**/target/jacoco.exec',
                                               classPattern          : 'target/jacoco_classes/',
                                               sourceInclusionPattern: '**/*.java,**/*.scala',
-                                              sourcePattern         : 'shuffle-plugin/src/main/scala/,' +
-                                                                      'udf-compiler/src/main/scala/,sql-plugin/src/main/java/,' +
-                                                                      'sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,' +
-                                                                      'shims/spark313/src/main/scala/'
+                                              sourcePattern         : sourcePattern
                                         ])
                                     } finally {
                                         // Save pytest result and publish to Jenkins at last
@@ -374,8 +408,9 @@ pipeline {
                 stage('DB runtime 7.3') {
                     when {
                         beforeAgent true
-                        expression {
-                            db_build && major_ver >= 21
+                        anyOf {
+                            expression { db_build && major_ver == 21 }
+                            expression { db_build && major_ver == 22 && minor_ver <= 2 }
                         }
                     }
 
@@ -439,6 +474,41 @@ pipeline {
                         }
                     }
                 } // end of DB runtime 9.1
+
+                stage('DB runtime 10.4') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            expression { db_build && major_ver == 22 && minor_ver >= 4 }
+                            expression { db_build && major_ver >= 23 }
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-10.4-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '10.4'
+                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
+                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
+                        BUILD_PROFILES = "${RUNTIME_MAP["$DB_RUNTIME"][ID_PROFILES]}"
+                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
+                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 5, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 10.4
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
