@@ -22,8 +22,8 @@
 #                               See: https://github.com/openucx/ucx/releases/
 
 ARG CUDA_VER=11.2.2
-ARG UCX_VER=1.11.2
-ARG UCX_CUDA_VER=11.2
+ARG UCX_VER=1.12.1
+ARG UCX_CUDA_VER=11
 
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu18.04
 ARG UCX_VER
@@ -31,5 +31,5 @@ ARG UCX_CUDA_VER
 
 RUN apt update
 RUN apt-get install -y wget
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5.x-cuda$UCX_CUDA_VER.deb
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5-cuda$UCX_CUDA_VER.deb
 RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
