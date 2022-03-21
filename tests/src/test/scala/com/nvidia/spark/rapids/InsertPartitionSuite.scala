@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.BeforeAndAfterEach
 
-class InsertPartition311Suite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
+class InsertPartitionSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
   var tableNr = 0
 
   override def afterEach(): Unit = {

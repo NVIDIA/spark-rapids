@@ -33,9 +33,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 /**
- * Tests for writing Parquet files with the GPU.
+ * Unit tests for cached batch writing
  */
-class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
+class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
 
   test("convert large columnar batch to cachedbatch on single col table") {
     if (!withCpuSparkSession(s => s.version < "3.1.0")) {
