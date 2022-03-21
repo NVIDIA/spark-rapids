@@ -15,14 +15,13 @@
  */
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.rapids.GpuFloorCeil
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 object RapidsFloorCeilUtils {
 
-  def getDataType(child: Expression): DataType = {
-    child.dataType match {
+  def outputDataType(dataType: DataType): DataType = {
+    dataType match {
       // For Ceil/Floor function we calculate the precision by calling unboundedOutputPrecision and
       // for RoundCeil/RoundFloor we take the precision as it is. Here the actual precision is
       // calculated by taking the max of these 2 to make sure we don't overflow while

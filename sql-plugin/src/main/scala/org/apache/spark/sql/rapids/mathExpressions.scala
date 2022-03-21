@@ -167,7 +167,7 @@ object GpuFloorCeil {
 }
 
 case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
-  override def dataType: DataType = RapidsFloorCeilUtils.getDataType(child)
+  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
 
   override def hasSideEffects: Boolean = true
 
@@ -239,7 +239,7 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
 }
 
 case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
-  override def dataType: DataType = RapidsFloorCeilUtils.getDataType(child)
+  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
 
   override def hasSideEffects: Boolean = true
 

@@ -16,14 +16,13 @@
 
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.rapids.GpuFloorCeil
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 object RapidsFloorCeilUtils {
 
-  def getDataType(child: Expression): DataType = {
-    child.dataType match {
+  def outputDataType(dataType: DataType): DataType = {
+    dataType match {
       case dt: DecimalType =>
          DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
       case _ => LongType
