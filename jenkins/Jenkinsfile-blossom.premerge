@@ -88,12 +88,12 @@ ID_INITSCRIPTS = 2
 ID_PROFILES = 3
 ID_INSTALL = 4
 RUNTIME_MAP = [
-        '7.3': [
-                '7.3.x-gpu-ml-scala2.12',
-                '3.0.1',
-                'init_cudf_udf.sh,init_cuda11_runtime.sh',
-                'databricks301,!snapshot-shims',
-                '3.0.1'
+        '10.4': [
+                '10.4.x-gpu-ml-scala2.12',
+                '3.2.1',
+                'init_cudf_udf.sh',
+                'databricks321,!snapshot-shims',
+                '3.2.1'
         ],
         '9.1': [
                 '9.1.x-gpu-ml-scala2.12',
@@ -300,7 +300,6 @@ pipeline {
                         sh """
                             bash -c 'dbfs mkdirs $INIT_SCRIPTS_DIR'
                             bash -c 'dbfs cp --overwrite jenkins/databricks/init_cudf_udf.sh $INIT_SCRIPTS_DIR'
-                            bash -c 'dbfs cp --overwrite jenkins/databricks/init_cuda11_runtime.sh $INIT_SCRIPTS_DIR'
                         """
                     }
                 }
@@ -398,7 +397,7 @@ pipeline {
                     }
                 } // end of Unit Test stage
 
-                stage('DB runtime 7.3') {
+                stage('DB runtime 10.4') {
                     when {
                         beforeAgent true
                         anyOf {
@@ -409,13 +408,13 @@ pipeline {
 
                     agent {
                         kubernetes {
-                            label "premerge-ci-db-7.3-${BUILD_NUMBER}"
+                            label "premerge-ci-db-10.4-${BUILD_NUMBER}"
                             cloud 'sc-ipp-blossom-prod'
                             yaml "${IMAGE_DB}"
                         }
                     }
                     environment {
-                        DB_RUNTIME = '7.3'
+                        DB_RUNTIME = '10.4'
                         DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
                         BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
                         BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
@@ -431,7 +430,7 @@ pipeline {
                             }
                         }
                     }
-                } // end of DB runtime 7.3
+                } // end of DB runtime 10.4
 
                 stage('DB runtime 9.1') {
                     when {
