@@ -70,7 +70,7 @@ class IntervalSuite extends SparkQueryCompareTestSuite {
   test("test GPU cache interval when reading/writing parquet") {
     setPCBS()
 
-    val tempFile = File.createTempFile("stats", ".parquet")
+    val tempFile = File.createTempFile("pcbs", ".parquet")
     try {
       withGpuSparkSession(spark => {
         // invoke convertInternalRowToCachedBatch
@@ -86,4 +86,42 @@ class IntervalSuite extends SparkQueryCompareTestSuite {
       tempFile.delete()
     }
   }
+
+  // CPU write a parquet, then test the reading between CPU and GPU
+  test("test ANSI interval read") {
+    val tmpFile = File.createTempFile("interval", ".parquet")
+    try {
+      withCpuSparkSession(spark => getDF(spark).coalesce(1)
+          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
+      val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath)
+          .collect())
+      val g = withGpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath)
+          .collect())
+      assert(compare(g, c))
+    } finally {
+      tmpFile.delete()
+    }
+  }
+
+  // GPU write a parquet, then test the reading between CPU and GPU
+  test("test ANSI interval write") {
+    val tmpFile = File.createTempFile("interval", ".parquet")
+    try {
+      withGpuSparkSession(spark => getDF(spark).coalesce(1)
+          .write.mode("overwrite").parquet(tmpFile.getAbsolutePath))
+      val c = withCpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
+      val g = withGpuSparkSession(spark => spark.read.parquet(tmpFile.getAbsolutePath).collect())
+      assert(compare(g, c))
+    } finally {
+      tmpFile.delete()
+    }
+  }
+
+  // Write 2 files with CPU and GPU separately, then read the 2 files with CPU and compare
+  testSparkWritesAreEqual(
+    "test ANSI interval read/write",
+    getDF,
+    (df, path) => df.coalesce(1).write.mode("overwrite").parquet(path),
+    (spark, path) => spark.read.parquet(path),
+  )
 }
