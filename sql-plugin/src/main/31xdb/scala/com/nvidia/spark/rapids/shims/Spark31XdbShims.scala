@@ -445,10 +445,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def getLegacyComplexTypeToString(): Boolean = {
-    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
-  }
-
   /** matches SPARK-33008 fix in 3.1.1 */
   override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
 

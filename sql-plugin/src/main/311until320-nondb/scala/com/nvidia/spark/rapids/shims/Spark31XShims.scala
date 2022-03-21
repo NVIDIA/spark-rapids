@@ -536,10 +536,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  override def getLegacyComplexTypeToString(): Boolean = {
-    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
-  }
-
   /** matches SPARK-33008 fix in 3.1.1 */
   override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
 
