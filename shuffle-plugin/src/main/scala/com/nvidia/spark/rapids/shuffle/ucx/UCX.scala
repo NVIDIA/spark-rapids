@@ -824,7 +824,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
       val clientId = connectionRequest.getClientId
 
-      if (endpoints.containsKey(clientId)) {
+      // We reject redundant connections iff the peer has an executor Id less
+      // than ours as a tie breaker when both executors in question start a connection
+      // to each other at the same time.
+      if (endpoints.containsKey(clientId) && clientId < localExecutorId) {
         connectionRequest.reject()
         logWarning(s"Rejected connection request from ${clientId}, we already had an " +
           s"endpoint established: ${endpoints.get(clientId)}")
