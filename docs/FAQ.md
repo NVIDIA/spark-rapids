@@ -475,20 +475,24 @@ the Spark cluster with no benefit.
 ### Why is my query in GPU mode slower than CPU mode?
 
 Below are some troubleshooting tips on GPU query performance issue:
-* Make sure the query in GPU mode is fully on GPU. Please refer to
+* Identify the most time consuming part of the query. You can use
+  [Profiling tool](./spark-profiling-tool.md) to process the Spark eventlog to get more insights of
+  the query performance. For example, if I/O is the bottleneck, we suggest optimizing the backend
+  storage I/O performance because the most suitable query type is computation bound instead of
+  I/O or network bound.
+  
+* Make sure at least the most time consuming part of the query is on GPU. Please refer to
   [Getting Started on Spark workload qualification](./get-started/getting-started-workload-qualification.md)
-  for more details. If there are some CPU fallbacks, check if those are some known features which
-  can be enabled by turning on some RAPIDS Accelerator parameters. If the features needed do not
-  exist in the most recent release of the RAPIDS Accelerator, please file a
+  for more details. Ideally we hope the whole query is fully on GPU, but if some minor part of the 
+  query, eg. a small JDBC table scan, can not run on GPU, it won't cause much performance overhead.
+  If there are some CPU fallbacks, check if those are some known features which can be enabled by 
+  turning on some RAPIDS Accelerator parameters. If the features needed do not exist in the most 
+  recent release of the RAPIDS Accelerator, please file a
   [feature request](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce.
 
 * Tune the Spark and RAPIDS Accelerator parameters such as `spark.sql.shuffle.partitions`, 
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` to get the best run.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
 
-* Identify the most time consuming part of the query. You can use 
-  [Profiling tool](./spark-profiling-tool.md) to process the Spark eventlog to get more insights of 
-  the query performance. For example, if I/O is the bottleneck, we suggest optimizing the backend 
-  storage I/O performance because the most suitable query type is computation bound instead of 
-  I/O or network bound.
+
   
