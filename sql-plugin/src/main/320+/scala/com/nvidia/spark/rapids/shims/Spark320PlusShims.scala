@@ -247,16 +247,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
       }),
-    GpuOverrides.expr[RegExpReplace](
-      "String replace using a regular expression pattern",
-      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
-        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
-            .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
-            TypeSig.lit(TypeEnum.INT)))),
-      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
     // Spark 3.2.0-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",

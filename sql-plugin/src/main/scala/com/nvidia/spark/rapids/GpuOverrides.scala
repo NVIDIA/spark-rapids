@@ -3111,6 +3111,16 @@ object GpuOverrides extends Logging {
         ("str", TypeSig.STRING, TypeSig.STRING),
         ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)),
+    expr[RegExpReplace](
+      "String replace using a regular expression pattern",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
+              .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
+            TypeSig.lit(TypeEnum.INT)))),
+      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
     expr[RegExpExtract](
       "Extract a specific group identified by a regular expression",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
