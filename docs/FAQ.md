@@ -478,8 +478,8 @@ Below are some troubleshooting tips on GPU query performance issue:
 * Make sure the query in GPU mode is fully on GPU. Please refer to
   [Getting Started on Spark workload qualification](./get-started/getting-started-workload-qualification.md)
   for more details. If there are some CPU fallbacks, check if those are some known features which
-  can be enabled by turning on some Spark RAPIDS parameters. If the features needed do not exsit in
-  the most recent release of Spark RAPIDS, please file 
+  can be enabled by turning on some RAPIDS Accelerator parameters. If the features needed do not
+  exist in the most recent release of the RAPIDS Accelerator, please file a
   [feature request](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce.
 
 * Tune the Spark and Spark RAPIDS parameters such as `spark.sql.shuffle.partitions`, 
