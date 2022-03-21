@@ -537,15 +537,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  override def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
-
-  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
-    s.copy(child = child)
-  }
-
   override def shouldIgnorePath(path: String): Boolean = {
     HadoopFSUtilsShim.shouldIgnorePath(path)
   }

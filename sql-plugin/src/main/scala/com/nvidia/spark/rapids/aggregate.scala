@@ -25,13 +25,13 @@ import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -424,7 +424,7 @@ class GpuHashAggregateIterator(
     }
 
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
-    val ordering = groupingAttributes.map(SparkShimImpl.sortOrder(_, Ascending, NullsFirst))
+    val ordering = groupingAttributes.map(SortOrder(_, Ascending, NullsFirst, Seq.empty))
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)

@@ -583,15 +583,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-  override def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
-
-  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
-    s.copy(child = child)
-  }
-
   override def shouldIgnorePath(path: String): Boolean = {
     HadoopFSUtilsShim.shouldIgnorePath(path)
   }

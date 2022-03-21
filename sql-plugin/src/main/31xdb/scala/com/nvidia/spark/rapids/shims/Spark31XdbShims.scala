@@ -445,15 +445,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
-
-  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
-    s.copy(child = child)
-  }
-
   override def shouldIgnorePath(path: String): Boolean = {
     HadoopFSUtilsShim.shouldIgnorePath(path)
   }

@@ -22,7 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NullOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
@@ -111,17 +111,6 @@ trait SparkShims {
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
-
-  def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
-    sortOrder(child, direction, direction.defaultNullOrdering)
-  }
-
-  def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder
-
-  def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder
 
   def shouldIgnorePath(path: String): Boolean
 

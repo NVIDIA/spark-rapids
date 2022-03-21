@@ -28,7 +28,7 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.RoundRobinPartitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
@@ -255,9 +255,8 @@ object GpuShuffleExchangeExecBase {
      * task when indeterminate tasks re-run.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
-      val shim = SparkShimImpl
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
-        shim.sortOrder(GpuBoundReference(index, attr.dataType,
+        SortOrder(GpuBoundReference(index, attr.dataType,
           attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
