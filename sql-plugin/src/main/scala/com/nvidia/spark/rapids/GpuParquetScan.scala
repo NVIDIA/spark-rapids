@@ -51,17 +51,19 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
-import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
+import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -72,29 +74,37 @@ import org.apache.spark.util.SerializableConfiguration
  *
  * @param sparkSession SparkSession.
  * @param hadoopConf Hadoop configuration.
+ * @param fileIndex File index of the relation.
  * @param dataSchema Schema of the data.
  * @param readDataSchema Schema to read.
  * @param readPartitionSchema Partition schema.
  * @param pushedFilters Filters on non-partition columns.
+ * @param options Parquet option settings.
+ * @param partitionFilters Filters on partition columns.
+ * @param dataFilters File source metadata filters.
  * @param rapidsConf Rapids configuration.
  * @param queryUsesInputFile This is a parameter to easily allow turning it
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
  */
-abstract class GpuParquetScanBase(
+case class GpuParquetScan(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
+    fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType,
     readDataSchema: StructType,
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
+    options: CaseInsensitiveStringMap,
+    partitionFilters: Seq[Expression],
+    dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean)
-  extends ScanWithMetrics with Logging {
+    queryUsesInputFile: Boolean = true)
+  extends ScanWithMetrics with FileScan with Logging {
 
-  def isSplitableBase(path: Path): Boolean = true
+  override def isSplitable(path: Path): Boolean = true
 
-  def createReaderFactoryBase(): PartitionReaderFactory = {
+  override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
@@ -108,9 +118,28 @@ abstract class GpuParquetScanBase(
         queryUsesInputFile)
     }
   }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case p: GpuParquetScan =>
+      super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
+          equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
+          queryUsesInputFile == p.queryUsesInputFile
+    case _ => false
+  }
+
+  override def hashCode(): Int = getClass.hashCode()
+
+  override def description(): String = {
+    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
+  }
+
+  // overrides nothing in 330
+  def withFilters(
+      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuParquetScanBase {
+object GpuParquetScan {
   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -1162,7 +1191,7 @@ class MultiFileParquetPartitionReader(
     }
 
     closeOnExcept(table) { _ =>
-      GpuParquetScanBase.throwIfNeeded(
+      GpuParquetScan.throwIfNeeded(
         table,
         extraInfo.isCorrectedInt96RebaseMode,
         extraInfo.isCorrectedRebaseMode,
@@ -1447,7 +1476,7 @@ class MultiFileCloudParquetPartitionReader(
         Table.readParquet(parseOpts, hostBuffer, 0, dataSize)
       }
       closeOnExcept(table) { _ =>
-        GpuParquetScanBase.throwIfNeeded(table, isCorrectInt96RebaseMode, isCorrectRebaseMode,
+        GpuParquetScan.throwIfNeeded(table, isCorrectInt96RebaseMode, isCorrectRebaseMode,
           hasInt96Timestamps)
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
@@ -1585,7 +1614,7 @@ class ParquetPartitionReader(
           Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         }
         closeOnExcept(table) { _ =>
-          GpuParquetScanBase.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
+          GpuParquetScan.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
             hasInt96Timestamps)
           maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
           if (readDataSchema.length < table.getNumberOfColumns) {
