@@ -164,53 +164,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
       }),
-    // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
-    GpuOverrides.expr[Lead](
-      "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-        TypeSig.all,
-        Seq(
-          ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-            TypeSig.all),
-          ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-            TypeSig.all)
-        )
-      ),
-      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
-      }),
-    // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
-    GpuOverrides.expr[Lag](
-      "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-        TypeSig.all,
-        Seq(
-          ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-            TypeSig.all),
-          ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-            TypeSig.all)
-        )
-      ),
-      (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
-        override def convertToGpu(): GpuExpression = {
-          GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
-        }
-      }),
   GpuOverrides.expr[GetArrayItem](
     "Gets the field at `ordinal` in the Array",
     ExprChecks.binaryProject(
