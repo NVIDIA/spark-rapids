@@ -3203,8 +3203,8 @@ object GpuOverrides extends Logging {
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction",
       // GpuCollectSet is not yet supported in Reduction context.
-      // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
-      // method drop_list_duplicates doesn't support nested types.
+      // Compared to CollectList, ArrayType and MapType are NOT supported in GpuCollectSet
+      // because underlying cuDF operator drop_list_duplicates doesn't support LIST type.
       ExprChecks.aggNotReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT),
