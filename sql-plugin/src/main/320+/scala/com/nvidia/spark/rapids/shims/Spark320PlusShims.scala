@@ -22,7 +22,6 @@ import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
-import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
@@ -52,7 +51,6 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
-import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
@@ -128,16 +126,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 
   override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
-
-  override def getMapSizesByExecutorId(
-      shuffleId: Int,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId,
-      startMapIndex, endMapIndex, startPartition, endPartition)
-  }
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 

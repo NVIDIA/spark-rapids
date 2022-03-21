@@ -22,7 +22,6 @@ import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
-import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
@@ -52,7 +51,6 @@ import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShu
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.HadoopFSUtilsShim
 import org.apache.spark.sql.types._
-import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 // 31x nondb shims, used by 311cdh and 31x
 abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with Logging {
@@ -194,16 +192,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     case EmptyHashedRelation => true
     case arr: Array[InternalRow] if arr.isEmpty => true
     case _ => false
-  }
-
-  override def getMapSizesByExecutorId(
-      shuffleId: Int,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId,
-      startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
   override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
