@@ -88,12 +88,12 @@ ID_INITSCRIPTS = 2
 ID_PROFILES = 3
 ID_INSTALL = 4
 RUNTIME_MAP = [
-        '10.4': [
-                '10.4.x-gpu-ml-scala2.12',
-                '3.2.1',
-                'init_cudf_udf.sh',
-                'databricks321,!snapshot-shims',
-                '3.2.1'
+        '7.3': [
+                '7.3.x-gpu-ml-scala2.12',
+                '3.0.1',
+                'init_cudf_udf.sh,init_cuda11_runtime.sh',
+                'databricks301,!snapshot-shims',
+                '3.0.1'
         ],
         '9.1': [
                 '9.1.x-gpu-ml-scala2.12',
@@ -101,6 +101,13 @@ RUNTIME_MAP = [
                 'init_cudf_udf.sh',
                 'databricks312,!snapshot-shims',
                 '3.1.2'
+        ],
+        '10.4': [
+                '10.4.x-gpu-ml-scala2.12',
+                '3.2.1',
+                'init_cudf_udf.sh',
+                'databricks321,!snapshot-shims',
+                '3.2.1'
         ]
 ]
 
@@ -397,7 +404,7 @@ pipeline {
                     }
                 } // end of Unit Test stage
 
-                stage('DB runtime 10.4') {
+                stage('DB runtime 7.3') {
                     when {
                         beforeAgent true
                         anyOf {
@@ -408,13 +415,13 @@ pipeline {
 
                     agent {
                         kubernetes {
-                            label "premerge-ci-db-10.4-${BUILD_NUMBER}"
+                            label "premerge-ci-db-7.3-${BUILD_NUMBER}"
                             cloud 'sc-ipp-blossom-prod'
                             yaml "${IMAGE_DB}"
                         }
                     }
                     environment {
-                        DB_RUNTIME = '10.4'
+                        DB_RUNTIME = '7.3'
                         DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
                         BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
                         BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
@@ -430,7 +437,7 @@ pipeline {
                             }
                         }
                     }
-                } // end of DB runtime 10.4
+                } // end of DB runtime 7.3
 
                 stage('DB runtime 9.1') {
                     when {
@@ -466,6 +473,41 @@ pipeline {
                         }
                     }
                 } // end of DB runtime 9.1
+
+                stage('DB runtime 10.4') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            expression { db_build && major_ver == 22 && minor_ver >= 4 }
+                            expression { db_build && major_ver >= 23 }
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-10.4-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '10.4'
+                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
+                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
+                        BUILD_PROFILES = "${RUNTIME_MAP["$DB_RUNTIME"][ID_PROFILES]}"
+                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
+                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 5, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 10.4
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
