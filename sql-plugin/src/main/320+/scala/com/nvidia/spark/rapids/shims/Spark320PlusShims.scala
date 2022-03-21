@@ -129,9 +129,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
-  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
-    sqlConf.maxMetadataStringLength
-
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",

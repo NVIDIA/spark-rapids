@@ -122,8 +122,6 @@ trait SparkShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
-  def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
-
   def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
     sortOrder(child, direction, direction.defaultNullOrdering)
   }
