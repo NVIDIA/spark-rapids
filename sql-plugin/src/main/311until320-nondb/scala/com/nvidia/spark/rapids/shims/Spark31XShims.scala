@@ -536,9 +536,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  /** matches SPARK-33008 fix in 3.1.1 */
-  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
-
   /** dropped by SPARK-34234 */
   override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
       tree: TreeType,

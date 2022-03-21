@@ -583,9 +583,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-  /** matches SPARK-33008 fix in 3.1.1 */
-  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
-
   /**
    * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
    * affecting the unapply method signature

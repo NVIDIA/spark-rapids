@@ -445,9 +445,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  /** matches SPARK-33008 fix in 3.1.1 */
-  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
-
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e

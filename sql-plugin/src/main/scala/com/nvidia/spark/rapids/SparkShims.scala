@@ -112,8 +112,6 @@ trait SparkShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
-  def shouldFailDivByZero(): Boolean
-
   def shouldFailDivOverflow: Boolean
 
   /**
