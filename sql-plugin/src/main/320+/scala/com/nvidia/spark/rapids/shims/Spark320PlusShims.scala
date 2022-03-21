@@ -124,8 +124,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 
-  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
-
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
@@ -320,7 +318,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         ("ordinal", TypeSig.INT, TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r) {
         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
-          GpuGetArrayItem(arr, ordinal, shouldFailOnElementNotExists)
+          GpuGetArrayItem(arr, ordinal, in.failOnError)
       }),
     GpuOverrides.expr[GetMapValue](
       "Gets Value from a Map based on a key",
@@ -334,7 +332,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r) {
         override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-          GpuGetMapValue(map, key, shouldFailOnElementNotExists)
+          GpuGetMapValue(map, key, in.failOnError)
       }),
     GpuOverrides.expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +

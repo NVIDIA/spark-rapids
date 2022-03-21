@@ -120,12 +120,6 @@ trait SparkShims {
    */
   def shouldFallbackOnAnsiTimestamp(): Boolean
 
-  /**
-   * This is to support ANSI mode: optionally return null result if element not exists
-   * in array/map.
-   */
-  def shouldFailOnElementNotExists(): Boolean = false
-
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
 
   /** dropped by SPARK-34234 */
