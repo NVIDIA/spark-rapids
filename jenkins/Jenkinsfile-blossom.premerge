@@ -307,6 +307,7 @@ pipeline {
                         sh """
                             bash -c 'dbfs mkdirs $INIT_SCRIPTS_DIR'
                             bash -c 'dbfs cp --overwrite jenkins/databricks/init_cudf_udf.sh $INIT_SCRIPTS_DIR'
+                            bash -c 'dbfs cp --overwrite jenkins/databricks/init_cuda11_runtime.sh $INIT_SCRIPTS_DIR'
                         """
                     }
                 }
