@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.util.concurrent.atomic.AtomicLong
-
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
@@ -64,6 +62,7 @@ object PCBSSchemaHelper {
    * long type.
    */
   def getSupportedDataType(dataType: DataType): DataType = {
+    var curId = 0
     dataType match {
       case CalendarIntervalType =>
         calendarIntervalStructType
@@ -72,9 +71,11 @@ object PCBSSchemaHelper {
       case s: StructType =>
         val newStructType = StructType(
           s.indices.map { index =>
-            StructField(s.fields(index).name,
+            val field = StructField(s"_col$curId",
               getSupportedDataType(s.fields(index).dataType),
               s.fields(index).nullable, s.fields(index).metadata)
+            curId += 1
+            field
           })
         newStructType
       case _@ArrayType(elementType, nullable) =>
@@ -106,10 +107,11 @@ object PCBSSchemaHelper {
    */
   def getSupportedSchemaFromUnsupported(cachedAttributes: Seq[Attribute]): Seq[Attribute] = {
     // We convert CalendarIntervalType, UDT and NullType ATM convert it to a supported type
-    val curId = new AtomicLong()
+    var curId = 0
     cachedAttributes.map {
       attribute =>
-        val name = s"_col${curId.getAndIncrement()}"
+        val name = s"_col$curId"
+        curId += 1
         attribute.dataType match {
           case CalendarIntervalType =>
             AttributeReference(name, calendarIntervalStructType,

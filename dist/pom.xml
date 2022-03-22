@@ -65,7 +65,8 @@
             330
         </snapshot.buildvers>
         <databricks.buildvers>
-            312db
+            312db,
+            321db
         </databricks.buildvers>
     </properties>
     <profiles>
