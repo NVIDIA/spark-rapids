@@ -437,16 +437,22 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     }
   }
 
+  def getParquetWriterOptions(
+      useCompression: Boolean,
+      schema: StructType): ParquetWriterOptions = {
+    val compressionType = if (useCompression) CompressionType.SNAPPY else CompressionType.NONE
+    SchemaUtils
+        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
+        .withCompressionType(compressionType)
+        .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
+  }
+
   private def writeTableToCachedBatch(
       table: Table,
       schema: StructType,
       useCompression: Boolean): ParquetBufferConsumer = {
     val buffer = new ParquetBufferConsumer(table.getRowCount.toInt)
-    val compressionType = if (useCompression) CompressionType.SNAPPY else CompressionType.NONE
-    val opts = SchemaUtils
-      .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
-      .withCompressionType(compressionType)
-      .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
+    val opts = getParquetWriterOptions(useCompression, schema)
     withResource(Table.writeParquetChunked(opts, buffer)) { writer =>
       writer.write(table)
     }
