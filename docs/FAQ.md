@@ -475,7 +475,7 @@ the Spark cluster with no benefit.
 ### Why is my query in GPU mode slower than CPU mode?
 
 Below are some troubleshooting tips on GPU query performance issue:
-* Identify the most time consuming part of the query. You can use
+* Identify the most time consuming part of the query. You can use the
   [Profiling tool](./spark-profiling-tool.md) to process the Spark eventlog to get more insights of
   the query performance. For example, if I/O is the bottleneck, we suggest optimizing the backend
   storage I/O performance because the most suitable query type is computation bound instead of
