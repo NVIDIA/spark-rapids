@@ -318,6 +318,94 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuLessThanOrEqual(lhs, rhs)
+        }),
+        GpuOverrides.expr[Abs](
+          "Absolute value",
+          ExprChecks.unaryProjectAndAstInputMatchesOutput(
+            TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.ansiInterval,
+            TypeSig.cpuNumeric + TypeSig.ansiInterval),
+          (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+            val ansiEnabled = SQLConf.get.ansiEnabled
+
+            override def tagSelfForAst(): Unit = {
+              if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+                willNotWorkInAst("AST unary minus does not support ANSI mode.")
+              }
+            }
+
+            // ANSI support for ABS was added in 3.2.0 SPARK-33275
+            override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
+          }),
+      GpuOverrides.expr[UnaryMinus](
+        "Negate a numeric value",
+        ExprChecks.unaryProjectAndAstInputMatchesOutput(
+          TypeSig.implicitCastsAstTypes,
+          TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          TypeSig.numericAndInterval),
+        (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
+          val ansiEnabled = SQLConf.get.ansiEnabled
+
+          override def tagSelfForAst(): Unit = {
+            if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+              willNotWorkInAst("AST unary minus does not support ANSI mode.")
+            }
+          }
+
+          override def convertToGpu(child: Expression): GpuExpression =
+            GpuUnaryMinus(child, ansiEnabled)
+        }),
+      GpuOverrides.expr[Add](
+        "Addition",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.implicitCastsAstTypes,
+          TypeSig.gpuNumeric + TypeSig.ansiInterval, TypeSig.numericAndInterval,
+          ("lhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+              TypeSig.numericAndInterval),
+          ("rhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+              TypeSig.numericAndInterval)),
+        (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
+          private val ansiEnabled = SQLConf.get.ansiEnabled
+
+          override def tagSelfForAst(): Unit = {
+            if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+              willNotWorkInAst("AST Addition does not support ANSI mode.")
+            }
+          }
+
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuAdd(lhs, rhs, failOnError = ansiEnabled)
+        }),
+      GpuOverrides.expr[Subtract](
+        "Subtraction",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.implicitCastsAstTypes,
+          TypeSig.gpuNumeric + TypeSig.ansiInterval, TypeSig.numericAndInterval,
+          ("lhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+              TypeSig.numericAndInterval),
+          ("rhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+              TypeSig.numericAndInterval)),
+        (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
+          private val ansiEnabled = SQLConf.get.ansiEnabled
+
+          override def tagSelfForAst(): Unit = {
+            if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+              willNotWorkInAst("AST Subtraction does not support ANSI mode.")
+            }
+          }
+
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuSubtract(lhs, rhs, ansiEnabled)
+        }),
+      GpuOverrides.expr[Alias](
+        "Gives a column a name",
+        ExprChecks.unaryProjectAndAstInputMatchesOutput(
+          TypeSig.astTypes,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
+              + TypeSig.DECIMAL_128 + TypeSig.ansiInterval).nested(),
+          TypeSig.all),
+        (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression =
+            GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map

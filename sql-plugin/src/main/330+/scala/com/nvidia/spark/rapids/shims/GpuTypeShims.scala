@@ -160,4 +160,9 @@ object GpuTypeShims {
     }
   }
 
+  def isDayTimeInterval(dt: DataType) : Boolean = dt match {
+    case _: DayTimeIntervalType => true
+    case _ => false
+  }
+
 }

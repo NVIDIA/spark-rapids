@@ -80,4 +80,9 @@ object GpuTypeShims {
 
   def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
     throw new RuntimeException(s"Not support type $dt.")
+
+  /**
+   * Spark supports interval type from 320, but GPU from 330, so just return false
+   */
+  def isDayTimeInterval(dt: DataType) : Boolean = false
 }
