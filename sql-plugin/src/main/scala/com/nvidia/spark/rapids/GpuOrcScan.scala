@@ -51,35 +51,41 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.caseSensitiveResolution
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.execution.datasources.rapids.OrcFiltersWrapper
-import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FilePartitionReaderFactory}
+import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-abstract class GpuOrcScanBase(
+case class GpuOrcScan(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
+    fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType,
     readDataSchema: StructType,
     readPartitionSchema: StructType,
+    options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter],
+    partitionFilters: Seq[Expression],
+    dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean)
-  extends ScanWithMetrics with Logging {
+    queryUsesInputFile: Boolean = true)
+  extends ScanWithMetrics with FileScan with Logging {
 
-  def isSplitableBase(path: Path): Boolean = true
+  override def isSplitable(path: Path): Boolean = true
 
-  def createReaderFactoryBase(): PartitionReaderFactory = {
+  override def createReaderFactory(): PartitionReaderFactory = {
     // Unset any serialized search argument setup by Spark's OrcScanBuilder as
     // it will be incompatible due to shading and potential ORC classifier mismatch.
     hadoopConf.unset(OrcConf.KRYO_SARG.getAttribute)
@@ -96,9 +102,27 @@ abstract class GpuOrcScanBase(
         queryUsesInputFile)
     }
   }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case o: GpuOrcScan =>
+      super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
+          equivalentFilters(pushedFilters, o.pushedFilters) && rapidsConf == o.rapidsConf &&
+          queryUsesInputFile == o.queryUsesInputFile
+    case _ => false
+  }
+
+  override def hashCode(): Int = getClass.hashCode()
+
+  override def description(): String = {
+    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
+  }
+
+  def withFilters(
+      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuOrcScanBase {
+object GpuOrcScan {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)

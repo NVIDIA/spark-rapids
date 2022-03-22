@@ -338,7 +338,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>
       if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
-        batchScan.scan.isInstanceOf[GpuOrcScanBase]) &&
+        batchScan.scan.isInstanceOf[GpuOrcScan]) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
         SparkShimImpl.copyBatchScanExec(batchScan, true)
       } else {

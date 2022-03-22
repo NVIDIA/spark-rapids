@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuOrcScanBase, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuOrcScan, RapidsConf, RapidsMeta, ScanMeta}
 
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -29,7 +29,7 @@ class RapidsOrcScanMeta(
   extends ScanMeta[OrcScan](oScan, conf, parent, rule) {
   
   override def tagSelfForGpu(): Unit = {
-    GpuOrcScanBase.tagSupport(this)
+    GpuOrcScan.tagSupport(this)
     // we are being overly cautious and that Orc does not support this yet
     if (oScan.isInstanceOf[SupportsRuntimeFiltering]) {
       willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
