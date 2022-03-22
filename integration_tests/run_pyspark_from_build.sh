@@ -57,11 +57,14 @@ else
     #
     # `./run_pyspark_from_build.sh -k xxx ` runs all xxx tests with spark-avro.jar in the classpath
     #
-    # `CI_EXCLUDE_AVRO=true ./run_pyspark_from_build.sh -k not avro_test.py` run all tests excluding
-    #                               those in avro_test.py
-    if [[ "${CI_EXCLUDE_AVRO}" != "" ]];
+    # `CI_EXCLUDE_AVRO=true ./run_pyspark_from_build.sh` run all tests (except the marker skipif())
+    #                                           without spark-avro.jar
+    if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr [:upper:] [:lower:] ) == "true" ]];
     then
-       AVRO_JARS=""
+        export INCLUDE_SPARK_AVRO_JAR=true
+    else
+        export INCLUDE_SPARK_AVRO_JAR=false
+        AVRO_JARS=""
     fi
 
     # Only 3 jars: cudf.jar dist.jar integration-test.jar

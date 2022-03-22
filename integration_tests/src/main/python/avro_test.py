@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
 from spark_session import with_cpu_session
 import pytest
 
@@ -18,6 +20,9 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+
+if os.environ.get('INCLUDE_SPARK_AVRO_JAR', 'false') == 'false':
+    pytestmark = pytest.mark.skip(reason=str("INCLUDE_SPARK_AVRO_JAR is disabled"))
 
 support_gens = numeric_gens + [string_gen, boolean_gen]
 
