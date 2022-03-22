@@ -823,7 +823,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
             "   or exists (select * from {} as r where r._2 = l._2 and r._3 {} l._3)"
         ).format(leftTable, rightTable, cond))
         return res
-    existenceJoinRegex = r"ExistenceJoin\(exists#[0-9]+\),"
+    existenceJoinRegex =  r"ExistenceJoin\(exists#[0-9]+\),"
     if conditionalJoin:
         existenceJoinRegex = existenceJoinRegex + r" \(.+ <= .+\)"
 
