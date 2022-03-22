@@ -1,9 +1,20 @@
 # A JSON generator built based on the context free grammar from https://www.json.org/json-en.html
 
-
+import pytest 
 import random
+from typing import List
 from data_gen import *
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from marks import approximate_float
+
+_name_gen = StringGen(pattern= "[a-z]{1,30}",nullable= False)
+_name_gen.start(random)
+_string_gen = StringGen(pattern= "[a-z]{1,30}")
+_string_gen.start(random)
+
+def gen_top_schema(depth):
+    return gen_object_type(depth)
+
 
 def gen_schema(depth):
     """
@@ -30,7 +41,7 @@ def gen_array_type(depth):
     return ArrayType(gen_schema(depth-1))
 
 def gen_fields_type(depth):
-    length = random.randint(0, 5)
+    length = random.randint(1, 5)
     return [gen_field_type(depth) for _ in range(length)]
 
 def gen_field_type(depth):
@@ -46,9 +57,7 @@ def gen_bool_type():
     return BooleanType()
 
 def gen_name():
-    name_gen = StringGen(nullable= False)
-    name_gen.start(random)
-    return name_gen.gen()
+    return _name_gen.gen()
 
 # This is just a simple prototype of JSON generator.
 # You need to generate a JSON schema before using it.
@@ -118,7 +127,7 @@ def gen_object(schema: StructType):
 
 
 
-def gen_members(schema: list[StructField]):
+def gen_members(schema: List[StructField]):
     """
     MEMBERS -> MEMBER 
              | MEMBER ',' MEMBERS
@@ -140,7 +149,7 @@ def gen_member(schema: StructField):
     for t in gen_whitespace():
         yield t
 
-    yield schema.name
+    yield '"' + schema.name + '"'
 
     for t in gen_whitespace():
         yield t
@@ -186,11 +195,9 @@ def gen_element(schema: DataType):
 def gen_string():
     """
     STRING -> '"' CHARACTERS '"'
+    use StringGen here for simplicity.
     """
-    yield '"'
-    for t in gen_characters():
-        yield t
-    yield '"'
+    yield '"' +  _string_gen.gen() + '"'
 
 def gen_characters():
     """
@@ -372,9 +379,12 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
     'spark.rapids.sql.format.json.read.enabled': 'true'}
 
+@approximate_float
+@pytest.mark.xfail(reason = "fuzz test")
 def test_json_read_fuzz(spark_tmp_path):
     depth = random.randint(1, 5)
-    schema = gen_schema(depth)
+    schema = gen_top_schema(depth)
+
     data_path = spark_tmp_path + '/JSON_FUZZ_DATA'
     json_string = "".join(gen_json(schema))
 
@@ -383,11 +393,11 @@ def test_json_read_fuzz(spark_tmp_path):
 
     if isinstance(schema, StructType):
         assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.read.schema(schema).json(data_path).cache(),
+            lambda spark: spark.read.schema(schema).json(data_path),
             _enable_all_types_conf
         )
     else:
         assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.read.json(data_path).cache(),
+            lambda spark: spark.read.json(data_path),
             _enable_all_types_conf
         )
