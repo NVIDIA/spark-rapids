@@ -20,7 +20,11 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
 import com.nvidia.spark.rapids._
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
+import org.apache.parquet.HadoopReadOptions
+import org.apache.parquet.format.CompressionCodec
+import org.apache.parquet.hadoop.ParquetFileReader
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
@@ -80,6 +84,28 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
       AttributeReference("field2", mockByteType, true)())
 
     testColumnarBatchToCachedBatchIterator(cb, schema)
+  }
+
+  test("test useCompression conf is honored") {
+    val ser = new ParquetCachedBatchSerializer()
+    val readOptions = HadoopReadOptions.builder(new Configuration).build()
+    val schema = new StructType().add("value", "int")
+    withResource(ColumnVector.fromInts(1, 2, 3, 4)) { cudfcv =>
+      val vec = GpuColumnVector.from(cudfcv, IntegerType)
+      val batch = new ColumnarBatch(Array[org.apache.spark.sql.vectorized.ColumnVector](vec), 4)
+      List(false, true).foreach { comp =>
+        val cbList = ser.compressColumnarBatchWithParquet(batch, schema, schema, 100, comp)
+        cbList.foreach { cb =>
+          val inputFile = new ByteArrayInputFile(cb.buffer)
+          withResource(ParquetFileReader.open(inputFile, readOptions)) { parquetFileReader =>
+            assert(
+              (if (comp) CompressionCodec.SNAPPY.name()
+              else CompressionCodec.UNCOMPRESSED.name()) ==
+                  parquetFileReader.getFooter.getBlocks.get(0).getColumns.get(0).getCodec.name())
+          }
+        }
+      }
+    }
   }
 
   val ROWS = 3 * 1024 * 1024
