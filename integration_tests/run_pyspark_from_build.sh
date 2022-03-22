@@ -57,7 +57,7 @@ else
     #
     # `./run_pyspark_from_build.sh -k xxx ` runs all xxx tests with spark-avro.jar in the classpath
     #
-    # `CI_EXCLUDE_AVRO=true ./run_pyspark_from_build.sh` run all tests (except the marker skipif())
+    # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` run all tests (except the marker skipif())
     #                                           without spark-avro.jar
     if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr [:upper:] [:lower:] ) == "true" ]];
     then
