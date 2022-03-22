@@ -44,6 +44,9 @@ The script below will initialize with the following:
   Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids) through
   initialization actions (please note it takes up to 1 week for the latest init script to be merged into the GCP
   Dataproc public GCS bucket)
+  
+  Inside `rapids.sh` please add the Spark RAPIDS related parameters according to
+  [tuning guide](../tuning-guide.md). 
 * One 8-core master node and 5 32-core worker nodes
 * Four NVIDIA T4 for each worker node
 * [Local SSD](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds) is
