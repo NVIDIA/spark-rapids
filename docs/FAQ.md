@@ -481,7 +481,7 @@ Below are some troubleshooting tips on GPU query performance issue:
   storage I/O performance because the most suitable query type is computation bound instead of
   I/O or network bound.
   
-* Make sure at least the most time consuming part of the query is on GPU. Please refer to
+* Make sure at least the most time consuming part of the query is on the GPU. Please refer to
   [Getting Started on Spark workload qualification](./get-started/getting-started-workload-qualification.md)
   for more details. Ideally we hope the whole query is fully on GPU, but if some minor part of the 
   query, eg. a small JDBC table scan, can not run on GPU, it won't cause much performance overhead.
