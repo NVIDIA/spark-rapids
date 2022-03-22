@@ -450,10 +450,6 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     withResource(Table.writeParquetChunked(opts, buffer)) { writer =>
       writer.write(table)
     }
-    withResource(Table.writeParquetChunked(opts,
-      new java.io.File(s"/tmp/cache${System.currentTimeMillis()}-${compressionType.name()}"))) {
-      writer => writer.write(table)
-    }
     buffer
   }
 
