@@ -488,7 +488,7 @@ Below are some troubleshooting tips on GPU query performance issue:
   If there are some CPU fallbacks, check if those are some known features which can be enabled by 
   turning on some RAPIDS Accelerator parameters. If the features needed do not exist in the most 
   recent release of the RAPIDS Accelerator, please file a
-  [feature request](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce.
+  [feature request](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproducing example.
 
 * Tune the Spark and RAPIDS Accelerator parameters such as `spark.sql.shuffle.partitions`, 
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` to get the best run.
