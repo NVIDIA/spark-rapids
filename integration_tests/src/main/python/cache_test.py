@@ -115,6 +115,17 @@ def test_cache_partial_load(data_gen, enable_vectorized_conf):
     assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a")), conf=enable_vectorized_conf)
     assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), conf=enable_vectorized_conf)
 
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
+def test_cache_reverse_order(enable_vectorized_conf):
+    col0 = StructGen([['child0', StructGen([['child1', byte_gen]])]])
+    col1 = StructGen([['child0', byte_gen]])
+    def partial_return():
+        def partial_return_cache(spark):
+            return two_col_df(spark, col0, col1).select(f.col("a"), f.col("b")).cache().limit(50).select(f.col("b"), f.col("a"))
+        return partial_return_cache
+    assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=enable_vectorized_conf)
+
 @allow_non_gpu('CollectLimitExec')
 def test_cache_diff_req_order(spark_tmp_path):
     def n_fold(spark):
