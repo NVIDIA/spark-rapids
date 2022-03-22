@@ -22,7 +22,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311, is_before_spark_320
+from spark_session import is_before_spark_320
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -691,23 +691,6 @@ def test_regexp_like():
                 'regexp_like(a, "a{1,3}")',
                 'regexp_like(a, "a{1,}")',
                 'regexp_like(a, "a[bc]d")'),
-        conf=_regexp_conf)
-
-@pytest.mark.skipif(is_databricks_runtime(),
-    reason='Databricks optimizes out regexp_replace call in this case')
-@pytest.mark.skipif(not is_before_spark_311(),
-    reason='Spark 3.1.1 optimizes out regexp_replace call in this case')
-@allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_null_pattern_fallback():
-    gen = mk_str_gen('[abcd]{0,3}')
-    # Spark 3.0.1 translates `NULL` to `CAST(NULL as STRING)` and we only support
-    # literal expressions for the regex pattern
-    # Spark 3.1.1 (and Databricks) replaces the whole regexp_replace expression with a
-    # literal null
-    assert_gpu_fallback_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_replace(a, NULL, "A")'),
-            'RegExpReplace',
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():

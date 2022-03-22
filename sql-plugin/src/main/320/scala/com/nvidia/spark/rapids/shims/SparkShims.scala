@@ -27,7 +27,9 @@ import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartitio
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.types.StructType
 
-object SparkShimImpl extends Spark320PlusShims with Spark30Xuntil33XShims {
+object SparkShimImpl extends Spark320PlusShims
+    with Spark320PlusNonDBShims
+    with Spark31Xuntil33XShims {
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def getFileScanRDD(

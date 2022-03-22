@@ -340,6 +340,13 @@ object RapidsConf {
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
 
+  val RMM_EXACT_ALLOC = conf("spark.rapids.memory.gpu.allocSize")
+      .doc("The exact size in byte that RMM should allocate. This is intended to only be " +
+          "used for testing.")
+      .internal() // If this becomes public we need to add in checks for the value when it is used.
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional
+
   val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
         s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
@@ -1175,9 +1182,9 @@ object RapidsConf {
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.1.1, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly." +
       "When tested in a combined jar with other Shims, it's expected that the provided " +
       "implementation follows the same convention as existing Spark shims. If its class" +
@@ -1510,6 +1517,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     }
     pool
   }
+
+  lazy val rmmExactAlloc: Option[Long] = get(RMM_EXACT_ALLOC)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
