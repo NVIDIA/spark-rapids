@@ -578,6 +578,7 @@ _full_gen_data_for_collect_op = _gen_data_for_collect_op + [[
 _repeat_agg_column_for_collect_list_op = [
         RepeatSeqGen(ArrayGen(int_gen), length=15),
         RepeatSeqGen(all_basic_struct_gen, length=15),
+        RepeatSeqGen(StructGen([['c0', all_basic_struct_gen]]), length=15),
         RepeatSeqGen(simple_string_to_string_map_gen, length=15)]
 
 _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
@@ -586,11 +587,8 @@ _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
 
 _repeat_agg_column_for_collect_set_op = [
     RepeatSeqGen(all_basic_struct_gen, length=15),
-    RepeatSeqGen(StructGen([['child0', all_basic_struct_gen]]), length=15)]
-
-_gen_data_for_collect_set_op_for_unique_group_by_key = [[
-    ('a', LongRangeGen()),
-    ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op]
+    RepeatSeqGen(StructGen([
+        ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15)]
 
 _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
@@ -654,25 +652,11 @@ def test_hash_groupby_collect_set(data_gen):
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(reason="the result order from collect-set can not be ensured for CPU and GPU."
-                          " We need to enable this after SortArray has supported on nested types."
-                          " See https://github.com/NVIDIA/spark-rapids/issues/3715")
 def test_hash_groupby_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
-            .agg(f.sort_array(f.collect_set('b')), f.count('b')))
-
-# After https://github.com/NVIDIA/spark-rapids/issues/3715 is fixed, we should remove this test case
-@approximate_float
-@ignore_order(local=True)
-@incompat
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_for_unique_group_by_key, ids=idfn)
-def test_hash_groupby_collect_set_on_nested_type_for_unique_group_by(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a')
-            .agg(f.collect_set('b')))
+            .agg(f.sort_array(f.collect_set('b'))))
 
 @approximate_float
 @ignore_order(local=True)
