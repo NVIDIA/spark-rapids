@@ -75,7 +75,7 @@ Turing or Ampere.
 
 Currently a limited set of SQL and DataFrame operations are supported, please see the
 [configs](configs.md) and [supported operations](supported_ops.md) for a more complete list of what
-is supported. Some of the MLlib functions, such as `PCA` is supported.
+is supported. Some of the MLlib functions, such as `PCA` are supported.
 Some of structured streaming is likely to be accelerated, but it has not been an area
 of focus right now. Other areas like GraphX or RDDs are not accelerated.
 
