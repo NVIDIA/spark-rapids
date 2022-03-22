@@ -160,11 +160,9 @@ Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021
 select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0, and click "Reload"
 if not triggered automatically.
 
-There is a known issue with the shims/spark3xx submodules. After being enabled once, a module such as shims/spark312
-may remain active in IDEA even though you explicitly disable the Maven profile `release312` in the Maven tool window.
-With an extra IDEA shim module loaded the IDEA internal build "Build->Build Project" is likely to fail
-(whereas it has no adverse effect on Maven build). As a workaround, locate the pom.xml under the extraneous IDEA module,
-right-click on it and select "Maven->Ignore Projects".
+There is a known issue where, even after selecting a different maven profile in maven submenu, the source folders from 
+previously selected profile may remain active. To get around this you have to manually reload the maven project from 
+the maven side menu 
 
 If you see Scala symbols unresolved (highlighted red) in IDEA please try the following steps to resolve it:
 - Make sure there are no relevant poms in "File->Settings->Build Tools->Maven->Ignored Files"
