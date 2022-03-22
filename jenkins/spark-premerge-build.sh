@@ -43,15 +43,15 @@ mvn_verify() {
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=302 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=303 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=304 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    # don't skip tests and build tools module. run all tests excluding avro_test. CI_EXCLUDE_AVRO will get rid of spark-jars from classpath
-    env -u SPARK_HOME CI_EXCLUDE_AVRO=true mvn -U -B $MVN_URM_MIRROR -Dbuildver=311 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='not avro_test.py'
+    # don't skip tests and build tools module
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=311 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS=''
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=312 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=313 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=314 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
 
-    # don't skip tests, but run all tests excluding avro_test. CI_EXCLUDE_AVRO will get rid of spark-jars from classpath
-    env -u SPARK_HOME CI_EXCLUDE_AVRO=true mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='not avro_test.py' -pl '!tools'
+    # don't skip tests
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools'
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=321 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=322 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
@@ -59,10 +59,6 @@ mvn_verify() {
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     mvn -B $MVN_URM_MIRROR '-Psnapshots,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
-
-    # Here run avro tests
-    mvn -B $MVN_URM_MIRROR '-Psnapshots,pre-merge' clean verify -Dpytest.TEST="avro_test.py" \
         -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin

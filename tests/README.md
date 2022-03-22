@@ -26,15 +26,11 @@ For more information about using scalatest with Maven please refer to the
     
 #### Running Unit Tests Against Specific Apache Spark Versions
 You can run the unit tests against different versions of Spark using the different profiles. The
-default version runs against Spark 3.0.1, to run against a specific version use one of the following
+default version runs against Spark 3.1.1, to run against a specific version use one of the following
 profiles:
-   - `-Pspark301tests` (spark 3.0.1)
-   - `-Pspark302tests` (spark 3.0.2)
-   - `-Pspark303tests` (spark 3.0.3)
-   - `-Pspark304tests` (spark 3.0.4)
-   - `-Pspark311tests` (spark 3.1.1)
-   - `-Pspark312tests` (spark 3.1.2)
-   - `-Pspark313tests` (spark 3.1.3)
+   - `-Pspark311tests` (Spark 3.1.1)
+   - `-Pspark312tests` (Spark 3.1.2)
+   - `-Pspark313tests` (Spark 3.1.3)
 
 Please refer to the [tests project POM](pom.xml) to see the list of test profiles supported.
 Apache Spark specific configurations can be passed in by setting the `SPARK_CONF` environment

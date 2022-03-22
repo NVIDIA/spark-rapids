@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
 SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
-# remove the periods so change something like 3.0.1 to 301
+# remove the periods so change something like 3.1.1 to 311
 VERSION_NUM=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS//.}
 SPARK_VERSION_STR=spark$VERSION_NUM
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`

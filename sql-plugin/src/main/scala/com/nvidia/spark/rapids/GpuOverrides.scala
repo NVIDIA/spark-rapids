@@ -2866,6 +2866,25 @@ object GpuOverrides extends Logging {
           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
+     expr[ArrayExists](
+      "Return true if any element satisfies the predicate LambdaFunction",
+      ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[ArrayExists](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuArrayExists(
+            childExprs.head.convertToGpu(),
+            childExprs(1).convertToGpu(),
+            SQLConf.get.getConf(SQLConf.LEGACY_ARRAY_EXISTS_FOLLOWS_THREE_VALUED_LOGIC)
+          )
+        }
+      }),
+
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
