@@ -62,6 +62,7 @@ The output if signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
+* Avro reader for primitive types
 * ExistenceJoin support
 * ArrayExists support
 * GetArrayStructFields support
