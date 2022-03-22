@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression}
 
@@ -372,7 +372,7 @@ class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
     throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
   override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.collectSet()
+    GroupByAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
   override val name: String = "CudfCollectSet"
 }
 
@@ -380,7 +380,7 @@ class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
     throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
   override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.mergeSets()
+    GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
   override val name: String = "CudfMergeSets"
 }
 
