@@ -40,7 +40,7 @@ mvn verify
 
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
 This will build the plugin for a single version of Spark.  By default this is Apache Spark
-3.0.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
+3.1.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
 to Maven. For instance to build Spark 3.1.1 you would use:
 
 ```shell script
@@ -72,12 +72,11 @@ You can also install some manually and build a combined jar. For instance to bui
 
 ```shell script
 mvn clean
-mvn -Dbuildver=301 install -DskipTests
-mvn -Dbuildver=302 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=303 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=311 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=312 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=313 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=311cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
@@ -88,9 +87,9 @@ There is a build script `build/buildall` that automates the local build process.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots`
-- `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
+- `minimumFeatureVersionMix` that currently includes 311cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
 
-For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=301` for Spark 3.0.1.
+For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=311` for Spark 3.1.1.
 
 The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need for the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
 
@@ -127,10 +126,8 @@ The version-specific directory names have one of the following forms / use cases
 - `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
    only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
    among the supported versions
-- `src/main/302until312-all` contains code that applies to all shims between 3.0.2 *inclusive*,
-3.1.2 *exclusive*
-- `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
-   3.1.2 *inclusive*
+- `src/main/311until320-all` contains code that applies to all shims between 3.1.1 *inclusive*,
+3.2.0 *exclusive*
 - `src/main/pre320-treenode` contains shims for the Catalyst `TreeNode` class before the
   [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
 - `src/main/post320-treenode` contains shims for the Catalyst `TreeNode` class after the
@@ -224,7 +221,7 @@ Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscod
 either locally or into a Remote-SSH extension destination depending on your target environment.
 When your project folder is open in VS Code, it may prompt you to import Maven project.
 IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the Bloop projects
-generated with the default `301` profile. If you need to use a different profile, always rerun the
+generated with the default `311` profile. If you need to use a different profile, always rerun the
 command above manually. When regenerating projects it's recommended to proceed to Metals
 "Build commands" View, and click:
 1. "Restart build server"

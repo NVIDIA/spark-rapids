@@ -70,7 +70,7 @@ object ApiValidation extends Logging {
     val gpuKeys = gpuExecs.keys
     var printNewline = false
 
-    val sparkToShimMap = Map("3.0.1" -> "spark301", "3.1.1" -> "spark311")
+    val sparkToShimMap = Map("3.1.1" -> "spark311")
     val sparkVersion = SparkShimImpl.getSparkShimVersion.toString
     val shimVersion = sparkToShimMap(sparkVersion)
 
