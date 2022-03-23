@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims._
+import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -1498,7 +1498,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Pmod](
       "Pmod",
-     ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
@@ -1705,7 +1705,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
       }),
     expr[Remainder](
-     "Remainder or modulo",
+      "Remainder or modulo",
       ExprChecks.binaryProject(
         TypeSig.gpuNumeric, TypeSig.cpuNumeric,
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
@@ -2449,7 +2449,7 @@ object GpuOverrides extends Logging {
         ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)),
     expr[RegExpExtract](
-     "Extract a specific group identified by a regular expression",
+      "Extract a specific group identified by a regular expression",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
@@ -2954,7 +2954,7 @@ object GpuOverrides extends Logging {
         TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
-     "Window-operator backend",
+      "Window-operator backend",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all,
