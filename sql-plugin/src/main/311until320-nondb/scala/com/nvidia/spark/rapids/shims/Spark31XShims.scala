@@ -594,8 +594,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
-      }),
-    GpuScalaUDFMeta.exprMeta
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
