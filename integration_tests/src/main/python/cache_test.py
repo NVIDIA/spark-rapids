@@ -122,7 +122,7 @@ def test_cache_reverse_order(enable_vectorized_conf):
     col1 = StructGen([['child0', byte_gen]])
     def partial_return():
         def partial_return_cache(spark):
-            return two_col_df(spark, col0, col1).select(f.col("a"), f.col("b")).cache().limit(50).select(f.col("b"), f.col("a"))
+            return two_col_df(spark, col0, col1).select(f.col("a"), f.col("b")).cache().select(f.col("b"), f.col("a"))
         return partial_return_cache
     assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=enable_vectorized_conf)
 
