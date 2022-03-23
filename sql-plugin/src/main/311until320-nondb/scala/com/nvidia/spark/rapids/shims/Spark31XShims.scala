@@ -60,7 +60,6 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.rapids.shims.{GpuColumnarToRowTransitionExec, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -696,51 +695,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT
             + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
-        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
-      GpuOverrides.exec[ArrowEvalPythonExec](
-        "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
-          " Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled",
-        ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-          TypeSig.all),
-        (e, conf, p, r) =>
-          new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
-            val udfs: Seq[BaseExprMeta[PythonUDF]] =
-              e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-            val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-              e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-            override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
-
-            override def replaceMessage: String = "partially run on GPU"
-            override def noReplacementPossibleMessage(reasons: String): String =
-              s"cannot run even partially on the GPU because $reasons"
-
-            override def convertToGpu(): GpuExec =
-              GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
-                resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-                childPlans.head.convertIfNeeded(),
-                e.evalType)
-          }),
-      GpuOverrides.exec[MapInPandasExec](
-        "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
-          " Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled.",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-          TypeSig.all),
-        (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
-      GpuOverrides.exec[FlatMapGroupsInPandasExec](
-        "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
-          " Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled.",
-        ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-        (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
-      GpuOverrides.exec[AggregateInPandasExec](
-        "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
-          " the Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled.",
-        ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-        (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
