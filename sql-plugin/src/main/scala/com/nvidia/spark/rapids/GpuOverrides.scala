@@ -429,6 +429,9 @@ object OrcFormatType extends FileFormatType {
 object JsonFormatType extends FileFormatType {
   override def toString = "JSON"
 }
+object AvroFormatType extends FileFormatType {
+  override def toString = "Avro"
+}
 
 sealed trait FileFormatOp
 object ReadFileOp extends FileFormatOp {
@@ -824,6 +827,12 @@ object GpuOverrides extends Logging {
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        TypeSig.UDT).nested())),
+    (AvroFormatType, FileFormatChecks(
+      cudfRead = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+        TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))
@@ -2857,6 +2866,25 @@ object GpuOverrides extends Logging {
           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
+     expr[ArrayExists](
+      "Return true if any element satisfies the predicate LambdaFunction",
+      ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[ArrayExists](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuArrayExists(
+            childExprs.head.convertToGpu(),
+            childExprs(1).convertToGpu(),
+            SQLConf.get.getConf(SQLConf.LEGACY_ARRAY_EXISTS_FOLLOWS_THREE_VALUED_LOGIC)
+          )
+        }
+      }),
+
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3203,8 +3231,8 @@ object GpuOverrides extends Logging {
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction",
       // GpuCollectSet is not yet supported in Reduction context.
-      // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
-      // method drop_list_duplicates doesn't support nested types.
+      // Compared to CollectList, ArrayType and MapType are NOT supported in GpuCollectSet
+      // because underlying cuDF operator drop_list_duplicates doesn't support LIST type.
       ExprChecks.aggNotReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT),
@@ -3454,7 +3482,7 @@ object GpuOverrides extends Logging {
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
-    commonScans ++ SparkShimImpl.getScans
+    commonScans ++ SparkShimImpl.getScans ++ ExternalSource.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,

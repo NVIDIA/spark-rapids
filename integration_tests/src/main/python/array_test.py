@@ -307,3 +307,28 @@ def test_get_array_struct_fields(data_gen):
         max_length=6)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, array_struct_gen).selectExpr('a.child0'))
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(string_gen), ArrayGen(int_gen)])
+@pytest.mark.parametrize('threeVL', [
+    pytest.param(False, id='3VL:off'),
+    pytest.param(True, id='3VL:on'),
+])
+def test_array_exists(data_gen, threeVL):
+    def do_it(spark):
+        columns = ['a']
+        element_type = data_gen.data_type.elementType
+        if isinstance(element_type, IntegralType):
+            columns.extend([
+                'exists(a, item -> item % 2 = 0) as exists_even',
+                'exists(a, item -> item < 0) as exists_negative',
+                'exists(a, item -> item >= 0) as exists_non_negative'
+            ])
+
+        if isinstance(element_type, StringType):
+            columns.extend(['exists(a, entry -> length(entry) > 5) as exists_longer_than_5'])
+
+        return unary_op_df(spark, data_gen).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
+        'spark.sql.legacy.followThreeValuedLogicInArrayExists' : threeVL,
+    })

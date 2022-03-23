@@ -65,7 +65,8 @@
             330
         </snapshot.buildvers>
         <databricks.buildvers>
-            312db
+            312db,
+            321db
         </databricks.buildvers>
     </properties>
     <profiles>
@@ -352,6 +353,11 @@
                                 <artifactId>curator-recipes</artifactId>
                             </exclusion>
                         </exclusions>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.spark</groupId>
+                        <artifactId>spark-avro_${scala.binary.version}</artifactId>
+                        <version>${spark.version}</version>
                     </dependency>
                 </dependencies>
             </plugin>

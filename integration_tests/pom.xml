@@ -297,13 +297,18 @@
                         <goals>
                             <goal>copy</goal>
                         </goals>
-			<configuration>
-			    <useBaseVersion>true</useBaseVersion>
+                        <configuration>
+                            <useBaseVersion>true</useBaseVersion>
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>ai.rapids</groupId>
                                     <artifactId>cudf</artifactId>
                                     <classifier>${cuda.version}</classifier>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.apache.spark</groupId>
+                                    <artifactId>spark-avro_${scala.binary.version}</artifactId>
+                                    <version>${spark.version}</version>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
