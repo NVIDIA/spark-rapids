@@ -43,7 +43,7 @@ object ShimGpuOverrides extends Logging {
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[Cast](cast, false, conf, p, r,
-          doFloatToIntCheck = false, stringToAnsiDate = false)),
+          doFloatToIntCheck = true, stringToAnsiDate = false)),
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
@@ -67,7 +67,7 @@ object ShimGpuOverrides extends Logging {
                       s"a precision large than 23. The current precision is ${dt.precision}")
                   } else {
                     logWarning("Decimal overflow guarantees disabled for " +
-                      s"Average(${a.child.dataType}) produces $dt with an " +
+                      s"Average(${a.child.dataType}) produces ${dt} with an " +
                       s"intermediate precision of ${dt.precision + 15}")
                   }
                 }
@@ -85,11 +85,14 @@ object ShimGpuOverrides extends Logging {
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         }),
       GpuOverrides.expr[RegExpReplace](
-        "String replace using a regular expression pattern",
+       "String replace using a regular expression pattern",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+            ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
+              .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
+              TypeSig.lit(TypeEnum.INT)))),
         (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",

@@ -181,26 +181,27 @@ diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.s
 diff -c spark2diffs/GpuOverrides.diff $tmp_dir/GpuOverrides.newdiff
 
 sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/cast_new.out
-sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/cast_old.out
+sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/cast_old.out
 diff $tmp_dir/cast_new.out $tmp_dir/cast_old.out > $tmp_dir/cast.newdiff || true
 diff -c spark2diffs/cast.diff $tmp_dir/cast.newdiff
 
 sed -n  '/GpuOverrides.expr\[Average\]/,/GpuOverrides.expr\[Abs/p'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/average_new.out
-sed -n  '/GpuOverrides.expr\[Average\]/,/GpuOverrides.expr\[Abs/p'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/average_old.out
-diff $tmp_dir/average_new.out $tmp_dir/average_old.out > $tmp_dir/average.newdiff || true
+sed -n  '/GpuOverrides.expr\[Average\]/,/GpuOverrides.expr\[Abs/p'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/average_old.out
+diff -w $tmp_dir/average_new.out $tmp_dir/average_old.out > $tmp_dir/average.newdiff || true
 diff -c spark2diffs/average.diff $tmp_dir/average.newdiff
 
 sed -n  '/GpuOverrides.expr\[Abs\]/,/GpuOverrides.expr\[RegExpReplace/p'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/abs_new.out
-sed -n  '/GpuOverrides.expr\[Abs\]/,/GpuOverrides.expr\[RegExpReplace/p'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/abs_old.out
-diff $tmp_dir/abs_new.out $tmp_dir/abs_old.out > $tmp_dir/abs.newdiff || true
+sed -n  '/GpuOverrides.expr\[Abs\]/,/GpuOverrides.expr\[RegExpReplace/p'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/abs_old.out
+diff -w $tmp_dir/abs_new.out $tmp_dir/abs_old.out > $tmp_dir/abs.newdiff || true
 diff -c spark2diffs/abs.diff $tmp_dir/abs.newdiff
 
 sed -n  '/GpuOverrides.expr\[RegExpReplace\]/,/GpuOverrides.expr\[TimeSub/{/GpuOverrides.expr\[TimeSub/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/regexreplace_new.out
-sed -n  '/GpuOverrides.expr\[RegExpReplace\]/,/GpuScalaUDFMeta.exprMeta/{/GpuScalaUDFMeta.exprMeta/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/regexreplace_old.out
-diff -c $tmp_dir/regexreplace_new.out $tmp_dir/regexreplace_old.out
+sed -n  '/GpuOverrides.expr\[RegExpReplace\]/,/GpuOverrides.expr\[Lead/{/GpuOverrides.expr\[Lead/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/regexreplace_old.out
+diff -w $tmp_dir/regexreplace_new.out $tmp_dir/regexreplace_old.out > $tmp_dir/regexreplace.newdiff || true
+diff -c spark2diffs/regexreplace.diff $tmp_dir/regexreplace.newdiff
 
 sed -n  '/GpuOverrides.expr\[TimeSub\]/,/GpuOverrides.expr\[ScalaUDF/{/GpuOverrides.expr\[ScalaUDF/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/TimeSub_new.out
-sed -n  '/GpuOverrides.expr\[TimeSub\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/TimeSub_old.out
+sed -n  '/GpuOverrides.expr\[TimeSub\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/TimeSub_old.out
 diff -w $tmp_dir/TimeSub_new.out $tmp_dir/TimeSub_old.out > $tmp_dir/TimeSub.newdiff || true
 diff -c spark2diffs/TimeSub.diff $tmp_dir/TimeSub.newdiff
 
@@ -210,25 +211,25 @@ diff -w $tmp_dir/ScalaUDF_new.out $tmp_dir/ScalaUDF_old.out > $tmp_dir/ScalaUDF.
 diff -c spark2diffs/ScalaUDF.diff $tmp_dir/ScalaUDF.newdiff
 
 sed -n  '/GpuOverrides.exec\[FileSourceScanExec\]/,/})/{/})/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/FileSourceScanExec_new.out
-sed -n  '/GpuOverrides.exec\[FileSourceScanExec\]/,/override def convertToCpu/{/override def convertToCpu/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/FileSourceScanExec_old.out
+sed -n  '/GpuOverrides.exec\[FileSourceScanExec\]/,/override def convertToCpu/{/override def convertToCpu/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/FileSourceScanExec_old.out
 diff -w $tmp_dir/FileSourceScanExec_new.out $tmp_dir/FileSourceScanExec_old.out > $tmp_dir/FileSourceScanExec.newdiff || true
 diff -c spark2diffs/FileSourceScanExec.diff $tmp_dir/FileSourceScanExec.newdiff
 
 sed -n  '/GpuOverrides.exec\[ArrowEvalPythonExec\]/,/})/{/})/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/ArrowEvalPythonExec_new.out
-sed -n  '/GpuOverrides.exec\[ArrowEvalPythonExec\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/ArrowEvalPythonExec_old.out
+sed -n  '/GpuOverrides.exec\[ArrowEvalPythonExec\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/ArrowEvalPythonExec_old.out
 diff -w $tmp_dir/ArrowEvalPythonExec_new.out $tmp_dir/ArrowEvalPythonExec_old.out > $tmp_dir/ArrowEvalPythonExec.newdiff || true
 diff -c spark2diffs/ArrowEvalPythonExec.diff $tmp_dir/ArrowEvalPythonExec.newdiff
 
 sed -n  '/GpuOverrides.exec\[FlatMapGroupsInPandasExec\]/,/GpuOverrides.exec\[WindowInPandasExec/{/GpuOverrides.exec\[WindowInPandasExec/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/FlatMapGroupsInPandasExec_new.out
-sed -n  '/GpuOverrides.exec\[FlatMapGroupsInPandasExec\]/,/GpuOverrides.exec\[AggregateInPandasExec/{/GpuOverrides.exec\[AggregateInPandasExec/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/FlatMapGroupsInPandasExec_old.out
+sed -n  '/GpuOverrides.exec\[FlatMapGroupsInPandasExec\]/,/GpuOverrides.exec\[AggregateInPandasExec/{/GpuOverrides.exec\[AggregateInPandasExec/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/FlatMapGroupsInPandasExec_old.out
 diff -c -w $tmp_dir/FlatMapGroupsInPandasExec_new.out $tmp_dir/FlatMapGroupsInPandasExec_old.out
 
 sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/})/{/})/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/WindowInPandasExec_new.out
-sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/WindowInPandasExec_old.out
+sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/WindowInPandasExec_old.out
 diff -c -w --ignore-blank-lines $tmp_dir/WindowInPandasExec_new.out $tmp_dir/WindowInPandasExec_old.out
 
 sed -n  '/GpuOverrides.exec\[AggregateInPandasExec\]/,/)\.collect/{/)\.collect/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/AggregateInPandasExec_new.out
-sed -n  '/GpuOverrides.exec\[AggregateInPandasExec\]/,/)\.map/{/)\.map/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/v2/Spark30XShims.scala > $tmp_dir/AggregateInPandasExec_old.out
+sed -n  '/GpuOverrides.exec\[AggregateInPandasExec\]/,/)\.map/{/)\.map/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/AggregateInPandasExec_old.out
 diff -c -w $tmp_dir/AggregateInPandasExec_new.out $tmp_dir/AggregateInPandasExec_old.out
 
 sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > $tmp_dir/GpuOrcScanBase_new.out
