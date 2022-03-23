@@ -298,10 +298,10 @@ diff -c spark2diffs/TreeNode.diff $tmp_dir/TreeNode.newdiff
 diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuSortMergeJoinMeta.scala  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinMeta.scala > $tmp_dir/GpuSortMergeJoinMeta.newdiff || true
 diff -c spark2diffs/GpuSortMergeJoinMeta.diff $tmp_dir/GpuSortMergeJoinMeta.newdiff
 
-diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuJoinUtils.scala  ../sql-plugin/src/main/301db/scala/com/nvidia/spark/rapids/shims/GpuJoinUtils.scala > $tmp_dir/GpuJoinUtils.newdiff || true
+diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuJoinUtils.scala  ../sql-plugin/src/main/311+-all/scala/com/nvidia/spark/rapids/shims/GpuJoinUtils.scala > $tmp_dir/GpuJoinUtils.newdiff || true
 diff -c spark2diffs/GpuJoinUtils.diff $tmp_dir/GpuJoinUtils.newdiff
 
-diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/TypeSigUtil.scala  ../sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/TypeSigUtil.scala > $tmp_dir/TypeSigUtil.newdiff || true
+diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/TypeSigUtil.scala  ../sql-plugin/src/main/311until320-all/scala/com/nvidia/spark/rapids/shims/TypeSigUtil.scala > $tmp_dir/TypeSigUtil.newdiff || true
 diff -c spark2diffs/TypeSigUtil.diff $tmp_dir/TypeSigUtil.newdiff
 
 sed -n  '/class GpuBroadcastHashJoinMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuBroadcastHashJoinExecMeta.scala > $tmp_dir/GpuBroadcastHashJoinMeta_new.out
