@@ -299,11 +299,12 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
     'CORRECTED',
     'EXCEPTION'
 ])
-def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy):
+def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, \
+        spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy})
-    f = read_func(std_input_path + '/' + filename, schema, {})
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
     assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
 
 @pytest.mark.parametrize('schema', [_string_schema])
