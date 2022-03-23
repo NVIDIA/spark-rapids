@@ -60,7 +60,7 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    Other considerations:
 
    - Please refer to [Mellanox documentation](
-   https://community.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
+   https://support.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
    on how to configure RoCE networks (lossless/lossy, QoS, and more)
 
    - We recommend that the `--without-ucx` option is passed when installing MLNX_OFED
