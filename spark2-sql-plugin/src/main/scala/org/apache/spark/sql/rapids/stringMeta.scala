@@ -255,3 +255,25 @@ class GpuStringSplitMeta(
     */
   }
 }
+
+class GpuStringToMapMeta(expr: StringToMap,
+                         conf: RapidsConf,
+                         parent: Option[RapidsMeta[_, _, _]],
+                         rule: DataFromReplacementRule)
+  extends StringSplitRegExpMeta[StringToMap](expr, conf, parent, rule) {
+
+  private def checkFoldable(children: Seq[Expression]): Unit = {
+    if (children.forall(_.foldable)) {
+      willNotWorkOnGpu("result can be compile-time evaluated")
+    }
+  }
+
+  private var pairDelimInfo: Option[(String, Boolean)] = None
+  private var keyValueDelimInfo: Option[(String, Boolean)] = None
+
+  override def tagExprForGpu(): Unit = {
+    checkFoldable(expr.children)
+    pairDelimInfo = checkRegExp(expr.pairDelim)
+    keyValueDelimInfo = checkRegExp(expr.keyValueDelim)
+  }
+}

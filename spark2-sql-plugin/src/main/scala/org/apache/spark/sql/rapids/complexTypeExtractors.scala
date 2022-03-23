@@ -35,3 +35,11 @@ class GpuGetMapValueMeta(
   rule: DataFromReplacementRule)
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
 }
+
+class GpuGetArrayStructFieldsMeta(
+     expr: GetArrayStructFields,
+     conf: RapidsConf,
+     parent: Option[RapidsMeta[_, _, _]],
+     rule: DataFromReplacementRule)
+  extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
+}
