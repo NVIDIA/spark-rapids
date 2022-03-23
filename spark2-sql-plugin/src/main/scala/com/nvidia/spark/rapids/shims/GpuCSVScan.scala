@@ -98,6 +98,10 @@ object GpuCSVScan {
     }
     */
 
+    if (parsedOptions.delimiter.codePointAt(0) > 127) {
+      meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
+    }
+
     // delimiter is char in 2.x
     if (parsedOptions.delimiter > 127) {
       meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
@@ -163,50 +167,14 @@ object GpuCSVScan {
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      if (!meta.conf.isCsvDateReadEnabled) {
-        meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading dates. " +
-            s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DATES} to true.")
+      if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+        // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
+        // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
+        // so we fall back to CPU
+        meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
       }
-      dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
-      }
-    }
-
-    if (!meta.conf.isCsvBoolReadEnabled && readSchema.map(_.dataType).contains(BooleanType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading boolean. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BOOLS} to true.")
-    }
-
-    if (!meta.conf.isCsvByteReadEnabled && readSchema.map(_.dataType).contains(ByteType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading bytes. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BYTES} to true.")
-    }
-
-    if (!meta.conf.isCsvShortReadEnabled && readSchema.map(_.dataType).contains(ShortType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading shorts. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_SHORTS} to true.")
-    }
-
-    if (!meta.conf.isCsvIntReadEnabled && readSchema.map(_.dataType).contains(IntegerType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading integers. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_INTEGERS} to true.")
-    }
-
-    if (!meta.conf.isCsvLongReadEnabled && readSchema.map(_.dataType).contains(LongType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading longs. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_LONGS} to true.")
-    }
-
-    if (!meta.conf.isCsvFloatReadEnabled && readSchema.map(_.dataType).contains(FloatType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
-    }
-
-    if (!meta.conf.isCsvDoubleReadEnabled && readSchema.map(_.dataType).contains(DoubleType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading doubles. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
+      DateUtils.tagAndGetCudfFormat(meta,
+        GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {

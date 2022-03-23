@@ -2,28 +2,28 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
-311c311
+313c313
 <     .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
 ---
 >     .createWithDefault(ByteUnit.GiB.toBytes(1))
-361c361
+370c370
 <       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
 ---
 >       .createWithDefault(ByteUnit.MiB.toBytes(640))
-393c393
+402c402
 <     .createWithDefault(ByteUnit.MiB.toBytes(8).toLong)
 ---
 >     .createWithDefault(ByteUnit.MiB.toBytes(8))
-1378c1378
-<         |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
+1374c1374
+<         |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
 ---
->         |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
-1433a1434,1437
+>         |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
+1429a1430,1433
 >       printToggleHeader("Scans\n")
 >     }
 >     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
 >     if (asTable) {
-1440c1444
+1436c1440
 <     // com.nvidia.spark.rapids.python.PythonConfEntries.init()
 ---
 >     com.nvidia.spark.rapids.python.PythonConfEntries.init()

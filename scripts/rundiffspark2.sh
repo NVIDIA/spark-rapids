@@ -89,10 +89,6 @@ sed -n  '/class GpuRLikeMeta/,/override def convertToGpu/{/override def convertT
 diff $tmp_dir/GpuRLikeMeta_new.out $tmp_dir/GpuRLikeMeta_old.out > $tmp_dir/GpuRLikeMeta.newdiff || true
 diff -c spark2diffs/GpuRLikeMeta.diff  $tmp_dir/GpuRLikeMeta.newdiff
 
-sed -n  '/class GpuRegExpExtractMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/GpuRegExpExtractMeta_new.out
-sed -n  '/class GpuRegExpExtractMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/GpuRegExpExtractMeta_old.out
-diff $tmp_dir/GpuRegExpExtractMeta_new.out $tmp_dir/GpuRegExpExtractMeta_old.out > $tmp_dir/GpuRegExpExtractMeta.newdiff || true
-diff -c spark2diffs/GpuRegExpExtractMeta.diff $tmp_dir/GpuRegExpExtractMeta.newdiff
 
 sed -n  '/class SubstringIndexMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/SubstringIndexMeta_new.out
 sed -n  '/class SubstringIndexMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/SubstringIndexMeta_old.out
@@ -314,11 +310,11 @@ sed -n  '/object GpuCSVScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvi
 diff  $tmp_dir/GpuCSVScan_new.out $tmp_dir/GpuCSVScan_old.out  > $tmp_dir/GpuCSVScan.newdiff || true
 diff -c spark2diffs/GpuCSVScan.diff $tmp_dir/GpuCSVScan.newdiff
 
-diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/OffsetWindowFunctionMeta.scala  ../sql-plugin/src/main/301until310-all/scala/com/nvidia/spark/rapids/shims/OffsetWindowFunctionMeta.scala > $tmp_dir/OffsetWindowFunctionMeta.newdiff || true
+diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/OffsetWindowFunctionMeta.scala  ../sql-plugin/src/main/311until320-all/scala/com/nvidia/spark/rapids/shims/OffsetWindowFunctionMeta.scala > $tmp_dir/OffsetWindowFunctionMeta.newdiff || true
 diff -c spark2diffs/OffsetWindowFunctionMeta.diff $tmp_dir/OffsetWindowFunctionMeta.newdiff
 
 sed -n  '/class GpuRegExpReplaceMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuRegExpReplaceMeta.scala > $tmp_dir/GpuRegExpReplaceMeta_new.out
-sed -n  '/class GpuRegExpReplaceMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/301until310-nondb/scala/com/nvidia/spark/rapids/shims/GpuRegExpReplaceMeta.scala > $tmp_dir/GpuRegExpReplaceMeta_old.out
+sed -n  '/class GpuRegExpReplaceMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/311+-nondb/scala/com/nvidia/spark/rapids/shims/GpuRegExpReplaceExec.scala > $tmp_dir/GpuRegExpReplaceMeta_old.out
 diff $tmp_dir/GpuRegExpReplaceMeta_new.out $tmp_dir/GpuRegExpReplaceMeta_old.out > $tmp_dir/GpuRegExpReplaceMeta.newdiff || true
 diff -c spark2diffs/GpuRegExpReplaceMeta.diff  $tmp_dir/GpuRegExpReplaceMeta.newdiff
 
@@ -333,17 +329,17 @@ diff $tmp_dir/GpuSpecifiedWindowFrameMetaBase_new.out $tmp_dir/GpuSpecifiedWindo
 diff -c spark2diffs/GpuSpecifiedWindowFrameMetaBase.diff  $tmp_dir/GpuSpecifiedWindowFrameMetaBase.newdiff
 
 sed -n  '/class GpuSpecifiedWindowFrameMeta(/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuSpecifiedWindowFrameMeta_new.out
-sed -n  '/class GpuSpecifiedWindowFrameMeta(/,/^}/{/^}/!p}'  ../sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuSpecifiedWindowFrameMeta_old.out
+sed -n  '/class GpuSpecifiedWindowFrameMeta(/,/^}/{/^}/!p}'  ../sql-plugin/src/main/311until320-all/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala  > $tmp_dir/GpuSpecifiedWindowFrameMeta_old.out
 diff $tmp_dir/GpuSpecifiedWindowFrameMeta_new.out $tmp_dir/GpuSpecifiedWindowFrameMeta_old.out > $tmp_dir/GpuSpecifiedWindowFrameMeta.newdiff || true
 diff -c spark2diffs/GpuSpecifiedWindowFrameMeta.diff  $tmp_dir/GpuSpecifiedWindowFrameMeta.newdiff
 
 sed -n  '/class GpuWindowExpressionMeta(/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuWindowExpressionMeta_new.out
-sed -n  '/class GpuWindowExpressionMeta(/,/^}/{/^}/!p}'  ../sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuWindowExpressionMeta_old.out
+sed -n  '/class GpuWindowExpressionMeta(/,/^}/{/^}/!p}'  ../sql-plugin/src/main/311until320-all/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuWindowExpressionMeta_old.out
 diff $tmp_dir/GpuWindowExpressionMeta_new.out $tmp_dir/GpuWindowExpressionMeta_old.out > $tmp_dir/GpuWindowExpressionMeta.newdiff || true
 diff -c spark2diffs/GpuWindowExpressionMeta.diff  $tmp_dir/GpuWindowExpressionMeta.newdiff
 
 sed -n  '/object GpuWindowUtil/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuWindowUtil_new.out
-sed -n  '/object GpuWindowUtil/,/^}/{/^}/!p}'  ../sql-plugin/src/main/301until320-all/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuWindowUtil_old.out
+sed -n  '/object GpuWindowUtil/,/^}/{/^}/!p}'  ../sql-plugin/src/main/311until320-all/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/GpuWindowUtil_old.out
 diff  -c $tmp_dir/GpuWindowUtil_new.out $tmp_dir/GpuWindowUtil_old.out
 
 sed -n  '/case class ParsedBoundary/p'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/gpuWindows.scala > $tmp_dir/ParsedBoundary_new.out
@@ -486,6 +482,11 @@ sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/
 sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuJsonScan.scala > $tmp_dir/GpuJsonScan_old.out
 diff $tmp_dir/GpuJsonScan_new.out $tmp_dir/GpuJsonScan_old.out > $tmp_dir/GpuJsonScan.newdiff || true
 diff -c spark2diffs/GpuJsonScan.diff $tmp_dir/GpuJsonScan.newdiff
+
+sed -n  '/class GpuRegExpExtractMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/GpuRegExpExtractMeta_new.out
+sed -n  '/class GpuRegExpExtractMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/GpuRegExpExtractMeta_old.out
+diff $tmp_dir/GpuRegExpExtractMeta_new.out $tmp_dir/GpuRegExpExtractMeta_old.out > $tmp_dir/GpuRegExpExtractMeta.newdiff || true
+diff -c spark2diffs/GpuRegExpExtractMeta.diff $tmp_dir/GpuRegExpExtractMeta.newdiff
 
 echo "Done running Diffs of spark2.x files"
 rm -r $tmp_dir
