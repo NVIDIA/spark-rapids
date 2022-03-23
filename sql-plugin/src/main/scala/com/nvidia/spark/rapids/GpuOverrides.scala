@@ -429,6 +429,9 @@ object OrcFormatType extends FileFormatType {
 object JsonFormatType extends FileFormatType {
   override def toString = "JSON"
 }
+object AvroFormatType extends FileFormatType {
+  override def toString = "Avro"
+}
 
 sealed trait FileFormatOp
 object ReadFileOp extends FileFormatOp {
@@ -824,6 +827,12 @@ object GpuOverrides extends Logging {
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        TypeSig.UDT).nested())),
+    (AvroFormatType, FileFormatChecks(
+      cudfRead = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+        TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))
@@ -3473,7 +3482,7 @@ object GpuOverrides extends Logging {
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
-    commonScans ++ SparkShimImpl.getScans
+    commonScans ++ SparkShimImpl.getScans ++ ExternalSource.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,
