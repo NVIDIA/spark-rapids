@@ -31,12 +31,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
-	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.3.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 9.1 ML LTS or 10.4 ML LTS Runtime and GCP Dataproc 2.0
+	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.3.0, Databricks 9.1 ML LTS or 10.4 ML LTS Runtime and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v22.04.0
 * Download the [RAPIDS
@@ -89,12 +91,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
-	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, 3.2.1, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 9.1 ML LTS Runtime and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, 3.2.1, Databricks 7.3 ML LTS or 9.1 ML LTS Runtime and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v22.02.0
 * Download the [RAPIDS
@@ -152,12 +156,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
-	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 9.1 ML LTS Runtime and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Databricks 7.3 ML LTS or 9.1 ML LTS Runtime and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v21.12.0
 * Download the [RAPIDS
@@ -216,12 +222,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
-	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, GCP Dataproc 2.0, and Azure Synapse
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Databricks 7.3 ML LTS or 8.2 ML Runtime, GCP Dataproc 2.0, and Azure Synapse
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v21.10.0
 * Download the [RAPIDS
@@ -272,12 +280,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
-	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v21.08.0
 * Download the [RAPIDS
@@ -325,12 +335,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
-	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v21.06.2
 * Download the [RAPIDS
@@ -365,12 +377,14 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
-	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v21.06.1
 * Download the [RAPIDS
@@ -409,12 +423,14 @@ Software Requirements:
 	
 	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 	
-	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
 		
 	Python 3.6+, Scala 2.12, Java 8 
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
 for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
 
 ### Download v21.06.0
 * Download the [RAPIDS
