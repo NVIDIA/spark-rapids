@@ -14,13 +14,9 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids.tool.ui
+package org.apache.spark.rapids.tool.status
 
-import org.apache.spark.rapids.tool.status.RapidsAppStatusStore
-import org.apache.spark.ui.{SparkUI, SparkUITab}
 
-class RapidsEnvTab(parent: SparkUI,
-                   store: RapidsAppStatusStore) extends SparkUITab(parent, "RAPIDSEnv") {
-  attachPage(new RapidsEnvPage(this, parent.conf, store))
-  parent.attachTab(this)
+object RapidsToolProfileConfig {
+  val RAPIDS_JARS_REGEX = "(.*rapids-4-spark.*jar)|(.*cudf.*jar)"
 }

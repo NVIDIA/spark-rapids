@@ -14,13 +14,23 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids.tool.ui
+package org.apache.spark.rapids.tool.status
 
-import org.apache.spark.rapids.tool.status.RapidsAppStatusStore
-import org.apache.spark.ui.{SparkUI, SparkUITab}
+import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
+import org.apache.spark.scheduler.SparkListener
+import org.apache.spark.status.ElementTrackingStore
 
-class RapidsEnvTab(parent: SparkUI,
-                   store: RapidsAppStatusStore) extends SparkUITab(parent, "RAPIDSEnv") {
-  attachPage(new RapidsEnvPage(this, parent.conf, store))
-  parent.attachTab(this)
+class RapidsAppStatusListener(
+  conf: SparkConf,
+  kvstore: ElementTrackingStore,
+  live: Boolean) extends SparkListener with Logging {
+  // TODO: add handling of events here
+  /*
+  private var appInfo: ApplicationInfo = null
+
+  override def onApplicationStart(event: SparkListenerApplicationStart): Unit = {
+    val app = new ApplicationInfo(null, "", 1)
+  }
+  */
 }

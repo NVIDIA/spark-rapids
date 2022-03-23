@@ -21,17 +21,20 @@ import javax.servlet.http.HttpServletRequest
 import scala.xml.Node
 
 import org.apache.spark.SparkConf
-import org.apache.spark.status.AppStatusStore
+import org.apache.spark.rapids.tool.status.RapidsAppStatusStore
 import org.apache.spark.ui.{UIUtils, WebUIPage}
 
 class RapidsEnvPage (parent: RapidsEnvTab,
                       conf: SparkConf,
-                      store: AppStatusStore) extends WebUIPage("") {
+                     rapidsStore: RapidsAppStatusStore) extends WebUIPage("") {
   private def jvmRow(kv: (String, String)) = <tr><td>{kv._1}</td><td>{kv._2}</td></tr>
   private def propertyHeader = Seq("Name", "Value")
   private def headerClasses = Seq("sorttable_alpha", "sorttable_alpha")
+  private def classPathHeader = Seq("Resource", "Source")
+  private def classPathRow(data: (String, String)) = <tr><td>{data._1}</td><td>{data._2}</td></tr>
+
   override def render(request: HttpServletRequest): Seq[Node] = {
-    val appEnv = store.environmentInfo()
+    val appEnv = rapidsStore.appSStore.environmentInfo()
     val jvmInformation = Map(
       "Java Version" -> appEnv.runtime.javaVersion,
       "Java Home" -> appEnv.runtime.javaHome,
@@ -39,6 +42,15 @@ class RapidsEnvPage (parent: RapidsEnvTab,
     val runtimeInformationTable = UIUtils.listingTable(
       propertyHeader, jvmRow, jvmInformation.toSeq.sorted, fixedWidth = true,
       headerClasses = headerClasses)
+
+    val classpathEntriesTable = UIUtils.listingTable(
+      classPathHeader, classPathRow, appEnv.classpathEntries.sorted, fixedWidth = true,
+      headerClasses = headerClasses)
+
+    val rapidsClasspathEntriesTable = UIUtils.listingTable(
+      classPathHeader, classPathRow, rapidsStore.getRapidJARInfo.sorted, fixedWidth = true,
+      headerClasses = headerClasses)
+
     val content =
       <span>
         <span class="collapse-aggregated-runtimeInformation collapse-table"
@@ -51,6 +63,30 @@ class RapidsEnvPage (parent: RapidsEnvTab,
         </span>
         <div class="aggregated-runtimeInformation collapsible-table">
           {runtimeInformationTable}
+        </div>
+
+        <span class="collapse-aggregated-classpathEntries collapse-table"
+              onClick="collapseTable('collapse-aggregated-classpathEntries',
+            'aggregated-classpathEntries')">
+          <h4>
+            <span class="collapse-table-arrow arrow-closed"></span>
+            <a>Rapids ClassPath Entries</a>
+          </h4>
+        </span>
+        <div class="aggregated-classpathEntries collapsible-table collapsed">
+          {rapidsClasspathEntriesTable}
+        </div>
+
+        <span class="collapse-aggregated-classpathEntries collapse-table"
+              onClick="collapseTable('collapse-aggregated-classpathEntries',
+            'aggregated-classpathEntries')">
+          <h4>
+            <span class="collapse-table-arrow arrow-closed"></span>
+            <a>Classpath Entries</a>
+          </h4>
+        </span>
+        <div class="aggregated-classpathEntries collapsible-table collapsed">
+          {classpathEntriesTable}
         </div>
       </span>
 

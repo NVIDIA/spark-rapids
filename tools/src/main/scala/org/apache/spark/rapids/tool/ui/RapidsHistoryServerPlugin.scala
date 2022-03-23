@@ -17,16 +17,19 @@
 package org.apache.spark.rapids.tool.ui
 
 import org.apache.spark.SparkConf
+import org.apache.spark.rapids.tool.status.{RapidsAppStatusListener, RapidsAppStatusStore}
 import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.status.{AppHistoryServerPlugin, ElementTrackingStore}
 import org.apache.spark.ui.SparkUI
 
 class RapidsHistoryServerPlugin extends AppHistoryServerPlugin {
   override def createListeners(conf: SparkConf,
-                               store: ElementTrackingStore): Seq[SparkListener] = Seq()
+                               store: ElementTrackingStore): Seq[SparkListener] = {
+    Seq(new RapidsAppStatusListener(conf, store, live = false))
+  }
 
   override def setupUI(ui: SparkUI): Unit = {
-    val store = ui.store
+    val store = new RapidsAppStatusStore(ui.store)
     new RapidsEnvTab(ui, store)
   }
 
