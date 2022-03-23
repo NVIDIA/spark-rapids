@@ -14,7 +14,6 @@
 
 # A JSON generator built based on the context free grammar from https://www.json.org/json-en.html
 
-import pytest 
 import random
 from typing import List
 from data_gen import *
@@ -23,7 +22,7 @@ from marks import approximate_float
 
 _name_gen = StringGen(pattern= "[a-z]{1,30}",nullable= False)
 _name_gen.start(random)
-_string_gen = StringGen(pattern= "[a-z]{1,30}")
+_string_gen = StringGen(pattern= "[a-z]{1,30}",nullable= False)
 _string_gen.start(random)
 
 def gen_top_schema(depth):
@@ -394,7 +393,6 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.json.read.enabled': 'true'}
 
 @approximate_float
-@pytest.mark.xfail(reason = "fuzz test")
 def test_json_read_fuzz(spark_tmp_path):
     depth = random.randint(1, 5)
     schema = gen_top_schema(depth)
