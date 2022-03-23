@@ -122,8 +122,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
 
-  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
-
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(

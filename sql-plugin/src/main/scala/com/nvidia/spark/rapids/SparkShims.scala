@@ -114,12 +114,6 @@ trait SparkShims {
 
   def shouldFailDivOverflow: Boolean
 
-  /**
-   * This is specifically in relation to SPARK-33498 which went into 3.1.0. We cannot fully support
-   * it right now, so we fall back to the CPU in those cases.
-   */
-  def shouldFallbackOnAnsiTimestamp(): Boolean
-
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
 
   /** dropped by SPARK-34234 */

@@ -1743,8 +1743,7 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
-        override def shouldFallbackOnAnsiTimestamp: Boolean =
-          SparkShimImpl.shouldFallbackOnAnsiTimestamp
+        override def shouldFallbackOnAnsiTimestamp: Boolean = SQLConf.get.ansiEnabled
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
@@ -1765,8 +1764,7 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
-        override def shouldFallbackOnAnsiTimestamp: Boolean =
-          SparkShimImpl.shouldFallbackOnAnsiTimestamp
+        override def shouldFallbackOnAnsiTimestamp: Boolean = SQLConf.get.ansiEnabled
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {

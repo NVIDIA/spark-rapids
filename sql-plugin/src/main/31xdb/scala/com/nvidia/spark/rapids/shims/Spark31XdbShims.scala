@@ -473,8 +473,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TaskContext.get.taskMemoryManager())
 
-  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
-
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.inputPlan
   }

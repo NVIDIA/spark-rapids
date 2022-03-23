@@ -125,6 +125,4 @@ trait Spark31XdbShimsBase extends SparkShims {
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     ss.sparkContext.defaultParallelism
   }
-
-  override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 }

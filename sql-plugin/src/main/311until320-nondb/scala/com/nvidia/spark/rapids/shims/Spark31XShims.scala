@@ -545,8 +545,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     attachTree(tree, msg)(f)
   }
 
-  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
-
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.inputPlan
   }
