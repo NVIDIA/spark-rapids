@@ -300,6 +300,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
+    val useCompression = conf.useCompression
     val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     val structSchema = schemaWithUnambiguousNames.toStructType
@@ -326,7 +327,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
             compressColumnarBatchWithParquet(gpuCB, structSchema, schema.toStructType,
-              bytesAllowedPerBatch)
+              bytesAllowedPerBatch, useCompression)
           }
         }
       })
@@ -344,7 +345,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       oldGpuCB: ColumnarBatch,
       schema: StructType,
       origSchema: StructType,
-      bytesAllowedPerBatch: Long): List[ParquetCachedBatch] = {
+      bytesAllowedPerBatch: Long,
+      useCompression: Boolean): List[ParquetCachedBatch] = {
     val estimatedRowSize = scala.Range(0, oldGpuCB.numCols()).map { idx =>
       oldGpuCB.column(idx).asInstanceOf[GpuColumnVector]
           .getBase.getDeviceMemorySize / oldGpuCB.numRows()
@@ -395,7 +397,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
           for (i <- splitVectors.head.indices) {
             withResource(makeTableForIndex(i)) { table =>
-              val buffer = writeTableToCachedBatch(table, schema)
+              val buffer = writeTableToCachedBatch(table, schema, useCompression)
               buffers += ParquetCachedBatch(buffer)
             }
           }
@@ -404,7 +406,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         }
       } else {
         withResource(GpuColumnVector.from(gpuCB)) { table =>
-          val buffer = writeTableToCachedBatch(table, schema)
+          val buffer = writeTableToCachedBatch(table, schema, useCompression)
           buffers += ParquetCachedBatch(buffer)
         }
       }
@@ -412,13 +414,22 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     }
   }
 
+  def getParquetWriterOptions(
+      useCompression: Boolean,
+      schema: StructType): ParquetWriterOptions = {
+    val compressionType = if (useCompression) CompressionType.SNAPPY else CompressionType.NONE
+    SchemaUtils
+        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
+        .withCompressionType(compressionType)
+        .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
+  }
+
   private def writeTableToCachedBatch(
       table: Table,
-      schema: StructType): ParquetBufferConsumer = {
+      schema: StructType,
+      useCompression: Boolean): ParquetBufferConsumer = {
     val buffer = new ParquetBufferConsumer(table.getRowCount.toInt)
-    val opts = SchemaUtils
-        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
-        .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
+    val opts = getParquetWriterOptions(useCompression, schema)
     withResource(Table.writeParquetChunked(opts, buffer)) { writer =>
       writer.write(table)
     }
@@ -1358,6 +1369,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
+    val useCompression = conf.useCompression
     val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
@@ -1369,7 +1381,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       })
       columnarBatchRdd.flatMap(cb => {
         withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema,
-          schema.toStructType, bytesAllowedPerBatch))
+          schema.toStructType, bytesAllowedPerBatch, useCompression))
       })
     } else {
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
