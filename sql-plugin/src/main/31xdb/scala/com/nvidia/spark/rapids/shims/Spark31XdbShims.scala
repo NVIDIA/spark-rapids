@@ -59,7 +59,6 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
