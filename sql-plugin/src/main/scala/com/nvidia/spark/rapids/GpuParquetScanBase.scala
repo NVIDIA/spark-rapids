@@ -342,12 +342,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     val filePath = new Path(new URI(file.filePath))
     //noinspection ScalaDeprecation
     val inputFile = HadoopInputFile.fromPath(filePath, conf)
-    val parquetFile = ParquetFileReader.open(inputFile)
-    val footer = try {
-      parquetFile.getFooter
-    } finally {
-      parquetFile.close()
-    }
+    val footer = withResource(ParquetFileReader.open(inputFile))(_.getFooter)
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
       val parquetFilters = SparkShimImpl.getParquetFilters(fileSchema, pushDownDate,
