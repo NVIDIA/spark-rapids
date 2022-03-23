@@ -89,10 +89,9 @@ by having the documented facade classes with a shim specifier in their package n
 The second issue that every parent class/trait in the inheritance graph is loaded using the classloader outside 
 Plugin's control. Therefore, all this bytecode must reside in the conventional jar location, and it must 
 be bitwise-identical across *all* shims. The only way to keep the source code for shared functionality unduplicated,
-(i.e., in `sql-plugin/src/main/scala` as opposed to be duplicated either in `shims/spark3xx` submodules or over
-`sql-plugin/src/main/3*/scala` source code roots) is to delay inheriting `ShuffleManager` until as late as possible, 
-as close as possible to the facade class where we have to split the source code anyways. Use traits as much 
-as possible for flexibility. 
+(i.e., in `sql-plugin/src/main/scala` as opposed to be duplicated in `sql-plugin/src/main/3*/scala` source code roots) 
+is to delay inheriting `ShuffleManager` until as late as possible, as close as possible to the facade class where we 
+have to split the source code anyway. Use traits as much as possible for flexibility. 
 
 ### Late Initialization of Public Classes' Ancestors
  

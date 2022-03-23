@@ -900,6 +900,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
+    .doc("When set to true enables all avro input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_AVRO_READ = conf("spark.rapids.sql.format.avro.read.enabled")
+    .doc("When set to true enables avro input acceleration")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1174,9 +1185,9 @@ object RapidsConf {
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.1.1, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly." +
       "When tested in a combined jar with other Shims, it's expected that the provided " +
       "implementation follows the same convention as existing Spark shims. If its class" +
@@ -1647,6 +1658,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
 
   lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
+
+  lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
+
+  lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

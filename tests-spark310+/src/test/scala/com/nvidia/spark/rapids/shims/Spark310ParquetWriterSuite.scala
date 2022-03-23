@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
+import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
@@ -80,6 +80,20 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
       AttributeReference("field2", mockByteType, true)())
 
     testColumnarBatchToCachedBatchIterator(cb, schema)
+  }
+
+  test("test useCompression conf is honored") {
+    val ser = new ParquetCachedBatchSerializer()
+    val schema = new StructType().add("value", "string")
+    List(false, true).foreach { comp =>
+      val opts = ser.getParquetWriterOptions(comp, schema)
+      assert(
+        (if (comp) {
+          CompressionType.SNAPPY
+        } else {
+          CompressionType.NONE
+        }) == opts.getCompressionType)
+    }
   }
 
   val ROWS = 3 * 1024 * 1024
@@ -149,7 +163,8 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
         Array(StructField("empty", ByteType, false),
           StructField("empty", ByteType, false),
           StructField("empty", ByteType, false)))
-      ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema, BYTES_ALLOWED_PER_BATCH)
+      ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
+        BYTES_ALLOWED_PER_BATCH, false)
       theTableMock.close()
     }
   }

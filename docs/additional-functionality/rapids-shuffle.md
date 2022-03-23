@@ -60,7 +60,7 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    Other considerations:
 
    - Please refer to [Mellanox documentation](
-   https://community.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
+   https://support.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
    on how to configure RoCE networks (lossless/lossy, QoS, and more)
 
    - We recommend that the `--without-ucx` option is passed when installing MLNX_OFED
@@ -287,16 +287,12 @@ In this section, we are using a docker container built using the sample dockerfi
 
    | Spark Shim      | spark.shuffle.manager value                              |
    | --------------- | -------------------------------------------------------- |
-   | 3.0.1           | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
-   | 3.0.2           | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
-   | 3.0.3           | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
    | 3.1.1           | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
    | 3.1.1 CDH       | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
    | 3.1.2           | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
    | 3.1.3           | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
    | 3.2.0           | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
    | 3.2.1           | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
-   | Databricks 7.3  | com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
    | Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
    | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 
@@ -367,15 +363,6 @@ spark.shuffle.service.enabled false
 spark.executorEnv.UCX_MEMTYPE_CACHE n
 spark.executorEnv.UCX_ERROR_SIGNALS ""
 spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
-```
-
-Databricks 7.3:
-
-```
-spark.shuffle.service.enabled false
-spark.executorEnv.UCX_MEMTYPE_CACHE n
-spark.executorEnv.UCX_ERROR_SIGNALS ""
-spark.shuffle.manager com.nvidia.spark.rapids.spark301db.RapidsShuffleManager
 ```
 
 Example of configuration panel with the new settings:

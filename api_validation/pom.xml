@@ -42,19 +42,6 @@
             </dependencies>
         </profile>
         <profile>
-            <id>spark301</id>
-            <properties>
-                <spark.version>${spark301.version}</spark.version>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>spark311</id>
             <properties>
                 <spark.version>${spark311.version}</spark.version>

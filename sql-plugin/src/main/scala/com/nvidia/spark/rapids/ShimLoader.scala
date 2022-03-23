@@ -44,7 +44,6 @@ import org.apache.spark.util.MutableURLClassLoader
 
     spark3xx-common/com/nvidia/spark/rapids/CastExprMeta.class
 
-    spark301/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark311/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
 
