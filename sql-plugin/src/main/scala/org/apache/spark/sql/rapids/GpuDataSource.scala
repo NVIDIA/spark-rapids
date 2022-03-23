@@ -286,17 +286,17 @@ case class GpuDataSource(
 
     relation match {
       case hs: HadoopFsRelation =>
-        SparkShimImpl.checkColumnNameDuplication(
+        SchemaUtils.checkSchemaColumnNameDuplication(
           hs.dataSchema,
           "in the data schema",
           equality)
-        SparkShimImpl.checkColumnNameDuplication(
+        SchemaUtils.checkSchemaColumnNameDuplication(
           hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        SparkShimImpl.checkColumnNameDuplication(
+        SchemaUtils.checkSchemaColumnNameDuplication(
           relation.schema,
           "in the data schema",
            equality)

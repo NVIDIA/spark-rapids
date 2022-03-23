@@ -28,10 +28,9 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
@@ -43,7 +42,6 @@ import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, Had
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -147,15 +145,6 @@ trait SparkShims {
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 
-  def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
-
-  def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
-  def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
-  def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
-  def getPartitionSplitFiles(
-      partitions: Array[PartitionDirectory],
-      maxSplitBytes: Long,
-      relation: HadoopFsRelation): Array[PartitionedFile]
   def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],
@@ -164,19 +153,6 @@ trait SparkShims {
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
   def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
-
-  def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec
-
-  def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec
-
-  def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit
 
   def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
     sortOrder(child, direction, direction.defaultNullOrdering)
@@ -188,11 +164,6 @@ trait SparkShims {
       nullOrdering: NullOrdering): SortOrder
 
   def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder
-
-  def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String] = Seq.empty,
-      explicitMetadata: Option[Metadata] = None): Alias
 
   def shouldIgnorePath(path: String): Boolean
 
@@ -296,13 +267,6 @@ trait SparkShims {
   def registerKryoClasses(kryo: Kryo): Unit
 
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
-
-  /**
-  * This Boolean variable set to `true` for Spark < 3.1.0, and set to
-  * `SQLConf.get.legacyStatisticalAggregate` otherwise.
-  * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
-  */
-  def getLegacyStatisticalAggregate(): Boolean
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 

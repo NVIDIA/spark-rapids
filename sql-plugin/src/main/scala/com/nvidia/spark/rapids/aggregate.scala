@@ -1261,10 +1261,10 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
         }
         converters.dequeue() match {
           case Left(converter) =>
-            SparkShimImpl.alias(converter.createExpression(ref),
+            Alias(converter.createExpression(ref),
               ref.name + "_converted")(NamedExpression.newExprId)
           case Right(converter) =>
-            SparkShimImpl.alias(converter.createExpression(ref),
+            Alias(converter.createExpression(ref),
               ref.name + "_converted")(NamedExpression.newExprId)
         }
       case retExpr =>

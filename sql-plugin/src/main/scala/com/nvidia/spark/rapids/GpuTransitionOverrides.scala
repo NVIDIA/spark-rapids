@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{GpuOrcScan, GpuParquetScan, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -340,13 +340,20 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       if ((batchScan.scan.isInstanceOf[GpuParquetScanBase] ||
         batchScan.scan.isInstanceOf[GpuOrcScanBase]) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
-        SparkShimImpl.copyBatchScanExec(batchScan, true)
+        val scanCopy = batchScan.scan match {
+          case parquetScan: GpuParquetScan =>
+            parquetScan.copy(queryUsesInputFile=true)
+          case orcScan: GpuOrcScan =>
+            orcScan.copy(queryUsesInputFile=true)
+          case _ => throw new RuntimeException("Wrong format") // never reach here
+        }
+        batchScan.copy(scan=scanCopy)
       } else {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
       if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        SparkShimImpl.copyFileSourceScanExec(fileSourceScan, true)
+        fileSourceScan.copy(queryUsesInputFile=true)(fileSourceScan.rapidsConf)
       } else {
         fileSourceScan
       }

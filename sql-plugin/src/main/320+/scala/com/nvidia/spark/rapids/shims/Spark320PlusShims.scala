@@ -35,16 +35,15 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, DynamicPruningExpression, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command._
@@ -142,10 +141,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 
   override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
-
-  override def getLegacyStatisticalAggregate(): Boolean =
-    SQLConf.get.legacyStatisticalAggregate
-
 
   override def getScalaUDFAsExpression(
       function: AnyRef,
@@ -676,70 +671,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-  override def getPartitionFileNames(
-      partitions: Seq[PartitionDirectory]): Seq[String] = {
-    val files = partitions.flatMap(partition => partition.files)
-    files.map(_.getPath.getName)
-  }
-
-  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
-    partitions.map(_.files.map(_.getLen).sum).sum
-  }
-
-  override def getPartitionedFiles(
-      partitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
-    partitions.flatMap { p =>
-      p.files.map { f =>
-        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-      }
-    }
-  }
-
-  override def getPartitionSplitFiles(
-      partitions: Array[PartitionDirectory],
-      maxSplitBytes: Long,
-      relation: HadoopFsRelation): Array[PartitionedFile] = {
-    partitions.flatMap { partition =>
-      partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
-        val filePath = file.getPath
-        val isSplitable = relation.fileFormat.isSplitable(
-          relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtil.splitFiles(
-          sparkSession = relation.sparkSession,
-          file = file,
-          filePath = filePath,
-          isSplitable = isSplitable,
-          maxSplitBytes = maxSplitBytes,
-          partitionValues = partition.values
-        )
-      }
-    }
-  }
-
-  override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
-    FilePartition(index, files)
-  }
-
-  override def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scanCopy = batchScanExec.scan match {
-      case parquetScan: GpuParquetScan =>
-        parquetScan.copy(queryUsesInputFile = queryUsesInputFile)
-      case orcScan: GpuOrcScan =>
-        orcScan.copy(queryUsesInputFile = queryUsesInputFile)
-      case _ => throw new RuntimeException("Wrong format") // never reach here
-    }
-    batchScanExec.copy(scan = scanCopy)
-  }
-
-  override def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile = queryUsesInputFile)(scanExec.rapidsConf)
-  }
-
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
       exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
@@ -749,13 +680,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     } else {
       GpuColumnarToRowExec(plan, exportColumnRdd)
     }
-  }
-
-  override def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
   override def getGpuShuffleExchangeExec(
@@ -779,13 +703,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
     s.copy(child = child)
-  }
-
-  override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
-    Alias(child, name)(exprId, qualifier, explicitMetadata)
   }
 
   override def shouldIgnorePath(path: String): Boolean = {

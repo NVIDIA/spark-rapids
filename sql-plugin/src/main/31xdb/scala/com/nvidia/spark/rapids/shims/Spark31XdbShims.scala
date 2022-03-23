@@ -34,7 +34,6 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
@@ -523,47 +522,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       (a, conf, p, r) => new RapidsOrcScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-  override def getPartitionFileNames(
-      partitions: Seq[PartitionDirectory]): Seq[String] = {
-    val files = partitions.flatMap(partition => partition.files)
-    files.map(_.getPath.getName)
-  }
-
-  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
-    partitions.map(_.files.map(_.getLen).sum).sum
-  }
-
-  override def getPartitionedFiles(
-      partitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
-    partitions.flatMap { p =>
-      p.files.map { f =>
-        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-      }
-    }
-  }
-
-  override def getPartitionSplitFiles(
-      partitions: Array[PartitionDirectory],
-      maxSplitBytes: Long,
-      relation: HadoopFsRelation): Array[PartitionedFile] = {
-    partitions.flatMap { partition =>
-      partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
-        val filePath = file.getPath
-        val isSplitable = relation.fileFormat.isSplitable(
-          relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtil.splitFiles(
-          sparkSession = relation.sparkSession,
-          file = file,
-          filePath = filePath,
-          isSplitable = isSplitable,
-          maxSplitBytes = maxSplitBytes,
-          partitionValues = partition.values
-        )
-      }
-    }
-  }
-
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
@@ -571,29 +529,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
-  }
-
-  override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
-    FilePartition(index, files)
-  }
-
-  override def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scanCopy = batchScanExec.scan match {
-      case parquetScan: GpuParquetScan =>
-        parquetScan.copy(queryUsesInputFile=queryUsesInputFile)
-      case orcScan: GpuOrcScan =>
-        orcScan.copy(queryUsesInputFile=queryUsesInputFile)
-      case _ => throw new RuntimeException("Wrong format") // never reach here
-    }
-    batchScanExec.copy(scan=scanCopy)
-  }
-
-  override def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
@@ -605,13 +540,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     } else {
       GpuColumnarToRowExec(plan, exportColumnRdd)
     }
-  }
-
-  override def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
   override def getGpuShuffleExchangeExec(
@@ -635,13 +563,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
     s.copy(child = child)
-  }
-
-  override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
-    Alias(child, name)(exprId, qualifier, explicitMetadata)
   }
 
   override def shouldIgnorePath(path: String): Boolean = {
@@ -816,9 +737,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.inputPlan
   }
-
-  override def getLegacyStatisticalAggregate(): Boolean =
-    SQLConf.get.legacyStatisticalAggregate
 
   override def supportsColumnarAdaptivePlans: Boolean = false
 
