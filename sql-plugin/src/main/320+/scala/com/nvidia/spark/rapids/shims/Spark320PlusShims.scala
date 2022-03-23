@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
@@ -33,7 +32,6 @@ import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
-import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
@@ -407,11 +405,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
               wrapped.disableBucketedScan)(conf)
           }
         }),
-      GpuOverrides.exec[InMemoryTableScanExec](
-        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT
-          + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
-        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(

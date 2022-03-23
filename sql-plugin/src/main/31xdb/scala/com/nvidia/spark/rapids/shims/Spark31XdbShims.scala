@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
-import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
@@ -34,7 +33,6 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -284,12 +282,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
               wrapped.tableIdentifier,
               wrapped.disableBucketedScan)(conf)
             }
-        }),
-      GpuOverrides.exec[InMemoryTableScanExec](
-        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT
-            + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
-        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r))
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 

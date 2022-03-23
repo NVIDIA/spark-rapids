@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
-import com.nvidia.spark.rapids._
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
