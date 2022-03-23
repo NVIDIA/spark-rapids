@@ -394,6 +394,10 @@ object JsonFormatType extends FileFormatType {
   override def toString = "JSON"
 }
 
+object AvroFormatType extends FileFormatType {
+  override def toString = "Avro"
+}
+
 sealed trait FileFormatOp
 object ReadFileOp extends FileFormatOp {
   override def toString = "read"
@@ -691,6 +695,12 @@ object GpuOverrides extends Logging {
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        TypeSig.UDT).nested())),
+    (AvroFormatType, FileFormatChecks(
+      cudfRead = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+        TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())))
@@ -2289,6 +2299,17 @@ object GpuOverrides extends Logging {
             TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[ArrayTransform](in, conf, p, r) {
       }),
+     expr[ArrayExists](
+      "Return true if any element satisfies the predicate LambdaFunction",
+      ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[ArrayExists](in, conf, p, r) {
+      }),
     expr[StringLocate](
       "Substring search operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
@@ -2502,6 +2523,34 @@ object GpuOverrides extends Logging {
           TypeSig.all))),
       (a, conf, p, r) => new ReplicateRowsExprMeta[ReplicateRows](a, conf, p, r) {
      }),
+    expr[CollectList](
+      "Collect a list of non-unique elements, not supported in reduction",
+      // GpuCollectList is not yet supported in Reduction context.
+      ExprChecks.aggNotReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.all))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
+      }),
+    expr[CollectSet](
+      "Collect a set of unique elements, not supported in reduction",
+      // GpuCollectSet is not yet supported in Reduction context.
+      // Compared to CollectList, ArrayType and MapType are NOT supported in GpuCollectSet
+      // because underlying cuDF operator drop_list_duplicates doesn't support LIST type.
+      ExprChecks.aggNotReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.NULL + TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.NULL + TypeSig.STRUCT).nested(),
+          TypeSig.all))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
+      }),
     expr[StddevPop](
       "Aggregation computing population standard deviation",
       ExprChecks.groupByOnly(
