@@ -94,24 +94,6 @@ object ShimGpuOverrides extends Logging {
               .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
               TypeSig.lit(TypeEnum.INT)))),
         (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
-      GpuOverrides.expr[TimeSub](
-        "Subtracts interval from timestamp",
-        ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-        (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            timeSub.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
-            }
-            checkTimeZoneId(timeSub.timeZoneId)
-          }
-        }),
       GpuOverrides.expr[ScalaUDF](
         "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
           "to get better performance.",
