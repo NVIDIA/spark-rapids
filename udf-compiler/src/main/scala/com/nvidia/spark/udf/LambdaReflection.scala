@@ -18,7 +18,6 @@ package com.nvidia.spark.udf
 
 import java.lang.invoke.SerializedLambda
 
-import com.nvidia.spark.rapids.ShimLoader
 import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField, CtMethod}
 import javassist.bytecode.{CodeIterator, ConstPool, Descriptor}
 
@@ -152,7 +151,9 @@ object LambdaReflection {
   }
 
   def getClass(name: String): Class[_] = {
-    ShimLoader.loadClass(name)
+    // scalastyle:off classforname
+    Class.forName(name, true, Thread.currentThread().getContextClassLoader)
+    // scalastyle:on classforname
   }
 
   def parseTypeSig(sig: String): Option[DataType] = {
