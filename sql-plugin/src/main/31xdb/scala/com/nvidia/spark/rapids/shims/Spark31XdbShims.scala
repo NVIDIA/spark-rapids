@@ -473,13 +473,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TaskContext.get.taskMemoryManager())
 
-  override def registerKryoClasses(kryo: Kryo): Unit = {
-    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
-      new KryoJavaSerializer())
-    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
-      new KryoJavaSerializer())
-  }
-
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
