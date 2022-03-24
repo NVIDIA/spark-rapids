@@ -1,4 +1,5 @@
-8,9c8,18
+8,10c8,18
+<       // SPARK 2.x - We leave off Avro here since its a datasource v2 thing and off by default
 <       case f =>
 <         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
 ---
