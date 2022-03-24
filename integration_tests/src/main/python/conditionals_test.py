@@ -217,3 +217,12 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
                 ELSE -1 END'),
                 conf = test_conf)
+
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+def test_conditional_with_side_effects_sequence(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE \
+            WHEN length(a) > 0 THEN sequence(1, length(a), 1) \
+            ELSE null END'),
+        conf = ansi_enabled_conf)
