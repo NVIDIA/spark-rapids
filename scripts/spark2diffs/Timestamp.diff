@@ -2,10 +2,21 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2021-2022, NVIDIA CORPORATION.
-32,33c32,48
-<     // Spark 2.x doesn't support GetTimestamp
-<     // GpuOverrides.expr[GetTimestamp](
+20c20,21
+< import com.nvidia.spark.rapids.ExprRule
 ---
+> import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
+> import com.nvidia.spark.rapids.shims.SparkShimImpl
+22c23,24
+< import org.apache.spark.sql.catalyst.expressions.Expression
+---
+> import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
+> import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
+29,30c31,50
+<   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+< }
+---
+>   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
 >     GpuOverrides.expr[GetTimestamp](
 >       "Gets timestamps from strings using given pattern.",
 >       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
@@ -23,8 +34,6 @@
 >           GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)
 >         }
 >       })
-35c50
-< }
----
+>   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 > }
 \ No newline at end of file
