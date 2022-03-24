@@ -15,19 +15,17 @@
 # A JSON generator built based on the context free grammar from https://www.json.org/json-en.html
 
 import random
+from marks import allow_non_gpu
 from typing import List
 from data_gen import *
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from marks import approximate_float
 
-_name_gen = StringGen(pattern= "[a-z]{1,30}",nullable= False)
-_name_gen.start(random)
-_string_gen = StringGen(pattern= "[a-z]{1,30}",nullable= False)
-_string_gen.start(random)
+_name_gen = StringGen(pattern= "[a-zA-Z]{1,30}",nullable= False)
+_name_gen.start(random.Random(0))
 
 def gen_top_schema(depth):
     return gen_object_type(depth)
-
 
 def gen_schema(depth):
     """
@@ -208,9 +206,11 @@ def gen_element(schema: DataType):
 def gen_string():
     """
     STRING -> '"' CHARACTERS '"'
-    use StringGen here for simplicity.
     """
-    yield '"' +  _string_gen.gen() + '"'
+    yield '"' 
+    for t in gen_characters():
+        yield t 
+    yield '"'
 
 def gen_characters():
     """
@@ -393,23 +393,19 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.json.read.enabled': 'true'}
 
 @approximate_float
+@allow_non_gpu('FileSourceScanExec')
 def test_json_read_fuzz(spark_tmp_path):
     depth = random.randint(1, 5)
     schema = gen_top_schema(depth)
 
     data_path = spark_tmp_path + '/JSON_FUZZ_DATA'
     json_string = "".join(gen_json(schema))
-
+    
     with open(data_path, 'w') as f:
         f.write(json_string)
 
-    if isinstance(schema, StructType):
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.read.schema(schema).json(data_path),
-            _enable_all_types_conf
-        )
-    else:
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.read.json(data_path),
-            _enable_all_types_conf
-        )
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).json(data_path),
+        _enable_all_types_conf
+    )
+
