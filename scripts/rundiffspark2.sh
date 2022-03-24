@@ -108,6 +108,11 @@ sed -n  '/class GpuStringSplitMeta/,/override def convertToGpu/{/override def co
 diff $tmp_dir/GpuStringSplitMeta_new.out $tmp_dir/GpuStringSplitMeta_old.out > $tmp_dir/GpuStringSplitMeta.newdiff || true
 diff -c spark2diffs/GpuStringSplitMeta.diff  $tmp_dir/GpuStringSplitMeta.newdiff
 
+sed -n  '/class GpuStringToMapMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/GpuStringToMapMeta_new.out
+sed -n  '/class GpuStringToMapMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/GpuStringToMapMeta_old.out
+diff $tmp_dir/GpuStringToMapMeta_new.out $tmp_dir/GpuStringToMapMeta_old.out > $tmp_dir/GpuStringToMapMeta.newdiff || true
+diff -c spark2diffs/GpuStringToMapMeta.diff  $tmp_dir/GpuStringToMapMeta.newdiff
+
 sed -n  '/object GpuOrcFileFormat/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuOrcFileFormat.scala > $tmp_dir/GpuOrcFileFormat_new.out
 sed -n  '/object GpuOrcFileFormat/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuOrcFileFormat.scala  > $tmp_dir/GpuOrcFileFormat_old.out
 diff  $tmp_dir/GpuOrcFileFormat_new.out $tmp_dir/GpuOrcFileFormat_old.out > $tmp_dir/GpuOrcFileFormat.newdiff || true
@@ -472,6 +477,16 @@ sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/
 sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuJsonScan.scala > $tmp_dir/GpuJsonScan_old.out
 diff $tmp_dir/GpuJsonScan_new.out $tmp_dir/GpuJsonScan_old.out > $tmp_dir/GpuJsonScan.newdiff || true
 diff -c spark2diffs/GpuJsonScan.diff $tmp_dir/GpuJsonScan.newdiff
+
+sed -n '/object GpuCsvUtils/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/csv/GpuCsvUtils.scala > $tmp_dir/GpuCsvUtils_new.out
+sed -n '/object GpuCsvUtils/,/^}/{/^}/!p}'  ../sql-plugin/src/main/311until330-nondb/scala/org/apache/spark/sql/catalyst/csv/GpuCsvUtils.scala > $tmp_dir/GpuCsvUtils_old.out 
+diff $tmp_dir/GpuCsvUtils_new.out $tmp_dir/GpuCsvUtils_old.out > $tmp_dir/GpuCsvUtils.newdiff || true
+diff -c spark2diffs/GpuCsvUtils.diff $tmp_dir/GpuCsvUtils.newdiff
+
+sed -n '/abstract class StringSplitRegExpMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/StringSplitRegExpMeta_new.out
+sed -n '/abstract class StringSplitRegExpMeta/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/StringSplitRegExpMeta_old.out
+diff $tmp_dir/StringSplitRegExpMeta_new.out $tmp_dir/StringSplitRegExpMeta_old.out > $tmp_dir/StringSplitRegExpMeta.newdiff || true
+diff -c spark2diffs/StringSplitRegExpMeta.diff $tmp_dir/StringSplitRegExpMeta.newdiff
 
 sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_new.out
 sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_old.out
