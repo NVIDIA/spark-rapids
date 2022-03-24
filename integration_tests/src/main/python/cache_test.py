@@ -117,6 +117,7 @@ def test_cache_partial_load(data_gen, enable_vectorized_conf):
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
+@ignore_order
 def test_cache_reverse_order(enable_vectorized_conf):
     col0 = StructGen([['child0', StructGen([['child1', byte_gen]])]])
     col1 = StructGen([['child0', byte_gen]])
