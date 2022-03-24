@@ -21,8 +21,10 @@ import java.nio.charset.StandardCharsets
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.csv.GpuCsvUtils
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.csv.CSVOptions
+import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 
 object GpuCSVScan {
@@ -97,10 +99,6 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GpuCSVScan does not support multi-character delimiters")
     }
     */
-
-    if (parsedOptions.delimiter.codePointAt(0) > 127) {
-      meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
-    }
 
     // delimiter is char in 2.x
     if (parsedOptions.delimiter > 127) {

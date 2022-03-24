@@ -69,13 +69,27 @@ object DecimalUtil {
     }
   }
 
+  /**
+   * Get the number of decimal places needed to hold the integral type held by this column
+   * Keep here for Spark 2.x so we don't need CUDF
+   */
+  def getPrecisionForIntegralType(input: String): Int = input match {
+    case "INT8" =>  3 // -128 to 127
+    case "INT16" => 5 // -32768 to 32767
+    case "INT32" => 10 // -2147483648 to 2147483647
+    case "INT64" => 19 // -9223372036854775808 to 9223372036854775807
+    case t => throw new IllegalArgumentException(s"Unsupported type $t")
+  }
+
   // The following types were copied from Spark's DecimalType class
   private val BooleanDecimal = DecimalType(1, 0)
 
   def optionallyAsDecimalType(t: DataType): Option[DecimalType] = t match {
     case dt: DecimalType => Some(dt)
     case ByteType | ShortType | IntegerType | LongType =>
-      Some(DecimalType(getNonNestedRapidsType(t).getPrecisionForInt, 0))
+      // Spark 2.x diff using string for type so don't need CUDF
+      val prec = DecimalUtil.getPrecisionForIntegralType(getNonNestedRapidsType(t))
+      Some(DecimalType(prec, 0))
     case BooleanType => Some(BooleanDecimal)
     case _ => None
   }

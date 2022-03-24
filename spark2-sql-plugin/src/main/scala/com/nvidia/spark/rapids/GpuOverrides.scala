@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSpecifiedWindowFrameMeta, GpuSortMergeJoinMeta, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -2523,34 +2523,7 @@ object GpuOverrides extends Logging {
           TypeSig.all))),
       (a, conf, p, r) => new ReplicateRowsExprMeta[ReplicateRows](a, conf, p, r) {
      }),
-    expr[CollectList](
-      "Collect a list of non-unique elements, not supported in reduction",
-      // GpuCollectList is not yet supported in Reduction context.
-      ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
-        TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-          TypeSig.all))),
-      (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
-      }),
-    expr[CollectSet](
-      "Collect a set of unique elements, not supported in reduction",
-      // GpuCollectSet is not yet supported in Reduction context.
-      // Compared to CollectList, ArrayType and MapType are NOT supported in GpuCollectSet
-      // because underlying cuDF operator drop_list_duplicates doesn't support LIST type.
-      ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT),
-        TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT).nested(),
-          TypeSig.all))),
-      (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
-      }),
+    // spark 2.x CollectList and CollectSet use TypedImperative which isn't in 2.x
     expr[StddevPop](
       "Aggregation computing population standard deviation",
       ExprChecks.groupByOnly(
@@ -2688,7 +2661,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
-    )
+      )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions

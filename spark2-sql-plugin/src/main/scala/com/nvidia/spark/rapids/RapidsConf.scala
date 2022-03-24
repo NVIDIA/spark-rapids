@@ -21,8 +21,6 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
-import ai.rapids.cudf.Cuda
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -1505,23 +1503,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
+  // Spark 2.x doesn't have access to Cuda in CUDF so just allow
   lazy val rmmPool: String = {
     var pool = get(RMM_POOL)
-    if ("ASYNC".equalsIgnoreCase(pool)) {
-      val driverVersion = Cuda.getDriverVersion
-      val runtimeVersion = Cuda.getRuntimeVersion
-      var fallbackMessage: Option[String] = None
-      if (runtimeVersion < 11020 || driverVersion < 11020) {
-        fallbackMessage = Some("CUDA runtime/driver does not support the ASYNC allocator")
-      } else if (driverVersion < 11050) {
-        fallbackMessage = Some("CUDA drivers before 11.5 have known incompatibilities with " +
-          "the ASYNC allocator")
-      }
-      if (fallbackMessage.isDefined) {
-        logWarning(s"${fallbackMessage.get}, falling back to ARENA")
-        pool = "ARENA"
-      }
-    }
     pool
   }
 

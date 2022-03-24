@@ -30,7 +30,8 @@ import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampTy
 
 object GpuJsonScan {
 
-  def dateFormatInRead(options: JSONOptions): String = options.dateFormat
+  // spark 2.x uses FastDateFormat, use getPattern
+  def dateFormatInRead(options: JSONOptions): String = options.dateFormat.getPattern
 
   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {

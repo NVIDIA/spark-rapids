@@ -19,9 +19,9 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{GpuRegExpUtils, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{Literal, RegExpExtract, RLike, StringSplit, SubstringIndex}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, Literal, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -178,9 +178,59 @@ object GpuSubstringIndex {
 }
 
 // TODO - add to diff script
+// StringSplit is BinaryExpression in spark 2.x so needs to be separate
+abstract class StringSplitRegBinaryExpMeta[INPUT <: BinaryExpression](expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _]],
+    rule: DataFromReplacementRule)
+  extends BinaryExprMeta[INPUT](expr, conf, parent, rule) {
+  import GpuOverrides._
+
+  /**
+   * Return the cudf transpiled regex pattern, and a boolean flag indicating whether the input
+   * delimiter is really a regex patter or just a literal string.
+   */
+  def checkRegExp(delimExpr: Expression): Option[(String, Boolean)] = {
+    var pattern: String = ""
+    var isRegExp: Boolean = false
+
+    val delim = extractLit(delimExpr)
+    if (delim.isEmpty) {
+      willNotWorkOnGpu("Only literal delimiter patterns are supported")
+    } else {
+      val utf8Str = delim.get.value.asInstanceOf[UTF8String]
+      if (utf8Str == null) {
+        willNotWorkOnGpu("Delimiter pattern is null")
+      } else {
+        if (utf8Str.numChars() == 0) {
+          willNotWorkOnGpu("An empty delimiter pattern is not supported")
+        }
+        val transpiler = new CudfRegexTranspiler(RegexSplitMode)
+        transpiler.transpileToSplittableString(utf8Str.toString) match {
+          case Some(simplified) =>
+            pattern = simplified
+          case None =>
+            try {
+              pattern = transpiler.transpile(utf8Str.toString)
+              isRegExp = true
+            } catch {
+              case e: RegexUnsupportedException =>
+                willNotWorkOnGpu(e.getMessage)
+            }
+        }
+      }
+    }
+
+    Some((pattern, isRegExp))
+  }
+
+  def throwUncheckedDelimiterException() =
+    throw new IllegalStateException("Delimiter expression has not been checked for regex pattern")
+}
+
 abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
     conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
+    parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
   extends TernaryExprMeta[INPUT](expr, conf, parent, rule) {
   import GpuOverrides._
@@ -232,7 +282,7 @@ class GpuStringSplitMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
-    extends StringSplitRegExpMeta[StringSplit](expr, conf, parent, rule) {
+    extends StringSplitRegBinaryExpMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
   private var delimInfo: Option[(String, Boolean)] = None
@@ -258,7 +308,7 @@ class GpuStringSplitMeta(
 
 class GpuStringToMapMeta(expr: StringToMap,
                          conf: RapidsConf,
-                         parent: Option[RapidsMeta[_, _, _]],
+                         parent: Option[RapidsMeta[_, _]],
                          rule: DataFromReplacementRule)
   extends StringSplitRegExpMeta[StringToMap](expr, conf, parent, rule) {
 
