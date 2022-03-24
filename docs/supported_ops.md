@@ -5060,7 +5060,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>If it's map, only primitive key types supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>If it's map, only primitive key types are supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 </tr>

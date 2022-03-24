@@ -2603,7 +2603,7 @@ object GpuOverrides extends Logging {
       }),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
-        "Returns value for the given key in value if column is map",
+        "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
           TypeSig.DECIMAL_128 + TypeSig.MAP).nested(), TypeSig.all,
