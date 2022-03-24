@@ -1036,11 +1036,24 @@ private case class GpuOrcFileFilterHandler(
           } else {
             CaseInsensitiveMap[TypeDescription](mapSensitive)
           }
-          rSchema.getFieldNames.asScala.zip(rSchema.getChildren.asScala)
-            .foreach { case (rName, rChild) =>
-              val fChild = name2ChildMap(rName)
-              setMapping(fChild.getId)
-              updateMapping(rChild, fChild)
+          // Config to match the top level columns using position rather than column names
+          if (OrcShims.forcePositionalEvolution(conf)) {
+            val rChildren = rSchema.getChildren
+            val fChildren = fSchema.getChildren
+            if (rChildren != null) {
+              rChildren.asScala.zipWithIndex.foreach { case (rChild, id) =>
+                val fChild = fChildren.get(id)
+                setMapping(fChild.getId)
+                updateMapping(rChild, fChild)
+              }
+            }
+          } else {
+            rSchema.getFieldNames.asScala.zip(rSchema.getChildren.asScala)
+                .foreach { case (rName, rChild) =>
+                  val fChild = name2ChildMap(rName)
+                  setMapping(fChild.getId)
+                  updateMapping(rChild, fChild)
+                }
           }
         } else {
           val rChildren = rSchema.getChildren
@@ -1220,13 +1233,26 @@ private case class GpuOrcFileFilterHandler(
           }
           val readerFieldNames = readSchema.getFieldNames.asScala
           val readerChildren = readSchema.getChildren.asScala
+          val fileTypesWithIndex = for (
+            (ftMap, index) <- fileTypesMap.zipWithIndex) yield (index, ftMap)
 
           val prunedReadSchema = TypeDescription.createStruct()
           val prunedInclude = mutable.ArrayBuffer(include(readSchema.getId))
-          readerFieldNames.zip(readerChildren).foreach { case (readField, readType) =>
-            // Skip check for the missing names because a column with nulls will be added
-            // for each of them.
-            if (fileTypesMap.contains(readField)) {
+          val readerMap = readerFieldNames.zip(readerChildren).toList
+          readerMap.zipWithIndex.foreach { case ((readField, readType), idx) =>
+            // Config to match the top level columns using position rather than column names
+            if (OrcShims.forcePositionalEvolution(conf)) {
+              fileTypesWithIndex(idx) match {
+                case (_, fileReadType) => if (fileReadType == readType) {
+                  val (newChild, childInclude) =
+                    checkSchemaCompatibility(fileReadType, readType, isCaseAware, include)
+                  prunedReadSchema.addField(readField, newChild)
+                  prunedInclude ++= childInclude
+                }
+              }
+            } else if (fileTypesMap.contains(readField)) {
+              // Skip check for the missing names because a column with nulls will be added
+              // for each of them.
               val (newChild, childInclude) = checkSchemaCompatibility(
                 fileTypesMap(readField), readType, isCaseAware, include)
               prunedReadSchema.addField(readField, newChild)

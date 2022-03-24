@@ -232,6 +232,29 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
             lambda spark : spark.read.orc(data_path),
             conf=all_confs)
 
+# Setup external table by altering column names
+def setup_external_table_with_forced_positions(spark, table_name, data_path):
+    rename_cols_query = "CREATE EXTERNAL TABLE `{}` (`col10` INT, `_c1` STRING, `col30` DOUBLE) STORED AS orc LOCATION '{}'".format(table_name, data_path)
+    spark.sql(rename_cols_query).collect
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('forced_position', ["true", "false"])
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_orc_forced_position(spark_tmp_path, spark_tmp_table_factory, reader_confs, forced_position, orc_impl):
+    orc_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + 'ORC_DATA'
+    with_cpu_session(lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_external_table_with_forced_positions(spark, table_name, data_path))
+
+    all_confs = copy_and_update(reader_confs, {
+        'orc.force.positional.evolution': forced_position,
+        'spark.sql.orc.impl': orc_impl})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
+        conf=all_confs)
+
 # In this we are reading the data, but only reading the key the data was partitioned by
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
