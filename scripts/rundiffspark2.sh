@@ -419,19 +419,14 @@ sed -n '/def optionallyAsDecimalType/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/
 diff $tmp_dir/optionallyAsDecimalType_new.out $tmp_dir/optionallyAsDecimalType_old.out > $tmp_dir/optionallyAsDecimalType.newdiff || true
 diff -c spark2diffs/optionallyAsDecimalType.diff $tmp_dir/optionallyAsDecimalType.newdiff
 
-sed -n '/def getPrecisionForIntegralType/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/getPrecisionForIntegralType_new.out
-sed -n '/def getPrecisionForIntegralType/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/getPrecisionForIntegralType_old.out
-diff $tmp_dir/getPrecisionForIntegralType_new.out $tmp_dir/getPrecisionForIntegralType_old.out > $tmp_dir/getPrecisionForIntegralType.newdiff || true
-diff -c spark2diffs/getPrecisionForIntegralType.diff $tmp_dir/getPrecisionForIntegralType.newdiff
-
 # not sure this diff works very well due to java vs scala and quite a bit different but should find any changes in those functions
 sed -n '/def toRapidsStringOrNull/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/toRapidsStringOrNull_new.out
-sed -n '/private static DType/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/java/com/nvidia/spark/rapids/GpuColumnVector.java > $tmp_dir/toRapidsStringOrNull_old.out
+sed -n '/private static DType toRapidsOrNullCommon/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/java/com/nvidia/spark/rapids/GpuColumnVector.java > $tmp_dir/toRapidsStringOrNull_old.out
 diff $tmp_dir/toRapidsStringOrNull_new.out $tmp_dir/toRapidsStringOrNull_old.out > $tmp_dir/toRapidsStringOrNull.newdiff || true
 diff -c spark2diffs/toRapidsStringOrNull.diff $tmp_dir/toRapidsStringOrNull.newdiff
 
-sed -n '/def createCudfDecimal/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/createCudfDecimal_new.out
-sed -n '/def createCudfDecimal/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/createCudfDecimal_old.out
+sed -n '/def createCudfDecimal/,/^ /p'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/createCudfDecimal_new.out
+sed -n '/def createCudfDecimal/,/^ /p'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/DecimalUtil.scala > $tmp_dir/createCudfDecimal_old.out
 diff $tmp_dir/createCudfDecimal_new.out $tmp_dir/createCudfDecimal_old.out > $tmp_dir/createCudfDecimal.newdiff || true
 diff -c spark2diffs/createCudfDecimal.diff $tmp_dir/createCudfDecimal.newdiff
 
@@ -468,11 +463,6 @@ sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala
 sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/mathExpressions.scala > $tmp_dir/GpuFloorCeil_old.out
 diff -c $tmp_dir/GpuFloorCeil_new.out $tmp_dir/GpuFloorCeil_old.out
 
-sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_new.out
-sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_old.out
-diff $tmp_dir/GpuFileSourceScanExec_new.out $tmp_dir/GpuFileSourceScanExec_old.out > $tmp_dir/GpuFileSourceScanExec.newdiff || true
-diff -c spark2diffs/GpuFileSourceScanExec.diff $tmp_dir/GpuFileSourceScanExec.newdiff
-
 sed -n '/object GpuReadJsonFileFormat/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuReadJsonFileFormat.scala > $tmp_dir/GpuReadJsonFileFormat_new.out
 sed -n '/object GpuReadJsonFileFormat/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuReadJsonFileFormat.scala > $tmp_dir/GpuReadJsonFileFormat_old.out
 diff $tmp_dir/GpuReadJsonFileFormat_new.out $tmp_dir/GpuReadJsonFileFormat_old.out > $tmp_dir/GpuReadJsonFileFormat.newdiff || true
@@ -482,6 +472,11 @@ sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/
 sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuJsonScan.scala > $tmp_dir/GpuJsonScan_old.out
 diff $tmp_dir/GpuJsonScan_new.out $tmp_dir/GpuJsonScan_old.out > $tmp_dir/GpuJsonScan.newdiff || true
 diff -c spark2diffs/GpuJsonScan.diff $tmp_dir/GpuJsonScan.newdiff
+
+sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_new.out
+sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_old.out
+diff $tmp_dir/GpuFileSourceScanExec_new.out $tmp_dir/GpuFileSourceScanExec_old.out > $tmp_dir/GpuFileSourceScanExec.newdiff || true
+diff -c spark2diffs/GpuFileSourceScanExec.diff $tmp_dir/GpuFileSourceScanExec.newdiff
 
 sed -n  '/class GpuRegExpExtractMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/GpuRegExpExtractMeta_new.out
 sed -n  '/class GpuRegExpExtractMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/GpuRegExpExtractMeta_old.out

@@ -30,12 +30,7 @@ import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampTy
 
 object GpuJsonScan {
 
-  def dateFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case jsonOpts: JSONOptions => Option(jsonOpts.dateFormat.getPattern)
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
-  }
+  def dateFormatInRead(options: JSONOptions): String = options.dateFormat
 
   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
     fileOptions match {
@@ -136,11 +131,8 @@ object GpuJsonScan {
     })
 
     if (readSchema.map(_.dataType).contains(DateType)) {
-      dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
-      }
+      DateUtils.tagAndGetCudfFormat(meta,
+          dateFormatInRead(parsedOptions), parseString = true)
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {
