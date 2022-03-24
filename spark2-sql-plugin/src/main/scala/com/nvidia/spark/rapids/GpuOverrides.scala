@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSpecifiedWindowFrameMeta, GpuSortMergeJoinMeta, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
+import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -2616,7 +2616,8 @@ object GpuOverrides extends Logging {
             + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Nil, None),
-      (a, conf, p, r) => new ExprMeta[org.apache.spark.sql.execution.ScalarSubquery](a, conf, p, r) {
+      (a, conf, p, r) =>
+        new ExprMeta[org.apache.spark.sql.execution.ScalarSubquery](a, conf, p, r) {
       }),
     expr[CreateMap](
       desc = "Create a map",

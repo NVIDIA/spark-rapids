@@ -31,7 +31,8 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
       case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      // TODO - do we want to try to do something with Avro here?  its v2 only so won't show up in 2.x
+      // TODO - do we want to try to do something with Avro here?  its v2 only so won't
+      // show up in 2.x
       case f =>
         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
     }
