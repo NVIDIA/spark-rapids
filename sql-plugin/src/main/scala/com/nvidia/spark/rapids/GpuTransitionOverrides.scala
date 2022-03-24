@@ -29,8 +29,10 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
+import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.shims.GpuColumnarToRowTransitionExec
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -62,7 +64,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   private def getColumnarToRowExec(plan: SparkPlan, exportColumnRdd: Boolean = false) = {
-    SparkShimImpl.getGpuColumnarToRowTransition(plan, exportColumnRdd)
+    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+    val serClass = ShimLoader.loadClass(serName)
+    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
+    } else {
+      GpuColumnarToRowExec(plan, exportColumnRdd)
+    }
   }
 
   /** Adds the appropriate coalesce after a shuffle depending on the type of shuffle configured */
@@ -462,10 +470,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val wrapped = GpuOverrides.wrapExpr(expr, rapidsConf, None)
       wrapped.tagForGpu()
       assert(wrapped.canThisBeReplaced)
-      SparkShimImpl.sortOrder(
-        wrapped.convertToGpu(),
-        Ascending,
-        Ascending.defaultNullOrdering)
+      SortOrder(wrapped.convertToGpu(), Ascending)
     }
   }
 

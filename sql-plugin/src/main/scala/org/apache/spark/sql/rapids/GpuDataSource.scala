@@ -50,7 +50,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, StructType}
 import org.apache.spark.sql.util.SchemaUtils
-import org.apache.spark.util.{ThreadUtils, Utils}
+import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
 
 /**
  * A truncated version of Spark DataSource that converts to use the GPU version of
@@ -637,7 +637,7 @@ object GpuDataSource extends Logging {
     val allPaths = globbedPaths ++ nonGlobPaths
     if (checkFilesExist) {
       val (filteredOut, filteredIn) = allPaths.partition { path =>
-        SparkShimImpl.shouldIgnorePath(path.getName)
+        HadoopFSUtils.shouldFilterOutPathName(path.getName)
       }
       if (filteredIn.isEmpty) {
         logWarning(

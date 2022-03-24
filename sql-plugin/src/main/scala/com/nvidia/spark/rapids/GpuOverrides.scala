@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -50,7 +51,7 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -1742,8 +1743,7 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
-        override def shouldFallbackOnAnsiTimestamp: Boolean =
-          SparkShimImpl.shouldFallbackOnAnsiTimestamp
+        override def shouldFallbackOnAnsiTimestamp: Boolean = SQLConf.get.ansiEnabled
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
@@ -1764,8 +1764,7 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
-        override def shouldFallbackOnAnsiTimestamp: Boolean =
-          SparkShimImpl.shouldFallbackOnAnsiTimestamp
+        override def shouldFallbackOnAnsiTimestamp: Boolean = SQLConf.get.ansiEnabled
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
@@ -2641,9 +2640,7 @@ object GpuOverrides extends Logging {
           checks.tag(this)
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          // This will be called under 3.0.x version, so set failOnError to false to match CPU
-          // behavior
-          GpuElementAt(lhs, rhs, failOnError = false)
+          GpuElementAt(lhs, rhs, failOnError = in.failOnError)
         }
       }),
     expr[MapKeys](
@@ -3658,14 +3655,16 @@ object GpuOverrides extends Logging {
                 takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                SparkShimImpl.getGpuShuffleExchangeExec(
+                GpuShuffleExchangeExec(
                   GpuSinglePartitioning,
                   GpuTopN(
                     takeExec.limit,
                     so,
                     takeExec.child.output,
                     childPlans.head.convertIfNeeded())(takeExec.sortOrder),
-                  SinglePartition))(takeExec.sortOrder)
+                  ENSURE_REQUIREMENTS
+                )(SinglePartition)
+              )(takeExec.sortOrder)
             }
           }
         }),

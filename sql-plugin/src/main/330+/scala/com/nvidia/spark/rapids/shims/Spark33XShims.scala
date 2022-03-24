@@ -41,11 +41,6 @@ import org.apache.spark.unsafe.types.CalendarInterval
 
 trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
-  /**
-   * For spark3.3+ optionally return null if element not exists.
-   */
-  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.strictIndexOperator
-
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
   override def getFileScanRDD(
@@ -426,7 +421,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = replaceWithAlluxioPathIfNeeded(
+            val location = AlluxioUtils.replacePathIfNeeded(
               conf,
               wrapped.relation,
               partitionFilters,

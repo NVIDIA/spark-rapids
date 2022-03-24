@@ -16,30 +16,20 @@
 
 package com.nvidia.spark.rapids.shims
 
-import java.net.URI
-import java.nio.ByteBuffer
-
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
-import org.apache.arrow.memory.ReferenceManager
-import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
 
-import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
@@ -48,55 +38,25 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.ShowCurrentNamespaceExec
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
-import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
-import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
 
-  override def getScalaUDFAsExpression(
-      function: AnyRef,
-      dataType: DataType,
-      children: Seq[Expression],
-      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-      outputEncoder: Option[ExpressionEncoder[_]] = None,
-      udfName: Option[String] = None,
-      nullable: Boolean = true,
-      udfDeterministic: Boolean = true): Expression = {
-    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
-      udfDeterministic)
-  }
-
-  override def getMapSizesByExecutorId(
-      shuffleId: Int,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId,
-      startMapIndex, endMapIndex, startPartition, endPartition)
-  }
-
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
-
-  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
-    sqlConf.maxMetadataStringLength
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
@@ -273,7 +233,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
       ("ordinal", TypeSig.INT, TypeSig.INT)),
     (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
       override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
-        GpuGetArrayItem(arr, ordinal, shouldFailOnElementNotExists)
+        GpuGetArrayItem(arr, ordinal, in.failOnError)
     }),
     GpuOverrides.expr[GetMapValue](
       "Gets Value from a Map based on a key",
@@ -288,7 +248,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r){
         override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-          GpuGetMapValue(map, key, shouldFailOnElementNotExists)
+          GpuGetMapValue(map, key, in.failOnError)
       }),
     GpuOverrides.expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
@@ -432,7 +392,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = replaceWithAlluxioPathIfNeeded(
+            val location = AlluxioUtils.replacePathIfNeeded(
               conf,
               wrapped.relation,
               partitionFilters,
@@ -485,170 +445,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
-    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = ShimLoader.loadClass(serName)
-    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-      GpuColumnarToRowTransitionExec(plan, exportColumnRdd)
-    } else {
-      GpuColumnarToRowExec(plan, exportColumnRdd)
-    }
-  }
-
-  override def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: GpuPartitioning,
-      child: SparkPlan,
-      cpuOutputPartitioning: Partitioning,
-      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
-    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
-    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin)(cpuOutputPartitioning)
-  }
-
-  override def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
-    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
-  }
-
-  override def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
-
-  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
-    s.copy(child = child)
-  }
-
-  override def shouldIgnorePath(path: String): Boolean = {
-    HadoopFSUtilsShim.shouldIgnorePath(path)
-  }
-
-  override def getLegacyComplexTypeToString(): Boolean = {
-    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
-  }
-
-  // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getDataBuffer()
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
-  }
-
-  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getValidityBuffer
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
-  }
-
-  override def createTable(table: CatalogTable,
-    sessionCatalog: SessionCatalog,
-    tableLocation: Option[URI],
-    result: BaseRelation) = {
-    val newTable = table.copy(
-      storage = table.storage.copy(locationUri = tableLocation),
-      // We will use the schema of resolved.relation as the schema of the table (instead of
-      // the schema of df). It is important since the nullability may be changed by the relation
-      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
-      schema = result.schema)
-    // Table location is already validated. No need to check it again during table creation.
-    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
-  }
-
-  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getOffsetBuffer
-    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
-  }
-
-  /** matches SPARK-33008 fix in 3.1.1 */
-  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
-
-  override def replaceWithAlluxioPathIfNeeded(
-      conf: RapidsConf,
-      relation: HadoopFsRelation,
-      partitionFilters: Seq[Expression],
-      dataFilters: Seq[Expression]): FileIndex = {
-
-    val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
-
-    if (alluxioPathsReplace.isDefined) {
-      // alluxioPathsReplace: Seq("key->value", "key1->value1")
-      // turn the rules to the Map with eg
-      // { s3:/foo -> alluxio://0.1.2.3:19998/foo,
-      //   gs:/bar -> alluxio://0.1.2.3:19998/bar,
-      //   /baz -> alluxio://0.1.2.3:19998/baz }
-      val replaceMapOption = alluxioPathsReplace.map(rules => {
-        rules.map(rule => {
-          val split = rule.split("->")
-          if (split.size == 2) {
-            split(0).trim -> split(1).trim
-          } else {
-            throw new IllegalArgumentException(s"Invalid setting for " +
-              s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
-          }
-        }).toMap
-      })
-
-      replaceMapOption.map(replaceMap => {
-
-        def isDynamicPruningFilter(e: Expression): Boolean =
-          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
-
-        val partitionDirs = relation.location.listFiles(
-          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-
-        // replacement func to check if the file path is prefixed with the string user configured
-        // if yes, replace it
-        val replaceFunc = (f: Path) => {
-          val pathStr = f.toString
-          val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
-          if (matchedSet.size > 1) {
-            // never reach here since replaceMap is a Map
-            throw new IllegalArgumentException(s"Found ${matchedSet.size} same replacing rules " +
-              s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule for each " +
-              s"file path")
-          } else if (matchedSet.size == 1) {
-            new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
-          } else {
-            f
-          }
-        }
-
-        // replace all of input files
-        val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
-          replacePartitionDirectoryFiles(partitionDir, replaceFunc)
-        })
-
-        // replace all of rootPaths which are already unique
-        val rootPaths = relation.location.rootPaths.map(replaceFunc)
-
-        val parameters: Map[String, String] = relation.options
-
-        // infer PartitionSpec
-        val partitionSpec = GpuPartitioningUtils.inferPartitioning(
-          relation.sparkSession,
-          rootPaths,
-          inputFiles,
-          parameters,
-          Option(relation.dataSchema),
-          replaceFunc)
-
-        // generate a new InMemoryFileIndex holding paths with alluxio schema
-        new InMemoryFileIndex(
-          relation.sparkSession,
-          inputFiles,
-          parameters,
-          Option(relation.dataSchema),
-          userSpecifiedPartitionSpec = Some(partitionSpec))
-      }).getOrElse(relation.location)
-
-    } else {
-      relation.location
-    }
-  }
-
-  override def replacePartitionDirectoryFiles(partitionDir: PartitionDirectory,
-      replaceFunc: Path => Path): Seq[Path] = {
-    partitionDir.files.map(f => replaceFunc(f.getPath))
-  }
-
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
@@ -676,17 +472,6 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TaskContext.get.taskMemoryManager())
-
-  override def registerKryoClasses(kryo: Kryo): Unit = {
-    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
-      new KryoJavaSerializer())
-    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
-      new KryoJavaSerializer())
-  }
-
-  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
-
-  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
 
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.inputPlan
