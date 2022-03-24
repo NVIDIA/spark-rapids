@@ -889,14 +889,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // TODO should we change this config?
-  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
-      .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
-          "format for Spark includes a timezone at the end. Anything except the UTC timezone is " +
-          "not supported. Timestamps after 2038 and before 1902 are also not supported.")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -1608,8 +1600,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
-
-  lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 

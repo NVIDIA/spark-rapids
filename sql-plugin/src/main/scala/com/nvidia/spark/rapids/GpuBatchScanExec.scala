@@ -31,7 +31,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.json.rapids.shims.FileOptionsShims
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read._
@@ -86,31 +85,6 @@ trait ScanWithMetrics {
 }
 
 object GpuCSVScan {
-  private val supportedDateFormats = Set(
-    "yyyy-MM-dd",
-    "yyyy/MM/dd",
-    "yyyy-MM",
-    "yyyy/MM",
-    "MM-yyyy",
-    "MM/yyyy",
-    "MM-dd-yyyy",
-    "MM/dd/yyyy"
-    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
-    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
-    // and would need to coordinate with the timestamp format too, because both cannot
-    // coexist
-  )
-
-  private val supportedTsPortionFormats = Set(
-    "HH:mm:ss.SSSXXX",
-    "HH:mm:ss[.SSS][XXX]",
-    "HH:mm",
-    "HH:mm:ss",
-    "HH:mm[:ss]",
-    "HH:mm:ss.SSS",
-    "HH:mm:ss[.SSS]"
-  )
-
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
@@ -212,37 +186,27 @@ object GpuCSVScan {
 
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
-    if (readSchema.map(_.dataType).contains(DateType)) {
-      if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
-        // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
-        // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
-        // so we fall back to CPU
-        meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
-      }
-      DateUtils.tagAndGetCudfFormat(meta,
+    val types = readSchema.map(_.dataType).toSet
+    if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy &&
+        (types.contains(DateType) ||
+        types.contains(TimestampType))) {
+      // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
+      // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
+      // so we fall back to CPU
+      meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
+    }
+
+    if (types.contains(DateType)) {
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
-    if (readSchema.map(_.dataType).contains(TimestampType)) {
-      if (!meta.conf.isCsvTimestampReadEnabled) {
-        meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
-          s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
-      }
+    if (types.contains(TimestampType)) {
       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      FileOptionsShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
-        val parts = tsFormat.split("'T'", 2)
-        if (parts.isEmpty) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-      }
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
     // TODO parsedOptions.emptyValueInRead
 
@@ -414,4 +378,5 @@ class CSVPartitionReader(
   }
 
   override def dateFormat: String = GpuCsvUtils.dateFormatInRead(parsedOptions)
+  override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
 }
