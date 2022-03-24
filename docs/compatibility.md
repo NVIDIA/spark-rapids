@@ -280,20 +280,6 @@ will produce a different result compared to the plugin.
 
 ## CSV Reading
 
-Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
-Each data type can be enabled or disabled independently using the following configs.
-
- * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
-
-If you know that your particular data type will be parsed correctly enough, you may enable each
-type you expect to use. Often the performance improvement is so good that it is worth
-checking if it is parsed correctly.
-
-Spark is generally very strict when reading CSV and if the data does not conform with the 
-expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
-uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
-nulls.
-
 Spark allows for stripping leading and trailing white space using various options that are off by
 default. The plugin will strip leading and trailing space for all values except strings.
 
@@ -335,6 +321,7 @@ portion followed by one of the following formats:
 
 * `HH:mm:ss.SSSXXX`
 * `HH:mm:ss[.SSS][XXX]`
+* `HH:mm:ss[.SSSXXX]`
 * `HH:mm`
 * `HH:mm:ss`
 * `HH:mm[:ss]`
@@ -525,8 +512,14 @@ versions prior to 3.3.0 only supported the `"Infinity"` and `"-Infinity"` repres
 support `"+INF"`, `"-INF"`, or `"+Infinity"`, which Spark considers valid when unquoted. The GPU JSON reader is 
 consistent with the behavior in Spark 3.3.0 and later.
 
-Another limitation of the GPU JSON reader is that it will parse strings containing boolean or numeric values where
+Another limitation of the GPU JSON reader is that it will parse strings containing non-string boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
+
+### JSON Timestamps
+
+There is currently no support for reading numeric values as timestamps and null values are returned instead 
+([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast 
+to timestamp.
 
 ### JSON Schema discovery
 
