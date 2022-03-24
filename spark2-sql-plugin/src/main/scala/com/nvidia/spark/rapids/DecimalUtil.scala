@@ -26,7 +26,7 @@ object DecimalUtil {
       IllegalArgumentException(dtype + " is not supported for GPU processing yet."))
   }
 
- def createCudfDecimal(dt: DecimalType): DType =
+ def createCudfDecimal(dt: DecimalType): Option[String] =
    createInternalCudfDecimal(dt.precision, dt.scale)
 
  def createInternalCudfDecimal(precision: Int, scale: Int): Option[String] = {
@@ -62,8 +62,7 @@ object DecimalUtil {
         // Decimal supportable check has been conducted in the GPU plan overriding stage.
         // So, we don't have to handle decimal-supportable problem at here.
         val dt = dtype.asInstanceOf[DecimalType]
-        createCudfDecimal(dt.precision, dt.scale)
-        DecimalUtil.createCudfDecimal((DecimalType) type);
+        createCudfDecimal(dt)
       case _: GpuUnsignedIntegerType => Some("UINT32")
       case _: GpuUnsignedLongType => Some("UINT64")
       case _ => None

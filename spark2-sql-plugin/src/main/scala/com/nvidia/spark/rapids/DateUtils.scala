@@ -16,12 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.LocalDate
+import java.time._
 
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
-import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuToTimestamp, LegacyTimeParserPolicy}
 
@@ -191,7 +190,7 @@ object DateUtils {
   case class TimestampFormatConversionException(reason: String) extends Exception
 
   def tagAndGetCudfFormat(
-      meta: RapidsMeta[_, _, _],
+      meta: RapidsMeta[_, _],
       sparkFormat: String,
       parseString: Boolean): String = {
     var strfFormat: String = null
@@ -207,7 +206,9 @@ object DateUtils {
           // - we can only support 4 digit years but Spark supports a wider range
           // - we use a proleptic Gregorian calender but Spark uses a hybrid Julian+Gregorian
           //   calender in LEGACY mode
-          if (SQLConf.get.ansiEnabled) {
+          // Spark 2.x doesn't support, assume false
+          val ansiEnabled = false
+          if (ansiEnabled) {
             meta.willNotWorkOnGpu("LEGACY format in ANSI mode is not supported on the GPU")
           } else if (!meta.conf.incompatDateFormats) {
             meta.willNotWorkOnGpu(s"LEGACY format '$sparkFormat' on the GPU is not guaranteed " +
