@@ -1,0 +1,30 @@
+2c2
+<  * Copyright (c) 2022, NVIDIA CORPORATION.
+---
+>  * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+32,33c32,48
+<     // Spark 2.x doesn't support GetTimestamp
+<     // GpuOverrides.expr[GetTimestamp](
+---
+>     GpuOverrides.expr[GetTimestamp](
+>       "Gets timestamps from strings using given pattern.",
+>       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+>         ("timeExp",
+>             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP,
+>             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP),
+>         ("format", TypeSig.lit(TypeEnum.STRING)
+>             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
+>             TypeSig.STRING)),
+>       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
+>         override def shouldFallbackOnAnsiTimestamp: Boolean =
+>           SparkShimImpl.shouldFallbackOnAnsiTimestamp
+> 
+>         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+>           GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)
+>         }
+>       })
+35c50
+< }
+---
+> }
+\ No newline at end of file

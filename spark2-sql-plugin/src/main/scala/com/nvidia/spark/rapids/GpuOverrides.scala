@@ -2667,7 +2667,8 @@ object GpuOverrides extends Logging {
 
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimGpuOverrides.shimExpressions
+    commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
+        ShimGpuOverrides.shimExpressions
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,

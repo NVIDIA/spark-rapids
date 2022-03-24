@@ -500,5 +500,8 @@ sed -n  '/class GpuRegExpExtractMeta/,/override def convertToGpu/{/override def 
 diff $tmp_dir/GpuRegExpExtractMeta_new.out $tmp_dir/GpuRegExpExtractMeta_old.out > $tmp_dir/GpuRegExpExtractMeta.newdiff || true
 diff -c spark2diffs/GpuRegExpExtractMeta.diff $tmp_dir/GpuRegExpExtractMeta.newdiff
 
+diff ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/expressions/rapids/Timestamp.scala ../sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/expressions/rapids/Timestamp.scala > $tmp_dir/Timestamp.newdiff || true
+diff -c spark2diffs/Timestamp.diff $tmp_dir/Timestamp.newdiff
+
 echo "Done running Diffs of spark2.x files"
 rm -r $tmp_dir
