@@ -20,10 +20,6 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 object VersionUtils {
 
-  lazy val isSpark301OrLater: Boolean = cmpSparkVersion(3, 0, 1) >= 0
-
-  lazy val isSpark311OrLater: Boolean = cmpSparkVersion(3, 1, 1) >= 0
-
   lazy val isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
 
   lazy val isSpark: Boolean = {

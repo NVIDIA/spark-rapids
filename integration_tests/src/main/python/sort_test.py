@@ -19,7 +19,6 @@ from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311
 
 orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), IntegerGen(nullable=False),
         LongGen(nullable=False), FloatGen(nullable=False), DoubleGen(nullable=False), BooleanGen(nullable=False),
@@ -164,11 +163,7 @@ def test_single_nested_sort_in_part(data_gen, order, stable_sort):
         lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order),
         conf=sort_conf)
 
-orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen,
-        pytest.param(float_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
-            reason='Spark has -0.0 < 0.0 before Spark 3.1')),
-        pytest.param(double_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
-            reason='Spark has -0.0 < 0.0 before Spark 3.1')),
+orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])] + decimal_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
 def test_multi_orderby(data_gen):

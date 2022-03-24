@@ -270,9 +270,7 @@ Queries on Databricks will not fail but it can not benefit from DPP.
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
-In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
-release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
-the GPU when AQE is enabled. 
+Any operation that is supported on GPU will stay on the GPU when AQE is enabled. 
 
 AQE is not supported on Databricks with the plugin. 
 If AQE is enabled on Databricks, queries may fail with `StackOverflowError` error.
