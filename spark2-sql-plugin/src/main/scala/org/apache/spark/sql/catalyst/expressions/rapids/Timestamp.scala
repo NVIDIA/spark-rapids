@@ -17,19 +17,14 @@
 
 package org.apache.spark.sql.catalyst.expressions.rapids
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.ExprRule
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
-import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
+import org.apache.spark.sql.catalyst.expressions.Expression
 
 /**
  * GetTimestamp is marked as private so we had to put it in a place that could access it.
  */
 object TimeStamp {
 
-  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-    // Spark 2.x doesn't support GetTimestamp
-    // GpuOverrides.expr[GetTimestamp](
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 }
