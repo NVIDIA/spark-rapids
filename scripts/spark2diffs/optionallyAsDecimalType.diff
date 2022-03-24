@@ -1,4 +1,6 @@
-4c4
-<       Some(DecimalType(getNonNestedRapidsType(t).getPrecisionForInt, 0))
+4,6c4
+<       // Spark 2.x diff using string for type so don't need CUDF
+<       val prec = DecimalUtil.getPrecisionForIntegralType(getNonNestedRapidsType(t))
+<       Some(DecimalType(prec, 0))
 ---
 >       Some(DecimalType(GpuColumnVector.getNonNestedRapidsType(t).getPrecisionForInt, 0))

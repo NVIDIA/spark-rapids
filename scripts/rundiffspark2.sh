@@ -488,6 +488,8 @@ sed -n '/abstract class StringSplitRegExpMeta/,/^}/{/^}/!p}'  ../sql-plugin/src/
 diff $tmp_dir/StringSplitRegExpMeta_new.out $tmp_dir/StringSplitRegExpMeta_old.out > $tmp_dir/StringSplitRegExpMeta.newdiff || true
 diff -c spark2diffs/StringSplitRegExpMeta.diff $tmp_dir/StringSplitRegExpMeta.newdiff
 
+diff -c ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuDataTypes.scala ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuDataTypes.scala
+
 sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_new.out
 sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_old.out
 diff $tmp_dir/GpuFileSourceScanExec_new.out $tmp_dir/GpuFileSourceScanExec_old.out > $tmp_dir/GpuFileSourceScanExec.newdiff || true

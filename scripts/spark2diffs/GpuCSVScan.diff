@@ -25,27 +25,26 @@
 <     /*
 72d69
 <     */
-78,82d74
+74,75c71
 <     // delimiter is char in 2.x
 <     if (parsedOptions.delimiter > 127) {
-<       meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
-<     }
-< 
-109,113d100
+---
+>     if (parsedOptions.delimiter.codePointAt(0) > 127) {
+105,109d100
 <     // 2.x doesn't have linSeparator config
 <     // CSV text with '\n', '\r' and '\r\n' as line separators.
 <     // Since I have no way to check in 2.x we will just assume it works for explain until
 <     // they move to 3.x
 <     /*
-117d103
+113d103
 <     */
-158,160c144
+154,156c144
 < 
 <       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
 <       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
 ---
 >       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
-163c147
+159c147
 <       timestampFormatInRead(parsedOptions).foreach { tsFormat =>
 ---
 >       FileOptionsShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>

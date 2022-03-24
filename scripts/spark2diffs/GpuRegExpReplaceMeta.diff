@@ -8,10 +8,6 @@
 >   extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 11a12
 >     GpuRegExpUtils.tagForRegExpEnabled(this)
-18c19
-<             pattern = Some(new CudfRegexTranspiler(replace = true).transpile(s.toString))
----
->             pattern = Some(new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString))
 36a38,43
 > 
 >     GpuOverrides.extractLit(expr.pos).foreach { lit =>

@@ -2,39 +2,45 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+19c19
+< import java.time._
+---
+> import java.time.LocalDate
 22a23,25
 > import ai.rapids.cudf.{DType, Scalar}
 > import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
 > 
-62,63c65,67
+23a27
+> import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
+61,62c65,67
 <   // Spark 2.x - removed isSpark320orlater checks
 <   def specialDatesDays: Map[String, Int] = {
 ---
 >   def specialDatesDays: Map[String, Int] = if (isSpark320OrLater) {
 >     Map.empty
 >   } else {
-74c78,80
+73c78,80
 <   def specialDatesSeconds: Map[String, Long] = {
 ---
 >   def specialDatesSeconds: Map[String, Long] = if (isSpark320OrLater) {
 >     Map.empty
 >   } else {
-76,77c82
+75,76c82
 <     // spark 2.4 Date utils are different
 <     val now = DateTimeUtils.instantToMicros(Instant.now())
 ---
 >     val now = DateTimeUtils.currentTimestamp()
-87c92,94
+86c92,94
 <   def specialDatesMicros: Map[String, Long] = {
 ---
 >   def specialDatesMicros: Map[String, Long] = if (isSpark320OrLater) {
 >     Map.empty
 >   } else {
-89c96
+88c96
 <     val now = DateTimeUtils.instantToMicros(Instant.now())
 ---
 >     val now = DateTimeUtils.currentTimestamp()
-99c106,123
+98c106,123
 <   def currentDate(): Int = Math.toIntExact(LocalDate.now().toEpochDay)
 ---
 >   def fetchSpecialDates(unit: DType): Map[String, () => Scalar] = unit match {
@@ -55,3 +61,13 @@
 >   }
 > 
 >   def currentDate(): Int = localDateToDays(LocalDate.now())
+193c218
+<       meta: RapidsMeta[_, _],
+---
+>       meta: RapidsMeta[_, _, _],
+209,211c234
+<           // Spark 2.x doesn't support, assume false
+<           val ansiEnabled = false
+<           if (ansiEnabled) {
+---
+>           if (SQLConf.get.ansiEnabled) {
