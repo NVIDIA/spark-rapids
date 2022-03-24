@@ -595,8 +595,7 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
       case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      case f =>
-        meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
+      case _ => ExternalSource.tagSupportForGpuFileSourceScanExec(meta)
     }
   }
 
@@ -606,8 +605,7 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
       case _: JsonFileFormat => new GpuReadJsonFileFormat
-      case f =>
-        throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
+      case _ => ExternalSource.convertFileFormatForGpuFileSourceScanExec(format)
     }
   }
 }

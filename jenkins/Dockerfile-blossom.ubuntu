@@ -44,7 +44,8 @@ RUN python3.8 -m easy_install pip
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
 
-RUN ln -s /usr/bin/python3.8 /usr/bin/python
+RUN ln -sfn /usr/bin/python3.8 /usr/bin/python
+RUN ln -sfn /usr/bin/python3.8 /usr/bin/python3
 RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order
 
 # libnuma1 and libgomp1 are required by ucx packaging
