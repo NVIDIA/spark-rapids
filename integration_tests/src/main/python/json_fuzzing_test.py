@@ -399,10 +399,10 @@ def test_json_read_fuzz(spark_tmp_path):
     schema = gen_top_schema(depth)
 
     data_path = spark_tmp_path + '/JSON_FUZZ_DATA'
-    json_string = "".join(gen_json(schema))
     
     with open(data_path, 'w') as f:
-        f.write(json_string)
+        for c in gen_json(schema):
+            f.write(c)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema).json(data_path),
