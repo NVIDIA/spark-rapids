@@ -1,2 +1,0 @@
-com/nvidia/spark/ParquetCachedBatchSerializer*
-com/nvidia/spark/GpuCachedBatchSerializer*

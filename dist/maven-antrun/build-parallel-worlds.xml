@@ -109,7 +109,6 @@
                     <patternset id="shared-world-includes">
                         <includesfile name="${project.basedir}/unshimmed-common-from-spark311.txt"/>
                         <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                        <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                     </patternset>
                 </unzip>
                 <unzip src="${aggregatorPrefix}-spark@{bv}.jar"
