@@ -85,6 +85,14 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
       }
     }
 
+    if (GpuTypeShims.isYearMonthInterval(dataType)) {
+      // For day time interval, Spark throws an exception when overflow,
+      // regardless of whether `SQLConf.get.ansiEnabled` is true or false
+      withResource(Scalar.fromLong(Int.MinValue)) { minVal =>
+        GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
+      }
+    }
+
     dataType match {
       case dt: DecimalType =>
         val zeroLit = Decimal(0L, dt.precision, dt.scale)
@@ -146,6 +154,14 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
       // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflowImp(minVal, input, "abs")
+      }
+    }
+
+    if (GpuTypeShims.isYearMonthInterval(dataType)) {
+      // For day time interval, Spark throws an exception when overflow,
+      // regardless of whether `SQLConf.get.ansiEnabled` is true or false
+      withResource(Scalar.fromLong(Int.MinValue)) { minVal =>
+        GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
       }
     }
 
@@ -249,7 +265,7 @@ case class GpuAdd(
     withResource(ret) { ret =>
       // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType) ||
-          GpuTypeShims.isDayTimeInterval(dataType)) {
+          GpuTypeShims.isAnsiInterval(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
@@ -347,7 +363,7 @@ case class GpuSubtract(
     withResource(ret) { ret =>
       // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType) ||
-          GpuTypeShims.isDayTimeInterval(dataType)) {
+          GpuTypeShims.isAnsiInterval(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         basicOpOverflowCheck(lhs, rhs, ret)

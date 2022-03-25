@@ -235,7 +235,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 2 + VALIDITY
   }
 
-  private object IntConverter extends TypeConverter {
+  private[rapids] object IntConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
@@ -250,7 +250,7 @@ private[rapids] object GpuRowToColumnConverter {
     override def getNullSize: Double = 4 + VALIDITY
   }
 
-  private object NotNullIntConverter extends TypeConverter {
+  private[rapids] object NotNullIntConverter extends TypeConverter {
     override def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
