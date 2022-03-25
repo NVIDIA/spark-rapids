@@ -87,11 +87,11 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         sparkSig = TypeSig.cpuAtomics)),
       (ParquetFormatType, FileFormatChecks(
         cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME).nested(),
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
         cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME).nested(),
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
         sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-            TypeSig.UDT + TypeSig.DAYTIME).nested())))
+            TypeSig.UDT + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested())))
   }
 
   // 330+ supports DAYTIME interval types
@@ -102,11 +102,11 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "Returns the first non-null argument if exists. Otherwise, null",
         ExprChecks.projectOnly(
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-              TypeSig.DAYTIME).nested(),
+              TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.DAYTIME).nested(),
+                TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
             TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
           override def convertToGpu():
@@ -117,7 +117,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         ExprChecks.projectAndAst(
           TypeSig.astTypes,
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
           TypeSig.all),
         (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
           // This is the only NOOP operator.  It goes away when things are bound
@@ -324,8 +324,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
     val map: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
       GpuOverrides.exec[ShuffleExchangeExec](
         "The backend for most data being exchanged between processes",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.DAYTIME).nested()
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested()
             .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
                 s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
             .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
@@ -338,7 +338,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+              TypeSig.DECIMAL_128 + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
           override val childScans: scala.Seq[ScanMeta[_]] =
@@ -350,7 +350,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[CoalesceExec](
         "The backend for the dataframe coalesce method",
         ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
-            TypeSig.MAP + TypeSig.DAYTIME).nested(),
+            TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
           TypeSig.all),
         (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
           override def convertToGpu(): GpuExec =
@@ -363,7 +363,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
             TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
             TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-            TypeSig.DAYTIME).nested(),
+            TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
           override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -373,11 +373,11 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
               childPlans.head.convertIfNeeded())
         }),
-      // this is copied, only added TypeSig.DAYTIME check
+      // this is copied, only added TypeSig.DAYTIME and TypeSig.YEARMONTH check
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
           TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
@@ -450,7 +450,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         // NullType is actually supported
-        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.DAYTIME, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.DAYTIME + TypeSig.YEARMONTH,
+          TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[ProjectExec](
         "The backend for most select, withColumn and dropColumn statements",
