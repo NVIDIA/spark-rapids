@@ -177,7 +177,6 @@ object GpuSubstringIndex {
   }
 }
 
-// TODO - add to diff script
 // StringSplit is BinaryExpression in spark 2.x so needs to be separate
 abstract class StringSplitRegBinaryExpMeta[INPUT <: BinaryExpression](expr: INPUT,
     conf: RapidsConf,
