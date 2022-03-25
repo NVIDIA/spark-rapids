@@ -156,7 +156,7 @@ object LambdaReflection {
     // but not by the parent classloader detected by the plugin.
     //
     // This code is executed after the Plugin and ShimLoader has already been initialized.
-    // REPL classes are able to interact with the Plugin classes because the the REPL
+    // REPL classes are able to interact with the Plugin classes because the REPL
     // Thread context classloader is a descendant of the Plugin classloader.
 
     // scalastyle:off classforname
