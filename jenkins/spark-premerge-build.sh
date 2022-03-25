@@ -99,11 +99,25 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
+    # using UCX shuffle
     PYSP_TEST_spark_master=$SPARK_MASTER \
       TEST_PARALLEL=0 \
       PYSP_TEST_spark_cores_max=2 \
       PYSP_TEST_spark_executor_cores=1 \
       SPARK_SUBMIT_FLAGS="--conf spark.executorEnv.UCX_ERROR_SIGNALS=" \
+      PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+      PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+      PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+      PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+      ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
+
+    # using MT shuffle
+    PYSP_TEST_spark_master=$SPARK_MASTER \
+      TEST_PARALLEL=0 \
+      PYSP_TEST_spark_cores_max=2 \
+      PYSP_TEST_spark_executor_cores=1 \
+      SPARK_SUBMIT_FLAGS="--conf spark.rapids.shuffle.mode=MULTI_THREADED \
+        --conf spark.rapids.shuffle.multiThreaded.writer.threads=2" \
       PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
       PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
       PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \

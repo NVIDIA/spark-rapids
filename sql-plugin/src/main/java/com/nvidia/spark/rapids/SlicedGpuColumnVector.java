@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
+import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -48,6 +49,13 @@ public class SlicedGpuColumnVector extends ColumnVector {
   @Override
   public void close() {
     wrap.close();
+  }
+
+  public static ColumnarBatch incRefCount(ColumnarBatch batch) {
+    for (int i = 0; i < batch.numCols(); i++) {
+      ((SlicedGpuColumnVector)batch.column(i)).getBase().incRefCount();
+    }
+    return batch;
   }
 
   @Override

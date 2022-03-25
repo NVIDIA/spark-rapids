@@ -34,7 +34,8 @@ class GpuShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     aggregator: Option[Aggregator[K, V, C]] = None,
     mapSideCombine: Boolean = false,
     shuffleWriterProcessor: ShuffleWriteProcessor = new ShuffleWriteProcessor,
-    val useRapidsShuffle: Boolean,
+    val useGPUShuffle: Boolean,
+    val useMultiThreadedShuffle: Boolean,
     val metrics: Map[String, SQLMetric] = Map.empty)
   extends ShuffleDependency[K, V, C](rdd, partitioner, serializer, keyOrdering,
     aggregator, mapSideCombine, shuffleWriterProcessor) {

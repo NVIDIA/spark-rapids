@@ -183,14 +183,14 @@ object GpuDeviceManager extends Logging {
     conf.rmmExactAlloc.map(truncateToAlignment).getOrElse {
       val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
       val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
-      val reserveAmount = if (GpuShuffleEnv.shouldUseRapidsShuffle(conf)
-          && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
-        // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
-        // bounce buffers.
-        conf.rmmAllocReserve + conf.shuffleUcxBounceBuffersSize * 2
-      } else {
-        conf.rmmAllocReserve
-      }
+      val reserveAmount =
+        if (conf.isUCXShuffleManagerMode && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
+          // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
+          // bounce buffers.
+          conf.rmmAllocReserve + conf.shuffleUcxBounceBuffersSize * 2
+        } else {
+          conf.rmmAllocReserve
+        }
       var poolAllocation = truncateToAlignment(
         (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
       if (poolAllocation < minAllocation) {
