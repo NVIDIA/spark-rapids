@@ -151,6 +151,14 @@ object LambdaReflection {
   }
 
   def getClass(name: String): Class[_] = {
+    // Don't use ShimLoader.loadClass because in the REPL use case the classes
+    // compiled by REPL are accessible via the thread's context classloader,
+    // but not by the parent classloader detected by the plugin.
+    //
+    // This code is executed after the Plugin and ShimLoader has already been initialized.
+    // REPL classes are able to interact with the Plugin classes because the the REPL
+    // Thread context classloader is a descendant of the Plugin classloader.
+
     // scalastyle:off classforname
     Class.forName(name, true, Thread.currentThread().getContextClassLoader)
     // scalastyle:on classforname
