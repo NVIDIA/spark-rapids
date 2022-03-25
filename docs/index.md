@@ -34,4 +34,7 @@ Learn more on how to [get started](get-started/getting-started.md).
 A single pipeline, from ingest to data preparation to model training
 ![spark3cluster](/docs/img/spark3cluster.png)
 
+## Technical Support 
 
+If you need any help or have questions on this product, please contact us : 
+spark-rapids-support@nvidia.com
