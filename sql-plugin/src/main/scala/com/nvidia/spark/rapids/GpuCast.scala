@@ -1544,11 +1544,7 @@ case class GpuCast(
     }
   }
 
-  override def toString: String = if (ansiMode) {
-    s"ansi_cast($child as ${dataType.simpleString})"
-  } else {
-    s"cast($child as ${dataType.simpleString})"
-  }
+  override def toString: String = s"cast($child as ${dataType.simpleString})"
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (Cast.canCast(child.dataType, dataType)) {
