@@ -611,7 +611,7 @@ Accelerator supports are described below.
 </tr>
 <tr>
 <td rowspan="1">InMemoryTableScanExec</td>
-<td rowspan="1">Implementation of InMemoryTableScanExec to use GPU accelerated Caching</td>
+<td rowspan="1">Implementation of InMemoryTableScanExec to use GPU accelerated caching</td>
 <td rowspan="1">None</td>
 <td>Input/Output</td>
 <td>S</td>
