@@ -31,7 +31,7 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
-	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.3.0, Databricks 9.1 ML LTS or 10.4 ML LTS Runtime and GCP Dataproc 2.0
+	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, Databricks 9.1 ML LTS or 10.4 ML LTS Runtime and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
