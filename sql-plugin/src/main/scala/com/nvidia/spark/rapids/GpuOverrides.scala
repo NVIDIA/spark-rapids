@@ -2584,7 +2584,10 @@ object GpuOverrides extends Logging {
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.INT, TypeSig.INT)),
-      (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
+      (in, conf, p, r) => new BinaryExprMeta[GetArrayItem](in, conf, p, r) {
+        override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
+          GpuGetArrayItem(arr, ordinal, in.failOnError)
+      }),
     expr[GetMapValue](
       "Gets Value from a Map based on a key",
       ExprChecks.binaryProject(
@@ -2594,10 +2597,13 @@ object GpuOverrides extends Logging {
         ("map", TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
-      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
+      (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
+        override def convertToGpu(map: Expression, key: Expression): GpuExpression =
+          GpuGetMapValue(map, key, in.failOnError)
+      }),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
-        "Returns value for the given key in value if column is map",
+        "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
           TypeSig.DECIMAL_128 + TypeSig.MAP).nested(), TypeSig.all,
@@ -3111,6 +3117,16 @@ object GpuOverrides extends Logging {
         ("str", TypeSig.STRING, TypeSig.STRING),
         ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)),
+    expr[RegExpReplace](
+      "String replace using a regular expression pattern",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
+              .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
+            TypeSig.lit(TypeEnum.INT)))),
+      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
     expr[RegExpExtract](
       "Extract a specific group identified by a regular expression",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
