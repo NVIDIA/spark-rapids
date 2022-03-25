@@ -17,6 +17,7 @@
 package org.apache.spark.sql.catalyst.json
 
 import org.apache.spark.sql.catalyst.util.DateFormatter
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuJsonUtils {
   def dateFormatInRead(options: JSONOptions): String =

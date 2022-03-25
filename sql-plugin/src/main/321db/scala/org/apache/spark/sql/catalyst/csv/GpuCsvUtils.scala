@@ -17,6 +17,7 @@
 package org.apache.spark.sql.catalyst.csv
 
 import org.apache.spark.sql.catalyst.util.DateFormatter
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuCsvUtils {
   def dateFormatInRead(options: CSVOptions): String =
