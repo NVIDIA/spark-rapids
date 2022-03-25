@@ -43,7 +43,6 @@ import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.hadoop.util.HadoopInputFile
 import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
@@ -370,8 +369,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
     val filePath = new Path(new URI(file.filePath))
     //noinspection ScalaDeprecation
-    val inputFile = HadoopInputFile.fromPath(filePath, conf)
-    val footer = withResource(ParquetFileReader.open(inputFile))(_.getFooter)
+    val footer = ParquetFileReader.readFooter(conf, filePath,
+      ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
       val parquetFilters = SparkShimImpl.getParquetFilters(fileSchema, pushDownDate,
