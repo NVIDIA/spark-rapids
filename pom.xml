@@ -793,6 +793,7 @@
                         </executions>
                         <configuration>
                             <doclint>none</doclint>
+                            <detectOfflineLinks>false</detectOfflineLinks>
                         </configuration>
                     </plugin>
                 </plugins>
