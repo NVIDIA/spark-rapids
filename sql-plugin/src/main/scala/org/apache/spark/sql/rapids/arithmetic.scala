@@ -661,8 +661,7 @@ object GpuDivModLike extends Arm {
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
-  lazy val failOnError: Boolean =
-    SparkShimImpl.shouldFailDivByZero()
+  lazy val failOnError: Boolean = SQLConf.get.ansiEnabled
 
   override def nullable: Boolean = true
 
@@ -728,7 +727,7 @@ case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
-    failOnError: Boolean = SparkShimImpl.shouldFailDivByZero()) extends
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends
     ShimExpression with GpuExpression {
 
   override def toString: String = s"($left / $right)"
@@ -856,7 +855,7 @@ object GpuDecimalDivide {
 }
 
 case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = SparkShimImpl.shouldFailDivByZero())
+    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
       extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")

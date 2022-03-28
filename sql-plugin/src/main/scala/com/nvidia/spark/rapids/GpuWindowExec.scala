@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
-import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -346,7 +346,7 @@ object GpuWindowExec extends Arm {
               extractAndSave(_, preProject, preDedupe)).toArray.toSeq
             val newOrderSpec = orderSpec.map { so =>
               val newChild = extractAndSave(so.child, preProject, preDedupe)
-              SparkShimImpl.sortOrder(newChild, so.direction, so.nullOrdering)
+              SortOrder(newChild, so.direction, so.nullOrdering, Seq.empty)
             }.toArray.toSeq
             wsc.copy(partitionSpec = newPartitionSpec, orderSpec = newOrderSpec)
         }
@@ -403,11 +403,11 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   }
 
   lazy val gpuPartitionOrdering: Seq[SortOrder] = {
-    gpuPartitionSpec.map(SparkShimImpl.sortOrder(_, Ascending))
+    gpuPartitionSpec.map(SortOrder(_, Ascending))
   }
 
   lazy val cpuPartitionOrdering: Seq[SortOrder] = {
-    cpuPartitionSpec.map(SparkShimImpl.sortOrder(_, Ascending))
+    cpuPartitionSpec.map(SortOrder(_, Ascending))
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =

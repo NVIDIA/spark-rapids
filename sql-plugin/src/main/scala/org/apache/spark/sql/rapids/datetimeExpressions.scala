@@ -165,28 +165,14 @@ abstract class GpuTimeMath(
               l.incRefCount()
             }
           case _ =>
-            throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an " +
-              "argument only")
+            throw new UnsupportedOperationException("only column and interval arguments " +
+              "are supported")
         }
       }
     }
   }
 
   def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
-}
-
-case class GpuTimeSub(start: Expression,
-                       interval: Expression,
-                       timeZoneId: Option[String] = None)
-  extends GpuTimeMath(start, interval, timeZoneId) {
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
-
-  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
-    us.sub(us_s)
-  }
 }
 
 case class GpuDateAddInterval(start: Expression,

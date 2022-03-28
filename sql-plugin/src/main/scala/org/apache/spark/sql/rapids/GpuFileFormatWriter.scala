@@ -21,7 +21,7 @@ import java.util.{Date, UUID}
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{RapidsFileSourceMetaUtils, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.RapidsFileSourceMetaUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._
@@ -35,7 +35,7 @@ import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{WriteTaskResult, WriteTaskStats}
@@ -203,7 +203,7 @@ object GpuFileFormatWriter extends Logging {
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
-            .map(attr => SparkShimImpl.sortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
+            .map(attr => SortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
         val sortType = if (RapidsConf.STABLE_SORT.get(plan.conf)) {
           FullSortSingleBatch
         } else {

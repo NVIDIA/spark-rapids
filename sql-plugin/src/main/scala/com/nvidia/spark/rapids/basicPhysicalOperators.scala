@@ -23,7 +23,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimSparkPlan, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ShimSparkPlan, ShimUnaryExecNode}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -572,7 +572,7 @@ case class GpuRangeExec(
     } else {
       Descending
     }
-    output.map(a => SparkShimImpl.sortOrder(a, order))
+    output.map(a => SortOrder(a, order))
   }
 
   override def outputPartitioning: Partitioning = {
