@@ -134,6 +134,10 @@ final class CastExprMeta[INPUT <: Cast](
         recursiveTagExprForGpuCheck(keyFrom, keyTo, depth + 1)
         recursiveTagExprForGpuCheck(valueFrom, valueTo, depth + 1)
 
+      case (MapType(keyFrom, valueFrom, _), StringType) =>
+        recursiveTagExprForGpuCheck(keyFrom, StringType, depth + 1)
+        recursiveTagExprForGpuCheck(valueFrom, StringType, depth + 1)
+
       case _ =>
     }
   }

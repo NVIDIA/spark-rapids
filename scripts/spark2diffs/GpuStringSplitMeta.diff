@@ -3,16 +3,18 @@
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
 6c6
-<     extends BinaryExprMeta[StringSplit](expr, conf, parent, rule) {
+<     extends StringSplitRegBinaryExpMeta[StringSplit](expr, conf, parent, rule) {
 ---
->     extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
-10,11c10
+>     extends StringSplitRegExpMeta[StringSplit](expr, conf, parent, rule) {
+12,13c12
 <     // 2.x uses expr.pattern not expr.regex
-<     val regexp = extractLit(expr.pattern)
+<     delimInfo = checkRegExp(expr.pattern)
 ---
->     val regexp = extractLit(expr.regex)
-27,28d25
+>     delimInfo = checkRegExp(expr.regex)
+15,16d13
 <     // 2.x has no limit parameter
 <     /*
-32d28
+26d22
 <     */
+27a24
+> 

@@ -14,79 +14,79 @@
 <       meta: RapidsMeta[_, _],
 ---
 >       meta: RapidsMeta[_, _, _],
-562c562
+586c586
 <   val DECIMAL_64: TypeSig = decimal(GpuOverrides.DECIMAL64_MAX_PRECISION)
 ---
 >   val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
-569c569
+593c593
 <   val DECIMAL_128: TypeSig = decimal(GpuOverrides.DECIMAL128_MAX_PRECISION)
 ---
 >   val DECIMAL_128: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
-703c703
+733c733
 <   def tag(meta: RapidsMeta[_, _]): Unit
 ---
 >   def tag(meta: RapidsMeta[_, _, _]): Unit
-716c716
+746c746
 <     meta: RapidsMeta[_, _],
 ---
 >     meta: RapidsMeta[_, _, _],
-773c773
+803c803
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-777c777
+807c807
 <   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-835c835
+865c865
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-846c846
+876c876
 <   override def tag(meta: RapidsMeta[_, _]): Unit =
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit =
-872c872
+902c902
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-893c893
+923c923
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-968c968
+998c998
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1020c1020
+1050c1050
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1063c1063
+1093c1093
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1113c1113
+1143c1143
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1159c1159
+1189c1189
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1195c1195
+1225c1225
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1345c1345
+1376c1376
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1355c1355
+1386c1386
 <   private[this] def tagBase(meta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-1690,1698d1689
+1721,1729d1720
 <   def getSparkVersion: String = {
 <     // hack for databricks, try to find something more reliable?
 <     if (SPARK_BUILD_USER.equals("Databricks")) {
@@ -96,23 +96,19 @@
 <     }
 <   }
 < 
-1713c1704
+1744c1735
 <     println(s"against version ${getSparkVersion} of Spark. Most of this should still")
 ---
 >     println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
-1721c1712
-<     println(s"supports a precision up to ${GpuOverrides.DECIMAL64_MAX_PRECISION} digits. Note that")
----
->     println(s"supports a precision up to ${DType.DECIMAL64_MAX_PRECISION} digits. Note that")
-1823c1814
+1852c1843
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-1906c1897
+1935c1926
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2010c2001
+2039c2030
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>

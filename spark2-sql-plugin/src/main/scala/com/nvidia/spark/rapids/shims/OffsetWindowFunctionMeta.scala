@@ -18,43 +18,58 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, ExprMeta, GpuOverrides, RapidsConf, RapidsMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{Lag, Lead, Literal, OffsetWindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Expression, Lag, Lead, Literal, OffsetWindowFunction}
 import org.apache.spark.sql.types.IntegerType
 
+/**
+ * Spark 3.1.1-specific replacement for com.nvidia.spark.rapids.OffsetWindowFunctionMeta.
+ * This is required primarily for two reasons:
+ *   1. com.nvidia.spark.rapids.OffsetWindowFunctionMeta (compiled against Spark 3.0.x)
+ *      fails class load in Spark 3.1.x. (`expr.input` is not recognized as an Expression.)
+ *   2. The semantics of offsets in LAG() are reversed/negated in Spark 3.1.1.
+ *      E.g. The expression `LAG(col, 5)` causes Lag.offset to be set to `-5`,
+ *      as opposed to `5`, in prior versions of Spark.
+ * This class adjusts the LAG offset to use similar semantics to Spark 3.0.x.
+ */
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
-    extends ExprMeta[INPUT](expr, conf, parent, rule) {
+  extends ExprMeta[INPUT](expr, conf, parent, rule) {
   lazy val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
-  lazy val offset: BaseExprMeta[_] = {
+  lazy val adjustedOffset: Expression = {
     expr match {
-      case _: Lead => // Supported.
-      case _: Lag =>  // Supported.
+      case lag: Lag =>
+        GpuOverrides.extractLit(lag.offset) match {
+         case Some(Literal(offset: Int, IntegerType)) =>
+            Literal(-offset, IntegerType)
+         case _ =>
+           throw new IllegalStateException(
+             s"Only integer literal offsets are supported for LAG. Found:${lag.offset}")
+        }
+      case lead: Lead =>
+        GpuOverrides.extractLit(lead.offset) match {
+          case Some(Literal(offset: Int, IntegerType)) =>
+            Literal(offset, IntegerType)
+          case _ =>
+            throw new IllegalStateException(
+              s"Only integer literal offsets are supported for LEAD. Found:${lead.offset}")
+        }
       case other =>
-        throw new IllegalStateException(
-          s"Only LEAD/LAG offset window functions are supported. Found: $other")
+        throw new IllegalStateException(s"$other is not a supported window function")
     }
-
-    val literalOffset = GpuOverrides.extractLit(expr.offset) match {
-      case Some(Literal(offset: Int, IntegerType)) =>
-        Literal(offset, IntegerType)
-      case _ =>
-        throw new IllegalStateException(
-          s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
-    }
-
-    GpuOverrides.wrapExpr(literalOffset, conf, Some(this))
   }
+  lazy val offset: BaseExprMeta[_] =
+    GpuOverrides.wrapExpr(adjustedOffset, conf, Some(this))
   lazy val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
 
   override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
 
   override def tagExprForGpu(): Unit = {
     expr match {
-      case _: Lead => // Supported.
-      case _: Lag =>  // Supported.
+      case Lead(_,_,_) => // Supported.
+      case Lag(_,_,_) =>  // Supported.
       case other =>
         willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
     }

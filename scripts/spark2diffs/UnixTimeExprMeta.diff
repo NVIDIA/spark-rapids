@@ -2,13 +2,5 @@
 <    parent: Option[RapidsMeta[_, _]],
 ---
 >    parent: Option[RapidsMeta[_, _, _]],
-36,37d35
-<                 // Spark 2.x - ansi not available
-<                 /*
-40,41c38
-<                 } else */
-<                  if (!conf.incompatDateFormats) {
----
->                 } else if (!conf.incompatDateFormats) {
-76a74
+30a31
 > 

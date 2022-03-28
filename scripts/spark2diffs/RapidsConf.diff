@@ -2,28 +2,49 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
-311c311
+23a24,25
+> import ai.rapids.cudf.Cuda
+> 
+311c313
 <     .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
 ---
 >     .createWithDefault(ByteUnit.GiB.toBytes(1))
-361c361
+368c370
 <       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
 ---
 >       .createWithDefault(ByteUnit.MiB.toBytes(640))
-393c393
+400c402
 <     .createWithDefault(ByteUnit.MiB.toBytes(8).toLong)
 ---
 >     .createWithDefault(ByteUnit.MiB.toBytes(8))
-1378c1378
-<         |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
+1372c1374
+<         |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
 ---
->         |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
-1433a1434,1437
+>         |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
+1427a1430,1433
 >       printToggleHeader("Scans\n")
 >     }
 >     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
 >     if (asTable) {
-1440c1444
+1434c1440
 <     // com.nvidia.spark.rapids.python.PythonConfEntries.init()
 ---
 >     com.nvidia.spark.rapids.python.PythonConfEntries.init()
+1506d1511
+<   // Spark 2.x doesn't have access to Cuda in CUDF so just allow
+1508a1514,1528
+>     if ("ASYNC".equalsIgnoreCase(pool)) {
+>       val driverVersion = Cuda.getDriverVersion
+>       val runtimeVersion = Cuda.getRuntimeVersion
+>       var fallbackMessage: Option[String] = None
+>       if (runtimeVersion < 11020 || driverVersion < 11020) {
+>         fallbackMessage = Some("CUDA runtime/driver does not support the ASYNC allocator")
+>       } else if (driverVersion < 11050) {
+>         fallbackMessage = Some("CUDA drivers before 11.5 have known incompatibilities with " +
+>           "the ASYNC allocator")
+>       }
+>       if (fallbackMessage.isDefined) {
+>         logWarning(s"${fallbackMessage.get}, falling back to ARENA")
+>         pool = "ARENA"
+>       }
+>     }

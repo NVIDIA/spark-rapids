@@ -24,6 +24,9 @@ import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcFile, O
 import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 
+import org.apache.spark.sql.execution.datasources.orc.OrcUtils
+import org.apache.spark.sql.types.DataType
+
 trait OrcShims311until320Base {
 
   // read data to buffer
@@ -96,4 +99,10 @@ trait OrcShims311until320Base {
   def forcePositionalEvolution(conf:Configuration): Boolean = {
     false
   }
+
+  // orcTypeDescriptionString is renamed to getOrcSchemaString from 3.3+
+  def getOrcSchemaString(dt: DataType): String = {
+    OrcUtils.orcTypeDescriptionString(dt)
+  }
+
 }
