@@ -26,7 +26,10 @@ object DecimalUtil {
       IllegalArgumentException(dtype + " is not supported for GPU processing yet."))
   }
 
- def createCudfDecimal(precision: Int, scale: Int): Option[String] = {
+ def createCudfDecimal(dt: DecimalType): Option[String] =
+   createInternalCudfDecimal(dt.precision, dt.scale)
+
+ def createInternalCudfDecimal(precision: Int, scale: Int): Option[String] = {
     if (precision <= GpuOverrides.DECIMAL32_MAX_PRECISION) {
       Some("DECIMAL32")
     } else if (precision <= GpuOverrides.DECIMAL64_MAX_PRECISION) {
@@ -59,13 +62,16 @@ object DecimalUtil {
         // Decimal supportable check has been conducted in the GPU plan overriding stage.
         // So, we don't have to handle decimal-supportable problem at here.
         val dt = dtype.asInstanceOf[DecimalType]
-        createCudfDecimal(dt.precision, dt.scale)
+        createCudfDecimal(dt)
+      case _: GpuUnsignedIntegerType => Some("UINT32")
+      case _: GpuUnsignedLongType => Some("UINT64")
       case _ => None
     }
   }
 
   /**
    * Get the number of decimal places needed to hold the integral type held by this column
+   * Keep here for Spark 2.x so we don't need CUDF
    */
   def getPrecisionForIntegralType(input: String): Int = input match {
     case "INT8" =>  3 // -128 to 127
@@ -74,12 +80,14 @@ object DecimalUtil {
     case "INT64" => 19 // -9223372036854775808 to 9223372036854775807
     case t => throw new IllegalArgumentException(s"Unsupported type $t")
   }
+
   // The following types were copied from Spark's DecimalType class
   private val BooleanDecimal = DecimalType(1, 0)
 
   def optionallyAsDecimalType(t: DataType): Option[DecimalType] = t match {
     case dt: DecimalType => Some(dt)
     case ByteType | ShortType | IntegerType | LongType =>
+      // Spark 2.x diff using string for type so don't need CUDF
       val prec = DecimalUtil.getPrecisionForIntegralType(getNonNestedRapidsType(t))
       Some(DecimalType(prec, 0))
     case BooleanType => Some(BooleanDecimal)

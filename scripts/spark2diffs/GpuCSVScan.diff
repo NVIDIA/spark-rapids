@@ -38,17 +38,13 @@
 <     /*
 113d103
 <     */
-143c133
-<       dateFormatInRead(parsedOptions).foreach { dateFormat =>
----
->       ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-190,192c180
+154,156c144
 < 
 <       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
 <       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
 ---
 >       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
-195c183
+159c147
 <       timestampFormatInRead(parsedOptions).foreach { tsFormat =>
 ---
->       ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
+>       FileOptionsShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
