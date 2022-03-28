@@ -64,4 +64,6 @@ class ShimVectorizedColumnReader(
       datetimeRebaseMode,
       TimeZone.getDefault.getID, // use default zone because of no rebase
       int96RebaseMode,
-      TimeZone.getDefault.getID) // use default zone because of will throw exception if rebase
+      TimeZone.getDefault.getID,
+      // TODO: wait https://github.com/NVIDIA/spark-rapids/pull/5124 to merge
+      null) // use default zone because of will throw exception if rebase

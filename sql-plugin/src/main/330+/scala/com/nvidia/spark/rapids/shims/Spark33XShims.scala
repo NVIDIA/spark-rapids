@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.GpuShuffleMeta
-import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterval, GpuTimeAdd}
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -312,6 +312,39 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuLessThanOrEqual(lhs, rhs)
+        }),
+      GpuOverrides.expr[Alias](
+        "Gives a column a name",
+        ExprChecks.unaryProjectAndAstInputMatchesOutput(
+          TypeSig.astTypes,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
+              + TypeSig.DECIMAL_128 + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
+          TypeSig.all),
+        (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression =
+            GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
+        }),
+      GpuOverrides.expr[DivideYMInterval](
+        "Year-month interval * operator",
+        ExprChecks.binaryProject(
+          TypeSig.YEARMONTH,
+          TypeSig.YEARMONTH,
+          ("lhs", TypeSig.YEARMONTH, TypeSig.YEARMONTH),
+          ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[DivideYMInterval](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuDivideYMInterval(lhs, rhs)
+        }),
+      GpuOverrides.expr[DivideDTInterval](
+        "Day-time interval * operator",
+        ExprChecks.binaryProject(
+          TypeSig.DAYTIME,
+          TypeSig.DAYTIME,
+          ("lhs", TypeSig.DAYTIME, TypeSig.DAYTIME),
+          ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[DivideDTInterval](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuDivideDTInterval(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map
@@ -456,7 +489,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "The backend for most select, withColumn and dropColumn statements",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-              TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+              TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.YEARMONTH + TypeSig.DAYTIME).nested(),
           TypeSig.all),
         (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
       GpuOverrides.exec[FilterExec](

@@ -867,3 +867,57 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
             conf=ansi_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=0, max_exp=5, special_cases=[])], ids=idfn)
+def test_day_time_interval_division_number_no_overflow1(data_gen):
+    gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-5000 * 365 * 86400), max_value=timedelta(seconds=5000 * 365 * 86400))),
+                ('_c2', data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        # avoid dividing by 0
+        lambda spark: gen_df(spark, gen_list).selectExpr("_c1 / case when _c2 = 0 then cast(1 as {}) else _c2 end".format(to_cast_string(data_gen.data_type))))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=-5, max_exp=0, special_cases=[])], ids=idfn)
+def test_day_time_interval_division_number_no_overflow2(data_gen):
+    gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
+                ('_c2', data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        # avoid dividing by 0
+        lambda spark: gen_df(spark, gen_list).selectExpr("_c1 / case when _c2 = 0 then cast(1 as {}) else _c2 end".format(to_cast_string(data_gen.data_type))))
+
+def _get_overflow_df_2cols(spark, data_types, values, expr):
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize([values]),
+        StructType([
+            StructField('a', data_types[0]),
+            StructField('b', data_types[1])
+        ])
+    ).selectExpr(expr)
+
+# test interval division overflow, such as interval / 0, Long.MinValue / -1 ...
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_type,value_pair', [
+    (ByteType(), [timedelta(seconds=1), 0]),
+    (ShortType(), [timedelta(seconds=1), 0]),
+    (IntegerType(), [timedelta(seconds=1), 0]),
+    (LongType(), [timedelta(seconds=1), 0]),
+    (FloatType(), [timedelta(seconds=1), 0.0]),
+    (FloatType(), [timedelta(seconds=1), -0.0]),
+    (DoubleType(), [timedelta(seconds=1), 0.0]),
+    (DoubleType(), [timedelta(seconds=1), -0.0]),
+    (FloatType(), [timedelta(seconds=1), float('NaN')]),
+    (DoubleType(), [timedelta(seconds=1), float('NaN')]),
+    (FloatType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
+    (DoubleType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
+    (FloatType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
+    (DoubleType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
+    (LongType(), [MIN_DAY_TIME_INTERVAL, -1]),
+    (FloatType(), [timedelta(seconds=0), 0.0]),   # 0 / 0 = NaN
+    (DoubleType(), [timedelta(seconds=0), 0.0]),  # 0 / 0 = NaN
+], ids=idfn)
+def test_day_time_interval_division_overflow(data_type, value_pair):
+    assert_gpu_and_cpu_error(
+        df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
+        conf={},
+        error_message='ArithmeticException')

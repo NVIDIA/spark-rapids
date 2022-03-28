@@ -135,6 +135,7 @@ object GpuTypeShims {
    */
   def supportToScalarForType(t: DataType): Boolean = {
     t match {
+      case _: YearMonthIntervalType => true
       case _: DayTimeIntervalType => true
       case _ => false
     }
@@ -143,8 +144,13 @@ object GpuTypeShims {
   /**
    * Convert the given value to Scalar
    */
-  def toScalarForType(t: DataType, v: Any) = {
+  def toScalarForType(t: DataType, v: Any): Scalar = {
     t match {
+      case _: YearMonthIntervalType => v match {
+        case i: Int => Scalar.fromInt(i)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+            s" for IntType, expecting int")
+      }
       case _: DayTimeIntervalType => v match {
         case l: Long => Scalar.fromLong(l)
         case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +

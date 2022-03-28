@@ -250,7 +250,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-          + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.DAYTIME)
+          + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.YEARMONTH + TypeSig.DAYTIME)
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),

@@ -28,9 +28,11 @@ object RapidsErrorUtils {
     }
   }
 
-  def mapKeyNotExistError(key: String, isElementAtF: Boolean = false): NoSuchElementException = {
+  // TODO: wait https://github.com/NVIDIA/spark-rapids/pull/5133 to fix
+  def mapKeyNotExistError(key: String, context: String,
+      isElementAtF: Boolean = false): NoSuchElementException = {
     // For now, the default argument is false. The caller sets the correct value accordingly.
-    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF)
+    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF, context)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
