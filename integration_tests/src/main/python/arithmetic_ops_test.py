@@ -867,3 +867,11 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
             conf=ansi_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=-3, max_exp=5, special_cases=[0.0])], ids=idfn)
+def test_day_time_interval_multiply_number(data_gen):
+    gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
+                ('_c2', data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen_list).selectExpr("_c1 * _c2"))

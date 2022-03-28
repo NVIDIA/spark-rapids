@@ -907,6 +907,105 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
+  def testBothCpuGpuExpectedException[T <: Throwable](
+      testName: String,
+      expectedException: T => Boolean,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
+    // test cpu throws an exception
+    testCpuExpectedException(testName + " ,cpu", expectedException, df, conf, repart, sort,
+      maxFloatDiff, incompat, execsAllowedNonGpu, sortBeforeRepart)(fun)
+
+    // then test gpu throws an exception
+    testGpuExpectedException(testName + " ,gpu", expectedException, df, conf, repart, sort,
+      maxFloatDiff, incompat, execsAllowedNonGpu, sortBeforeRepart)(fun)
+  }
+
+  def testCpuExpectedException[T <: Throwable](
+      testName: String,
+      expectedException: T => Boolean,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
+    val clazz = classTag.runtimeClass
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+
+    test(qualifiedTestName) {
+      val t = Try({
+        withCpuSparkSession( session => {
+          var data = df(session)
+          if (repart > 0) {
+            // repartition the data so it is turned into a projection,
+            // not folded into the table scan exec
+            data = data.repartition(repart)
+          }
+          fun(data).collect()
+        }, testConf)
+        fail("Cpu not throw an exception")
+      })
+      t match {
+        case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
+          assert(expectedException(e.asInstanceOf[T]))
+        case Failure(e) => throw e
+        case _ => fail("Expected an exception, but got none")
+      }
+    }
+  }
+
+  def testGpuExpectedException[T <: Throwable](
+      testName: String,
+      expectedException: T => Boolean,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
+    val clazz = classTag.runtimeClass
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+
+    test(qualifiedTestName) {
+      val t = Try({
+        withGpuSparkSession( session => {
+          var data = df(session)
+          if (repart > 0) {
+            // repartition the data so it is turned into a projection,
+            // not folded into the table scan exec
+            data = data.repartition(repart)
+          }
+          fun(data).collect()
+        }, testConf)
+        fail("Gpu not throw an exception")
+      })
+      t match {
+        case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
+          assert(expectedException(e.asInstanceOf[T]))
+        case Failure(e) => throw e
+        case _ => fail("Expected an exception, but got none")
+      }
+    }
+  }
+
   def INCOMPAT_testSparkResultsAreEqual2(
       testName: String,
       dfA: SparkSession => DataFrame,
