@@ -366,56 +366,67 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       conf : Configuration,
       filters: Array[Filter],
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
-
-    val filePath = new Path(new URI(file.filePath))
-    //noinspection ScalaDeprecation
-    val footer = ParquetFileReader.readFooter(conf, filePath,
-      ParquetMetadataConverter.range(file.start, file.start + file.length))
-    val fileSchema = footer.getFileMetaData.getSchema
-    val pushedFilters = if (enableParquetFilterPushDown) {
-      val parquetFilters = SparkShimImpl.getParquetFilters(fileSchema, pushDownDate,
-        pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
-        isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
-      filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
-    } else {
-      None
-    }
-
-    val hasInt96Timestamps = isParquetTimeInInt96(fileSchema)
-
-    val isCorrectedRebaseForThisFile =
-      GpuParquetPartitionReaderFactoryBase.isCorrectedRebaseMode(
-        footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
-
-    val isCorrectedInt96RebaseForThisFile =
-      GpuParquetPartitionReaderFactoryBase.isCorrectedInt96RebaseMode(
-        footer.getFileMetaData.getKeyValueMetaData.get, isInt96CorrectedRebase)
-
-    val blocks = if (pushedFilters.isDefined) {
-      // Use the ParquetFileReader to perform dictionary-level filtering
-      ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
+    withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
+      val filePath = new Path(new URI(file.filePath))
       //noinspection ScalaDeprecation
-      withResource(new ParquetFileReader(conf, footer.getFileMetaData, filePath,
-        footer.getBlocks, Collections.emptyList[ColumnDescriptor])) { parquetReader =>
-        parquetReader.getRowGroups
+      val footer = withResource(new NvtxRange("readFooter", NvtxColor.YELLOW)) { _ =>
+        ParquetFileReader.readFooter(conf, filePath,
+          ParquetMetadataConverter.range(file.start, file.start + file.length))
       }
-    } else {
-      footer.getBlocks
+      val fileSchema = footer.getFileMetaData.getSchema
+      val pushedFilters = if (enableParquetFilterPushDown) {
+        val parquetFilters = SparkShimImpl.getParquetFilters(fileSchema, pushDownDate,
+          pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
+          isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
+        filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
+      } else {
+        None
+      }
+
+      val hasInt96Timestamps = isParquetTimeInInt96(fileSchema)
+
+      val isCorrectedRebaseForThisFile =
+        GpuParquetPartitionReaderFactoryBase.isCorrectedRebaseMode(
+          footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
+
+      val isCorrectedInt96RebaseForThisFile =
+        GpuParquetPartitionReaderFactoryBase.isCorrectedInt96RebaseMode(
+          footer.getFileMetaData.getKeyValueMetaData.get, isInt96CorrectedRebase)
+
+      val blocks = if (pushedFilters.isDefined) {
+        withResource(new NvtxRange("getBlocksWithFilter", NvtxColor.CYAN)) { _ =>
+          // Use the ParquetFileReader to perform dictionary-level filtering
+          ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
+          //noinspection ScalaDeprecation
+          withResource(new ParquetFileReader(conf, footer.getFileMetaData, filePath,
+            footer.getBlocks, Collections.emptyList[ColumnDescriptor])) { parquetReader =>
+            parquetReader.getRowGroups
+          }
+        }
+      } else {
+        footer.getBlocks
+      }
+
+      val (clipped, clippedSchema) =
+        withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
+          val clippedSchemaTmp = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
+            isCaseSensitive)
+          // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
+          // everything in readDataSchema, even if it is not in fileSchema we want to remove those
+          // for our own purposes
+          val clippedSchema =
+          GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
+            fileSchema, isCaseSensitive)
+          val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
+          val clipped =
+            ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala, isCaseSensitive)
+          (clipped, clippedSchema)
+        }
+
+      ParquetFileInfoWithBlockMeta(filePath, clipped, file.partitionValues,
+        clippedSchema, isCorrectedInt96RebaseForThisFile, isCorrectedRebaseForThisFile,
+        hasInt96Timestamps)
     }
-
-    val clippedSchemaTmp = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
-      isCaseSensitive)
-    // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
-    // everything in readDataSchema, even if it is not in fileSchema we want to remove those
-    // for our own purposes
-    val clippedSchema = GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
-      fileSchema, isCaseSensitive)
-    val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
-    val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala, isCaseSensitive)
-
-    ParquetFileInfoWithBlockMeta(filePath, clipped, file.partitionValues,
-      clippedSchema, isCorrectedInt96RebaseForThisFile, isCorrectedRebaseForThisFile,
-      hasInt96Timestamps)
   }
 }
 
