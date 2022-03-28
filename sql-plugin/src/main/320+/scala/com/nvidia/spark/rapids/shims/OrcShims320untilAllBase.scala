@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ArrayBuffer
@@ -27,8 +28,7 @@ import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.impl.reader.StripePlanner
 import org.apache.orc.impl.writer.StreamOptions
 
-// 320+ ORC shims
-object OrcShims {
+trait OrcShims320untilAllBase {
 
   // the ORC Reader in non-CDH Spark is closeable
   def withReader[T <: Reader, V](r: T)(block: T => V): V = {
