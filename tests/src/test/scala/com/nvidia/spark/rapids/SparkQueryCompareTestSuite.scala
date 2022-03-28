@@ -150,6 +150,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def enableCsvConf(): SparkConf = {
     new SparkConf()
+        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_DECIMALS.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_FLOATS.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_DOUBLES.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_DECIMALS.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat

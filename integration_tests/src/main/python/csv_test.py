@@ -167,7 +167,10 @@ _empty_double_schema = StructType([
     StructField('number', DoubleType()),
     StructField('ignored_b', StringType())])
 
-_enable_all_types_conf = {'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
+_enable_all_types_conf = {'spark.rapids.sql.csv.read.float.enabled': 'true',
+        'spark.rapids.sql.csv.read.double.enabled': 'true',
+        'spark.rapids.sql.csv.read.decimal.enabled': 'true',
+        'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
 def read_csv_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
     def read_impl(spark):
