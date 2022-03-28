@@ -225,8 +225,9 @@ pipeline {
 
             steps {
                 script {
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
+                    unstash "source_tree"
                     container('docker-build') {
-                        unstash "source_tree"
                         // check if pre-merge dockerfile modified
                         def dockerfileModified = sh(returnStdout: true,
                                 script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
@@ -268,8 +269,9 @@ pipeline {
             }
             steps {
                 script {
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
+                    unstash "source_tree"
                     container('cpu') {
-                        unstash "source_tree"
                         sh """
                             bash -c 'dbfs mkdirs $INIT_SCRIPTS_DIR'
                             bash -c 'dbfs cp --overwrite jenkins/databricks/init_cudf_udf.sh $INIT_SCRIPTS_DIR'
@@ -356,7 +358,6 @@ pipeline {
                     steps {
                         script {
                             unstash "source_tree"
-
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
@@ -501,7 +502,9 @@ pipeline {
                     guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
                     githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                    if (currentBuild.currentResult != "ABORTED") { // skip ABORTED result to avoid status overwrite
+                        githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                    }
                 }
 
                 if (db_build) {
@@ -666,15 +669,16 @@ void checkoutCode(String url, String sha) {
         ]
     )
 
-    stash(name: "source_tree", includes: "**,.git/**")
+    stash(name: "source_tree", includes: "**,.git/**", useDefaultExcludes: false)
 }
 
 boolean databricksCodeChanged() {
     def output = sh(script: '''
             # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
             BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
-            git --no-pager diff --name-only ${BASE_REF} HEAD | grep -E 'sql-plugin/src/main/.*[0-9x-]db/|databricks'
+            git --no-pager diff --name-only ${BASE_REF} HEAD | grep -E 'sql-plugin/src/main/.*[0-9x-]db/|databricks || true'
         ''', returnStdout: true).trim()
+
     if (output) {
         echo "Databricks-related changed files: \n${output}"
         return true
