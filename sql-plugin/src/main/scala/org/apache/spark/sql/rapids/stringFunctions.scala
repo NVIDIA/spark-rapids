@@ -776,27 +776,24 @@ object GpuRegExpUtils {
    * Determine if a string contains back-references such as `$1` but ignoring
    * if preceded by escape character.
    */
-  def backrefReplace(s: String): String = {
+  def backrefReplace(s: String): (Boolean, String) = {
     val b = new StringBuilder
+    var hasBackrefSymbol = false
     var i = 0
     while (i < s.length) {
       if (s.charAt(i) == '\\') {
         b.append('\\')
         i += 2
       } else if (s.charAt(i) == '$' && i+1 < s.length && s.charAt(i+1).isDigit) {
-        b.append('\\')
-        var j = i + 1
-        while (j < s.length && s.charAt(j).isDigit) {
-          b.append(s.charAt(j))
-          j += 1
-        }
-        i = j + 1
+        if (!hasBackrefSymbol) hasBackrefSymbol = true
+        b.append('\\').append(s.charAt(i+1))
+        i += 2
       } else {
         b.append(s.charAt(i))
         i += 1
       }
     }
-    b.toString
+    if (hasBackrefSymbol) true -> b.toString else false -> s
   }
 
   /**

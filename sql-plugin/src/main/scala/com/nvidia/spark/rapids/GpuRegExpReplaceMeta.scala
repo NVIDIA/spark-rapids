@@ -53,9 +53,12 @@ class GpuRegExpReplaceMeta(
 
     expr.rep match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        replacement = Some(
-          GpuRegExpUtils.unescapeReplaceString(
-            GpuRegExpUtils.backrefReplace(s.toString)))
+        GpuRegExpUtils.backrefReplace(
+          GpuRegExpUtils.unescapeReplaceString(s.toString)) match {
+          case (hasBackref, convertedRep) =>
+            containsBackref = hasBackref
+            replacement = Some(convertedRep)
+        }
       case _ =>
     }
 
