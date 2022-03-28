@@ -174,8 +174,9 @@ pipeline {
                         skipped = true
                         return
                     }
+                    checkoutCode()
                     // check if need trigger databricks CI build
-                    if (title ==~ /.*\[databricks\].*/) {
+                    if (title ==~ /.*\[databricks\].*/ || databricksCodeChanged()) {
                         db_build = true
                     }
                 }
@@ -684,4 +685,34 @@ String stashPytestResult(String name) {
     }
 
     return result
+}
+
+void checkoutCode() {
+    checkout(
+        changelog: false,
+        poll: true,
+        scm: [
+            $class           : 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
+            submoduleCfg     : [],
+            userRemoteConfigs: [[
+                                    credentialsId: 'github-token',
+                                    url          : githubHelper.getCloneUrl(),
+                                    refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
+        ]
+    )
+
+    stash(name: "source_tree", includes: "**,.git/**")
+}
+
+boolean databricksCodeChanged() {
+    def output = sh(script: '''
+            # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
+            BASE_REF=git --no-pager log --oneline -1 | awk '{ print $NF }'
+            git --no-pager diff --name-only ${BASE_REF} HEAD | grep -E 'sql-plugin/src/main/.*[0-9x-]db/|databricks'
+        ''', returnStdout: true).trim()
+    if (output) {
+        echo "Databricks related changed files: \n${output}"
+        return true
+    }
+    return false
 }
