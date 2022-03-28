@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ArrayBuffer
@@ -27,8 +28,7 @@ import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.impl.reader.StripePlanner
 import org.apache.orc.impl.writer.StreamOptions
 
-// 320+ ORC shims
-object OrcShims {
+trait OrcShims320untilAllBase {
 
   // the ORC Reader in non-CDH Spark is closeable
   def withReader[T <: Reader, V](r: T)(block: T => V): V = {
@@ -63,7 +63,7 @@ object OrcShims {
 
   // create reader properties builder
   def newDataReaderPropertiesBuilder(compressionSize: Int,
-      compressionKind: CompressionKind, typeCount: Int): DataReaderProperties.Builder = {
+    compressionKind: CompressionKind, typeCount: Int): DataReaderProperties.Builder = {
     val compression = new InStream.StreamOptions()
       .withBufferSize(compressionSize).withCodec(OrcCodecPool.getCodec(compressionKind))
     DataReaderProperties.builder().withCompression(compression)
@@ -71,7 +71,7 @@ object OrcShims {
 
   // create ORC out stream
   def newOrcOutStream(name: String, bufferSize: Int, codec: CompressionCodec,
-      receiver: PhysicalWriter.OutputReceiver): OutStream = {
+    receiver: PhysicalWriter.OutputReceiver): OutStream = {
     val options = new StreamOptions(bufferSize)
     if (codec != null) {
       options.withCodec(codec, codec.getDefaultOptions)
