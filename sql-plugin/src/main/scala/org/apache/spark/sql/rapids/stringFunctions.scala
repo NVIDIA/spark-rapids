@@ -786,8 +786,15 @@ object GpuRegExpUtils {
         i += 2
       } else if (s.charAt(i) == '$' && i+1 < s.length && s.charAt(i+1).isDigit) {
         if (!hasBackrefSymbol) hasBackrefSymbol = true
-        b.append('\\').append(s.charAt(i+1))
-        i += 2
+        b.append('\\')
+        var j = i + 1
+        var groupNumber = 0
+        while (j + 1 < s.length && s.charAt(j).isDigit) {
+          groupNumber = groupNumber * 10 + s.charAt(j)
+          j += 1
+        }
+        b.append(groupNumber + 1)
+        i = j + 1
       } else {
         b.append(s.charAt(i))
         i += 1
