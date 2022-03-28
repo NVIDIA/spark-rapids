@@ -340,6 +340,13 @@ object RapidsConf {
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
 
+  val RMM_EXACT_ALLOC = conf("spark.rapids.memory.gpu.allocSize")
+      .doc("The exact size in byte that RMM should allocate. This is intended to only be " +
+          "used for testing.")
+      .internal() // If this becomes public we need to add in checks for the value when it is used.
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional
+
   val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
         s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
@@ -882,14 +889,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // TODO should we change this config?
-  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
-      .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
-          "format for Spark includes a timezone at the end. Anything except the UTC timezone is " +
-          "not supported. Timestamps after 2038 and before 1902 are also not supported.")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -898,6 +897,17 @@ object RapidsConf {
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
+    .doc("When set to true enables all avro input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_AVRO_READ = conf("spark.rapids.sql.format.avro.read.enabled")
+    .doc("When set to true enables avro input acceleration")
     .booleanConf
     .createWithDefault(false)
 
@@ -1175,9 +1185,9 @@ object RapidsConf {
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.1.1, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly." +
       "When tested in a combined jar with other Shims, it's expected that the provided " +
       "implementation follows the same convention as existing Spark shims. If its class" +
@@ -1492,15 +1502,26 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
   lazy val rmmPool: String = {
-    val pool = get(RMM_POOL)
-    if ("ASYNC".equalsIgnoreCase(pool) &&
-        (Cuda.getRuntimeVersion < 11020 || Cuda.getDriverVersion < 11020)) {
-      logWarning("CUDA runtime/driver does not support the ASYNC allocator, falling back to ARENA")
-      "ARENA"
-    } else {
-      pool
+    var pool = get(RMM_POOL)
+    if ("ASYNC".equalsIgnoreCase(pool)) {
+      val driverVersion = Cuda.getDriverVersion
+      val runtimeVersion = Cuda.getRuntimeVersion
+      var fallbackMessage: Option[String] = None
+      if (runtimeVersion < 11020 || driverVersion < 11020) {
+        fallbackMessage = Some("CUDA runtime/driver does not support the ASYNC allocator")
+      } else if (driverVersion < 11050) {
+        fallbackMessage = Some("CUDA drivers before 11.5 have known incompatibilities with " +
+          "the ASYNC allocator")
+      }
+      if (fallbackMessage.isDefined) {
+        logWarning(s"${fallbackMessage.get}, falling back to ARENA")
+        pool = "ARENA"
+      }
     }
+    pool
   }
+
+  lazy val rmmExactAlloc: Option[Long] = get(RMM_EXACT_ALLOC)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
@@ -1580,8 +1601,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
-  lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
-
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
@@ -1639,6 +1658,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
 
   lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
+
+  lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
+
+  lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

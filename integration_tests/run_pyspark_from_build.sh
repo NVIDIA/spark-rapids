@@ -40,18 +40,35 @@ else
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         CUDF_JARS=$(echo "$LOCAL_JAR_PATH"/cudf-*.jar)
+        AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER.jar)
     else
         CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
+        AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER.jar)
     fi
 
+    # `./run_pyspark_from_build.sh` runs all tests including avro_test.py with spark-avro.jar
+    #                               in the classpath.
+    #
+    # `./run_pyspark_from_build.sh -k xxx ` runs all xxx tests with spark-avro.jar in the classpath
+    #
+    # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` run all tests (except the marker skipif())
+    #                                           without spark-avro.jar
+    if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr [:upper:] [:lower:] ) == "true" ]];
+    then
+        export INCLUDE_SPARK_AVRO_JAR=true
+    else
+        export INCLUDE_SPARK_AVRO_JAR=false
+        AVRO_JARS=""
+    fi
+
     # Only 3 jars: cudf.jar dist.jar integration-test.jar
-    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
+    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $AVRO_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then
@@ -63,45 +80,39 @@ else
     fi
     if [[ "${TEST_PARALLEL}" == "" ]];
     then
-        # For now just assume that we are going to use the GPU on the
-        # system with the most free memory and then divide it up into chunks.
-        # We use free memory to try and avoid issues if the GPU also is working
-        # on graphics, which happens some times.
-        # We subtract one for the main controlling process that will still
-        # launch an application.  It will not run thing on the GPU but it needs
-        # to still launch a spark application.
-        TEST_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2.3 * 1024)) - 1}'`
+        # For integration tests we want to have at least
+        #  - 1.5 GiB of GPU memory for the tests and 750 MiB for loading CUDF + CUDA.
+        #    From profiling we saw that tests allocated under 200 MiB of GPU memory and
+        #    1.5 GiB felt like it gave us plenty of room to grow.
+        #  - 5 GiB of host memory. In testing with a limited number of tasks (4) we saw
+        #    the amount of host memory not go above 3 GiB so 5 felt like a good number
+        #    for future growth.
+        #  - 1 CPU core
+        # per Spark application. We reserve 2 GiB of GPU memory for general overhead also.
+
+        # For now just assume that we are going to use the GPU on the system with the most
+        # free memory. We use free memory to try and avoid issues if the GPU also is working
+        # on graphics, which happens with many workstation GPUs. We also reserve 2 GiB for
+        # CUDA/CUDF overhead which can be used because of JIT or launching large kernels.
+       
+        # If you need to increase the amount of GPU memory you need to change it here and
+        # below where the processes are launched.
+        GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
+        CPU_CORES=`nproc` 
+        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024))}'`
+        TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
+        TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
+        if [[ $TMP_PARALLEL -gt 1 ]];
+        then
+            # We subtract 1 from the parallel number because xdist launches a process to
+            # control and monitor the other processes. It takes up one available parallel
+            # slot, even if it is not truly using all of the resources we give it.
+            TEST_PARALLEL=$(( $TMP_PARALLEL - 1 ))
+        else
+            TEST_PARALLEL=1
+        fi
+
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
-
-        # adjust TEST_PARALLEL according to cpu cores and free memory;
-        # first read from ENV; Note it's hardly to get CPU cores and real free memory in docker.
-        # So in docker Env, Please set TEST_PARALLEL or set PYSP_TEST_CPU_CORES and PYSP_TEST_FREE_MEMORY
-        if [[ "${PYSP_TEST_CPU_CORES}" != "" ]]; then
-          cpu_cores=${PYSP_TEST_CPU_CORES}
-        else
-          # "nproc" get the number of processing units available
-          # "nproc" will get right number in docker created by "docker run --cpuset-cpus" command,
-          # but not work with "--cpus" or "--cpu-period" or "--cpu-quota".
-          cpu_cores=$(nproc)
-        fi
-        if [[ "${PYSP_TEST_FREE_MEMORY}" != "" ]]; then
-          free_mem_mib=${PYSP_TEST_FREE_MEMORY}
-        else
-          free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
-        fi
-
-        # reserve one to avoid 100% usages of all CPU cores
-        max_parallel_for_cpu_cores=$((${cpu_cores} - 1))
-        # default heap size for spark is 1G, add reserve 50M for other processes in OS.
-        max_parallel_for_free_memory=$(( (${free_mem_mib} - 50) / 1024 ))
-        if [[ TEST_PARALLEL -gt $max_parallel_for_cpu_cores ]]; then
-          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_cpu_cores according to cpu cores $cpu_cores"
-          TEST_PARALLEL=${max_parallel_for_cpu_cores}
-        fi
-        if [[ TEST_PARALLEL -gt ${max_parallel_for_free_memory} ]]; then
-          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_free_memory according to free memory $free_mem_mib mib"
-          TEST_PARALLEL=${max_parallel_for_free_memory}
-        fi
     fi
     if python -c 'import findspark';
     then
@@ -129,9 +140,7 @@ else
         # With xdist 0 and 1 are the same parallelsm but
         # 0 is more effecient
         TEST_PARALLEL_OPTS=()
-        MEMORY_FRACTION='1'
     else
-        MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
     RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
@@ -172,9 +181,13 @@ else
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
-    export PYSP_TEST_spark_sql_shuffle_partitions='12'
+    export PYSP_TEST_spark_sql_shuffle_partitions='4'
     # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
+    export PYSP_TEST_spark_rapids_memory_host_spillStorageSize='100m'
+    # Not the default 2G but should be large enough for a single batch for all data (we found
+    # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
+    export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.
@@ -199,23 +212,31 @@ else
     if ((NUM_LOCAL_EXECS > 0)); then
       export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
     else
-      # If a master is not specified, use "local[*, $SPARK_TASK_MAXFAILURES]"
+      # If a master is not specified, use "local[cores, $SPARK_TASK_MAXFAILURES]"
       if [ -z "${PYSP_TEST_spark_master}" ] && [[ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]]; then
-        export PYSP_TEST_spark_master="local[*,$SPARK_TASK_MAXFAILURES]"
+        CPU_CORES=`nproc` 
+        # We are limiting the number of tasks in local mode to 4 because it helps to reduce the
+        # total memory usage, especially host memory usage because when copying data to the GPU
+        # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
+        LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
+        export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
 
+    # If you want to change the amount of GPU memory allocated you have to change it here 
+    # and where TEST_PARALLEL is calculated
+    export PYSP_TEST_spark_rapids_memory_gpu_allocSize='1536m'
+
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
-        export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
-        export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
-        # when running tests in parallel, we allocate less than the default minAllocFraction per test
-        # so we need to override this setting here
-        export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
+        # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
+        # because it helps us have consistent test runs.
         exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
-            $SPARK_SUBMIT_FLAGS "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
+            $SPARK_SUBMIT_FLAGS \
+            --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
+            "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi

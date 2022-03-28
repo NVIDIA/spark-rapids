@@ -34,6 +34,11 @@ export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
 export SPARK_CONF_DIR=$PWD
 export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
+if [[ $BASE_SPARK_VER == "3.2.1" ]]
+then
+  # Databricks Koalas can conflict with the actual Pandas version, so put site packages first
+  export PYTHONPATH=/databricks/python3/lib/python3.8/site-packages:$PYTHONPATH
+fi
 sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*

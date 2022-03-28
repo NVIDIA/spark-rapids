@@ -21,7 +21,7 @@ import java.util.Optional
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
@@ -391,14 +391,11 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
   }
 }
 
-trait GpuBaseArrayAgg extends GpuUnaryExpression {
-
-  protected def agg: GroupByAggregation
-
-  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+// TODO switch over to array aggregations once
+//  https://github.com/rapidsai/cudf/issues/10417 is done
+object SlowGpuArrayAgg extends Arm{
+  def reallySlow(input: GpuColumnVector, agg: GroupByAggregation): cudf.ColumnVector = {
     val baseInput = input.getBase
-    // TODO switch over to array aggregations once
-    //  https://github.com/rapidsai/cudf/issues/9135 is done
     val inputTab = withResource(Scalar.fromInt(0)) { zero =>
       withResource(cudf.ColumnVector.sequence(zero, input.getRowCount.toInt)) { rowNums =>
         new cudf.Table(rowNums, baseInput)
@@ -422,9 +419,29 @@ trait GpuBaseArrayAgg extends GpuUnaryExpression {
       retTab.getColumn(1).incRefCount()
     }
   }
+
+  def bitCastDecimal(
+      input: GpuColumnVector,
+      agg: SegmentedReductionAggregation,
+      tmpType: DType,
+      resultType: DType): cudf.ColumnVector = {
+    val base = input.getBase
+    val tmpResult = withResource(base.getChildColumnView(0)) { dataCol =>
+      withResource(dataCol.bitCastTo(tmpType)) { castDataCol =>
+        withResource(base.replaceListChild(castDataCol)) { bitCastInput =>
+          bitCastInput.listReduce(agg)
+        }
+      }
+    }
+    withResource(tmpResult) { tmpResult =>
+      withResource(tmpResult.bitCastTo(resultType)) { bitCastResult =>
+        bitCastResult.copyToColumnVector()
+      }
+    }
+  }
 }
 
-case class GpuArrayMin(child: Expression) extends GpuBaseArrayAgg with ImplicitCastInputTypes {
+case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
 
   override def nullable: Boolean = true
 
@@ -437,10 +454,26 @@ case class GpuArrayMin(child: Expression) extends GpuBaseArrayAgg with ImplicitC
 
   override def prettyName: String = "array_min"
 
-  override protected def agg: GroupByAggregation = GroupByAggregation.min()
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
+    dataType match {
+      case StringType =>
+        SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.min())
+      case dt: DecimalType =>
+        if (dt.precision > Decimal.MAX_LONG_DIGITS) {
+          SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.min())
+        } else if (dt.precision > Decimal.MAX_INT_DIGITS) {
+          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.min(),
+            DType.INT64, GpuColumnVector.getNonNestedRapidsType(dataType))
+        } else {
+          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.min(),
+            DType.INT32, GpuColumnVector.getNonNestedRapidsType(dataType))
+        }
+      case _ =>
+        input.getBase.listReduce(SegmentedReductionAggregation.min())
+    }
 }
 
-case class GpuArrayMax(child: Expression) extends GpuBaseArrayAgg with ImplicitCastInputTypes {
+case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
 
   override def nullable: Boolean = true
 
@@ -453,7 +486,23 @@ case class GpuArrayMax(child: Expression) extends GpuBaseArrayAgg with ImplicitC
 
   override def prettyName: String = "array_max"
 
-  override protected def agg: GroupByAggregation = GroupByAggregation.max()
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
+    dataType match {
+      case StringType =>
+        SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.max())
+      case dt: DecimalType =>
+        if (dt.precision > Decimal.MAX_LONG_DIGITS) {
+          SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.max())
+        } else if (dt.precision > Decimal.MAX_INT_DIGITS) {
+          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.max(),
+            DType.INT64, GpuColumnVector.getNonNestedRapidsType(dataType))
+        } else {
+          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.max(),
+            DType.INT32, GpuColumnVector.getNonNestedRapidsType(dataType))
+        }
+      case _ =>
+        input.getBase.listReduce(SegmentedReductionAggregation.max())
+    }
 }
 
 class GpuSequenceMeta(
@@ -617,6 +666,9 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
   override def nullable: Boolean = children.exists(_.nullable)
 
   override def foldable: Boolean = children.forall(_.foldable)
+
+  // can throw exceptions such as "Illegal sequence boundaries: step > 0 but start > stop"
+  override def hasSideEffects: Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>

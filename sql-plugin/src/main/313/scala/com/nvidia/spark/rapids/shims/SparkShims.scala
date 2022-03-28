@@ -22,7 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
-object SparkShimImpl extends Spark31XShims with Spark30Xuntil33XShims {
+object SparkShimImpl extends Spark31XShims {
 
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 

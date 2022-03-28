@@ -10,7 +10,7 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2 or 3.2.0 of
+The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, or 3.2.1 of
 Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
 be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -265,9 +265,7 @@ Queries on Databricks will not fail but it can not benefit from DPP.
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
-In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
-release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
-the GPU when AQE is enabled. 
+Any operation that is supported on GPU will stay on the GPU when AQE is enabled. 
 
 AQE is not supported on Databricks with the plugin. 
 If AQE is enabled on Databricks, queries may fail with `StackOverflowError` error.

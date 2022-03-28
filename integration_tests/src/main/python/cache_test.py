@@ -17,9 +17,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
+import pyspark.mllib.linalg as mllib
+import pyspark.ml.linalg as ml
 
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
@@ -112,6 +114,18 @@ def test_cache_partial_load(data_gen, enable_vectorized_conf):
         return partial_return_cache
     assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a")), conf=enable_vectorized_conf)
     assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), conf=enable_vectorized_conf)
+
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
+@ignore_order
+def test_cache_reverse_order(enable_vectorized_conf):
+    col0 = StructGen([['child0', StructGen([['child1', byte_gen]])]])
+    col1 = StructGen([['child0', byte_gen]])
+    def partial_return():
+        def partial_return_cache(spark):
+            return two_col_df(spark, col0, col1).select(f.col("a"), f.col("b")).cache().select(f.col("b"), f.col("a"))
+        return partial_return_cache
+    assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=enable_vectorized_conf)
 
 @allow_non_gpu('CollectLimitExec')
 def test_cache_diff_req_order(spark_tmp_path):
@@ -285,3 +299,27 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
         return df.selectExpr("a")
 
     assert_gpu_and_cpu_are_equal_collect(helper)
+
+def test_cache_udt():
+    def fun(spark):
+        df = spark.sparkContext.parallelize([
+            (mllib.DenseVector([1, ]), ml.DenseVector([1, ])),
+            (mllib.SparseVector(1, [0, ], [1, ]), ml.SparseVector(1, [0, ], [1, ]))
+        ]).toDF(["mllib_v", "ml_v"])
+        df.cache().count()
+        return df.selectExpr("mllib_v", "ml_v").collect()
+    cpu_result = with_cpu_session(fun)
+    gpu_result = with_gpu_session(fun)
+    # assert_gpu_and_cpu_are_equal_collect method doesn't handle UDT so we just write a single
+    # statement here to compare
+    assert cpu_result == gpu_result, "not equal"
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@ignore_order(local=True)
+def test_cache_daytimeinterval(enable_vectorized_conf):
+    def test_func(spark):
+        df = two_col_df(spark, DayTimeIntervalGen(), int_gen)
+        df.cache().count()
+        return df.selectExpr("b", "a")
+    assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)

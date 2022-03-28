@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.nvidia.spark.udf
 
 import java.lang.invoke.SerializedLambda
 
-import com.nvidia.spark.rapids.ShimLoader
 import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField, CtMethod}
 import javassist.bytecode.{CodeIterator, ConstPool, Descriptor}
 
@@ -152,7 +151,17 @@ object LambdaReflection {
   }
 
   def getClass(name: String): Class[_] = {
-    ShimLoader.loadClass(name)
+    // Don't use ShimLoader.loadClass because in the REPL use case the classes
+    // compiled by REPL are accessible via the thread's context classloader,
+    // but not by the parent classloader detected by the plugin.
+    //
+    // This code is executed after the Plugin and ShimLoader has already been initialized.
+    // REPL classes are able to interact with the Plugin classes because the REPL
+    // Thread context classloader is a descendant of the Plugin classloader.
+
+    // scalastyle:off classforname
+    Class.forName(name, true, Thread.currentThread().getContextClassLoader)
+    // scalastyle:on classforname
   }
 
   def parseTypeSig(sig: String): Option[DataType] = {

@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.orc.Reader
 
-object OrcShims extends OrcShims301until320Base {
+object OrcShims extends OrcShims311until320Base {
 
   // ORC Reader of the 311cdh Spark has no close method.
   // The resource is closed internally.

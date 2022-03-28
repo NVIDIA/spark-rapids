@@ -1,7 +1,7 @@
 16,18d15
-< package com.nvidia.spark.rapids.shims.v2
+< package com.nvidia.spark.rapids.shims
 < 
-< import com.nvidia.spark.rapids.shims.v2._
+< import com.nvidia.spark.rapids.shims._
 20,26c17
 < import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 < 
@@ -11,7 +11,7 @@
 <  */
 < sealed abstract class GpuBuildSide
 ---
-> package com.nvidia.spark.rapids.shims.v2
+> package com.nvidia.spark.rapids.shims
 28c19
 < case object GpuBuildRight extends GpuBuildSide
 ---

@@ -64,7 +64,12 @@ the other is to modify your existing Spark application code to call a function d
 Please note that if using adaptive execution in Spark the explain output may not be perfect
 as the plan could have changed along the way in a way that we wouldn't see by looking at just
 the CPU plan. The same applies if you are using an older version of Spark. Spark planning
-may be slightly different if you go up to a newer version of Spark.
+may be slightly different when you go up to a newer version of Spark. One example where we have
+seen Spark 2.4.X plan differently is in the use of the EqualNullSafe expression. We have seen Spark 2.4.X
+use EqualNullSafe but in Spark 3.X it used other expressions to do the same thing. In this case
+it shows up as GPU doesn't support EqualNullSafe in the Spark 2.X explain output but when you
+go to Spark 3.X those parts would run on the GPU because it is using different operators. This
+is something to keep in mind when doing the analysis.
 
 ### Using the Configuration Flag for Explain Only Mode
 
@@ -145,6 +150,47 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 - Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 22.02 or newer
 
+#### Function Documentation
+
+```scala
+explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL")
+```
+
+Looks at the CPU plan associated with the dataframe and outputs information
+about which parts of the query the RAPIDS Accelerator for Apache Spark
+could place on the GPU. This only applies to the initial plan, so if running
+with adaptive query execution enable, it will not be able to show any changes
+in the plan due to that.
+
+This is very similar output you would get by running the query with the
+RAPIDS Accelerator enabled and with the config `spark.rapids.sql.enabled` enabled.
+
+Requires the RAPIDS Accelerator for Apache Spark jar and RAPIDS cudf jar be included
+in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
+
+Calling from Scala:
+```scala
+val output = com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df)
+```
+
+Calling from PySpark:
+```python
+output = sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+```
+
+Parameters:  
+`df` - The Spark DataFrame to get the query plan from  
+`explain` - If ALL returns all the explain data, otherwise just returns what does not
+          work on the GPU. Default is ALL.
+
+Returns:  
+String containing the explain output.
+
+Throws:  
+`java.lang.IllegalArgumentException` - if an argument is invalid or it is unable to determine the Spark version  
+`java.lang.IllegalStateException` - if the plugin gets into an invalid state while trying
+       to process the plan or there is an unexepected exception.
+
 #### Usage
 
 1. In `spark-shell`, add the necessary jars into --jars option or put them in the
@@ -210,8 +256,7 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
    ```
    ! <RowDataSourceScanExec> cannot run on GPU because GPU does not currently support the operator class org.apache.spark.sql.execution.RowDataSourceScanExec
    ```
-
-This log can show you which operators (on what data type) can not run on GPU and the reason.
+The output will show you which operators (on what data type) can not run on GPU and the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
 you should first understand the risk and applicability of that parameter based on 
 [configs doc](../configs.md) and then enable that parameter and try the tool again.

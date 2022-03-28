@@ -15,10 +15,13 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.DType
+import ai.rapids.cudf
+import ai.rapids.cudf.{DType, Scalar}
+import com.nvidia.spark.rapids.ColumnarCopyHelper
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
+import org.apache.spark.sql.vectorized.ColumnVector
 
 /**
  * Spark stores ANSI YearMonthIntervalType as int32 and ANSI DayTimeIntervalType as int64
@@ -93,4 +96,68 @@ object GpuTypeShims {
         null
     }
   }
+
+  /** Whether the Shim supports columnar copy for the given type */
+  def isColumnarCopySupportedForType(colType: DataType): Boolean = colType match {
+    case DayTimeIntervalType(_, _) => true
+    case _ => false
+  }
+
+  /**
+   * Copy a column for computing on GPU.
+   * Better to check if the type is supported first by calling 'isColumnarCopySupportedForType'
+   */
+  def columnarCopy(cv: ColumnVector,
+      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = cv.dataType() match {
+    case DayTimeIntervalType(_, _) =>
+      ColumnarCopyHelper.longCopy(cv, b, rows)
+    case t =>
+      throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
+  }
+
+  def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = colType match {
+    case DayTimeIntervalType(_, _) => true
+    case _ => false
+  }
+
+  /**
+   * Whether the Shim supports converting the given type to GPU Scalar
+   */
+  def supportToScalarForType(t: DataType): Boolean = {
+    t match {
+      case _: DayTimeIntervalType => true
+      case _ => false
+    }
+  }
+
+  /**
+   * Convert the given value to Scalar
+   */
+  def toScalarForType(t: DataType, v: Any) = {
+    t match {
+      case _: DayTimeIntervalType => v match {
+        case l: Long => Scalar.fromLong(l)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+            s" for LongType, expecting Long")
+      }
+      case _ =>
+        throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
+    }
+  }
+
+
+  def supportCsvRead(dt: DataType) : Boolean = {
+    dt match {
+      case DayTimeIntervalType(_, _) => true
+      case _ => false
+    }
+  }
+
+  def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector  = {
+    dt match {
+      case d: DayTimeIntervalType => GpuIntervalUtils.castStringToDTInterval(cv, d)
+      case _ => throw new RuntimeException(s"Not support type $dt.")
+    }
+  }
+
 }
