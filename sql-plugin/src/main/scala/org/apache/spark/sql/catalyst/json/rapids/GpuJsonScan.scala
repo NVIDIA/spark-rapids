@@ -145,7 +145,7 @@ object GpuJsonScan {
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
     }
 
-    if (!meta.conf.isJsonDoubleReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+    if (!meta.conf.isJsonDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading decimals. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DECIMALS} to true.")
     }

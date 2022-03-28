@@ -220,7 +220,7 @@ object GpuCSVScan {
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
     }
 
-    if (!meta.conf.isCsvDoubleReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+    if (!meta.conf.isCsvDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
       meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading decimals. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
     }
