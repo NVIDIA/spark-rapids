@@ -498,14 +498,12 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_re_replace_backrefs():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, "(TEST)", "[$0]")',
             'REGEXP_REPLACE(a, "(TEST)", "[$1]")'),
-            'RegExpReplace',
         conf=_regexp_conf)
 
 def test_re_replace_backrefs_escaped():

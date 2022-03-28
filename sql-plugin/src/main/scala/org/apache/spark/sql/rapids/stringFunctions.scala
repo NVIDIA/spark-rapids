@@ -956,6 +956,22 @@ case class GpuRegExpReplace(
 
 }
 
+case class GpuRegExpReplaceWithBackref(
+    override val child: Expression,
+    cudfRegexPattern: String,
+    cudfReplacementString: String)
+  extends GpuUnaryExpression with ImplicitCastInputTypes {
+
+  override def inputTypes: Seq[DataType] = Seq(StringType)
+
+  override def dataType: DataType = StringType
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    input.getBase.stringReplaceWithBackrefs(cudfRegexPattern, cudfReplacementString)
+  }
+
+}
+
 class GpuRegExpExtractMeta(
     expr: RegExpExtract,
     conf: RapidsConf,
