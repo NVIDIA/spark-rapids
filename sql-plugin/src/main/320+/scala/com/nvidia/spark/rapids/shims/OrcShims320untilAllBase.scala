@@ -63,7 +63,7 @@ trait OrcShims320untilAllBase {
 
   // create reader properties builder
   def newDataReaderPropertiesBuilder(compressionSize: Int,
-    compressionKind: CompressionKind, typeCount: Int): DataReaderProperties.Builder = {
+      compressionKind: CompressionKind, typeCount: Int): DataReaderProperties.Builder = {
     val compression = new InStream.StreamOptions()
       .withBufferSize(compressionSize).withCodec(OrcCodecPool.getCodec(compressionKind))
     DataReaderProperties.builder().withCompression(compression)
@@ -71,7 +71,7 @@ trait OrcShims320untilAllBase {
 
   // create ORC out stream
   def newOrcOutStream(name: String, bufferSize: Int, codec: CompressionCodec,
-    receiver: PhysicalWriter.OutputReceiver): OutStream = {
+      receiver: PhysicalWriter.OutputReceiver): OutStream = {
     val options = new StreamOptions(bufferSize)
     if (codec != null) {
       options.withCodec(codec, codec.getDefaultOptions)

@@ -15,18 +15,6 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.OrcOutputStripe
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
-import org.apache.orc.impl.{BufferChunk, BufferChunkList, DataReaderProperties, InStream, OrcCodecPool, OutStream, ReaderImpl, SchemaEvolution}
-import org.apache.orc.impl.RecordReaderImpl.SargApplier
-import org.apache.orc.impl.reader.StripePlanner
-import org.apache.orc.impl.writer.StreamOptions
-
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.types.DataType
 
