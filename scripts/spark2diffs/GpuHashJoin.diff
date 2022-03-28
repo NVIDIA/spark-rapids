@@ -2,13 +2,13 @@
 <   def tagForGpu(joinType: JoinType, meta: RapidsMeta[_, _]): Unit = {
 ---
 >   def tagForGpu(joinType: JoinType, meta: RapidsMeta[_, _, _]): Unit = {
-69c69
+72c72
 < object GpuHashJoin {
 ---
 > object GpuHashJoin extends Arm {
-101a102
+98a99
 > 
-122c123
+119c120
 < }
 ---
 > 
