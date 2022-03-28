@@ -169,68 +169,6 @@ pipeline {
             }
         } // end of Init githubHelper
 
-        stage('Build docker image') {
-            when {
-                beforeAgent true
-                expression {
-                    !skipped
-                }
-            }
-
-            agent {
-                kubernetes {
-                    label "premerge-docker-${BUILD_TAG}"
-                    cloud 'sc-ipp-blossom-prod'
-                    yaml pod.getDockerBuildYAML()
-                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
-                    customWorkspace "${CUSTOM_WORKSPACE}"
-                }
-            }
-
-            steps {
-                script {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
-                    checkout(
-                            changelog: false,
-                            poll: true,
-                            scm: [
-                                    $class           : 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
-                                    submoduleCfg     : [],
-                                    userRemoteConfigs: [[
-                                                                credentialsId: 'github-token',
-                                                                url          : githubHelper.getCloneUrl(),
-                                                                refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
-                            ]
-                    )
-
-                    stash(name: "source_tree", includes: "**")
-
-                    container('docker-build') {
-                        // check if pre-merge dockerfile modified
-                        def dockerfileModified = sh(returnStdout: true,
-                                script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
-                                        'git --no-pager diff --name-only HEAD $(git merge-base HEAD $BASE) ' +
-                                        "-- ${PREMERGE_DOCKERFILE} || true")
-                        if (!dockerfileModified?.trim()) {
-                            TEMP_IMAGE_BUILD = false
-                        }
-
-                        if (TEMP_IMAGE_BUILD) {
-                            IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
-                            PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
-                            IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
-                            def CUDA_VER = "$CUDA_NAME" - "cuda"
-                            docker.build(IMAGE_PREMERGE, "-f ${PREMERGE_DOCKERFILE} --build-arg CUDA_VER=$CUDA_VER -t $IMAGE_PREMERGE .")
-                            uploadDocker(IMAGE_PREMERGE)
-                        } else {
-                            // if no pre-merge dockerfile change, use nightly image
-                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
-                        }
-                    }
-                }
-            }
-        } // end of Build docker image
-
         stage("Determine Project Version") {
             when {
                 expression {
@@ -240,7 +178,6 @@ pipeline {
 
             steps {
                 script {
-                    unstash "source_tree"
                     // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
                     PROJECT_VER = sh(returnStdout: true, script: "bash $JENKINS_ROOT/version-def.sh | cut -d ',' -f 3 | cut -d ' ' -f 3")
                     PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
@@ -267,6 +204,53 @@ pipeline {
                 }
             }
         }
+
+        stage('Build docker image') {
+            when {
+                beforeAgent true
+                expression {
+                    !skipped
+                }
+            }
+
+            agent {
+                kubernetes {
+                    label "premerge-docker-${BUILD_TAG}"
+                    cloud 'sc-ipp-blossom-prod'
+                    yaml pod.getDockerBuildYAML()
+                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                    customWorkspace "${CUSTOM_WORKSPACE}"
+                }
+            }
+
+            steps {
+                script {
+                    container('docker-build') {
+                        unstash "source_tree"
+                        // check if pre-merge dockerfile modified
+                        def dockerfileModified = sh(returnStdout: true,
+                                script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
+                                        'git --no-pager diff --name-only HEAD $(git merge-base HEAD $BASE) ' +
+                                        "-- ${PREMERGE_DOCKERFILE} || true")
+                        if (!dockerfileModified?.trim()) {
+                            TEMP_IMAGE_BUILD = false
+                        }
+
+                        if (TEMP_IMAGE_BUILD) {
+                            IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
+                            PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
+                            IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
+                            def CUDA_VER = "$CUDA_NAME" - "cuda"
+                            docker.build(IMAGE_PREMERGE, "-f ${PREMERGE_DOCKERFILE} --build-arg CUDA_VER=$CUDA_VER -t $IMAGE_PREMERGE .")
+                            uploadDocker(IMAGE_PREMERGE)
+                        } else {
+                            // if no pre-merge dockerfile change, use nightly image
+                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
+                        }
+                    }
+                }
+            }
+        } // end of Build docker image
 
         stage('Init DB') {
             when {
