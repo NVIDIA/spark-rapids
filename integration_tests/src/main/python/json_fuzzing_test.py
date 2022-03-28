@@ -15,6 +15,7 @@
 # A JSON generator built based on the context free grammar from https://www.json.org/json-en.html
 
 import random
+import pytest 
 from marks import allow_non_gpu
 from typing import List
 from data_gen import *
@@ -394,6 +395,7 @@ _enable_all_types_conf = {
 
 @approximate_float
 @allow_non_gpu('FileSourceScanExec')
+@pytest.mark.xfail(reason="fuzz test may randomly fail")
 def test_json_read_fuzz(spark_tmp_path):
     depth = random.randint(1, 5)
     schema = gen_top_schema(depth)
