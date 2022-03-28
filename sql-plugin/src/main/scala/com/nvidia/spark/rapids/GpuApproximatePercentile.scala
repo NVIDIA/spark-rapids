@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{GroupByAggregation, ReductionAggregation}
+import ai.rapids.cudf.{DType, GroupByAggregation, ReductionAggregation}
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -181,7 +181,8 @@ class CudfTDigestUpdate(accuracyExpression: GpuLiteral)
 
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) =>
-      col.reduce(ReductionAggregation.createTDigest(CudfTDigest.accuracy(accuracyExpression)))
+      col.reduce(ReductionAggregation.createTDigest(CudfTDigest.accuracy(accuracyExpression)),
+        DType.STRUCT)
 
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.createTDigest(CudfTDigest.accuracy(accuracyExpression))
