@@ -55,10 +55,6 @@ case class DatabricksShimVersion(
   override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
 }
 
-case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-amzn"
-}
-
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
   def parquetRebaseReadKey: String
