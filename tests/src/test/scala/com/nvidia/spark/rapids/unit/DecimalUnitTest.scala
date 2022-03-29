@@ -26,6 +26,8 @@ import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExec, GpuColumnVector, Gpu
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
+import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.types.{Decimal, DecimalType, IntegerType, LongType, StructField, StructType}
@@ -255,7 +257,7 @@ class DecimalUnitTest extends GpuUnitTests {
       var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuFileSourceScanExec]))
       rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
-      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuFileSourceScanExec]))
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[FileSourceScanExec]))
       rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuFileSourceScanExec]))
     }, conf)
@@ -264,7 +266,7 @@ class DecimalUnitTest extends GpuUnitTests {
       var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExec]))
       rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
-      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExec]))
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[BatchScanExec]))
       rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExec]))
     }, conf.set(SQLConf.USE_V1_SOURCE_LIST.key, ""))
