@@ -676,11 +676,11 @@ boolean databricksCodeChanged() {
     def output = sh(script: '''
             # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
             BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
-            git --no-pager diff --name-only ${BASE_REF} HEAD | grep -E 'sql-plugin/src/main/.*[0-9x-]db/|databricks || true'
+            git --no-pager diff --name-only ${BASE_REF} HEAD | grep -lE 'sql-plugin/src/main/.*[0-9x-]db/|databricks' || true
         ''', returnStdout: true).trim()
 
     if (output) {
-        echo "Databricks-related changed files: \n${output}"
+        echo "Found databricks-related changed files"
         return true
     }
     return false
