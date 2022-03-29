@@ -226,3 +226,19 @@ def test_conditional_with_side_effects_sequence(data_gen):
             WHEN length(a) > 0 THEN sequence(1, length(a), 1) \
             ELSE null END'),
         conf = ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(mk_str_gen('[a-z]{0,3}'))], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_element_at(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN size(a) > 1 THEN element_at(a, 2) ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(mk_str_gen('[a-z]{0,3}'))], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_array_index(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN size(a) > 1 THEN a[1] ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
