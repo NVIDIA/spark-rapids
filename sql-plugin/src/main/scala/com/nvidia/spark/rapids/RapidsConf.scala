@@ -899,7 +899,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimals.enabled")
+  val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimal.enabled")
     .doc("CSV reading is not 100% compatible when reading decimals.")
     .booleanConf
     .createWithDefault(false)
@@ -925,7 +925,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimals.enabled")
+  val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
     .doc("JSON reading is not 100% compatible when reading decimals.")
     .booleanConf
     .createWithDefault(false)
