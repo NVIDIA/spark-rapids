@@ -242,3 +242,14 @@ def test_conditional_with_side_effects_array_index(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'CASE WHEN size(a) > 1 THEN a[1] ELSE null END'),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('map_gen',
+                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+                                 mk_str_gen('[a-z]{0,3}'), max_length=6)])
+@pytest.mark.parametrize('data_gen', [StringGen(pattern='neverempty_[0-9]', nullable=False)])
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_map_key_not_found(map_gen, data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, map_gen, data_gen).selectExpr(
+            'CASE WHEN length(b) = 0 THEN a["not_found"] ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})

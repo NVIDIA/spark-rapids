@@ -232,6 +232,8 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
 
   override def prettyName: String = "getMapValue"
 
+  override def hasSideEffects: Boolean = failOnError
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (failOnError){
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
