@@ -3324,7 +3324,7 @@ object GpuOverrides extends Logging {
       }),
     expr[ApproximatePercentile](
       "Approximate percentile",
-      ExprChecks.groupByOnly(
+      ExprChecks.reductionAndGroupByAgg(
         // note that output can be single number or array depending on whether percentiles param
         // is a single number or an array
         TypeSig.gpuNumeric +
