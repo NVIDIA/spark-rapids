@@ -22,7 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
-object SparkShimImpl extends Spark31XdbShims with Spark30Xuntil33XShims {
+object SparkShimImpl extends Spark31XdbShims {
 
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
@@ -41,5 +41,6 @@ object SparkShimImpl extends Spark31XdbShims with Spark30Xuntil33XShims {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
+
   override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 }

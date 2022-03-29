@@ -25,13 +25,13 @@ import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -424,7 +424,7 @@ class GpuHashAggregateIterator(
     }
 
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
-    val ordering = groupingAttributes.map(SparkShimImpl.sortOrder(_, Ascending, NullsFirst))
+    val ordering = groupingAttributes.map(SortOrder(_, Ascending, NullsFirst, Seq.empty))
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -802,6 +802,26 @@ class GpuHashAggregateIterator(
   }
 }
 
+object GpuBaseAggregateMeta {
+  private val aggPairReplaceChecked = TreeNodeTag[Boolean](
+    "rapids.gpu.aggPairReplaceChecked")
+
+  def getAggregateOfAllStages(
+      currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
+    currentMeta match {
+      case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
+        List[GpuBaseAggregateMeta[_]](aggMeta) ++
+          getAggregateOfAllStages(aggMeta.childPlans.head, logical)
+      case shuffleMeta: GpuShuffleMeta =>
+        getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
+      case sortMeta: GpuSortMeta =>
+        getAggregateOfAllStages(sortMeta.childPlans.head, logical)
+      case _ =>
+        List[GpuBaseAggregateMeta[_]]()
+    }
+  }
+}
+
 abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     plan: INPUT,
     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -842,6 +862,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       // which will do the right thing.
       willNotWorkOnGpu(
         "DISTINCT and FILTER cannot be used in aggregate functions at the same time")
+    }
+
+    if (AggregationTagging.mustReplaceBoth) {
+      tagForMixedReplacement()
     }
   }
 
@@ -905,6 +929,34 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     if (!conf.partialMergeDistinctEnabled && aggPattern.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
+    }
+  }
+
+  /** Prevent mixing of CPU and GPU aggregations */
+  private def tagForMixedReplacement(): Unit = {
+    // only run the check for final stages that have not already been checked
+    val haveChecked =
+      agg.getTagValue[Boolean](GpuBaseAggregateMeta.aggPairReplaceChecked).contains(true)
+    val needCheck = !haveChecked && agg.aggregateExpressions.exists {
+      case e: AggregateExpression if e.mode == Final => true
+      case _ => false
+    }
+
+    if (needCheck) {
+      agg.setTagValue(GpuBaseAggregateMeta.aggPairReplaceChecked, true)
+      val stages = GpuBaseAggregateMeta.getAggregateOfAllStages(this, agg.logicalLink.get)
+      // check if aggregations will mix CPU and GPU across stages
+      val hasMixedAggs = stages.indices.exists {
+        case i if i == stages.length - 1 => false
+        case i => stages(i).canThisBeReplaced ^ stages(i + 1).canThisBeReplaced
+      }
+      if (hasMixedAggs) {
+        stages.foreach {
+          case aggMeta if aggMeta.canThisBeReplaced =>
+            aggMeta.willNotWorkOnGpu("mixing CPU and GPU aggregations is not supported")
+          case _ =>
+        }
+      }
     }
   }
 
@@ -1091,7 +1143,7 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
     meta.agg.setTagValue(bufferConverterInjected, true)
 
     // Fetch AggregateMetas of all stages which belong to current Aggregate
-    val stages = getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
+    val stages = GpuBaseAggregateMeta.getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
 
     // Find out stages in which the buffer converters are essential.
     val needBufferConversion = stages.indices.map {
@@ -1209,10 +1261,10 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
         }
         converters.dequeue() match {
           case Left(converter) =>
-            SparkShimImpl.alias(converter.createExpression(ref),
+            Alias(converter.createExpression(ref),
               ref.name + "_converted")(NamedExpression.newExprId)
           case Right(converter) =>
-            SparkShimImpl.alias(converter.createExpression(ref),
+            Alias(converter.createExpression(ref),
               ref.name + "_converted")(NamedExpression.newExprId)
         }
       case retExpr =>
@@ -1220,21 +1272,6 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
     }
 
     expressions
-  }
-
-  private def getAggregateOfAllStages(
-      currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
-    currentMeta match {
-      case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
-        List[GpuBaseAggregateMeta[_]](aggMeta) ++
-            getAggregateOfAllStages(aggMeta.childPlans.head, logical)
-      case shuffleMeta: GpuShuffleMeta =>
-        getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
-      case sortMeta: GpuSortMeta =>
-        getAggregateOfAllStages(sortMeta.childPlans.head, logical)
-      case _ =>
-        List[GpuBaseAggregateMeta[_]]()
-    }
   }
 
   @tailrec

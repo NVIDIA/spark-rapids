@@ -1,4 +1,11 @@
-11a12,22
+8,10c8,18
+<       // SPARK 2.x - We leave off Avro here since its a datasource v2 thing and off by default
+<       case f =>
+<         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
+---
+>       case _ => ExternalSource.tagSupportForGpuFileSourceScanExec(meta)
+>     }
+>   }
 > 
 >   def convertFileFormat(format: FileFormat): FileFormat = {
 >     format match {
@@ -6,7 +13,4 @@
 >       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
 >       case _: ParquetFileFormat => new GpuReadParquetFileFormat
 >       case _: JsonFileFormat => new GpuReadJsonFileFormat
->       case f =>
->         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
->     }
->   }
+>       case _ => ExternalSource.convertFileFormatForGpuFileSourceScanExec(format)

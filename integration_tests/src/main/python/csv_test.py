@@ -167,10 +167,9 @@ _empty_double_schema = StructType([
     StructField('number', DoubleType()),
     StructField('ignored_b', StringType())])
 
-_enable_all_types_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true',
-        'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
+_enable_all_types_conf = {'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
-def read_csv_df(data_path, schema, options = {}):
+def read_csv_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
     def read_impl(spark):
         reader = spark.read
         if not schema is None:
@@ -180,13 +179,13 @@ def read_csv_df(data_path, schema, options = {}):
         return debug_df(reader.csv(data_path))
     return read_impl
 
-def read_csv_sql(data_path, schema, options = {}):
+def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     opts = options
     if not schema is None:
         opts = copy_and_update(options, {'schema': schema})
     def read_impl(spark):
-        spark.sql('DROP TABLE IF EXISTS `TMP_CSV_TABLE`')
-        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', path=data_path, **opts)
+        tmp_name = spark_tmp_table_factory.get()
+        return spark.catalog.createTable(tmp_name, source='csv', path=data_path, **opts)
     return read_impl
 
 @approximate_float
@@ -196,6 +195,7 @@ def read_csv_sql(data_path, schema, options = {}):
     ('ts.csv', _date_schema, {}),
     ('date.csv', _date_schema, {}),
     ('ts.csv', _ts_schema, {}),
+    ('str.csv', _ts_schema, {}),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
     ('str.csv', _good_str_schema, {'header': 'true'}),
     ('no-comments.csv', _three_str_schema, {}),
@@ -246,12 +246,12 @@ def read_csv_sql(data_path, schema, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled):
+def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
     updated_conf=copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.ansi.enabled': ansi_enabled
     })
-    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
             conf=updated_conf)
 
 csv_supported_gens = [
@@ -285,7 +285,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
 @allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
-def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
+def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_factory):
     data_gens =[
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
@@ -296,7 +296,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     schema = gen.data_type
     updated_conf = copy_and_update(_enable_all_types_conf, {disable_conf: 'false'})
 
-    reader = read_func(data_path, schema)
+    reader = read_func(data_path, schema, spark_tmp_table_factory)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
@@ -306,7 +306,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
             conf=updated_conf)
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
-        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
+        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
@@ -322,7 +322,6 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, a
     updated_conf = copy_and_update(_enable_all_types_conf,
        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.ansi.enabled': ansi_enabled,
-        'spark.rapids.sql.incompatibleDateFormats.enabled': True,
         'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write\
@@ -360,7 +359,6 @@ def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list,
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.sources.useV1SourceList': v1_enabled_list,
                                     'spark.sql.ansi.enabled': ansi_enabled,
-                                    'spark.rapids.sql.incompatibleDateFormats.enabled': True,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     if time_parser_policy == 'EXCEPTION':
         assert_gpu_and_cpu_error(
@@ -399,7 +397,8 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_
             lambda spark : gen_df(spark, gen).write\
                     .option('timestampFormat', full_format)\
                     .csv(data_path))
-    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                   {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\
@@ -485,3 +484,29 @@ def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
         do_csv_scan,
         exist_classes= "FileSourceScanExec",
         non_exist_classes= "GpuBatchScanExec")
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Reading day-time interval type is supported from Spark3.3.0')
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
+    csv_interval_gens = [
+        DayTimeIntervalGen(start_field="day", end_field="day"),
+        DayTimeIntervalGen(start_field="day", end_field="hour"),
+        DayTimeIntervalGen(start_field="day", end_field="minute"),
+        DayTimeIntervalGen(start_field="day", end_field="second"),
+        DayTimeIntervalGen(start_field="hour", end_field="hour"),
+        DayTimeIntervalGen(start_field="hour", end_field="minute"),
+        DayTimeIntervalGen(start_field="hour", end_field="second"),
+        DayTimeIntervalGen(start_field="minute", end_field="minute"),
+        DayTimeIntervalGen(start_field="minute", end_field="second"),
+        DayTimeIntervalGen(start_field="second", end_field="second"),
+    ]
+
+    gen = StructGen([('_c' + str(i), csv_interval_gens[i]) for i in range(0, len(csv_interval_gens))], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen).write.csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).csv(data_path),
+        conf=updated_conf)

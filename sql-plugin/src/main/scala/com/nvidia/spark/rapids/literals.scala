@@ -28,7 +28,7 @@ import scala.reflect.runtime.universe.TypeTag
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.internal.Logging
@@ -372,6 +372,8 @@ object GpuScalar extends Arm with Logging {
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
           s" for LongType, expecting Long, or Int.")
     }
+    case other if GpuTypeShims.supportToScalarForType(other) =>
+      GpuTypeShims.toScalarForType(other, v)
     case _ => throw new UnsupportedOperationException(s"${v.getClass} '$v' is not supported" +
         s" as a Scalar yet")
   }

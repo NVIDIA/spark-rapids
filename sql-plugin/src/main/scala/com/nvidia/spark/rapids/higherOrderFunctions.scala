@@ -23,7 +23,7 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, Metadata}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -206,26 +206,14 @@ trait GpuSimpleHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
   }
 }
 
-case class GpuArrayTransform(
-    argument: Expression,
-    function: Expression,
-    isBound: Boolean = false,
-    boundIntermediate: Seq[GpuExpression] = Seq.empty)
-    extends GpuSimpleHigherOrderFunction {
 
-  override def dataType: ArrayType = ArrayType(function.dataType, function.nullable)
+trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
+  def isBound: Boolean
+  def  boundIntermediate: Seq[GpuExpression]
 
-  override def prettyName: String = "transform"
-
-  private lazy val inputToLambda: Seq[DataType] = {
+  protected lazy val inputToLambda: Seq[DataType] = {
     assert(isBound)
     boundIntermediate.map(_.dataType) ++ lambdaFunction.arguments.map(_.dataType)
-  }
-
-  override def bind(input: AttributeSeq): GpuExpression = {
-    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
-
-    GpuArrayTransform(boundArg, boundFunc, isBound = true, boundIntermediate)
   }
 
   private[this] def makeElementProjectBatch(
@@ -277,20 +265,147 @@ case class GpuArrayTransform(
     }
   }
 
+  /*
+   * Post-process the column view of the array after applying the function parameter
+   */
+  protected def transformListColumnView(
+    lambdaTransformedCV: cudf.ColumnView): GpuColumnVector
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
       val dataCol = withResource(
         makeElementProjectBatch(batch, arg.getBase)) { cb =>
         GpuExpressionsUtils.columnarEvalToColumn(function, cb)
       }
-      withResource(dataCol) { dataCol =>
-        withResource(GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)) {
-          retView =>
-            GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+      withResource(dataCol) { _ =>
+        val cv = GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)
+        withResource(cv)(transformListColumnView(_))
+      }
+    }
+  }
+}
+
+
+case class GpuArrayTransform(
+  argument: Expression,
+  function: Expression,
+  isBound: Boolean = false,
+  boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+
+  override def dataType: ArrayType = ArrayType(function.dataType, function.nullable)
+
+  override def prettyName: String = "transform"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuArrayTransform(boundArg, boundFunc, isBound = true, boundIntermediate)
+  }
+
+  override protected def transformListColumnView(
+    lambdaTransformedCV: cudf.ColumnView): GpuColumnVector = {
+    GpuColumnVector.from(lambdaTransformedCV.copyToColumnVector(), dataType)
+  }
+}
+
+
+case class GpuArrayExists(
+    argument: Expression,
+    function: Expression,
+    followThreeValuedLogic: Boolean,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+
+  override def dataType: DataType = BooleanType
+
+  override def prettyName: String = "exists"
+
+  override def nullable: Boolean = super.nullable || function.nullable
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+    GpuArrayExists(boundArg, boundFunc,  followThreeValuedLogic,isBound = true, boundIntermediate)
+  }
+
+  private def imputeFalseForEmptyArrays(
+    transformedCV: cudf.ColumnView,
+    result: cudf.ColumnView
+  ): GpuColumnVector = {
+    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+      withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
+        withResource(transformedCV.countElements()) { elementCounts =>
+          withResource(elementCounts.equalTo(zeroScalar)) { isEmptyList =>
+            GpuColumnVector.from(isEmptyList.ifElse(falseScalar, result), dataType)
+          }
         }
       }
     }
   }
+
+  private def existsReduce(columnView: cudf.ColumnView, nullPolicy: cudf.NullPolicy) = {
+    columnView.listReduce(
+      cudf.SegmentedReductionAggregation.any(),
+      nullPolicy,
+      DType.BOOL8)
+  }
+
+  private def replaceChildNullsByFalseView(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+      withResource(cv.getChildColumnView(0)) { childView =>
+        withResource(childView.replaceNulls(falseScalar)) { noNullsChildView =>
+            cv.replaceListChild(noNullsChildView)
+        }
+      }
+    }
+  }
+
+  /*
+   * The difference between legacyExists and EXCLUDE nulls reduction
+   * is that the list without valid values (all nulls) should produce false
+   * which is equivalent to replacing nulls with false after lambda prior
+   * to aggregation
+   */
+  private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(replaceChildNullsByFalseView(cv)) { reduceInput =>
+      existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+    }
+  }
+
+  /*
+   * 3VL is true if EXCLUDE nulls reduce is true
+   * 3VL is false if INCLUDE nulls reduce is false
+   * 3VL is null if
+   *    EXCLUDE null reduce is false and
+   *    INCLUDE nulls reduce is null
+   */
+  private def threeValueExists(cv: cudf.ColumnView): cudf.ColumnView = {
+    withResource(existsReduce(cv, cudf.NullPolicy.EXCLUDE)) { existsNullsExcludedCV =>
+      withResource(existsReduce(cv, cudf.NullPolicy.INCLUDE)) { existsNullsIncludedCV =>
+        existsNullsExcludedCV.ifElse(existsNullsExcludedCV, existsNullsIncludedCV)
+      }
+    }
+  }
+
+  private def exists(cv: cudf.ColumnView) = {
+    if (followThreeValuedLogic) {
+      threeValueExists(cv)
+    } else {
+      legacyExists(cv)
+    }
+  }
+
+  override protected def transformListColumnView(
+    lambdaTransformedCV: cudf.ColumnView
+  ): GpuColumnVector = {
+    withResource(exists(lambdaTransformedCV)) { existsCV =>
+      // exists is false for empty arrays
+      // post process empty arrays until cudf allows specifying
+      // the initial value for a list reduction (i.e. similar to Scala fold)
+      // https://github.com/rapidsai/cudf/issues/10455
+      imputeFalseForEmptyArrays(lambdaTransformedCV, existsCV)
+    }
+  }
+
 }
 
 trait GpuMapSimpleHigherOrderFunction extends GpuSimpleHigherOrderFunction with GpuBind {

@@ -280,20 +280,6 @@ will produce a different result compared to the plugin.
 
 ## CSV Reading
 
-Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
-Each data type can be enabled or disabled independently using the following configs.
-
- * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
-
-If you know that your particular data type will be parsed correctly enough, you may enable each
-type you expect to use. Often the performance improvement is so good that it is worth
-checking if it is parsed correctly.
-
-Spark is generally very strict when reading CSV and if the data does not conform with the 
-expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
-uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
-nulls.
-
 Spark allows for stripping leading and trailing white space using various options that are off by
 default. The plugin will strip leading and trailing space for all values except strings.
 
@@ -335,6 +321,7 @@ portion followed by one of the following formats:
 
 * `HH:mm:ss.SSSXXX`
 * `HH:mm:ss[.SSS][XXX]`
+* `HH:mm:ss[.SSSXXX]`
 * `HH:mm`
 * `HH:mm:ss`
 * `HH:mm[:ss]`
@@ -357,6 +344,32 @@ Also parsing of some values will not produce bit for bit identical results to wh
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
 then results in a number being returned when the CPU would have returned null.
 
+### CSV ANSI day time interval
+This type was added in as a part of Spark 3.3.0, and it's not supported on Spark versions before 3.3.0.
+Apache Spark can [overflow](https://issues.apache.org/jira/browse/SPARK-38520) when reading ANSI day time interval values.
+The RAPIDS Accelerator does not overflow and as such is not bug for bug compatible with Spark in this case.
+
+Interval string in csv|Spark reads to|The RAPIDS Accelerator reads to|Comments|
+-----|-------------------------|-----------------|-----------|
+interval '106751992' day| INTERVAL '-106751990' DAY | NULL| Spark issue|
+interval '2562047789' hour| INTERVAL '-2562047787' HOUR | NULL| Spark issue|
+
+There are two valid textual representations in CSV: the ANSI style and the HIVE style, e.g:
+
+SQL Type|An instance of ANSI style|An instance of HIVE style|
+-----|-------------------------------------------|-----------------|
+INTERVAL DAY | INTERVAL '100' DAY TO SECOND              | 100|
+INTERVAL DAY TO HOUR | INTERVAL '100 10' DAY TO HOUR             | 100 10|
+INTERVAL DAY TO MINUTE | INTERVAL '100 10:30' DAY TO MINUTE        | 100 10:30|
+INTERVAL DAY TO SECOND | INTERVAL '100 10:30:40.999999' DAY TO SECOND | 100 10:30:40.999999|
+INTERVAL HOUR | INTERVAL '10' HOUR                        | 10|
+INTERVAL HOUR TO MINUTE | INTERVAL '10:30' HOUR TO MINUTE           | 10:30|
+INTERVAL HOUR TO SECOND | INTERVAL '10:30:40.999999' HOUR TO SECOND | 10:30:40.999999|
+INTERVAL MINUTE | INTERVAL '30' MINUTE                      | 30|
+INTERVAL MINUTE TO SECOND | INTERVAL '30:40.999999' MINUTE TO SECOND  | 30:40.999999|
+INTERVAL SECOND | INTERVAL '40.999999' SECOND               | 40.999999|
+Currently, the RAPIDS Accelerator only supports the ANSI style.
+
 ## ORC
 
 The ORC format has fairly complete support for both reads and writes. There are only a few known
@@ -370,6 +383,54 @@ to work for dates after the epoch as described
 The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
  CPU when reading an unsupported compression format, and will error out in that case.
+
+### Push Down Aggreates for ORC
+
+Spark-3.3.0+ pushes down certain aggregations (`MIN`/`MAX`/`COUNT`) into ORC when the user-config
+`spark.sql.orc.aggregatePushdown` is set to true.  
+By enabling this feature, aggregate query performance will improve as it takes advantage of the
+statistics information.
+
+**Caution**
+
+Spark ORC reader/writer assumes that all ORC files must have valid column statistics. This assumption
+deviates from the [ORC-specification](https://orc.apache.org/specification) which states that statistics
+are optional.  
+When a Spark-3.3.0+ job reads an ORC file with empty file-statistics, it fails while throwing the following
+runtime exception:
+
+```bash
+org.apache.spark.SparkException: Cannot read columns statistics in file: /PATH_TO_ORC_FILE
+E    Caused by: java.util.NoSuchElementException
+E        at java.util.LinkedList.removeFirst(LinkedList.java:270)
+E        at java.util.LinkedList.remove(LinkedList.java:685)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcFooterReader.convertStatistics(OrcFooterReader.java:54)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcFooterReader.readStatistics(OrcFooterReader.java:45)
+E        at org.apache.spark.sql.execution.datasources.orc.OrcUtils$.createAggInternalRowFromFooter(OrcUtils.scala:428)
+```
+
+The Spark community is planning to work on a runtime fallback to read from actual rows when ORC
+file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.org/jira/browse/SPARK-34960)).  
+
+**Limitations With RAPIDS**
+
+RAPIDS does not support whole file statistics in ORC file. We are working with
+[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
+[here](https://github.com/rapidsai/cudf/issues/5826).
+
+*Writing ORC Files*
+
+Without CUDF support to file statistics, all ORC files written by
+the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
+In order to prevent job failures, `spark.sql.orc.aggregatePushdown` should be disabled while reading ORC files
+that were written by the GPU.
+
+*Reading ORC Files*
+
+To take advantage of the aggregate optimization, the plugin falls back to the CPU as it is a meta data only query.
+As long as the ORC file has valid statistics (written by the CPU), then the pushing down aggregates to the ORC layer
+should be successful.  
+Otherwise, reading an ORC file written by the GPU requires `aggregatePushdown` to be disabled.
 
 ## Parquet
 
@@ -451,8 +512,14 @@ versions prior to 3.3.0 only supported the `"Infinity"` and `"-Infinity"` repres
 support `"+INF"`, `"-INF"`, or `"+Infinity"`, which Spark considers valid when unquoted. The GPU JSON reader is 
 consistent with the behavior in Spark 3.3.0 and later.
 
-Another limitation of the GPU JSON reader is that it will parse strings containing boolean or numeric values where
+Another limitation of the GPU JSON reader is that it will parse strings containing non-string boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
+
+### JSON Timestamps
+
+There is currently no support for reading numeric values as timestamps and null values are returned instead 
+([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast 
+to timestamp.
 
 ### JSON Schema discovery
 
@@ -483,6 +550,18 @@ values in the [JSON specification](https://json.org)). Spark versions prior to 3
 parse some variants of `NaN` and `Infinity` even when this option is disabled
 ([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with
 Spark version 3.3.0 and later.
+
+## Avro
+
+The Avro format read is a very experimental feature which is expected to have some issues, so we disable
+it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.avro.enabled` and 
+`spark.rapids.sql.format.avro.read.enabled`.
+
+Currently, the GPU accelerated Avro reader doesn't support reading the Avro version 1.2 files.
+
+### Supported types
+
+The boolean, byte, short, int, long, float, double, string are supported in current version.
 
 ## Regular Expressions
 

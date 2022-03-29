@@ -44,7 +44,6 @@ import org.apache.spark.util.MutableURLClassLoader
 
     spark3xx-common/com/nvidia/spark/rapids/CastExprMeta.class
 
-    spark301/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark311/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
 
@@ -53,13 +52,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.

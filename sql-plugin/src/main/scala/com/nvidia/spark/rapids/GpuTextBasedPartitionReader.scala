@@ -22,6 +22,8 @@ import scala.collection.mutable.ListBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -30,7 +32,8 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
-import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
 import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -175,7 +178,10 @@ abstract class GpuTextBasedPartitionReader(
             f.dataType match {
               case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
                    DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
-                   DataTypes.DoubleType | _: DecimalType | DataTypes.DateType =>
+                   DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
+                   DataTypes.TimestampType =>
+                f.copy(dataType = DataTypes.StringType)
+              case other if GpuTypeShims.supportCsvRead(other) =>
                 f.copy(dataType = DataTypes.StringType)
               case _ =>
                 f
@@ -218,7 +224,12 @@ abstract class GpuTextBasedPartitionReader(
                 case dt: DecimalType =>
                   castStringToDecimal(table.getColumn(i), dt)
                 case DataTypes.DateType =>
-                  castStringToDate(table.getColumn(i))
+                  castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS, failOnInvalid = true)
+                case DataTypes.TimestampType =>
+                  castStringToTimestamp(table.getColumn(i), timestampFormat,
+                    DType.TIMESTAMP_MICROSECONDS)
+                case other if GpuTypeShims.supportCsvRead(other) =>
+                  GpuTypeShims.csvRead(table.getColumn(i), other)
                 case _ =>
                   table.getColumn(i).incRefCount()
               }
@@ -236,20 +247,139 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   def dateFormat: String
+  def timestampFormat: String
 
-  def castStringToDate(input: ColumnVector): ColumnVector = {
+  def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
     val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
-    withResource(input.isTimestamp(cudfFormat)) { isDate =>
-      if (GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
-        withResource(isDate.all()) { all =>
-          if (all.isValid && !all.getBoolean) {
-            throw new DateTimeException("One or more values is not a valid date")
+    withResource(input.strip()) { stripped =>
+      withResource(stripped.isTimestamp(cudfFormat)) { isDate =>
+        if (failOnInvalid && GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
+          withResource(isDate.all()) { all =>
+            if (all.isValid && !all.getBoolean) {
+              throw new DateTimeException("One or more values is not a valid date")
+            }
+          }
+        }
+        withResource(stripped.asTimestamp(dt, cudfFormat)) { asDate =>
+          withResource(Scalar.fromNull(dt)) { nullScalar =>
+            isDate.ifElse(asDate, nullScalar)
           }
         }
       }
-      withResource(input.asTimestamp(DType.TIMESTAMP_DAYS, cudfFormat)) { asDate =>
-        withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
-          isDate.ifElse(asDate, nullScalar)
+    }
+  }
+
+  def castStringToTimestamp(
+      lhs: ColumnVector,
+      sparkFormat: String,
+      dtype: DType): ColumnVector = {
+
+    val optionalSeconds = raw"(?:\:\d{2})?"
+    val optionalMicros = raw"(?:\.\d{1,6})?"
+    val twoDigits = raw"\d{2}"
+    val fourDigits = raw"\d{4}"
+
+    val regexRoot = sparkFormat
+      .replace("'T'", "T")
+      .replace("yyyy", fourDigits)
+      .replace("MM", twoDigits)
+      .replace("dd", twoDigits)
+      .replace("HH", twoDigits)
+      .replace("mm", twoDigits)
+      .replace("[:ss]", optionalSeconds)
+      .replace(":ss", optionalSeconds) // Spark always treats seconds portion as optional
+      .replace("[.SSSXXX]", optionalMicros)
+      .replace("[.SSS][XXX]", optionalMicros)
+      .replace("[.SSS]", optionalMicros)
+      .replace("[.SSSSSS]", optionalMicros)
+      .replace(".SSSXXX", optionalMicros)
+      .replace(".SSSSSS", optionalMicros)
+      .replace(".SSS", optionalMicros)
+
+    // Spark treats timestamp portion as optional always
+    val regexOptionalTime = regexRoot.split('T') match {
+      case Array(d, t) =>
+        d + "(?:[ T]" + t + ")?"
+      case _ =>
+        regexRoot
+    }
+    val regex = regexOptionalTime + raw"Z?\Z"
+
+    // get a list of all possible cuDF formats that we need to check for
+    val cudfFormats = GpuTextBasedDateUtils.toCudfFormats(sparkFormat, parseString = true)
+
+
+    // filter by regexp first to eliminate invalid entries
+    val regexpFiltered = withResource(lhs.strip()) { stripped =>
+      withResource(stripped.matchesRe(regex)) { matchesRe =>
+        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+          matchesRe.ifElse(stripped, nullString)
+        }
+      }
+    }
+
+    // fix timestamps that have milliseconds but no microseconds
+    // example ".296" => ".296000"
+    val sanitized = withResource(regexpFiltered) { _ =>
+      // cannot replace with back-refs directly because cuDF cannot support "\1000\2" so we
+      // first substitute with a placeholder and then replace that. The placeholder value
+      // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
+      // date/time formats that contain the `@` character
+      val placeholder = "@"
+      withResource(regexpFiltered.stringReplaceWithBackrefs(
+        raw"(\.\d{3})(Z?)\Z", raw"\1$placeholder\2")) { tmp =>
+        withResource(Scalar.fromString(placeholder)) { from =>
+          withResource(Scalar.fromString("000")) { to =>
+            tmp.stringReplace(from, to)
+          }
+        }
+      }
+    }
+
+    def isTimestamp(fmt: String): ColumnVector = {
+      val pos = fmt.indexOf('T')
+      if (pos == -1) {
+        sanitized.isTimestamp(fmt)
+      } else {
+        // Spark supports both ` ` and `T` as the delimiter so we have to test
+        // for both formats when calling `isTimestamp` in cuDF but the
+        // `asTimestamp` method ignores the delimiter so we only need to call that
+        // with one format
+        val withSpaceDelim = fmt.substring(0, pos) + ' ' + fmt.substring(pos + 1)
+        withResource(sanitized.isTimestamp(fmt)) { isValidFmt1 =>
+          withResource(sanitized.isTimestamp(withSpaceDelim)) { isValidFmt2 =>
+            isValidFmt1.or(isValidFmt2)
+          }
+        }
+      }
+    }
+
+    def asTimestampOrNull(fmt: String): ColumnVector = {
+      withResource(Scalar.fromNull(dtype)) { nullScalar =>
+        withResource(isTimestamp(fmt)) { isValid =>
+          withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
+            isValid.ifElse(ts, nullScalar)
+          }
+        }
+      }
+    }
+
+    def asTimestampOr(fmt: String, orValue: ColumnVector): ColumnVector = {
+      withResource(orValue) { _ =>
+        withResource(isTimestamp(fmt)) { isValid =>
+          withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
+            isValid.ifElse(ts, orValue)
+          }
+        }
+      }
+    }
+
+    withResource(sanitized) { _ =>
+      if (cudfFormats.length == 1) {
+        asTimestampOrNull(cudfFormats.head)
+      } else {
+        cudfFormats.tail.foldLeft(asTimestampOrNull(cudfFormats.head)) { (input, fmt) =>
+          asTimestampOr(fmt, input)
         }
       }
     }
@@ -358,4 +488,149 @@ abstract class GpuTextBasedPartitionReader(
     batch = None
     isExhausted = true
   }
+}
+
+object GpuTextBasedDateUtils {
+
+  private val supportedDateFormats = Set(
+    "yyyy-MM-dd",
+    "yyyy/MM/dd",
+    "yyyy-MM",
+    "yyyy/MM",
+    "MM-yyyy",
+    "MM/yyyy",
+    "MM-dd-yyyy",
+    "MM/dd/yyyy",
+    "dd-MM-yyyy",
+    "dd/MM/yyyy"
+  )
+
+  private val supportedTsPortionFormats = Set(
+    "HH:mm:ss.SSSXXX",
+    "HH:mm:ss[.SSS][XXX]",
+    "HH:mm:ss[.SSSXXX]",
+    "HH:mm",
+    "HH:mm:ss",
+    "HH:mm[:ss]",
+    "HH:mm:ss.SSS",
+    "HH:mm:ss[.SSS]"
+  )
+
+  def tagCudfFormat(
+      meta: RapidsMeta[_, _, _],
+      sparkFormat: String,
+      parseString: Boolean): Unit = {
+    if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+      try {
+        // try and convert the format to cuDF format - this will throw an exception if
+        // the format contains unsupported characters or words
+        toCudfFormats(sparkFormat, parseString)
+        // format parsed ok but we have no 100% compatible formats in LEGACY mode
+        if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.contains(sparkFormat)) {
+          // LEGACY support has a number of issues that mean we cannot guarantee
+          // compatibility with CPU
+          // - we can only support 4 digit years but Spark supports a wider range
+          // - we use a proleptic Gregorian calender but Spark uses a hybrid Julian+Gregorian
+          //   calender in LEGACY mode
+          if (SQLConf.get.ansiEnabled) {
+            meta.willNotWorkOnGpu("LEGACY format in ANSI mode is not supported on the GPU")
+          } else if (!meta.conf.incompatDateFormats) {
+            meta.willNotWorkOnGpu(s"LEGACY format '$sparkFormat' on the GPU is not guaranteed " +
+              s"to produce the same results as Spark on CPU. Set " +
+              s"${RapidsConf.INCOMPATIBLE_DATE_FORMATS.key}=true to force onto GPU.")
+          }
+        } else {
+          meta.willNotWorkOnGpu(s"LEGACY format '$sparkFormat' is not supported on the GPU.")
+        }
+      } catch {
+        case e: TimestampFormatConversionException =>
+          meta.willNotWorkOnGpu(s"Failed to convert ${e.reason} ${e.getMessage}")
+      }
+    } else {
+      val parts = sparkFormat.split("'T'", 2)
+      if (parts.isEmpty) {
+        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported")
+      }
+      if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
+        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported")
+      }
+      if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
+        meta.willNotWorkOnGpu(s"the timestamp format '$sparkFormat' is not supported")
+      }
+      try {
+        // try and convert the format to cuDF format - this will throw an exception if
+        // the format contains unsupported characters or words
+        toCudfFormats(sparkFormat, parseString)
+      } catch {
+        case e: TimestampFormatConversionException =>
+          meta.willNotWorkOnGpu(s"Failed to convert ${e.reason} ${e.getMessage}")
+      }
+    }
+  }
+
+  /**
+   * Get the list of all cuDF formats that need to be checked for when parsing timestamps. The
+   * returned formats must be ordered such that the first format is the most lenient and the
+   * last is the least lenient.
+   *
+   * For example, the spark format `yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]` would result in the
+   * following cuDF formats being returned, in this order:
+   *
+   * - `%Y-%m-%d`
+   * - `%Y-%m-%dT%H:%M`
+   * - `%Y-%m-%dT%H:%M:%S`
+   * - `%Y-%m-%dT%H:%M:%S.%f`
+   */
+  def toCudfFormats(sparkFormat: String, parseString: Boolean): Seq[String] = {
+    val hasZsuffix = sparkFormat.endsWith("Z")
+    val formatRoot = if (hasZsuffix) {
+      sparkFormat.substring(0, sparkFormat.length-1)
+    } else {
+      sparkFormat
+    }
+
+    // strip off suffixes that cuDF will not recognize
+    val cudfSupportedFormat = formatRoot
+      .replace("'T'", "T")
+      .replace("[.SSSXXX]", "")
+      .replace("[.SSS][XXX]", "")
+      .replace("[.SSS]", "")
+      .replace("[.SSSSSS]", "")
+      .replace(".SSSXXX", "")
+      .replace(".SSS", "")
+      .replace("[:ss]", "")
+
+    val cudfFormat = toStrf(cudfSupportedFormat, parseString)
+    val suffix = if (hasZsuffix) "Z" else ""
+
+    val optionalFractional = Seq("[.SSS][XXX]", "[.SSS]", "[.SSSSSS]", "[.SSS][XXX]",
+      ".SSSXXX", ".SSS")
+    val baseFormats = if (optionalFractional.exists(formatRoot.endsWith)) {
+      val cudfFormat1 = cudfFormat + suffix
+      val cudfFormat2 = cudfFormat + ".%f" + suffix
+      Seq(cudfFormat1, cudfFormat2)
+    } else if (formatRoot.endsWith("[:ss]")) {
+      Seq(cudfFormat + ":%S" + suffix)
+    } else {
+      Seq(cudfFormat)
+    }
+
+    val pos = baseFormats.head.indexOf('T')
+    val formatsIncludingDateOnly = if (pos == -1) {
+      baseFormats
+    } else {
+      Seq(baseFormats.head.substring(0, pos)) ++ baseFormats
+    }
+
+    // seconds are always optional in Spark
+    val formats = ListBuffer[String]()
+    for (fmt <- formatsIncludingDateOnly) {
+      if (fmt.contains(":%S") && !fmt.contains("%f")) {
+        formats += fmt.replace(":%S", "")
+      }
+      formats += fmt
+    }
+    formats
+  }
+
 }
