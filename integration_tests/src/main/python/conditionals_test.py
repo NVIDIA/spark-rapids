@@ -253,3 +253,11 @@ def test_conditional_with_side_effects_map_key_not_found(map_gen, data_gen, ansi
         lambda spark: two_col_df(spark, map_gen, data_gen).selectExpr(
             'CASE WHEN length(b) = 0 THEN a["not_found"] ELSE null END'),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('data_gen', [ShortGen().with_special_case(SHORT_MIN)], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_abs(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN a > -32768 THEN abs(a) ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})

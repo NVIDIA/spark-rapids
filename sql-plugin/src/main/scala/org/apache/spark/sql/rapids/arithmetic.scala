@@ -122,6 +122,8 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
   override def unaryOp: UnaryOp = UnaryOp.ABS
 
+  override def hasSideEffects: Boolean = failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)
+
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
       // Because of 2s compliment we need to only worry about the min value for integer types.
