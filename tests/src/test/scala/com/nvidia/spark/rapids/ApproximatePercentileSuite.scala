@@ -94,8 +94,12 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       "FROM salaries GROUP BY dept")
   }
 
-  test("fall back to CPU for reduction") {
-    sqlFallbackTest("SELECT approx_percentile(salary, array(0.5)) FROM salaries")
+  testSparkResultsAreEqual("approx percentile reduction",
+      df => salaries(df, DataTypes.DoubleType, 100),
+      maxFloatDiff = 25.0, // approx percentile on GPU uses a different algorithm to Spark
+      incompat = true) { df =>
+    df.createOrReplaceTempView("salaries")
+    df.sparkSession.sql("SELECT approx_percentile(salary, array(0.5)) FROM salaries")
   }
 
   def sqlFallbackTest(sql: String) {
