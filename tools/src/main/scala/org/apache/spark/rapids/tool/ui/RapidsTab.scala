@@ -19,8 +19,14 @@ package org.apache.spark.rapids.tool.ui
 import org.apache.spark.rapids.tool.status.RapidsAppStatusStore
 import org.apache.spark.ui.{SparkUI, SparkUITab}
 
-class RapidsEnvTab(parent: SparkUI,
-                   store: RapidsAppStatusStore) extends SparkUITab(parent, "RAPIDSEnv") {
-  attachPage(new RapidsEnvPage(this, parent.conf, store))
+class RapidsTab(parent: SparkUI,
+                store: RapidsAppStatusStore) extends SparkUITab(parent, "RAPIDS") {
+  attachPage(new RapidsPage(this, parent.conf, store))
+  attachPage(new RapidsComparePage(this, parent.conf, store))
   parent.attachTab(this)
+  parent.addStaticHandler(RapidsTab.STATIC_RESOURCE_DIR, "/static/rapids")
+}
+
+object RapidsTab {
+  private val STATIC_RESOURCE_DIR = "org/apache/spark/rapids/tool/ui/static"
 }

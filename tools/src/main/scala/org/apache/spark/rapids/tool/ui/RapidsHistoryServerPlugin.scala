@@ -30,7 +30,7 @@ class RapidsHistoryServerPlugin extends AppHistoryServerPlugin {
 
   override def setupUI(ui: SparkUI): Unit = {
     val store = new RapidsAppStatusStore(ui.store)
-    new RapidsEnvTab(ui, store)
+    new RapidsTab(ui, store)
   }
 
   override def displayOrder: Int = 2

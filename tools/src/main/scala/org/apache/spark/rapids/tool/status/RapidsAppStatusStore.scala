@@ -16,17 +16,33 @@
 
 package org.apache.spark.rapids.tool.status
 
-import org.apache.spark.internal.Logging
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.rapids.tool.status.RapidsToolProfileConfig._
 import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.status.AppStatusStore
 
-
 class RapidsAppStatusStore(
   val appSStore: AppStatusStore,
   val listener: Option[RapidsAppStatusListener] = None) extends SparkListener with Logging {
+  val sparkProperties = appSStore.environmentInfo().sparkProperties.toMap
 
   def getRapidJARInfo: Seq[(String, String)] = {
     appSStore.environmentInfo().classpathEntries.filter(_._1 matches(RAPIDS_JARS_REGEX))
+  }
+
+  def getRapidsParams: Map[String, String] = {
+    sparkProperties.filterKeys { key =>
+      key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
+        key.startsWith("spark.shuffle.manager") || key.startsWith("spark.shuffle.service.enabled")
+    }
+  }
+
+  def isRapidsEnabled(): Boolean = {
+    sparkProperties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin") &&
+      sparkProperties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean
+  }
+
+  def getGeneralConfig: Map[String, String] = {
+    Map("Plugin Enabled" -> isRapidsEnabled().toString)
   }
 }
