@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids
 
 import java.io.{InputStream, IOException}
 import java.lang.reflect.Method
 import java.nio.ByteBuffer
+import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -27,10 +28,9 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
-import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import java.util
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
@@ -40,7 +40,7 @@ import org.apache.parquet.hadoop.{CodecFactory, MemoryManager, ParquetFileReader
 import org.apache.parquet.hadoop.ParquetFileWriter.Mode
 import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
-import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream, SeekableInputStream}
+import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream}
 import org.apache.parquet.schema.Type
 
 import org.apache.spark.TaskContext
@@ -53,7 +53,8 @@ import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjectio
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.columnar.CachedBatch
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, VectorizedColumnReader}
-import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.{ParquetRecordMaterializer, ShimVectorizedColumnReader}
+import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
+import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.ShimVectorizedColumnReader
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
@@ -120,7 +121,7 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
 
   override def getLength: Long = buff.length
 
-  override def newStream(): SeekableInputStream = {
+  override def newStream(): org.apache.parquet.io.SeekableInputStream = {
     val byteBuffer = ByteBuffer.wrap(buff)
     new DelegatingSeekableInputStream(new ByteBufferInputStream(byteBuffer)) {
       override def getPos: Long = byteBuffer.position()

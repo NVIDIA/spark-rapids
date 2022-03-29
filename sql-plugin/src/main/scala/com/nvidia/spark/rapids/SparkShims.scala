@@ -36,16 +36,6 @@ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
-/**
- * Spark BuildSide, BuildRight, BuildLeft moved packages in Spark 3.1
- * so create GPU versions of these that can be agnostic to Spark version.
- */
-sealed abstract class GpuBuildSide
-
-case object GpuBuildRight extends GpuBuildSide
-
-case object GpuBuildLeft extends GpuBuildSide
-
 sealed abstract class ShimVersion
 
 case class SparkShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {

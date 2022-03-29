@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
+package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.ParquetCachedBatchSerializer
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -25,8 +25,52 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, Expre
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan}
-import org.apache.spark.sql.execution.columnar.InMemoryRelation
+import org.apache.spark.sql.execution.columnar.{InMemoryRelation, InMemoryTableScanExec}
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+class InMemoryTableScanMeta(
+    imts: InMemoryTableScanExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends SparkPlanMeta[InMemoryTableScanExec](imts, conf, parent, rule) {
+
+  override def tagPlanForGpu(): Unit = {
+    def stringifyTypeAttributeMap(groupedByType: Map[DataType, Set[String]]): String = {
+      groupedByType.map { case (dataType, nameSet) =>
+        dataType + " " + nameSet.mkString("[", ", ", "]")
+      }.mkString(", ")
+    }
+
+    val supportedTypeSig = rule.getChecks.get.asInstanceOf[ExecChecks]
+    val unsupportedTypes: Map[DataType, Set[String]] = imts.relation.output
+        .filterNot(attr => supportedTypeSig.check.isSupportedByPlugin(attr.dataType))
+        .groupBy(_.dataType)
+        .mapValues(_.map(_.name).toSet)
+
+    val msgFormat = "unsupported data types in output: %s"
+    if (unsupportedTypes.nonEmpty) {
+      willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
+    }
+    if (!imts.relation.cacheBuilder.serializer
+        .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+      willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+      if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+          .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
+        throw new IllegalStateException("Cache serializer failed to load! " +
+            "Something went wrong while loading ParquetCachedBatchSerializer class")
+      }
+    }
+  }
+  /**
+   * Convert InMemoryTableScanExec to a GPU enabled version.
+   */
+  override def convertToGpu(): GpuExec = {
+    GpuInMemoryTableScanExec(imts.attributes, imts.predicates, imts.relation)
+  }
+}
 
 case class GpuInMemoryTableScanExec(
    attributes: Seq[Attribute],

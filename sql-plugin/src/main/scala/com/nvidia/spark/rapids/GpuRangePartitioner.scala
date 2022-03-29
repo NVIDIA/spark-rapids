@@ -42,7 +42,7 @@ object GpuRangePartitioner {
       sampleSizePerPartition: Int,
       sorter: GpuSorter): (Long, Array[(Int, Long, Array[InternalRow])]) = {
     val shift = rdd.id
-    val toRowConverter = GpuColumnarToRowExecParent.makeIteratorFunc(sorter.projectedBatchSchema,
+    val toRowConverter = GpuColumnarToRowExec.makeIteratorFunc(sorter.projectedBatchSchema,
       NoopMetric, NoopMetric, NoopMetric, NoopMetric)
     val sketched = rdd.mapPartitionsWithIndex { (idx, iter) =>
       val seed = byteswap32(idx ^ (shift << 16))
@@ -59,7 +59,7 @@ object GpuRangePartitioner {
       fraction: Double,
       seed: Int,
       sorter: GpuSorter): Array[InternalRow] = {
-    val toRowConverter = GpuColumnarToRowExecParent.makeIteratorFunc(sorter.projectedBatchSchema,
+    val toRowConverter = GpuColumnarToRowExec.makeIteratorFunc(sorter.projectedBatchSchema,
       NoopMetric, NoopMetric, NoopMetric, NoopMetric)
     rdd.mapPartitions { iter =>
       val sample = SamplingUtils.randomResample(

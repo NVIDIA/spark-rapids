@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
+package org.apache.spark.sql.execution.datasources.parquet.rapids
 
 import java.time.ZoneId
 
@@ -23,6 +23,7 @@ import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.parquet.{NoopUpdater, ParquetToSparkSchemaConverter}
+import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.ShimParquetRowConverter
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 

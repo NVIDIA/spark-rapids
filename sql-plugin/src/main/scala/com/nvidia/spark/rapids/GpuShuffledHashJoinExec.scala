@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{HostConcatResultUtil, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
-import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuJoinUtils, ShimBinaryExecNode}
+import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD

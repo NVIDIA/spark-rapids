@@ -14,11 +14,19 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
-
-import com.nvidia.spark.rapids.{GpuBuildLeft, GpuBuildRight, GpuBuildSide}
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+
+/**
+ * Spark BuildSide, BuildRight, BuildLeft moved packages in Spark 3.1
+ * so create GPU versions of these that can be agnostic to Spark version.
+ */
+sealed abstract class GpuBuildSide
+
+case object GpuBuildRight extends GpuBuildSide
+
+case object GpuBuildLeft extends GpuBuildSide
 
 object GpuJoinUtils {
   def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {

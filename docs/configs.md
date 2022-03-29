@@ -365,7 +365,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
 <a name="sql.exec.ObjectHashAggregateExec"></a>spark.rapids.sql.exec.ObjectHashAggregateExec|The backend for hash based aggregations supporting TypedImperativeAggregate functions|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
-<a name="sql.exec.InMemoryTableScanExec"></a>spark.rapids.sql.exec.InMemoryTableScanExec|Implementation of InMemoryTableScanExec to use GPU accelerated Caching|true|None|
+<a name="sql.exec.InMemoryTableScanExec"></a>spark.rapids.sql.exec.InMemoryTableScanExec|Implementation of InMemoryTableScanExec to use GPU accelerated caching|true|None|
 <a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 <a name="sql.exec.BatchScanExec"></a>spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
 <a name="sql.exec.BroadcastExchangeExec"></a>spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|

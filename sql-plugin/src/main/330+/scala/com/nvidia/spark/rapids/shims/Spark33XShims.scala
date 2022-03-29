@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 

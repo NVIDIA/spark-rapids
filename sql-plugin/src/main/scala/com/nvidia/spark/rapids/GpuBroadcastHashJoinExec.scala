@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.{GpuJoinUtils, ShimBinaryExecNode}
+import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

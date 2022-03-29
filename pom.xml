@@ -114,7 +114,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -140,7 +139,6 @@
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -181,7 +179,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/312db/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -232,7 +229,6 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/312-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -258,7 +254,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -286,7 +281,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/313/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -312,7 +306,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -340,7 +333,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/314/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -376,7 +368,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -404,7 +395,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/320/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
@@ -440,7 +430,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -468,7 +457,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/321/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
@@ -504,7 +492,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -532,7 +519,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/322/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
@@ -568,7 +554,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -610,7 +595,6 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/321db/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
@@ -659,7 +643,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/330/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -693,7 +676,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -722,7 +704,6 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
@@ -753,7 +734,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
