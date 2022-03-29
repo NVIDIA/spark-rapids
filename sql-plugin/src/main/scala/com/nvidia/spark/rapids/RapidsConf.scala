@@ -889,6 +889,21 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
+    .doc("CSV reading is not 100% compatible when reading floats.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
+    .doc("CSV reading is not 100% compatible when reading doubles.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimal.enabled")
+    .doc("CSV reading is not 100% compatible when reading decimals.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -897,6 +912,21 @@ object RapidsConf {
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
+    .doc("JSON reading is not 100% compatible when reading floats.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
+    .doc("JSON reading is not 100% compatible when reading doubles.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
+    .doc("JSON reading is not 100% compatible when reading decimals.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1655,9 +1685,21 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
 
+  lazy val isCsvFloatReadEnabled: Boolean = get(ENABLE_READ_CSV_FLOATS)
+
+  lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
+
+  lazy val isCsvDecimalReadEnabled: Boolean = get(ENABLE_READ_CSV_DECIMALS)
+
   lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
 
   lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
+
+  lazy val isJsonFloatReadEnabled: Boolean = get(ENABLE_READ_JSON_FLOATS)
+
+  lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
+
+  lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 

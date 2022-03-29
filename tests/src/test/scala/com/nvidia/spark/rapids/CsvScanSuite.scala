@@ -29,7 +29,8 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test CSV splits with chunks", floatCsvDf,
     conf = new SparkConf()
-        .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
+        .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
+        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")) {
     frame => frame.select(col("floats"))
   }
 
