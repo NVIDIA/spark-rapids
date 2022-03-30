@@ -46,40 +46,6 @@ trait TableCompressionCodec {
   val codecId: Byte
 
   /**
-   * Compress a contiguous table.
-   * @note The contiguous table is NOT closed by this operation and must be closed separately.
-   * @note The compressed buffer MAY NOT be ideally sized to the compressed data. It may be
-   *       significantly larger than the size of the compressed data. Releasing this unused
-   *       memory will require making a copy of the data to a buffer of the appropriate size.
-   * @param tableId ID to use for this table
-   * @param contigTable contiguous table to compress
-   * @param stream CUDA stream to use
-   * @return compressed table
-   */
-  def compress(tableId: Int, contigTable: ContiguousTable, stream: Cuda.Stream): CompressedTable
-
-  /**
-   * Decompress the compressed data buffer from a table compression operation asynchronously
-   * using the specified stream.
-   * @note The compressed buffer is NOT closed by this method.
-   * @param outputBuffer buffer where uncompressed data will be written
-   * @param outputOffset offset in the uncompressed buffer to start writing data
-   * @param outputLength expected length of the uncompressed data in bytes
-   * @param inputBuffer buffer containing the compressed data
-   * @param inputOffset offset in the compressed buffer where compressed data starts
-   * @param inputLength length of the compressed data in bytes
-   * @param stream CUDA stream to use
-   */
-  def decompressBufferAsync(
-      outputBuffer: DeviceMemoryBuffer,
-      outputOffset: Long,
-      outputLength: Long,
-      inputBuffer: DeviceMemoryBuffer,
-      inputOffset: Long,
-      inputLength: Long,
-      stream: Cuda.Stream): Unit
-
-  /**
    * Create a batched compressor instance
    * @param maxBatchMemorySize The upper limit in bytes of temporary and output memory usage at
    *                           which a batch should be compressed. A single table that requires

@@ -27,39 +27,6 @@ class NvcompLZ4CompressionCodec(codecConfigs: TableCompressionCodecConfig)
   override val name: String = "nvcomp-LZ4"
   override val codecId: Byte = CodecType.NVCOMP_LZ4
 
-  override def compress(
-      tableId: Int,
-      contigTable: ContiguousTable,
-      stream: Cuda.Stream): CompressedTable = {
-    val tableBuffer = contigTable.getBuffer
-    val (compressedSize, oversizedBuffer) =
-      NvcompLZ4CompressionCodec.compress(tableBuffer, codecConfigs, stream)
-    closeOnExcept(oversizedBuffer) { oversizedBuffer =>
-      require(compressedSize <= oversizedBuffer.getLength, "compressed buffer overrun")
-      val tableMeta = MetaUtils.buildTableMeta(
-        Some(tableId),
-        contigTable,
-        CodecType.NVCOMP_LZ4,
-        compressedSize)
-      CompressedTable(compressedSize, tableMeta, oversizedBuffer)
-    }
-  }
-
-  override def decompressBufferAsync(
-      outputBuffer: DeviceMemoryBuffer,
-      outputOffset: Long,
-      outputLength: Long,
-      inputBuffer: DeviceMemoryBuffer,
-      inputOffset: Long,
-      inputLength: Long,
-      stream: Cuda.Stream): Unit = {
-    withResource(outputBuffer.slice(outputOffset, outputLength)) { outSlice =>
-      withResource(inputBuffer.slice(inputOffset, inputLength)) { inSlice =>
-        NvcompLZ4CompressionCodec.decompressAsync(outSlice, inSlice, stream)
-      }
-    }
-  }
-
   override def createBatchCompressor(
       maxBatchMemoryBytes: Long,
       stream: Cuda.Stream): BatchedTableCompressor = {
@@ -85,7 +52,7 @@ object NvcompLZ4CompressionCodec extends Arm {
       input: DeviceMemoryBuffer,
       codecConfigs: TableCompressionCodecConfig,
       stream: Cuda.Stream): (Long, DeviceMemoryBuffer) = {
-    val lz4Config = LZ4Compressor.configure(codecConfigs.lz4ChunkSize, input.getLength())
+    val lz4Config = LZ4Compressor.configure(codecConfigs.lz4ChunkSize, input.getLength)
     withResource(DeviceMemoryBuffer.allocate(lz4Config.getTempBytes)) { tempBuffer =>
       var compressedSize: Long = 0L
       val outputSize = lz4Config.getMaxCompressedBytes
@@ -109,12 +76,12 @@ object NvcompLZ4CompressionCodec extends Arm {
       inputBuffer: DeviceMemoryBuffer,
       stream: Cuda.Stream): Unit = {
     withResource(LZ4Decompressor.configure(inputBuffer, stream)) { decompressConf =>
-      val outputSize = decompressConf.getUncompressedBytes()
+      val outputSize = decompressConf.getUncompressedBytes
       if (outputSize != outputBuffer.getLength) {
         throw new IllegalStateException(
           s"metadata uncompressed size is $outputSize, buffer size is ${outputBuffer.getLength}")
       }
-      val tempSize = decompressConf.getTempBytes()
+      val tempSize = decompressConf.getTempBytes
       withResource(DeviceMemoryBuffer.allocate(tempSize)) { tempBuffer =>
         LZ4Decompressor.decompressAsync(inputBuffer, decompressConf, tempBuffer, outputBuffer,
           stream)
