@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,11 @@ class RapidsGdsStore(
         singleShotSpill(other, deviceBuffer)
       }
     }
+  }
+
+  override def close(): Unit = {
+    super.close()
+    batchSpiller.close()
   }
 
   abstract class RapidsGdsBuffer(
@@ -120,13 +125,19 @@ class RapidsGdsStore(
       other.getSpillPriority, other.spillCallback)
   }
 
-  class BatchSpiller() {
+  class BatchSpiller() extends AutoCloseable {
     private val blockSize = 4096
     private[this] val spilledBuffers = new ConcurrentHashMap[File, Set[RapidsBufferId]]
     private[this] val pendingBuffers = ArrayBuffer.empty[RapidsGdsBatchedBuffer]
     private[this] val batchWriteBuffer = CuFileBuffer.allocate(batchWriteBufferSize, true)
     private[this] var currentFile = TempSpillBufferId().getDiskPath(diskBlockManager)
     private[this] var currentOffset = 0L
+
+    override def close(): Unit = {
+      pendingBuffers.foreach(_.free())
+      pendingBuffers.clear()
+      batchWriteBuffer.close()
+    }
 
     def spill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
       this.synchronized {
