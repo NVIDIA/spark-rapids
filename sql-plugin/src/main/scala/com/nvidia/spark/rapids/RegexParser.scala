@@ -584,9 +584,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'b' | 'B' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4517
           throw new RegexUnsupportedException("word boundaries are not supported")
-        case 's' | 'S' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4528
-          throw new RegexUnsupportedException("whitespace classes are not supported")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
         case 'Z' if mode == RegexSplitMode =>
