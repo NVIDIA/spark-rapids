@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.profiling._
 
@@ -201,8 +202,8 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
         app.accumIdToStageId.put(res.id, event.stageId)
         arrBuf += thisMetric
       } catch {
-        case e: ClassCastException =>
-          logWarning("ClassCastException when parsing accumulables for task "
+        case NonFatal(e) =>
+          logWarning("Exception when parsing accumulables for task "
             + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
             + ": ")
           logWarning(e.toString)
@@ -404,8 +405,8 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
         app.accumIdToStageId.put(res._2.id, event.stageInfo.stageId)
         arrBuf += thisMetric
       } catch {
-        case e: ClassCastException =>
-          logWarning("ClassCastException when parsing accumulables for task " +
+        case NonFatal(e) =>
+          logWarning("Exception when parsing accumulables for task " +
               "stageID=" + event.stageInfo.stageId + ": ")
           logWarning(e.toString)
           logWarning("The problematic accumulable is: name="
