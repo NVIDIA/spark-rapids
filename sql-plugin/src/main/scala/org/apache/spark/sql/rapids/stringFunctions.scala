@@ -810,7 +810,7 @@ object GpuRegExpUtils {
     }
 
     val converted = b.toString
-    rep.equals(converted) -> converted
+    !rep.equals(converted) -> converted
   }
 
   /**

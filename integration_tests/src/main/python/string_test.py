@@ -504,9 +504,9 @@ def test_re_replace_backrefs():
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, "(TEST)", "[$0]")',
             'REGEXP_REPLACE(a, "(TEST)", "[\\1]")',
-            'REGEXP_REPLACE(a, "(TEST).*(A)", "[\\2][$1][$0]")',
-            'REGEXP_REPLACE(a, "([0-9]+)(T).*(T)", "[$3][$2][$1]")',
-            'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1"'  # no match
+            'REGEXP_REPLACE(a, "(T)[a-z]+(T)", "[$2][$1][$0]")',
+            'REGEXP_REPLACE(a, "([0-9]+)(T)[a-z]+(T)", "[$3][$2][$1]")',
+            'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1")'  # no match
         ),
         conf=_regexp_conf)
 
@@ -514,7 +514,7 @@ def test_re_replace_backrefs():
 def test_re_replace_backrefs_idx_out_of_bounds():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_error(lambda spark: unary_op_df(spark, gen).selectExpr(
-        'REGEXP_REPLACE(a, "(T).*(T)", "[$3]")'),
+        'REGEXP_REPLACE(a, "(T)(E)(S)(T)", "[$5]")').collect(),
         conf=_regexp_conf,
         error_message='')
 
