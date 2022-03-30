@@ -773,34 +773,44 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 object GpuRegExpUtils {
 
   /**
-   * Determine if a string contains back-references such as `$1` but ignoring
-   * if preceded by escape character.
+   * Convert symbols of back-references if input string contains any.
+   * In spark's regex rule, there are two patterns of back-references:
+   * \group_index and $group_index
+   * This method transforms above two patterns into cuDF pattern ${group_index}, except they are
+   * preceded by escape character.
+   *
+   * @param rep replacement string
+   * @return A pair consists of a boolean indicating whether containing any backref and the
+   *         converted replacement.
    */
-  def backrefReplace(s: String): (Boolean, String) = {
+  def backrefConversion(rep: String): (Boolean, String) = {
     val b = new StringBuilder
-    var hasBackrefSymbol = false
     var i = 0
-    while (i < s.length) {
-      if (s.charAt(i) == '\\') {
-        b.append('\\')
-        i += 2
-      } else if (s.charAt(i) == '$' && i+1 < s.length && s.charAt(i+1).isDigit) {
-        if (!hasBackrefSymbol) hasBackrefSymbol = true
-        b.append('\\')
+    while (i < rep.length) {
+      // match $group_index or \group_index
+      if (Seq('$', '\\').contains(rep.charAt(i))
+        && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
+
+        b.append("${")
         var j = i + 1
-        var groupNumber = 0
-        while (j + 1 < s.length && s.charAt(j).isDigit) {
-          groupNumber = groupNumber * 10 + s.charAt(j)
+        while (j + 1 < rep.length && rep.charAt(j).isDigit) {
+          b.append(rep.charAt(j))
           j += 1
         }
-        b.append(groupNumber + 1)
-        i = j + 1
+        b.append("}")
+        i = j
+      } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
+        // skip potential \$group_index or \\group_index
+        b.append('\\').append(rep.charAt(i + 1))
+        i += 2
       } else {
-        b.append(s.charAt(i))
+        b.append(rep.charAt(i))
         i += 1
       }
     }
-    if (hasBackrefSymbol) true -> b.toString else false -> s
+
+    val converted = b.toString
+    rep.equals(converted) -> converted
   }
 
   /**

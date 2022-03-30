@@ -499,12 +499,24 @@ def test_re_replace():
         conf=_regexp_conf)
 
 def test_re_replace_backrefs():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, "(TEST)", "[$0]")',
-            'REGEXP_REPLACE(a, "(TEST)", "[$1]")'),
+            'REGEXP_REPLACE(a, "(TEST)", "[\\1]")',
+            'REGEXP_REPLACE(a, "(TEST).*(A)", "[\\2][$1][$0]")',
+            'REGEXP_REPLACE(a, "([0-9]+)(T).*(T)", "[$3][$2][$1]")',
+            'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1"'  # no match
+        ),
         conf=_regexp_conf)
+
+# For GPU runs, cuDF will check the range and throw exception if index is out of range
+def test_re_replace_backrefs_idx_out_of_bounds():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_error(lambda spark: unary_op_df(spark, gen).selectExpr(
+        'REGEXP_REPLACE(a, "(T).*(T)", "[$3]")'),
+        conf=_regexp_conf,
+        error_message='')
 
 def test_re_replace_backrefs_escaped():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
