@@ -402,6 +402,11 @@ def test_json_read_fuzz(enable_fuzz_test, spark_tmp_path):
     schema = gen_top_schema(depth)
 
     data_path = spark_tmp_path + '/JSON_FUZZ_DATA'
+    schema_path = spark_tmp_path + '/JSON_SCHEMA'
+
+    # write the schema for debugging
+    with open(schema_path, 'w') as f:
+        f.write("{}".format(schema))
     
     with open(data_path, 'w') as f:
         for c in gen_json(schema):
