@@ -780,11 +780,11 @@ def test_regexp_whitespace():
                 'regexp(a, "[abcd]+\\s+[0-9]+")',
                 'regexp(a, "\\S{3}")',
                 'rlike(a, "[abcd]+\\s+\\S{2,3}")',
-                'regexp_extract(a, "([a-d]*)([0-9\\s]*)([a-d]*)", 2)',
-                'regexp_extract(a, "([a-d]*)(\\S*)([0-9]*)", 2)',
-                'regexp_extract(a, "([a-d]*)(\\S*)([0-9]*)", 3)',
-                'regexp_replace(a, "(\\s*)", "@")',
-                'regexp_replace(a, "(\\S*)", "#")',
+                'regexp_extract(a, "([a-d]+)([0-9\\s]+)([a-d]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 3)',
+                'regexp_replace(a, "(\\s+)", "@")',
+                'regexp_replace(a, "(\\S+)", "#")',
             ),
         conf=_regexp_conf)
 
