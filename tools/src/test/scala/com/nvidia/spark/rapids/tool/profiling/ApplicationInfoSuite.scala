@@ -752,4 +752,36 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }
     }
   }
+
+  test("test collectionAccumulator") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, appId) = ToolTestUtils.generateEventLog(eventLogDir, "collectaccum") { spark =>
+        val a = spark.sparkContext.collectionAccumulator[Long]("testCollect")
+        val rdd = spark.sparkContext.parallelize(Array(1, 2, 3, 4))
+        // run something to add it to collectionAccumulator
+        rdd.foreach(x => a.add(x))
+        import spark.implicits._
+        rdd.toDF
+      }
+
+      TrampolineUtil.withTempDir { collectFileDir =>
+        val appArgs = new ProfileArgs(Array(
+          "--output-directory",
+          collectFileDir.getAbsolutePath,
+          eventLog))
+
+        var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+        var index: Int = 1
+        val eventlogPaths = appArgs.eventlog()
+        for (path <- eventlogPaths) {
+          apps += new ApplicationInfo(hadoopConf,
+            EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
+          index += 1
+        }
+        // the fact we generated app properly shows we can handle collectionAccumulators
+        // right now we just ignore them so nothing else to check
+        assert(apps.size == 1)
+      }
+    }
+  }
 }
