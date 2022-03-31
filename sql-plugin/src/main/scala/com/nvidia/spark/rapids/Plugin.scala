@@ -277,7 +277,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
-    super.onTaskFailed(failureReason)
     failureReason match {
       case ef: ExceptionFailure =>
         val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
