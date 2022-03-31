@@ -280,15 +280,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     super.onTaskFailed(failureReason)
     failureReason match {
       case ef: ExceptionFailure =>
-        logWarning(" exception description: " + ef.description)
-        logWarning(" exception Failures: " + ef.toErrorString)
-
-        // parse the exception message
-        logWarning("full stack trace: " + ef.fullStackTrace)
-        logWarning("full exception: " + ef.exception.getOrElse(""))
-        ef.stackTrace.foreach { elem =>
-          logWarning(s"stacktrace elem is: $elem")
-        }
         val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
           "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
           "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
@@ -296,6 +287,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           "cudaErrorECCUncorrectable")
         if (unrecoverableErrors.exists(ef.toErrorString.contains(_)) ||
           unrecoverableErrors.exists(ef.description.contains(_)) ) {
+          logError("Existing Executor based on exception having fata CUDA error: " +
+            s"${ef.toErrorString}")
           System.exit(2)
         }
       case other =>
