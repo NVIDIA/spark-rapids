@@ -420,8 +420,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
     val map: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
       GpuOverrides.exec[ShuffleExchangeExec](
         "The backend for most data being exchanged between processes",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ansiIntervals).nested()
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.ansiIntervals).nested()
             .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
                 s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
             .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
@@ -434,7 +434,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+              TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
           override val childScans: scala.Seq[ScanMeta[_]] =

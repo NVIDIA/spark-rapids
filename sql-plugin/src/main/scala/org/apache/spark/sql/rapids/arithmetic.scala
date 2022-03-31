@@ -158,7 +158,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
     if (GpuTypeShims.isYearMonthIntervalType(dataType)) {
       // For day time interval, Spark throws an exception when overflow,
       // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-      withResource(Scalar.fromLong(Int.MinValue)) { minVal =>
+      withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
       }
     }
