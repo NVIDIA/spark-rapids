@@ -289,10 +289,10 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           unrecoverableErrors.exists(ef.description.contains(_)) ) {
           logError("Stopping the Executor based on exception being a fatal CUDA error: " +
             s"${ef.toErrorString}")
-          System.exit(2)
+          System.exit(20)
         }
       case other =>
-        logWarning(s"other type of task failure: ${other.toString}")
+        logDebug(s"Executor onTaskFailed not a CUDA fatal error: ${other.toString}")
     }
   }
 }
