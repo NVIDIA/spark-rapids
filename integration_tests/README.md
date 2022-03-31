@@ -381,7 +381,7 @@ $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.06.0-SNAPSHOT.jar,cu
 ### Enabling fuzz tests
 
 Fuzz tests are intended to find more corner cases in testing. We disable them by default because they might randomly fail. 
-The tests can be enabled by appending th option `--fuzz_test` to the command.
+The tests can be enabled by appending the option `--fuzz_test` to the command.
 
    * `--fuzz_test` (enable the fuzz tests when provided, and remove this option if you want to disable the tests)
 

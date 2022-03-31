@@ -14,9 +14,7 @@
 
 # A JSON generator built based on the context free grammar from https://www.json.org/json-en.html
 
-from cgi import test
 import random
-import pytest 
 from marks import allow_non_gpu, fuzz_test
 from typing import List
 from data_gen import *
