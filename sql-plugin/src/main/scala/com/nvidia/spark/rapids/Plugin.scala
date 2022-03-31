@@ -28,7 +28,7 @@ import scala.util.matching.Regex
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
@@ -274,6 +274,32 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+  }
+
+  override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
+    super.onTaskFailed(failureReason)
+    failureReason match {
+      case ef: ExceptionFailure =>
+        logWarning(" exception description: " + ef.description)
+        logWarning(" exception Failures: " + ef.toErrorString)
+
+        // parse the exception message
+        logWarning("full stack trace: " + ef.fullStackTrace)
+        logWarning("full exception: " + ef.exception.getOrElse(""))
+        ef.stackTrace.foreach { elem =>
+          logWarning(s"stacktrace elem is: $elem")
+        }
+        val errorText = "CUDA, the process must be terminated and relaunched."
+        val unknownErrorText = "cudaErrorUnknown"
+        val eccErrorText = "cudaErrorECCUncorrectable"
+        val allErrors = Seq(unknownErrorText, eccErrorText, errorText)
+        if (allErrors.exists(ef.toErrorString.contains(_)) ||
+          allErrors.exists(ef.description.contains(_)) ) {
+          System.exit(2)
+        }
+      case other =>
+        logWarning(s"other type of task failure: ${other.toString}")
+    }
   }
 }
 
