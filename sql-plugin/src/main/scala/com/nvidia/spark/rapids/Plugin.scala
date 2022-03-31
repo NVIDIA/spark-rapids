@@ -287,7 +287,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           "cudaErrorECCUncorrectable")
         if (unrecoverableErrors.exists(ef.toErrorString.contains(_)) ||
           unrecoverableErrors.exists(ef.description.contains(_)) ) {
-          logError("Existing Executor based on exception having fata CUDA error: " +
+          logError("Stopping the Executor based on exception being a fatal CUDA error: " +
             s"${ef.toErrorString}")
           System.exit(2)
         }
