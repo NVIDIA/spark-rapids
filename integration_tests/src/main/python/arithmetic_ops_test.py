@@ -871,17 +871,12 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_unary_minus_day_time_interval():
-    DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, DAY_TIME_GEN_NO_OVER_FLOW).selectExpr('-a'))
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_unary_minus_ansi_no_overflow_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_unary_minus_day_time_interval(ansi_enabled):
     DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, DAY_TIME_GEN_NO_OVER_FLOW).selectExpr('-a'),
-        conf=ansi_enabled_conf)
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_unary_minus_ansi_overflow_day_time_interval():
@@ -891,17 +886,12 @@ def test_unary_minus_ansi_overflow_day_time_interval():
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_abs_day_time_interval():
-    DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, DAY_TIME_GEN_NO_OVER_FLOW).selectExpr('abs(a)'))
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_abs_ansi_no_overflow_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
     DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, DAY_TIME_GEN_NO_OVER_FLOW).selectExpr('abs(a)'),
-        conf=ansi_enabled_conf)
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_abs_ansi_overflow_day_time_interval():
@@ -911,19 +901,13 @@ def test_abs_ansi_overflow_day_time_interval():
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_addition_day_time_interval():
-    DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, DAY_TIME_GEN_NO_OVER_FLOW, DAY_TIME_GEN_NO_OVER_FLOW).select(
-            f.col('a') + f.col('b')))
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_addition_ansi_no_overflow_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_addition_day_time_interval(ansi_enabled):
     DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, DAY_TIME_GEN_NO_OVER_FLOW, DAY_TIME_GEN_NO_OVER_FLOW).select(
             f.col('a') + f.col('b')),
-        conf=ansi_enabled_conf)
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_add_overflow_with_ansi_enabled_day_time_interval():
@@ -936,19 +920,13 @@ def test_add_overflow_with_ansi_enabled_day_time_interval():
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_subtraction_day_time_interval():
-    DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, DAY_TIME_GEN_NO_OVER_FLOW, DAY_TIME_GEN_NO_OVER_FLOW).select(
-            f.col('a') - f.col('b')))
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_subtraction_ansi_no_overflow_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_subtraction_day_time_interval(ansi_enabled):
     DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, DAY_TIME_GEN_NO_OVER_FLOW, DAY_TIME_GEN_NO_OVER_FLOW).select(
             f.col('a') - f.col('b')),
-        conf=ansi_enabled_conf)
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_subtraction_overflow_with_ansi_enabled_day_time_interval():

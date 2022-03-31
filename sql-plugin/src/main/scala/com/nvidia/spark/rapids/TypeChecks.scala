@@ -677,7 +677,7 @@ object TypeSig {
   /**
    * ANSI year-month and day-time interval for Spark 320+
    */
-  val ansiInterval: TypeSig = TypeSigUtil.getAnsiInterval
+  val ansiIntervals: TypeSig = TypeSigUtil.getAnsiInterval
 
   /**
    * All types that CUDF supports sorting/ordering on.

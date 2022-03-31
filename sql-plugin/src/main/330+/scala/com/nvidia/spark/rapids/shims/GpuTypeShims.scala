@@ -166,15 +166,7 @@ object GpuTypeShims {
     }
   }
 
-  def isDayTimeInterval(dt: DataType) : Boolean = dt match {
-    case _: DayTimeIntervalType => true
-    case _ => false
-  }
+  def isDayTimeIntervalType(dt: DataType) : Boolean = dt.isInstanceOf[DayTimeIntervalType]
 
-  def isYearMonthInterval(dt: DataType) : Boolean = dt match {
-    case _: YearMonthIntervalType => true
-    case _ => false
-  }
-
-  def isAnsiInterval(dt: DataType) : Boolean = isDayTimeInterval(dt) || isYearMonthInterval(dt)
+  def isYearMonthIntervalType(dt: DataType) : Boolean = dt.isInstanceOf[YearMonthIntervalType]
 }

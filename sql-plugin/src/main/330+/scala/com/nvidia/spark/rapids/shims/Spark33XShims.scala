@@ -107,11 +107,11 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "Returns the first non-null argument if exists. Otherwise, null",
         ExprChecks.projectOnly(
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-              TypeSig.ansiInterval).nested(),
+              TypeSig.ansiIntervals).nested(),
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.ansiInterval).nested(),
+                TypeSig.ansiIntervals).nested(),
             TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
           override def convertToGpu():
@@ -122,7 +122,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         ExprChecks.projectAndAst(
           TypeSig.astTypes,
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.ansiInterval).nested(),
+              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
           // This is the only NOOP operator.  It goes away when things are bound
@@ -322,8 +322,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         GpuOverrides.expr[Abs](
           "Absolute value",
           ExprChecks.unaryProjectAndAstInputMatchesOutput(
-            TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.ansiInterval,
-            TypeSig.cpuNumeric + TypeSig.ansiInterval),
+            TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.ansiIntervals,
+            TypeSig.cpuNumeric + TypeSig.ansiIntervals),
           (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
             val ansiEnabled = SQLConf.get.ansiEnabled
 
@@ -340,7 +340,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "Negate a numeric value",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
           TypeSig.implicitCastsAstTypes,
-          TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          TypeSig.gpuNumeric + TypeSig.ansiIntervals,
           TypeSig.numericAndInterval),
         (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
           val ansiEnabled = SQLConf.get.ansiEnabled
@@ -358,7 +358,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "A numeric value with a + in front of it",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
           TypeSig.astTypes,
-          TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          TypeSig.gpuNumeric + TypeSig.ansiIntervals,
           TypeSig.numericAndInterval),
         (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
@@ -367,10 +367,10 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "Addition",
         ExprChecks.binaryProjectAndAst(
           TypeSig.implicitCastsAstTypes,
-          TypeSig.gpuNumeric + TypeSig.ansiInterval, TypeSig.numericAndInterval,
-          ("lhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          TypeSig.gpuNumeric + TypeSig.ansiIntervals, TypeSig.numericAndInterval,
+          ("lhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
               TypeSig.numericAndInterval),
-          ("rhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          ("rhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
               TypeSig.numericAndInterval)),
         (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
           private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -388,10 +388,10 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "Subtraction",
         ExprChecks.binaryProjectAndAst(
           TypeSig.implicitCastsAstTypes,
-          TypeSig.gpuNumeric + TypeSig.ansiInterval, TypeSig.numericAndInterval,
-          ("lhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          TypeSig.gpuNumeric + TypeSig.ansiIntervals, TypeSig.numericAndInterval,
+          ("lhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
               TypeSig.numericAndInterval),
-          ("rhs", TypeSig.gpuNumeric + TypeSig.ansiInterval,
+          ("rhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
               TypeSig.numericAndInterval)),
         (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
           private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -410,7 +410,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
           TypeSig.astTypes,
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
-              + TypeSig.DECIMAL_128 + TypeSig.ansiInterval).nested(),
+              + TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression =
@@ -427,7 +427,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[ShuffleExchangeExec](
         "The backend for most data being exchanged between processes",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ansiInterval).nested()
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ansiIntervals).nested()
             .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
                 s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
             .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
@@ -452,7 +452,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[CoalesceExec](
         "The backend for the dataframe coalesce method",
         ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
-            TypeSig.MAP + TypeSig.ansiInterval).nested(),
+            TypeSig.MAP + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
           override def convertToGpu(): GpuExec =
@@ -558,7 +558,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         "The backend for most select, withColumn and dropColumn statements",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-              TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.ansiInterval).nested(),
+              TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
       GpuOverrides.exec[FilterExec](

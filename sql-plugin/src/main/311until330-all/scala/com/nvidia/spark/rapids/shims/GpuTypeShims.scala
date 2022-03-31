@@ -84,15 +84,11 @@ object GpuTypeShims {
   /**
    * Spark supports interval type from 320, but GPU from 330, so just return false
    */
-  def isDayTimeInterval(dt: DataType) : Boolean = false
+  def isDayTimeIntervalType(dt: DataType) : Boolean = false
 
   /**
    * Spark supports interval type from 320, but GPU from 330, so just return false
    */
-  def isYearMonthInterval(dt: DataType) : Boolean = false
+  def isYearMonthIntervalType(dt: DataType) : Boolean = false
 
-  /**
-   * Spark supports interval type from 320, but GPU from 330, so just return false
-   */
-  def isAnsiInterval(dt: DataType) : Boolean = false
 }
