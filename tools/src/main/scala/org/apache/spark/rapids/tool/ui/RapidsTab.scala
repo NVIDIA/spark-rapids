@@ -19,7 +19,7 @@ package org.apache.spark.rapids.tool.ui
 import org.apache.spark.rapids.tool.status.RapidsAppStatusStore
 import org.apache.spark.ui.{SparkUI, SparkUITab}
 
-class RapidsTab(parent: SparkUI,
+class RapidsTab(val parent: SparkUI,
                 store: RapidsAppStatusStore) extends SparkUITab(parent, "RAPIDS") {
   attachPage(new RapidsPage(this, parent.conf, store))
   attachPage(new RapidsComparePage(this, parent.conf, store))

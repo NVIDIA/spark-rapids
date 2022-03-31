@@ -19,6 +19,8 @@
 
 var appLimit = -1;
 var currentAppID = null;
+/* For now, we do not enable listing incomplete apps in RAPIDS Tab */
+var enableIncompleteApps = false;
 
 function setCurrentAppID(val) {
     currentAppID = val;
@@ -115,7 +117,7 @@ $(document).ready(function() {
     var historySummary = $("#rapids-history-summary");
     var searchString = window.location.search;
     var requestedIncomplete = getParameterByName("showIncomplete", searchString);
-    requestedIncomplete = (requestedIncomplete == "true" ? true : false);
+    requestedIncomplete = enableIncompleteApps && (requestedIncomplete == "true" ? true : false);
 
     var appParams = {
         limit: appLimit,
