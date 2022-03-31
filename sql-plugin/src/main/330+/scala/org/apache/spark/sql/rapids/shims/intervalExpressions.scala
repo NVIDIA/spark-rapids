@@ -99,7 +99,7 @@ object IntervalUtils extends Arm {
           withResource(Scalar.fromLong(-1L)) { negOne =>
             withResource(y.equalTo(negOne)) { negOneBool =>
               if (negOneBool.any().getBoolean) { // y = -1L
-                throw new ArithmeticException("overflow occurs in year month * number")
+                throw new ArithmeticException("overflow occurs")
               }
             }
           }
@@ -112,7 +112,7 @@ object IntervalUtils extends Arm {
               withResource(y.equalTo(negOneLong)) { oneBool =>
                 withResource(minBool.add(oneBool)) { overflow =>
                   if (overflow.any().getBoolean) {
-                    throw new ArithmeticException("overflow occurs in year month * number")
+                    throw new ArithmeticException("overflow occurs")
                   }
                 }
               }
@@ -179,7 +179,7 @@ object IntervalUtils extends Arm {
           withResource(expected.notEqualTo(x)) { notEquals => // x != (r/y)
             withResource(numIsNotZero.and(notEquals)) { wrong => // x != (r/y) and y != 0
               if (wrong.any().getBoolean) {
-                throw new ArithmeticException("overflow occurs in year month * number")
+                throw new ArithmeticException("overflow occurs")
               }
             }
           }
@@ -203,7 +203,7 @@ object IntervalUtils extends Arm {
     withResource(Scalar.fromDouble(Double.PositiveInfinity)) { positiveInfScalar =>
       withResource(doubleCv.equalTo(positiveInfScalar)) { equalsInfinity =>
         if (equalsInfinity.any().getBoolean) {
-          throw new ArithmeticException("Double column has infinity, can't cast to int")
+          throw new ArithmeticException("Has infinity")
         }
       }
     }
@@ -212,7 +212,7 @@ object IntervalUtils extends Arm {
     withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negativeInfScalar =>
       withResource(doubleCv.equalTo(negativeInfScalar)) { equalsInfinity =>
         if (equalsInfinity.any().getBoolean) {
-          throw new ArithmeticException("Double column has -infinity, can't cast to int")
+          throw new ArithmeticException("Has -infinity")
         }
       }
     }
@@ -220,7 +220,7 @@ object IntervalUtils extends Arm {
     // check NaN
     withResource(doubleCv.isNan) { isNan =>
       if (isNan.any().getBoolean) {
-        throw new ArithmeticException("Double column has NaN, can't cast to int")
+        throw new ArithmeticException("Has NaN")
       }
     }
   }
@@ -271,7 +271,7 @@ object IntervalUtils extends Arm {
       withResource(Scalar.fromDouble(MAX_LONG_AS_DOUBLE_PLUS_ONE)) { max =>
         withResource(z.greaterOrEqualTo(max)) { invalid =>
           if (invalid.any().getBoolean) {
-            throw new ArithmeticException("Round to long overflow")
+            throw new ArithmeticException("Round double to long overflow")
           }
         }
       }
@@ -281,7 +281,7 @@ object IntervalUtils extends Arm {
           withResource(Scalar.fromDouble(1.0d)) { one =>
             withResource(diff.greaterOrEqualTo(one)) { invalid =>
               if (invalid.any().getBoolean) {
-                throw new ArithmeticException("Round to long overflow")
+                throw new ArithmeticException("Round double to long overflow")
               }
             }
           }
