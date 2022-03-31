@@ -3,10 +3,10 @@
 ---
 >  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
 17,20c17
-< package com.nvidia.spark.rapids.shims.v2
+< package com.nvidia.spark.rapids.shims
 < 
 < import com.nvidia.spark.rapids._
-< import com.nvidia.spark.rapids.shims.v2._
+< import com.nvidia.spark.rapids.shims._
 ---
 > package com.nvidia.spark.rapids
 29c26

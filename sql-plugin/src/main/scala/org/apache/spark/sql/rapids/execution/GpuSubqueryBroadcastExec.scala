@@ -20,7 +20,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExecParent, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExec, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
 import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
 
@@ -72,7 +72,7 @@ class GpuSubqueryBroadcastMeta(
     //    +- GpuBroadcastExchange (can be reused)
     //       +- [GPU overrides of executed subquery...]
     //
-    case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
+    case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExec) =>
       val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
       exMeta.tagForGpu()
       if (exMeta.canThisBeReplaced) {

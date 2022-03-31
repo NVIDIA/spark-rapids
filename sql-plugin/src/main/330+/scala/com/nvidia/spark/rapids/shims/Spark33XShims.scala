@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
@@ -40,11 +39,6 @@ import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, De
 import org.apache.spark.unsafe.types.CalendarInterval
 
 trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
-
-  /**
-   * For spark3.3+ optionally return null if element not exists.
-   */
-  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.strictIndexOperator
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
@@ -92,11 +86,11 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         sparkSig = TypeSig.cpuAtomics)),
       (ParquetFormatType, FileFormatChecks(
         cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME).nested(),
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.ansiIntervals).nested(),
         cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME).nested(),
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.ansiIntervals).nested(),
         sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-            TypeSig.UDT + TypeSig.DAYTIME).nested())))
+            TypeSig.UDT + TypeSig.ansiIntervals).nested())))
   }
 
   // 330+ supports DAYTIME interval types
@@ -465,7 +459,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
             TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
             TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-            TypeSig.DAYTIME).nested(),
+            TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
           override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -475,11 +469,11 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
               childPlans.head.convertIfNeeded())
         }),
-      // this is copied, only added TypeSig.DAYTIME check
+      // this is copied, only added TypeSig.DAYTIME and TypeSig.YEARMONTH check
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
@@ -523,7 +517,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = replaceWithAlluxioPathIfNeeded(
+            val location = AlluxioUtils.replacePathIfNeeded(
               conf,
               wrapped.relation,
               partitionFilters,
@@ -552,7 +546,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         // NullType is actually supported
-        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.DAYTIME, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.ansiIntervals,
+          TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[ProjectExec](
         "The backend for most select, withColumn and dropColumn statements",

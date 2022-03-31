@@ -17,8 +17,16 @@
 package org.apache.spark.sql.catalyst.csv
 
 import org.apache.spark.sql.catalyst.util.DateFormatter
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuCsvUtils {
   def dateFormatInRead(options: CSVOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
+
+  def timestampFormatInRead(options: CSVOptions): String = options.timestampFormatInRead.getOrElse(
+    if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
+      s"${DateFormatter.defaultPattern}'T'HH:mm:ss.SSSXXX"
+    } else {
+      s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"
+    })
 }

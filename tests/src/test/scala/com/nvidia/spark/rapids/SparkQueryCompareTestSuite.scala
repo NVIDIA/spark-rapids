@@ -150,6 +150,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def enableCsvConf(): SparkConf = {
     new SparkConf()
+      .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
+      .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
+      .set(RapidsConf.ENABLE_READ_CSV_DECIMALS.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_FLOATS.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_DOUBLES.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_DECIMALS.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat
@@ -1933,12 +1939,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)
       case ClouderaShimVersion(a, b, c, _) => (a, b, c)
-      case EMRShimVersion(a, b, c) => (a, b, c)
     }
     val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
     val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
     sparkFullVersion.compareTo(fullVersion)
   }
-
-
 }

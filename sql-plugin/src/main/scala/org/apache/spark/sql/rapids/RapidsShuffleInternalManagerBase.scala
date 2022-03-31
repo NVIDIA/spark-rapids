@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
@@ -372,7 +371,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
         val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
         val blocksByAddress = try {
-          SparkShimImpl.getMapSizesByExecutorId(gpu.shuffleId,
+          SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(gpu.shuffleId,
             startMapIndex, endMapIndex, startPartition, endPartition)
         } finally {
           nvtxRange.close()

@@ -12,7 +12,7 @@
 > import ai.rapids.cudf.NvtxColor
 > import com.nvidia.spark.rapids.GpuMetric._
 > import com.nvidia.spark.rapids.RapidsPluginImplicits._
-> import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+> import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode, SparkShimImpl}
 > 
 > import org.apache.spark.TaskContext
 > import org.apache.spark.internal.Logging
@@ -39,7 +39,7 @@
 < // BaseAggregateExec class in Spark 2.x
 ---
 > object AggregateUtils {
-31,32c50,808
+31,32c50,827
 < class GpuHashAggregateMeta(
 <     val agg: HashAggregateExec,
 ---
@@ -419,9 +419,8 @@
 >           "without grouping keys")
 >     }
 > 
->     val shims = ShimLoader.getSparkShims
 >     val groupingAttributes = groupingExpressions.map(_.toAttribute)
->     val ordering = groupingAttributes.map(shims.sortOrder(_, Ascending, NullsFirst))
+>     val ordering = groupingAttributes.map(SparkShimImpl.sortOrder(_, Ascending, NullsFirst))
 >     val aggBufferAttributes = groupingAttributes ++
 >         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 >     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -799,10 +798,30 @@
 >   }
 > }
 > 
+> object GpuBaseAggregateMeta {
+>   private val aggPairReplaceChecked = TreeNodeTag[Boolean](
+>     "rapids.gpu.aggPairReplaceChecked")
+> 
+>   def getAggregateOfAllStages(
+>       currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
+>     currentMeta match {
+>       case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
+>         List[GpuBaseAggregateMeta[_]](aggMeta) ++
+>           getAggregateOfAllStages(aggMeta.childPlans.head, logical)
+>       case shuffleMeta: GpuShuffleMeta =>
+>         getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
+>       case sortMeta: GpuSortMeta =>
+>         getAggregateOfAllStages(sortMeta.childPlans.head, logical)
+>       case _ =>
+>         List[GpuBaseAggregateMeta[_]]()
+>     }
+>   }
+> }
+> 
 > abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-34,36c810,813
+34,36c829,832
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
@@ -811,7 +830,7 @@
 >     rule: DataFromReplacementRule) extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 > 
 >   val agg: BaseAggregateExec
-60a838,846
+60a857,869
 > 
 >     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
 >         && agg.aggregateExpressions.exists(expr => expr.filter.isDefined)) {
@@ -821,7 +840,39 @@
 >       willNotWorkOnGpu(
 >         "DISTINCT and FILTER cannot be used in aggregate functions at the same time")
 >     }
-124a911,921
+> 
+>     if (AggregationTagging.mustReplaceBoth) {
+>       tagForMixedReplacement()
+>     }
+124a934,972
+> 
+>   /** Prevent mixing of CPU and GPU aggregations */
+>   private def tagForMixedReplacement(): Unit = {
+>     // only run the check for final stages that have not already been checked
+>     val haveChecked =
+>       agg.getTagValue[Boolean](GpuBaseAggregateMeta.aggPairReplaceChecked).contains(true)
+>     val needCheck = !haveChecked && agg.aggregateExpressions.exists {
+>       case e: AggregateExpression if e.mode == Final => true
+>       case _ => false
+>     }
+> 
+>     if (needCheck) {
+>       agg.setTagValue(GpuBaseAggregateMeta.aggPairReplaceChecked, true)
+>       val stages = GpuBaseAggregateMeta.getAggregateOfAllStages(this, agg.logicalLink.get)
+>       // check if aggregations will mix CPU and GPU across stages
+>       val hasMixedAggs = stages.indices.exists {
+>         case i if i == stages.length - 1 => false
+>         case i => stages(i).canThisBeReplaced ^ stages(i + 1).canThisBeReplaced
+>       }
+>       if (hasMixedAggs) {
+>         stages.foreach {
+>           case aggMeta if aggMeta.canThisBeReplaced =>
+>             aggMeta.willNotWorkOnGpu("mixing CPU and GPU aggregations is not supported")
+>           case _ =>
+>         }
+>       }
+>     }
+>   }
 > 
 >   override def convertToGpu(): GpuExec = {
 >     GpuHashAggregateExec(
@@ -833,7 +884,7 @@
 >       childPlans.head.convertIfNeeded(),
 >       conf.gpuTargetBatchSizeBytes)
 >   }
-127,128c924,930
+127,128c975,981
 < class GpuSortAggregateExecMeta(
 <     val agg: SortAggregateExec,
 ---
@@ -844,7 +895,7 @@
 > abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggregateExec](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-130,132c932,940
+130,132c983,991
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
@@ -858,7 +909,7 @@
 >       expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] &&
 >           (expr.mode == Partial || expr.mode == PartialMerge)
 >     }
-134,141c942,943
+134,141c993,994
 <   val groupingExpressions: Seq[BaseExprMeta[_]] =
 <     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 <   val aggregateExpressions: Seq[BaseExprMeta[_]] =
@@ -870,7 +921,7 @@
 ---
 >   // overriding data types of Aggregation Buffers if necessary
 >   if (mayNeedAggBufferConversion) overrideAggBufTypes()
-143,144c945,956
+143,144c996,1007
 <   override val childExprs: Seq[BaseExprMeta[_]] =
 <     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 ---
@@ -886,7 +937,7 @@
 >       case aggMeta: TypedImperativeAggExprMeta[_] => aggMeta.supportBufferConversion
 >       case _ => true
 >     }
-147,153c959,1003
+147,153c1010,1054
 <     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
 <     // we need to run recursive type check on the structs.
 <     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
@@ -940,9 +991,9 @@
 >         conf.gpuTargetBatchSizeBytes)
 >     } else {
 >       super.convertToGpu()
-154a1005
+154a1056
 >   }
-156c1007,1268
+156c1058,1304
 <     tagForReplaceMode()
 ---
 >   /**
@@ -1033,7 +1084,7 @@
 >     meta.agg.setTagValue(bufferConverterInjected, true)
 > 
 >     // Fetch AggregateMetas of all stages which belong to current Aggregate
->     val stages = getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
+>     val stages = GpuBaseAggregateMeta.getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
 > 
 >     // Find out stages in which the buffer converters are essential.
 >     val needBufferConversion = stages.indices.map {
@@ -1151,10 +1202,10 @@
 >         }
 >         converters.dequeue() match {
 >           case Left(converter) =>
->             ShimLoader.getSparkShims.alias(converter.createExpression(ref),
+>             SparkShimImpl.alias(converter.createExpression(ref),
 >               ref.name + "_converted")(NamedExpression.newExprId)
 >           case Right(converter) =>
->             ShimLoader.getSparkShims.alias(converter.createExpression(ref),
+>             SparkShimImpl.alias(converter.createExpression(ref),
 >               ref.name + "_converted")(NamedExpression.newExprId)
 >         }
 >       case retExpr =>
@@ -1162,21 +1213,6 @@
 >     }
 > 
 >     expressions
->   }
-> 
->   private def getAggregateOfAllStages(
->       currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
->     currentMeta match {
->       case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
->         List[GpuBaseAggregateMeta[_]](aggMeta) ++
->             getAggregateOfAllStages(aggMeta.childPlans.head, logical)
->       case shuffleMeta: GpuShuffleMeta =>
->         getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
->       case sortMeta: GpuSortMeta =>
->         getAggregateOfAllStages(sortMeta.childPlans.head, logical)
->       case _ =>
->         List[GpuBaseAggregateMeta[_]]()
->     }
 >   }
 > 
 >   @tailrec
@@ -1207,7 +1243,7 @@
 >       agg.requiredChildDistributionExpressions, conf, parent, rule) {
 >   override def tagPlanForGpu(): Unit = {
 >     super.tagPlanForGpu()
-183,245d1294
+183,245d1330
 < 
 <   /**
 <    * Tagging checks tied to configs that control the aggregation modes that are replaced.
@@ -1271,15 +1307,15 @@
 <           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
 <     }
 <   }
-248,250d1296
+248,250d1332
 < // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 < // ObjectHashAggregate
 < /*
-254c1300
+254c1336
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-259c1305,1506
+259c1341,1542
 < */
 ---
 > /**

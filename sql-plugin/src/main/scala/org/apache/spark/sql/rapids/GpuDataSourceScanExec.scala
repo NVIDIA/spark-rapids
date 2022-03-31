@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.GpuExec
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 
@@ -42,8 +41,7 @@ trait GpuDataSourceScanExec extends LeafExecNode with GpuExec {
   // Metadata that describes more details of this scan.
   protected def metadata: Map[String, String]
 
-  protected val maxMetadataValueLength = SparkShimImpl
-    .getFileSourceMaxMetadataValueLength(sparkSession.sessionState.conf)
+  protected val maxMetadataValueLength = sparkSession.sessionState.conf.maxMetadataStringLength
 
   override def simpleString(maxFields: Int): String = {
     val metadataEntries = metadata.toSeq.sorted.map {

@@ -16,48 +16,25 @@
 
 package com.nvidia.spark.rapids
 
-import java.net.URI
-import java.nio.ByteBuffer
-
-import com.esotericsoftware.kryo.Kryo
-import org.apache.arrow.memory.ReferenceManager
-import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.Resolver
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
-import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
-import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
-import org.apache.spark.storage.{BlockId, BlockManagerId}
-
-/**
- * Spark BuildSide, BuildRight, BuildLeft moved packages in Spark 3.1
- * so create GPU versions of these that can be agnostic to Spark version.
- */
-sealed abstract class GpuBuildSide
-
-case object GpuBuildRight extends GpuBuildSide
-
-case object GpuBuildLeft extends GpuBuildSide
 
 sealed abstract class ShimVersion
 
@@ -78,10 +55,6 @@ case class DatabricksShimVersion(
   override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
 }
 
-case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-amzn"
-}
-
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
   def parquetRebaseReadKey: String
@@ -91,7 +64,6 @@ trait SparkShims {
   def parquetRebaseRead(conf: SQLConf): String
   def parquetRebaseWrite(conf: SQLConf): String
   def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
-  def hasSeparateINT96RebaseConf: Boolean
   def int96ParquetRebaseRead(conf: SQLConf): String
   def int96ParquetRebaseWrite(conf: SQLConf): String
   def int96ParquetRebaseReadKey: String
@@ -111,51 +83,14 @@ trait SparkShims {
 
   def isWindowFunctionExec(plan: SparkPlan): Boolean
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
-  def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
   def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()
-
-  def getScalaUDFAsExpression(
-    function: AnyRef,
-    dataType: DataType,
-    children: Seq[Expression],
-    inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-    outputEncoder: Option[ExpressionEncoder[_]] = None,
-    udfName: Option[String] = None,
-    nullable: Boolean = true,
-    udfDeterministic: Boolean = true): Expression
-
-  def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: GpuPartitioning,
-      child: SparkPlan,
-      cpuOutputPartitioning: Partitioning,
-      cpuShuffle: Option[ShuffleExchangeExec] = None): GpuShuffleExchangeExecBase
-
-  def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
 
   def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
       newPlan: SparkPlan): BroadcastQueryStageExec
 
-  def getMapSizesByExecutorId(
-    shuffleId: Int,
-    startMapIndex: Int,
-    endMapIndex: Int,
-    startPartition: Int,
-    endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
-
-  def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
-
-  def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
-  def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
-  def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
-  def getPartitionSplitFiles(
-      partitions: Array[PartitionDirectory],
-      maxSplitBytes: Long,
-      relation: HadoopFsRelation): Array[PartitionedFile]
   def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],
@@ -163,75 +98,7 @@ trait SparkShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
-  def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
-
-  def copyBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec
-
-  def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec
-
-  def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit
-
-  def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
-    sortOrder(child, direction, direction.defaultNullOrdering)
-  }
-
-  def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder
-
-  def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder
-
-  def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String] = Seq.empty,
-      explicitMetadata: Option[Metadata] = None): Alias
-
-  def shouldIgnorePath(path: String): Boolean
-
-  def getLegacyComplexTypeToString(): Boolean
-
-  def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
-  def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
-  def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
-
-  def replaceWithAlluxioPathIfNeeded(
-      conf: RapidsConf,
-      relation: HadoopFsRelation,
-      partitionFilters: Seq[Expression],
-      dataFilters: Seq[Expression]): FileIndex
-
-  def replacePartitionDirectoryFiles(
-    partitionDir: PartitionDirectory,
-    replaceFunc: Path => Path): Seq[Path]
-
-  def shouldFailDivByZero(): Boolean
-
   def shouldFailDivOverflow: Boolean
-
-  /**
-   * This is specifically in relation to SPARK-33498 which went into 3.1.0. We cannot fully support
-   * it right now, so we fall back to the CPU in those cases.
-   */
-  def shouldFallbackOnAnsiTimestamp(): Boolean
-
-  /**
-   * This is to support ANSI mode: optionally return null result if element not exists
-   * in array/map.
-   */
-  def shouldFailOnElementNotExists(): Boolean = false
-
-  def createTable(table: CatalogTable,
-    sessionCatalog: SessionCatalog,
-    tableLocation: Option[URI],
-    result: BaseRelation): Unit
 
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
 
@@ -293,16 +160,7 @@ trait SparkShims {
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
 
-  def registerKryoClasses(kryo: Kryo): Unit
-
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
-
-  /**
-  * This Boolean variable set to `true` for Spark < 3.1.0, and set to
-  * `SQLConf.get.legacyStatisticalAggregate` otherwise.
-  * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
-  */
-  def getLegacyStatisticalAggregate(): Boolean
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 

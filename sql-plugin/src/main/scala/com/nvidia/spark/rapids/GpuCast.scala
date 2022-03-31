@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.shims.{AnsiCheckUtil, SparkShimImpl, YearParseUti
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
 
@@ -52,7 +53,7 @@ final class CastExprMeta[INPUT <: CastBase](
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
-  val legacyCastToString: Boolean = SparkShimImpl.getLegacyComplexTypeToString()
+  val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 

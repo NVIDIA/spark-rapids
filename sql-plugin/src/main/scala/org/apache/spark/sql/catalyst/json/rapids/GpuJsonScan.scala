@@ -31,7 +31,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions, JSONOptionsInRead}
-import org.apache.spark.sql.catalyst.json.rapids.shims.FileOptionsShims
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -39,37 +38,12 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, DecimalType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 object GpuJsonScan {
-
-  private val supportedDateFormats = Set(
-    "yyyy-MM-dd",
-    "yyyy/MM/dd",
-    "yyyy-MM",
-    "yyyy/MM",
-    "MM-yyyy",
-    "MM/yyyy",
-    "MM-dd-yyyy",
-    "MM/dd/yyyy"
-    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
-    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
-    // and would need to coordinate with the timestamp format too, because both cannot
-    // coexist
-  )
-
-  private val supportedTsPortionFormats = Set(
-    "HH:mm:ss.SSSXXX",
-    "HH:mm:ss[.SSS][XXX]",
-    "HH:mm",
-    "HH:mm:ss",
-    "HH:mm[:ss]",
-    "HH:mm:ss.SSS",
-    "HH:mm:ss[.SSS]"
-  )
 
   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
     val scan = scanMeta.wrapped
@@ -147,27 +121,33 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
     })
 
-    if (readSchema.map(_.dataType).contains(DateType)) {
-      DateUtils.tagAndGetCudfFormat(meta,
+    val types = readSchema.map(_.dataType)
+    if (types.contains(DateType)) {
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
-    if (readSchema.map(_.dataType).contains(TimestampType)) {
+    if (types.contains(TimestampType)) {
       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      FileOptionsShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
-        val parts = tsFormat.split("'T'", 2)
-        if (parts.isEmpty) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-      }
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
+    }
+
+    if (!meta.conf.isJsonFloatReadEnabled && types.contains(FloatType)) {
+      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
+    }
+
+    if (!meta.conf.isJsonDoubleReadEnabled && types.contains(DoubleType)) {
+      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading doubles. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
+    }
+
+    if (!meta.conf.isJsonDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading decimals. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DECIMALS} to true.")
     }
 
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
@@ -412,5 +392,5 @@ class JsonPartitionReader(
   }
 
   override def dateFormat: String = GpuJsonUtils.dateFormatInRead(parsedOptions)
-
+  override def timestampFormat: String = GpuJsonUtils.timestampFormatInRead(parsedOptions)
 }

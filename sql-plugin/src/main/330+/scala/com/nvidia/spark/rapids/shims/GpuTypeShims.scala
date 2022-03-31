@@ -106,6 +106,7 @@ object GpuTypeShims {
   /** Whether the Shim supports columnar copy for the given type */
   def isColumnarCopySupportedForType(colType: DataType): Boolean = colType match {
     case DayTimeIntervalType(_, _) => true
+    case YearMonthIntervalType(_, _) => true
     case _ => false
   }
 
@@ -117,12 +118,15 @@ object GpuTypeShims {
       b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = cv.dataType() match {
     case DayTimeIntervalType(_, _) =>
       ColumnarCopyHelper.longCopy(cv, b, rows)
+    case YearMonthIntervalType(_, _) =>
+      ColumnarCopyHelper.intCopy(cv, b, rows)
     case t =>
       throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
   }
 
   def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = colType match {
     case DayTimeIntervalType(_, _) => true
+    case YearMonthIntervalType(_, _) => true
     case _ => false
   }
 

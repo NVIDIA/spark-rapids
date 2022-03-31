@@ -43,7 +43,7 @@ object ShimGpuOverrides extends Logging {
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[Cast](cast, false, conf, p, r,
-          doFloatToIntCheck = false, stringToAnsiDate = false)),
+          doFloatToIntCheck = true, stringToAnsiDate = false)),
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
@@ -67,7 +67,7 @@ object ShimGpuOverrides extends Logging {
                       s"a precision large than 23. The current precision is ${dt.precision}")
                   } else {
                     logWarning("Decimal overflow guarantees disabled for " +
-                      s"Average(${a.child.dataType}) produces $dt with an " +
+                      s"Average(${a.child.dataType}) produces ${dt} with an " +
                       s"intermediate precision of ${dt.precision + 15}")
                   }
                 }
@@ -85,32 +85,15 @@ object ShimGpuOverrides extends Logging {
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         }),
       GpuOverrides.expr[RegExpReplace](
-        "RegExpReplace support for string literal input patterns",
+       "String replace using a regular expression pattern",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
-        "the implementation is not 100% compatible. " +
-          "See the compatibility guide for more information."),
-      GpuOverrides.expr[TimeSub](
-        "Subtracts interval from timestamp",
-        ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-        (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            timeSub.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
-            }
-            checkTimeZoneId(timeSub.timeZoneId)
-          }
-        }),
+            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+            ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
+              .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
+              TypeSig.lit(TypeEnum.INT)))),
+        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
       GpuOverrides.expr[ScalaUDF](
         "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
           "to get better performance.",

@@ -1,3 +1,7 @@
+1c1
+<       GpuOverrides.expr[Cast](
+---
+>     GpuOverrides.expr[Cast](
 4c4,5
 <         (cast, conf, p, r) => new CastExprMeta[Cast](cast, false, conf, p, r,
 ---
