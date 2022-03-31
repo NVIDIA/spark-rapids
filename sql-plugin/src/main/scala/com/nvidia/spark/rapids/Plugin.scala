@@ -289,12 +289,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         ef.stackTrace.foreach { elem =>
           logWarning(s"stacktrace elem is: $elem")
         }
-        val errorText = "CUDA, the process must be terminated and relaunched."
-        val unknownErrorText = "cudaErrorUnknown"
-        val eccErrorText = "cudaErrorECCUncorrectable"
-        val allErrors = Seq(unknownErrorText, eccErrorText, errorText)
-        if (allErrors.exists(ef.toErrorString.contains(_)) ||
-          allErrors.exists(ef.description.contains(_)) ) {
+        val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
+          "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
+          "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
+          "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
+          "cudaErrorECCUncorrectable")
+        if (unrecoverableErrors.exists(ef.toErrorString.contains(_)) ||
+          unrecoverableErrors.exists(ef.description.contains(_)) ) {
           System.exit(2)
         }
       case other =>
