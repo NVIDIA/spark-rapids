@@ -346,11 +346,11 @@ object GpuColumnarToRowExecParent {
   /**
    * Helper to check if GPU accelerated row-column transpose is supported
    */
-  private def isAcceleratedTransposeSupported: Boolean = {
+  private lazy val isAcceleratedTransposeSupported: Boolean = {
     // Check if the current CUDA device architecture exceeds Pascal.
     // i.e. CUDA compute capability > 6.x.
     // Reference:  https://developer.nvidia.com/cuda-gpus
-    Cuda.getCurrentComputeCapabilityMajor > 6
+    Cuda.getComputeCapabilityMajor > 6
   }
 
   def makeIteratorFunc(
