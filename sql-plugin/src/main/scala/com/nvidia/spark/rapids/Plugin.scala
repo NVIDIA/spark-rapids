@@ -284,7 +284,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
           "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
           "cudaErrorECCUncorrectable")
-        // Could check the entire error string, but don't think its necessary
         if (unrecoverableErrors.exists(ef.description.contains(_)) ||
           unrecoverableErrors.exists(ef.toErrorString.contains(_))) {
           logError("Stopping the Executor based on exception being a fatal CUDA error: " +
