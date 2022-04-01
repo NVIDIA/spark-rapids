@@ -375,7 +375,9 @@ There are multiple reasons why this a problematic configuration:
 ### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
-for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
+for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`, 
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/MIG-Support) 
+or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
 reduces the amount of GPU memory that can be used by the Accelerator for each executor instance.
@@ -383,6 +385,9 @@ If the cluster is purpose-built to run Spark with the RAPIDS Accelerator then we
 without MIG. Also note that the UCX-based shuffle plugin will not work as well in this
 configuration because
 [MIG does not support direct GPU to GPU transfers](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#app-considerations).
+
+However MIG can be advantageous if the cluster is intended to be shared amongst other processes 
+(like ML / DL jobs).
 
 ### How can I run custom expressions/UDFs on the GPU?
 
