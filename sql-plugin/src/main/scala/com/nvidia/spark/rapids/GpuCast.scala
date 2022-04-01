@@ -1527,8 +1527,8 @@ case class GpuCast(
   import GpuCast._
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
-  override def hasSideEffects: Boolean = {
-    (child.dataType, dataType) match {
+  override def hasSideEffects: Boolean = child.asInstanceOf[GpuExpression].hasSideEffects || {
+    (child. dataType, dataType) match {
       case (StringType, _) if ansiMode => true
       case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
       case (_: DecimalType, LongType) if ansiMode => true
