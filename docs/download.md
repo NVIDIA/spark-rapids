@@ -70,7 +70,7 @@ New functionality and performance improvements for this release include:
 * GetArrayStructFields support
 * Function str_to_map support
 * Function percent_rank support
-* Add regular expression support for function split on string
+* Regular expression support for function split on string
 * Support function approx_percentile in reduction context
 * Support function element_at with non-literal index  
 * Spark cuSpatial UDF
