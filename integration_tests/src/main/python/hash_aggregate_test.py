@@ -1273,6 +1273,14 @@ def test_agg_nested_map():
 
 @incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_reduction(aqe_enabled):
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('v', DoubleGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf, reduction = True)
+
+@incompat
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_byte(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
@@ -1405,11 +1413,11 @@ def test_hash_groupby_approx_percentile_decimal128_single():
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
 # compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
 # of the CPU numbers
-def compare_percentile_approx(df_fun, percentiles, conf = {}):
+def compare_percentile_approx(df_fun, percentiles, conf = {}, reduction = False):
 
     # create SQL statements for exact and approx percentiles
-    p_exact_sql = create_percentile_sql("percentile", percentiles)
-    p_approx_sql = create_percentile_sql("approx_percentile", percentiles)
+    p_exact_sql = create_percentile_sql("percentile", percentiles, reduction)
+    p_approx_sql = create_percentile_sql("approx_percentile", percentiles, reduction)
 
     def run_exact(spark):
         df = df_fun(spark)
@@ -1436,8 +1444,9 @@ def compare_percentile_approx(df_fun, percentiles, conf = {}):
         gpu_approx_result = approx_gpu[i]
 
         # assert that keys match
-        assert cpu_exact_result['k'] == cpu_approx_result['k']
-        assert cpu_exact_result['k'] == gpu_approx_result['k']
+        if not reduction:
+            assert cpu_exact_result['k'] == cpu_approx_result['k']
+            assert cpu_exact_result['k'] == gpu_approx_result['k']
 
         # extract the percentile result column
         exact_percentile = cpu_exact_result['the_percentile']
@@ -1472,13 +1481,22 @@ def compare_percentile_approx(df_fun, percentiles, conf = {}):
                     else:
                         assert abs(cpu_delta / gpu_delta) - 1 < 0.001
 
-def create_percentile_sql(func_name, percentiles):
-    if isinstance(percentiles, list):
-        return """select k, {}(v, array({})) as the_percentile from t group by k order by k""".format(
-            func_name, ",".join(str(i) for i in percentiles))
+def create_percentile_sql(func_name, percentiles, reduction):
+    if reduction:
+        if isinstance(percentiles, list):
+            return """select {}(v, array({})) as the_percentile from t""".format(
+                func_name, ",".join(str(i) for i in percentiles))
+        else:
+            return """select {}(v, {}) as the_percentile from t""".format(
+                func_name, percentiles)
     else:
-        return """select k, {}(v, {}) as the_percentile from t group by k order by k""".format(
-            func_name, percentiles)
+        if isinstance(percentiles, list):
+            return """select k, {}(v, array({})) as the_percentile from t group by k order by k""".format(
+                func_name, ",".join(str(i) for i in percentiles))
+        else:
+            return """select k, {}(v, {}) as the_percentile from t group by k order by k""".format(
+                func_name, percentiles)
+
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)

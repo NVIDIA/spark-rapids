@@ -37,7 +37,11 @@ json_supported_gens = [
 
 _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
-    'spark.rapids.sql.format.json.read.enabled': 'true'}
+    'spark.rapids.sql.format.json.read.enabled': 'true',
+    'spark.rapids.sql.json.read.float.enabled': 'true',
+    'spark.rapids.sql.json.read.double.enabled': 'true',
+    'spark.rapids.sql.json.read.decimal.enabled': 'true'
+}
 
 _bool_schema = StructType([
     StructField('number', BooleanType())])

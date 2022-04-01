@@ -2,13 +2,14 @@
 <       GpuOverrides.expr[ScalaUDF](
 ---
 >   def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
-9a10,18
+9a10,19
 >       override protected def rowBasedScalaUDF: GpuRowBasedScalaUDFBase =
 >         GpuRowBasedScalaUDF(
 >           expr.function,
 >           expr.dataType,
 >           childExprs.map(_.convertToGpu()),
 >           expr.inputEncoders,
+>           expr.outputEncoder,
 >           expr.udfName,
 >           expr.nullable,
 >           expr.udfDeterministic)

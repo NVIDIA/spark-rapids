@@ -56,3 +56,6 @@ RUN mkdir -p /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-v${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5.x-cuda${CUDA_VER}.deb && \
     dpkg -i *.deb && \
     rm -rf /tmp/ucx
+
+# export JAVA_HOME for mvn option 'source-javadoc'
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64

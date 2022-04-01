@@ -48,6 +48,9 @@ object JoinTypeChecks {
       case LeftAnti if !conf.areLeftAntiJoinsEnabled =>
         meta.willNotWorkOnGpu("left anti joins have been disabled. To enable set " +
             s"${RapidsConf.ENABLE_LEFT_ANTI_JOIN.key} to true")
+      case ExistenceJoin(_) if !conf.areExistenceJoinsEnabled =>
+        meta.willNotWorkOnGpu("existence joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_EXISTENCE_JOIN.key} to true")
       case _ => // not disabled
     }
   }
@@ -102,25 +105,19 @@ object GpuHashJoin {
       conditionMeta: Option[BaseExprMeta[_]]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
 
-    def unSupportNonEqualCondition(): Unit = if (conditionMeta.isDefined) {
-      meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-    }
-    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
-      meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
-    }
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
-      case LeftSemi | LeftAnti =>
-        unSupportNonEqualCondition()
       case FullOuter =>
         conditionMeta.foreach(meta.requireAstForGpuOn)
         // FullOuter join cannot support with struct keys as two issues below
         //  * https://github.com/NVIDIA/spark-rapids/issues/2126
         //  * https://github.com/rapidsai/cudf/issues/7947
-        unSupportStructKeys()
+        if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+          meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
+        }
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }

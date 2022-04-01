@@ -56,7 +56,6 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.execution.datasources.rapids.OrcFiltersWrapper
 import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -954,9 +953,9 @@ private case class GpuOrcFileFilterHandler(
       partitionSchema: StructType,
       conf: Configuration): String = {
     val resultSchemaString = if (canPruneCols) {
-      OrcUtils.orcTypeDescriptionString(readDataSchema)
+      OrcShims.getOrcSchemaString(readDataSchema)
     } else {
-      OrcUtils.orcTypeDescriptionString(StructType(dataSchema.fields ++ partitionSchema.fields))
+      OrcShims.getOrcSchemaString(StructType(dataSchema.fields ++ partitionSchema.fields))
     }
     OrcConf.MAPRED_INPUT_SCHEMA.setString(conf, resultSchemaString)
     resultSchemaString

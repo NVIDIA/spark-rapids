@@ -22,7 +22,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
@@ -707,7 +707,9 @@ class GpuHashAggregateIterator(
      * @return a pre-processed batch that can be later cuDF aggregated
      */
     def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
-      GpuProjectExec.project(toAggregateBatch, preStepBound)
+      withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+        GpuProjectExec.project(toAggregateBatch, preStepBound)
+      }
     }
 
     /**
@@ -716,17 +718,19 @@ class GpuHashAggregateIterator(
      * @return
      */
     def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
-      val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-      cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
-        val aggFn = cudfAgg.reductionAggregate
-        val cols = GpuColumnVector.extractColumns(preProcessed)
-        val reductionCol = cols(aggOrdinals(ix))
-        withResource(aggFn(reductionCol.getBase)) { res =>
-          cvs += GpuColumnVector.from(
-            cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
+      withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
+        val cvs = mutable.ArrayBuffer[GpuColumnVector]()
+        cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
+          val aggFn = cudfAgg.reductionAggregate
+          val cols = GpuColumnVector.extractColumns(preProcessed)
+          val reductionCol = cols(aggOrdinals(ix))
+          withResource(aggFn(reductionCol.getBase)) { res =>
+            cvs += GpuColumnVector.from(
+              cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
+          }
         }
+        new ColumnarBatch(cvs.toArray, 1)
       }
-      new ColumnarBatch(cvs.toArray, 1)
     }
 
     /**
@@ -735,23 +739,25 @@ class GpuHashAggregateIterator(
      * @return a Table that has been cuDF aggregated
      */
     def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
-      withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
-        val groupOptions = cudf.GroupByOptions.builder()
-          .withIgnoreNullKeys(false)
-          .withKeysSorted(isSorted)
-          .build()
+      withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
+        withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
+          val groupOptions = cudf.GroupByOptions.builder()
+            .withIgnoreNullKeys(false)
+            .withKeysSorted(isSorted)
+            .build()
 
-        val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
-          case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
-        }
+          val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
+            case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
+          }
 
-        // perform the aggregate
-        val aggTbl = preProcessedTbl
-          .groupBy(groupOptions, groupingExpressions.indices: _*)
-          .aggregate(cudfAggsOnColumn: _*)
+          // perform the aggregate
+          val aggTbl = preProcessedTbl
+            .groupBy(groupOptions, groupingExpressions.indices: _*)
+            .aggregate(cudfAggsOnColumn: _*)
 
-        withResource(aggTbl) { _ =>
-          GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+          withResource(aggTbl) { _ =>
+            GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+          }
         }
       }
     }
@@ -766,8 +772,10 @@ class GpuHashAggregateIterator(
      * @return output batch from the aggregate
      */
     def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
-      withResource(resultBatch) { _ =>
-        GpuProjectExec.project(resultBatch, postStepBound)
+      withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
+        withResource(resultBatch) { _ =>
+          GpuProjectExec.project(resultBatch, postStepBound)
+        }
       }
     }
   }

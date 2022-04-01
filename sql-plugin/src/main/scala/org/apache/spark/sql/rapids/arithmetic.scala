@@ -67,6 +67,8 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
 
   override def sql: String = s"(- ${child.sql})"
 
+  override def hasSideEffects: Boolean = failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)
+
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
       // Because of 2s compliment we need to only worry about the min value for integer types.
@@ -121,6 +123,8 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   override def dataType: DataType = child.dataType
 
   override def unaryOp: UnaryOp = UnaryOp.ABS
+
+  override def hasSideEffects: Boolean = failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
