@@ -107,7 +107,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
 
-  override def hasSideEffects: Boolean = failOnError
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val (array, indices) = (lhs.getBase, rhs.getBase)
@@ -232,7 +232,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
 
   override def prettyName: String = "getMapValue"
 
-  override def hasSideEffects: Boolean = failOnError
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (failOnError){
