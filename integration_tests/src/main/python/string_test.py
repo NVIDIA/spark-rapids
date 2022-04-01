@@ -772,13 +772,13 @@ def test_regexp_extract_idx_0():
         conf=_regexp_conf)
 
 def test_regexp_whitespace():
-    gen = mk_str_gen('[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f{1,3}')
+    gen = mk_str_gen('\u001e[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f[0-9]{0,10}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp(a, "\\s{2}")',
-                'regexp(a, "\\s{3}")',
-                'regexp(a, "[abcd]+\\s+[0-9]+")',
-                'regexp(a, "\\S{3}")',
+                'rlike(a, "\\s{2}")',
+                'rlike(a, "\\s{3}")',
+                'rlike(a, "[abcd]+\\s+[0-9]+")',
+                'rlike(a, "\\S{3}")',
                 'rlike(a, "[abcd]+\\s+\\S{2,3}")',
                 'regexp_extract(a, "([a-d]+)([0-9\\s]+)([a-d]+)", 2)',
                 'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 2)',

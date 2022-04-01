@@ -601,6 +601,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'Z' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4532
           throw new RegexUnsupportedException("string anchor \\Z is not supported")
+        case 's' | 'S' =>
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar(' '), RegexChar('\u000b'))
+          chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped)
+          RegexCharacterClass(negated = ch.isUpper, characters = chars)
         case _ =>
           regex
       }
