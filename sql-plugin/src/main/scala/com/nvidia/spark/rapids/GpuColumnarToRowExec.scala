@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -343,6 +343,16 @@ object GpuColumnarToRowExecParent {
     Option(Tuple2(arg.child, arg.exportColumnarRdd))
   }
 
+  /**
+   * Helper to check if GPU accelerated row-column transpose is supported
+   */
+  private def isAcceleratedTransposeSupported: Boolean = {
+    // Check if the current CUDA device architecture exceeds Pascal.
+    // i.e. CUDA compute capability > 6.x.
+    // Reference:  https://developer.nvidia.com/cuda-gpus
+    Cuda.getCurrentComputeCapabilityMajor > 6
+  }
+
   def makeIteratorFunc(
       output: Seq[Attribute],
       numOutputRows: GpuMetric,
@@ -356,7 +366,9 @@ object GpuColumnarToRowExecParent {
         // This number includes the 1-bit validity per column, but doesn't include padding.
         // We are being conservative by only allowing 100M columns until we feel the need to
         // increase this number
-        output.length <= 100000000) {
+        output.length <= 100000000 &&
+        // Check if the current CUDA device supports accelerated transpose.
+        isAcceleratedTransposeSupported) {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
