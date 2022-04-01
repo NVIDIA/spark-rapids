@@ -793,10 +793,10 @@ object GpuRegExpUtils {
 
         b.append("${")
         var j = i + 1
-        while (j + 1 < rep.length && rep.charAt(j).isDigit) {
+        do {
           b.append(rep.charAt(j))
           j += 1
-        }
+        } while (j < rep.length && rep.charAt(j).isDigit)
         b.append("}")
         i = j
       } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
