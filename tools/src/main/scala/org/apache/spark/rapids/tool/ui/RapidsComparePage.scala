@@ -16,23 +16,20 @@
 
 package org.apache.spark.rapids.tool.ui
 
+import com.google.common.io.ByteStreams
+
 import java.io.{IOException, InputStream}
 import java.net.{HttpURLConnection, URL}
 import java.nio.charset.StandardCharsets
-//import java.text.SimpleDateFormat
-
+import java.util.zip.ZipInputStream
 import javax.servlet.http.HttpServletRequest
-
 import scala.xml.Node
-
-//import org.json4s.DefaultFormats
-//import org.json4s.jackson.JsonMethods
-
 import org.apache.commons.io.IOUtils
 import org.apache.spark.SparkConf
-import org.apache.spark.deploy.history.rapids.tool.SHSUtils
 import org.apache.spark.rapids.tool.status.RapidsAppStatusStore
 import org.apache.spark.ui.{UIUtils, WebUIPage}
+
+import scala.collection.mutable.ListBuffer
 
 class RapidsComparePage(parent: RapidsTab, conf: SparkConf, store: RapidsAppStatusStore)
   extends WebUIPage("compare") {
@@ -54,6 +51,11 @@ class RapidsComparePage(parent: RapidsTab, conf: SparkConf, store: RapidsAppStat
     new URL(s"$baseURL/api/v1/applications/$otherAppID")
   }
 
+  def getURLForLogFile(request: HttpServletRequest, otherAppID: String) : URL = {
+    val baseURL = getAPIPath(request).getOrElse("http://localhost:18080")
+    new URL(s"$baseURL/api/v1/applications/$otherAppID/logs")
+  }
+
   def getContentAndCode(url: URL): (Int, Option[String], Option[String]) = {
     val (code, in, errString) = connectAndGetInputStream(url)
     val inString = in.map(IOUtils.toString(_, StandardCharsets.UTF_8))
@@ -61,7 +63,6 @@ class RapidsComparePage(parent: RapidsTab, conf: SparkConf, store: RapidsAppStat
   }
 
   def connectAndGetInputStream(url: URL): (Int, Option[InputStream], Option[String]) = {
-
     val connection = url.openConnection().asInstanceOf[HttpURLConnection]
     connection.setRequestMethod("GET")
     connection.connect()
@@ -80,31 +81,26 @@ class RapidsComparePage(parent: RapidsTab, conf: SparkConf, store: RapidsAppStat
     (code, inStream, errString)
   }
 
-  def getOtherAppName(otherAppID: String): String = {
-    val otherAppInfo = SHSUtils.getApplicationInfo(store.appSStore.store, otherAppID, conf)
-//    if (otherAppInfo.isDefined) {
-//      return otherAppInfo.get.name
-//    }
-//    "NOT_DEFINED"
-    otherAppInfo.name
-  }
+  def getAppLogEventsByRest(request: HttpServletRequest, appID: String): Seq[String] = {
+    val (code, resultOpt, error) = getContentAndCode(getURLForLogFile(request, appID))
+    val zipStream = new ZipInputStream(resultOpt.get)
+    var allEvents = new ListBuffer[String]()
+    var entry = zipStream.getNextEntry
+    while (entry != null) {
+      val actual = new String(ByteStreams.toByteArray(zipStream), StandardCharsets.UTF_8)
+      allEvents += actual
+      entry = zipStream.getNextEntry
+    }
 
-  def tryToRunREST(appIDURL: String): String = {
-    val url = new URL("http://localhost:18080/api/v1/applications/local-1647443474448")
-    val (code, resultOpt, error) = getContentAndCode(url)
-    resultOpt.get
-//    val jsonResult = resultOpt.get
-//    JsonMethods.parse(jsonResult).extractOpt[ApplicationInfo]
-  }
+    allEvents
 
+  }
   def getAppInfoByRest(request: HttpServletRequest, appID: String): String = {
     val (code, resultOpt, error) = getContentAndCode(getURLForAppInfo(request, appID))
     resultOpt.get
-    //JsonMethods.parse(jsonParsed).extract[ApplicationInfo]
   }
 
   def generateURL(request: HttpServletRequest, otherAppID: String): String = {
-
     UIUtils.prependBaseUri(request,
       s"/api/v1/applications/$otherAppID/")
   }
@@ -114,19 +110,14 @@ class RapidsComparePage(parent: RapidsTab, conf: SparkConf, store: RapidsAppStat
       s"/api/v1/applications/$otherAppID/")
   }
 
-//  def createURLForResource(): Unit = {
-//    APIResource. ApiRootResource
-//  }
-
   override def render(request: HttpServletRequest): Seq[Node] = {
     val otherAppId = request.getParameter("id")
     require(otherAppId != null && otherAppId.nonEmpty, "Missing id parameter")
 
     val currAppID = store.appSStore.applicationInfo().id
-    //val otherAppName = getOtherAppName(currAppID)
 
     val dataInfoJson = getAppInfoByRest(request, otherAppId)
-
+    val eventsList = getAppLogEventsByRest(request, otherAppId).mkString("\n")
     val content =
         <div id="no-info">
           <p>Comparison Results between {currAppID} and {otherAppId} will be shown here......</p>
@@ -137,6 +128,7 @@ class RapidsComparePage(parent: RapidsTab, conf: SparkConf, store: RapidsAppStat
           <p>servlet path = {request.getServletPath}</p>
           <p>servlet pathInfo = {request.getPathInfo}</p>
           <p>dataInfoJSON application name is = {dataInfoJson}</p>
+          <p>events List of Other Application is = {eventsList}</p>
           <a href="{generateURL(request, otherAppId)}" class="name-link">Request</a>
         </div>
     UIUtils.headerSparkPage(
