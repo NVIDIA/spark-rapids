@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
+from spark_session import is_before_spark_320
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -224,6 +225,16 @@ def test_conditional_with_side_effects_sequence(data_gen):
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'CASE \
             WHEN length(a) > 0 THEN sequence(1, length(a), 1) \
+            ELSE null END'),
+        conf = ansi_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+def test_conditional_with_side_effects_sequence_cast(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE \
+            WHEN length(a) > 0 THEN CAST(sequence(1, length(a), 1) AS STRING) \
             ELSE null END'),
         conf = ansi_enabled_conf)
 
