@@ -44,7 +44,7 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
         Row(Period.ofMonths(7), 4.toByte, 3.toShort, 2, 1L,
           Float.NegativeInfinity, Double.NegativeInfinity),
         Row(Period.ofMonths(7), 6.toByte, 5.toShort, 4, 3L,
-          Float.PositiveInfinity, Double.PositiveInfinity),
+          Float.PositiveInfinity, Double.PositiveInfinity)
       )
       val schema = StructType(Seq(
         StructField("c_ym", YearMonthIntervalType()),
