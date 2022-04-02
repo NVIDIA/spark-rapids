@@ -82,12 +82,14 @@ object GpuTypeShims {
     throw new RuntimeException(s"Not support type $dt.")
 
   /**
-   * Spark supports interval type from 320, but GPU from 330, so just return false
+   * Spark supports interval type from 320; Spark supports to/from Parquet from 330,
+   * And lots of interval operators from 330, so just return false for Spark330-
    */
   def isDayTimeIntervalType(dt: DataType) : Boolean = false
 
   /**
-   * Spark supports interval type from 320, but GPU from 330, so just return false
+   * Spark supports interval type from 320; Spark supports to/from Parquet from 330,
+   * And lots of interval operators from 330, so just return false for Spark330-
    */
   def isYearMonthIntervalType(dt: DataType) : Boolean = false
 

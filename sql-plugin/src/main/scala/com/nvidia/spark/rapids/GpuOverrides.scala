@@ -1193,7 +1193,7 @@ object GpuOverrides extends Logging {
       "Negate a numeric value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.ansiIntervals,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1211,7 +1211,7 @@ object GpuOverrides extends Logging {
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
-        TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.ansiIntervals,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
@@ -1861,10 +1861,10 @@ object GpuOverrides extends Logging {
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.ansiIntervals, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric,
+        ("rhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1882,10 +1882,10 @@ object GpuOverrides extends Logging {
       "Subtraction",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.ansiIntervals, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric,
+        ("rhs", TypeSig.gpuNumeric + TypeSig.ansiIntervals,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled

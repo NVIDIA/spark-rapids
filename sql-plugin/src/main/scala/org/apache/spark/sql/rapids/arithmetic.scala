@@ -75,19 +75,9 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
       GpuAnsi.assertMinValueOverflow(input, "minus")
     }
 
-    if (GpuTypeShims.isDayTimeIntervalType(dataType)) {
-      // For day time interval, Spark throws an exception when overflow,
-      // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-      withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
-        GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
-      }
-    }
-
-    if (GpuTypeShims.isYearMonthIntervalType(dataType)) {
-      // For day time interval, Spark throws an exception when overflow,
-      // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-      withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
-        GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
+    def commonMinus(input: GpuColumnVector): ColumnVector = {
+      withResource(Scalar.fromByte(0.toByte)) { scalar =>
+        scalar.sub(input.getBase)
       }
     }
 
@@ -97,10 +87,22 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
         withResource(GpuScalar.from(zeroLit, dt)) { scalar =>
           scalar.sub(input.getBase)
         }
-      case _ =>
-        withResource(Scalar.fromByte(0.toByte)) { scalar =>
-          scalar.sub(input.getBase)
+      case t if GpuTypeShims.isDayTimeIntervalType(t) =>
+        // For day-time interval, Spark throws an exception when overflow,
+        // regardless of whether `SQLConf.get.ansiEnabled` is true or false
+        withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
+          GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
         }
+        commonMinus(input)
+      case t if GpuTypeShims.isYearMonthIntervalType(t) =>
+        // For year-month interval, Spark throws an exception when overflow,
+        // regardless of whether `SQLConf.get.ansiEnabled` is true or false
+        withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
+          GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
+        }
+        commonMinus(input)
+      case _ =>
+        commonMinus(input)
     }
   }
 
@@ -148,15 +150,13 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
     }
 
     if (GpuTypeShims.isDayTimeIntervalType(dataType)) {
-      // For day time interval, Spark throws an exception when overflow,
+      // For day-time interval, Spark throws an exception when overflow,
       // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflowImp(minVal, input, "abs")
       }
-    }
-
-    if (GpuTypeShims.isYearMonthIntervalType(dataType)) {
-      // For day time interval, Spark throws an exception when overflow,
+    } else if (GpuTypeShims.isYearMonthIntervalType(dataType)) {
+      // For year-month interval, Spark throws an exception when overflow,
       // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflowImp(minVal, input, "minus")
