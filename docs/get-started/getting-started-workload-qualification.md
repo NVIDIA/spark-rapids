@@ -64,7 +64,12 @@ the other is to modify your existing Spark application code to call a function d
 Please note that if using adaptive execution in Spark the explain output may not be perfect
 as the plan could have changed along the way in a way that we wouldn't see by looking at just
 the CPU plan. The same applies if you are using an older version of Spark. Spark planning
-may be slightly different if you go up to a newer version of Spark.
+may be slightly different when you go up to a newer version of Spark. One example where we have
+seen Spark 2.4.X plan differently is in the use of the EqualNullSafe expression. We have seen Spark 2.4.X
+use EqualNullSafe but in Spark 3.X it used other expressions to do the same thing. In this case
+it shows up as GPU doesn't support EqualNullSafe in the Spark 2.X explain output but when you
+go to Spark 3.X those parts would run on the GPU because it is using different operators. This
+is something to keep in mind when doing the analysis.
 
 ### Using the Configuration Flag for Explain Only Mode
 

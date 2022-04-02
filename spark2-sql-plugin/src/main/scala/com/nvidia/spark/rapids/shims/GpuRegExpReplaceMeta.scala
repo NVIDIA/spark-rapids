@@ -38,7 +38,7 @@ class GpuRegExpReplaceMeta(
           // use GpuStringReplace
         } else {
           try {
-            pattern = Some(new CudfRegexTranspiler(replace = true).transpile(s.toString))
+            pattern = Some(new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString))
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -100,4 +100,10 @@ object GpuRegExpUtils {
     b.toString
   }
 
+  def tagForRegExpEnabled(meta: ExprMeta[_]): Unit = {
+    if (!meta.conf.isRegExpEnabled) {
+      meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
+        s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
+    }
+  }
 }

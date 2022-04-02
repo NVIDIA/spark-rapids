@@ -16,8 +16,6 @@
 
 package org.apache.spark.rapids.shims
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
-
 import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, SparkEnv, TaskContext}
 import org.apache.spark.shuffle.ShuffleReader
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec}
@@ -57,7 +55,6 @@ object ShuffledBatchRDDUtil {
       dependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
       sqlMetricsReporter: SQLShuffleReadMetricsReporter):
   (ShuffleReader[Nothing, Nothing], Long) = {
-    val shim = SparkShimImpl
     split.asInstanceOf[ShuffledBatchRDDPartition].spec match {
       case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
         val reader = SparkEnv.get.shuffleManager.getReader(
@@ -66,7 +63,7 @@ object ShuffledBatchRDDUtil {
           endReducerIndex,
           context,
           sqlMetricsReporter)
-        val blocksByAddress = shim.getMapSizesByExecutorId(
+        val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
           dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
         val partitionSize = blocksByAddress.flatMap(_._2).map(_._2).sum
         (reader, partitionSize)
@@ -80,7 +77,7 @@ object ShuffledBatchRDDUtil {
           reducerIndex + 1,
           context,
           sqlMetricsReporter)
-        val blocksByAddress = shim.getMapSizesByExecutorId(
+        val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
           dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, reducerIndex,
           reducerIndex + 1)
         val partitionSize = blocksByAddress.flatMap(_._2)
@@ -96,7 +93,7 @@ object ShuffledBatchRDDUtil {
           endReducerIndex,
           context,
           sqlMetricsReporter)
-        val blocksByAddress = shim.getMapSizesByExecutorId(
+        val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
           dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
         val partitionSize = blocksByAddress.flatMap(_._2)
             .filter(_._3 == mapIndex)

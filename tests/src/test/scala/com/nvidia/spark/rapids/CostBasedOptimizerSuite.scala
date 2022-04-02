@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -127,7 +127,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   // see https://github.com/NVIDIA/spark-rapids/issues/3526
   ignore("Force section of plan back onto CPU, AQE on") {
     logError("Force section of plan back onto CPU, AQE on")
-    assumeSpark311orLater
 
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -243,7 +242,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   // see https://github.com/NVIDIA/spark-rapids/issues/3526
   ignore("Force last section of plan back onto CPU, AQE on") {
     logError("Force last section of plan back onto CPU, AQE on")
-    assumeSpark311orLater
 
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -474,7 +472,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Compute estimated row count nested joins no broadcast") {
-    assumeSpark301orLater
     logError("Compute estimated row count nested joins no broadcast")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -523,7 +520,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Compute estimated row count nested joins with broadcast") {
-    assumeSpark301orLater
     logError("Compute estimated row count nested joins with broadcast")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")

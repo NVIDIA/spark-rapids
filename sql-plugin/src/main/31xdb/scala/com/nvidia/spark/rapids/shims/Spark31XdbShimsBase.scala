@@ -54,7 +54,6 @@ trait Spark31XdbShimsBase extends SparkShims {
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-  override def hasSeparateINT96RebaseConf: Boolean = true
 
   override def sessionFromPlan(plan: SparkPlan): SparkSession = {
     plan.sqlContext.sparkSession
@@ -126,8 +125,4 @@ trait Spark31XdbShimsBase extends SparkShims {
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     ss.sparkContext.defaultParallelism
   }
-
-  override def shouldFallbackOnAnsiTimestamp(): Boolean = false
-
-  override def shouldFailOnElementNotExists(): Boolean = SQLConf.get.ansiEnabled
 }

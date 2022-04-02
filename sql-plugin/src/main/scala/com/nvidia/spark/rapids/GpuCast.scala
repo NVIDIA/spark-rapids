@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.shims.{AnsiCheckUtil, SparkShimImpl, YearParseUti
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
 
@@ -52,7 +53,7 @@ final class CastExprMeta[INPUT <: CastBase](
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
-  val legacyCastToString: Boolean = SparkShimImpl.getLegacyComplexTypeToString()
+  val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
@@ -1527,7 +1528,7 @@ case class GpuCast(
   import GpuCast._
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
-  override def hasSideEffects: Boolean = {
+  override def hasSideEffects: Boolean = super.hasSideEffects || {
     (child.dataType, dataType) match {
       case (StringType, _) if ansiMode => true
       case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true

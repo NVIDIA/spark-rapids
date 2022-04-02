@@ -167,7 +167,9 @@ _empty_double_schema = StructType([
     StructField('number', DoubleType()),
     StructField('ignored_b', StringType())])
 
-_enable_all_types_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true',
+_enable_all_types_conf = {'spark.rapids.sql.csv.read.float.enabled': 'true',
+        'spark.rapids.sql.csv.read.double.enabled': 'true',
+        'spark.rapids.sql.csv.read.decimal.enabled': 'true',
         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'}
 
 def read_csv_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
@@ -196,6 +198,7 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     ('ts.csv', _date_schema, {}),
     ('date.csv', _date_schema, {}),
     ('ts.csv', _ts_schema, {}),
+    ('str.csv', _ts_schema, {}),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
     ('str.csv', _good_str_schema, {'header': 'true'}),
     ('no-comments.csv', _three_str_schema, {}),
@@ -306,7 +309,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_f
             conf=updated_conf)
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
-        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
+        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
@@ -322,7 +325,6 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, a
     updated_conf = copy_and_update(_enable_all_types_conf,
        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.ansi.enabled': ansi_enabled,
-        'spark.rapids.sql.incompatibleDateFormats.enabled': True,
         'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write\
@@ -360,7 +362,6 @@ def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list,
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.sources.useV1SourceList': v1_enabled_list,
                                     'spark.sql.ansi.enabled': ansi_enabled,
-                                    'spark.rapids.sql.incompatibleDateFormats.enabled': True,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy})
     if time_parser_policy == 'EXCEPTION':
         assert_gpu_and_cpu_error(
@@ -399,7 +400,8 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_
             lambda spark : gen_df(spark, gen).write\
                     .option('timestampFormat', full_format)\
                     .csv(data_path))
-    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                   {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\

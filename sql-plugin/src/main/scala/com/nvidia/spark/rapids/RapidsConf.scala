@@ -415,7 +415,7 @@ object RapidsConf {
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly.")
     .stringConf
-    .createWithDefault("ARENA")
+    .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -889,13 +889,20 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // TODO should we change this config?
-  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
-      .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
-          "format for Spark includes a timezone at the end. Anything except the UTC timezone is " +
-          "not supported. Timestamps after 2038 and before 1902 are also not supported.")
-      .booleanConf
-      .createWithDefault(false)
+  val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
+    .doc("CSV reading is not 100% compatible when reading floats.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
+    .doc("CSV reading is not 100% compatible when reading doubles.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimal.enabled")
+    .doc("CSV reading is not 100% compatible when reading decimals.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_JSON = conf("spark.rapids.sql.format.json.enabled")
     .doc("When set to true enables all json input and output acceleration. " +
@@ -905,6 +912,32 @@ object RapidsConf {
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
+    .doc("JSON reading is not 100% compatible when reading floats.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
+    .doc("JSON reading is not 100% compatible when reading doubles.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
+    .doc("JSON reading is not 100% compatible when reading decimals.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
+    .doc("When set to true enables all avro input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_AVRO_READ = conf("spark.rapids.sql.format.avro.read.enabled")
+    .doc("When set to true enables avro input acceleration")
     .booleanConf
     .createWithDefault(false)
 
@@ -1182,9 +1215,9 @@ object RapidsConf {
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.1.1, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly." +
       "When tested in a combined jar with other Shims, it's expected that the provided " +
       "implementation follows the same convention as existing Spark shims. If its class" +
@@ -1360,7 +1393,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.06.0-SNAPSHOT.jar,cudf-22.06.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1598,8 +1631,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
-  lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
-
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
@@ -1654,9 +1685,25 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
 
+  lazy val isCsvFloatReadEnabled: Boolean = get(ENABLE_READ_CSV_FLOATS)
+
+  lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
+
+  lazy val isCsvDecimalReadEnabled: Boolean = get(ENABLE_READ_CSV_DECIMALS)
+
   lazy val isJsonEnabled: Boolean = get(ENABLE_JSON)
 
   lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
+
+  lazy val isJsonFloatReadEnabled: Boolean = get(ENABLE_READ_JSON_FLOATS)
+
+  lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
+
+  lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
+
+  lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
+
+  lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

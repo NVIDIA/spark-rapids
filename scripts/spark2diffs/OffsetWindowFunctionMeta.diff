@@ -1,8 +1,8 @@
 2c2
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
->  * Copyright (c) 2021, NVIDIA CORPORATION.
-27c27
+>  * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+37c37
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],

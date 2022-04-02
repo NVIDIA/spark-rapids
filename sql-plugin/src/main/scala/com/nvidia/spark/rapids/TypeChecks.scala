@@ -914,7 +914,7 @@ object FileFormatChecks {
  * The namedChecks map can be used to provide checks for specific groups of expressions.
  */
 class ExecChecks private(
-    check: TypeSig,
+    val check: TypeSig,
     sparkSig: TypeSig,
     val namedChecks: Map[String, InputCheck],
     override val shown: Boolean = true)
@@ -2137,23 +2137,14 @@ object SupportedOpsForTools {
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
+          case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
         val read = ioMap(ReadFileOp)
         // we have lots of configs for various operations, just try to get the main ones
         val readOps = types.map { t =>
-          val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
-            t.toString match {
-              case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
-              case _ => true
-            }
-          } else {
-            t.toString match {
-              case _ => true
-            }
-          }
-          if (!formatEnabled || !typeEnabled) {
+          if (!formatEnabled) {
             // indicate configured off by default
             "CO"
           } else {

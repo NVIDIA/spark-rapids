@@ -84,6 +84,8 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
 case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
+
   override lazy val dataType: DataType = left.dataType match {
     case ArrayType(elementType, _) => elementType
     case MapType(_, valueType, _) => valueType
@@ -666,6 +668,9 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
   override def nullable: Boolean = children.exists(_.nullable)
 
   override def foldable: Boolean = children.forall(_.foldable)
+
+  // can throw exceptions such as "Illegal sequence boundaries: step > 0 but start > stop"
+  override def hasSideEffects: Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>

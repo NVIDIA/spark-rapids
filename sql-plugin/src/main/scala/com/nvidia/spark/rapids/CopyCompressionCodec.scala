@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,40 +24,6 @@ import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 class CopyCompressionCodec extends TableCompressionCodec with Arm {
   override val name: String = "COPY"
   override val codecId: Byte = CodecType.COPY
-
-  override def compress(
-      tableId: Int,
-      contigTable: ContiguousTable,
-      stream: Cuda.Stream): CompressedTable = {
-    val buffer = contigTable.getBuffer
-    closeOnExcept(DeviceMemoryBuffer.allocate(buffer.getLength)) { outputBuffer =>
-      outputBuffer.copyFromDeviceBufferAsync(0, buffer, 0, buffer.getLength, stream)
-      val meta = MetaUtils.buildTableMeta(
-        Some(tableId),
-        contigTable,
-        codecId,
-        outputBuffer.getLength)
-      stream.sync()
-      CompressedTable(buffer.getLength, meta, outputBuffer)
-    }
-  }
-
-  override def decompressBufferAsync(
-      outputBuffer: DeviceMemoryBuffer,
-      outputOffset: Long,
-      outputLength: Long,
-      inputBuffer: DeviceMemoryBuffer,
-      inputOffset: Long,
-      inputLength: Long,
-      stream: Cuda.Stream): Unit = {
-    require(outputLength == inputLength)
-    outputBuffer.copyFromDeviceBufferAsync(
-      outputOffset,
-      inputBuffer,
-      inputOffset,
-      inputLength,
-      stream)
-  }
 
   override def createBatchCompressor(
       maxBatchMemorySize: Long,

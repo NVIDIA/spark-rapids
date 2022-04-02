@@ -22,7 +22,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311, is_before_spark_320
+from spark_session import is_before_spark_320
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -498,15 +498,27 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_re_replace_backrefs():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
-    assert_gpu_fallback_collect(
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "(TEST)", "$1")',
             'REGEXP_REPLACE(a, "(TEST)", "[$0]")',
-            'REGEXP_REPLACE(a, "(TEST)", "[$1]")'),
-            'RegExpReplace',
+            'REGEXP_REPLACE(a, "(TEST)", "[\\1]")',
+            'REGEXP_REPLACE(a, "(T)[a-z]+(T)", "[$2][$1][$0]")',
+            'REGEXP_REPLACE(a, "([0-9]+)(T)[a-z]+(T)", "[$3][$2][$1]")',
+            'REGEXP_REPLACE(a, "(.)([0-9]+TEST)", "$0 $1 $2")',
+            'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1")'  # no match
+        ),
         conf=_regexp_conf)
+
+# For GPU runs, cuDF will check the range and throw exception if index is out of range
+def test_re_replace_backrefs_idx_out_of_bounds():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_error(lambda spark: unary_op_df(spark, gen).selectExpr(
+        'REGEXP_REPLACE(a, "(T)(E)(S)(T)", "[$5]")').collect(),
+        conf=_regexp_conf,
+        error_message='')
 
 def test_re_replace_backrefs_escaped():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
@@ -693,23 +705,6 @@ def test_regexp_like():
                 'regexp_like(a, "a[bc]d")'),
         conf=_regexp_conf)
 
-@pytest.mark.skipif(is_databricks_runtime(),
-    reason='Databricks optimizes out regexp_replace call in this case')
-@pytest.mark.skipif(not is_before_spark_311(),
-    reason='Spark 3.1.1 optimizes out regexp_replace call in this case')
-@allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_null_pattern_fallback():
-    gen = mk_str_gen('[abcd]{0,3}')
-    # Spark 3.0.1 translates `NULL` to `CAST(NULL as STRING)` and we only support
-    # literal expressions for the regex pattern
-    # Spark 3.1.1 (and Databricks) replaces the whole regexp_replace expression with a
-    # literal null
-    assert_gpu_fallback_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_replace(a, NULL, "A")'),
-            'RegExpReplace',
-        conf=_regexp_conf)
-
 def test_regexp_replace_character_set_negated():
     gen = mk_str_gen('[abcd]{0,3}[\r\n]{0,2}[abcd]{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -786,6 +781,23 @@ def test_regexp_extract_idx_0():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 0)',
                 'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)\\z", 0)'),
+        conf=_regexp_conf)
+
+def test_regexp_whitespace():
+    gen = mk_str_gen('\u001e[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f[0-9]{0,10}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "\\s{2}")',
+                'rlike(a, "\\s{3}")',
+                'rlike(a, "[abcd]+\\s+[0-9]+")',
+                'rlike(a, "\\S{3}")',
+                'rlike(a, "[abcd]+\\s+\\S{2,3}")',
+                'regexp_extract(a, "([a-d]+)([0-9\\s]+)([a-d]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 3)',
+                'regexp_replace(a, "(\\s+)", "@")',
+                'regexp_replace(a, "(\\S+)", "#")',
+            ),
         conf=_regexp_conf)
 
 def test_rlike():

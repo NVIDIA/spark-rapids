@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>22.04.0-SNAPSHOT</version>
+    <version>22.06.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -89,229 +89,9 @@
             </modules>
         </profile>
         <profile>
-            <id>release301</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-                <property>
-                    <name>buildver</name>
-                    <value>301</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version>${spark301.version}</spark.version>
-                <spark.test.version>${spark301.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-30+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301/scala</source>
-                                        <source>${project.basedir}/src/main/301until304/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/pre320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <modules>
-                <module>common</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>api_validation</module>
-                <module>tools</module>
-                <module>aggregator</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-30+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/302/scala</source>
-                                        <source>${project.basedir}/src/main/301until304/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/pre320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <properties>
-                <spark.version>${spark302.version}</spark.version>
-                <spark.test.version>${spark302.version}</spark.test.version>
-                <spark.version.classifier>spark302</spark.version.classifier>
-            </properties>
-            <modules>
-                <module>common</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
-                <module>tools</module>
-                <module>api_validation</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release303</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>303</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version>${spark303.version}</spark.version>
-                <spark.test.version>${spark303.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-30+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/303/scala</source>
-                                        <source>${project.basedir}/src/main/301until304/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/pre320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <modules>
-                <module>common</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>api_validation</module>
-                <module>tools</module>
-                <module>aggregator</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release304</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>304</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version>${spark304.version}</spark.version>
-                <spark.test.version>${spark304.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-30+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/304/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/pre320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <modules>
-                <module>common</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>api_validation</module>
-                <module>tools</module>
-                <module>aggregator</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release311</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>311</value>
@@ -333,18 +113,13 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -363,68 +138,6 @@
                 <module>udf-compiler</module>
                 <module>api_validation</module>
                 <module>tools</module>
-                <module>aggregator</module>
-                <module>tests-spark310+</module>
-            </modules>
-        </profile>
-        <profile>
-            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=301db -->
-            <id>release301db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301db</value>
-                </property>
-            </activation>
-            <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
-                <shim.module.name>spark301db</shim.module.name>
-                <spark.version.classifier>spark301db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
-                <spark.version>${spark301db.version}</spark.version>
-                <spark.test.version>${spark301db.version}</spark.test.version>
-                <hadoop.client.version>2.7.4</hadoop.client.version>
-                <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-31+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/301db/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/pre320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <modules>
-                <module>common</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -465,14 +178,11 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/312db/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/31xdb/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
@@ -517,18 +227,14 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/312-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -548,7 +254,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -575,18 +280,13 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/313/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -606,7 +306,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -633,18 +332,13 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/314/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -674,7 +368,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -701,12 +394,10 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -739,7 +430,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -766,12 +456,10 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/321/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
@@ -804,7 +492,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -831,12 +518,10 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/322/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
@@ -869,7 +554,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -910,8 +594,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/321db/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
@@ -959,9 +642,7 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/330/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -995,7 +676,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -1022,18 +702,14 @@
                                 <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/301until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/pre320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -1058,7 +734,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -1106,15 +781,15 @@
     </profiles>
 
     <properties>
-        <buildver>301</buildver>
+        <buildver>311</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
-        <spark.version>${spark301.version}</spark.version>
+        <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <cudf.version>22.04.0-SNAPSHOT</cudf.version>
+        <cudf.version>22.06.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.15</scala.version>
         <!--
@@ -1136,11 +811,6 @@
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
         <spark248.version>2.4.8</spark248.version>
-        <spark301.version>3.0.1</spark301.version>
-        <spark301db.version>3.0.1-databricks</spark301db.version>
-        <spark302.version>3.0.2</spark302.version>
-        <spark303.version>3.0.3</spark303.version>
-        <spark304.version>3.0.4-SNAPSHOT</spark304.version>
         <spark311.version>3.1.1</spark311.version>
         <spark311cdh.version>3.1.1.3.1.7270.0-253</spark311cdh.version>
         <spark312.version>3.1.2</spark312.version>

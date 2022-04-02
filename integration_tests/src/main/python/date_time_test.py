@@ -18,7 +18,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_spark_session, is_before_spark_311, is_before_spark_330
+from spark_session import with_spark_session, is_before_spark_330
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -189,7 +189,6 @@ def test_to_unix_timestamp(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"))
 
 @allow_non_gpu('ProjectExec,Alias,ToUnixTimestamp,Literal')
-@pytest.mark.skipif(is_before_spark_311(), reason='SPARK-33498')
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_to_unix_timestamp_fallback(data_gen):
     assert_gpu_fallback_collect(
@@ -205,7 +204,6 @@ def test_unix_timestamp_improved(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))), conf)
 
 @allow_non_gpu('ProjectExec,Alias,UnixTimestamp,Literal')
-@pytest.mark.skipif(is_before_spark_311(), reason='SPARK-33498')
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp_fallback(data_gen):
     assert_gpu_fallback_collect(
@@ -236,7 +234,6 @@ def test_string_unix_timestamp(data_gen, date_form):
             lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)))
 
 @allow_non_gpu('ProjectExec,Alias,GetTimestamp,Literal,Cast')
-@pytest.mark.skipif(is_before_spark_311(), reason='SPARK-33498')
 @pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
 def test_gettimestamp_fallback(data_gen):
     assert_gpu_fallback_collect(

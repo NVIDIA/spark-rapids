@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ TMP_CLASS=${TEMP_CLASS_LOC:-"./target/jacoco_classes/"}
 HTML_LOC=${HTML_LOCATION:="./target/jacoco-report/"}
 XML_LOC=${XML_LOCATION:="${HTML_LOC}"}
 DIST_JAR=${RAPIDS_DIST_JAR:-$(ls ./dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)}
-SPK_VER=${JACOCO_SPARK_VER:-"301"}
+SPK_VER=${JACOCO_SPARK_VER:-"311"}
 UDF_JAR=${RAPIDS_UDF_JAR:-$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-SNAPSHOT-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)}
 SOURCE_DIRS=${SOURCE_DIRS:-"./sql-plugin/src/main/scala/:./sql-plugin/src/main/java/:./shuffle-plugin/src/main/scala/:./udf-compiler/src/main/scala/"}
 
