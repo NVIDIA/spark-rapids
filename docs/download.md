@@ -38,7 +38,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.04.0
 * Download the [RAPIDS
@@ -98,7 +99,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to the [Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+*For Cloudera and EMR support, please refer to the 
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.02.0
 * Download the [RAPIDS
@@ -163,7 +165,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.12.0
 * Download the [RAPIDS
@@ -229,7 +232,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.10.0
 * Download the [RAPIDS
@@ -287,7 +291,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.08.0
 * Download the [RAPIDS
@@ -342,7 +347,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.06.2
 * Download the [RAPIDS
@@ -384,7 +390,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.06.1
 * Download the [RAPIDS
@@ -430,7 +437,8 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
 for your hardware's minimum driver version.
 
-*For Cloudera and EMR support, please refer to [FAQ section](./FAQ.md).
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.06.0
 * Download the [RAPIDS
