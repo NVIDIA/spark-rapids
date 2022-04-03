@@ -30,7 +30,15 @@ object RapidsErrorUtils {
 
   def mapKeyNotExistError(key: String, isElementAtF: Boolean = false): NoSuchElementException = {
     // For now, the default argument is false. The caller sets the correct value accordingly.
-    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF)
+    // Pass "" to context parameter, context is a SQL string with line and position info, like:
+    // == SQL(line 1, position 0) ==
+    // element_at(col, 5)
+    // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    // The context is generated from TreeNode.origin.context,
+    // because of origin is thread local variable while CPU processing data,
+    // we can't catch it.
+    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF, "")
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
