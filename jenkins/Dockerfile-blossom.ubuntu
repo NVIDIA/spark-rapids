@@ -25,11 +25,13 @@
 
 ARG CUDA_VER=11.0
 ARG UBUNTU_VER=18.04
-ARG UCX_VER=1.11.2
+ARG UCX_VER=1.12.1
+ARG UCX_CUDA_VER=11
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG UBUNTU_VER
 ARG UCX_VER
+ARG UCX_CUDA_VER
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
@@ -53,6 +55,6 @@ RUN apt install -y inetutils-ping expect wget libnuma1 libgomp1
 
 RUN mkdir -p /tmp/ucx && \
     cd /tmp/ucx && \
-    wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-v${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5.x-cuda${CUDA_VER}.deb && \
+    wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-v${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}.deb && \
     dpkg -i *.deb && \
     rm -rf /tmp/ucx
