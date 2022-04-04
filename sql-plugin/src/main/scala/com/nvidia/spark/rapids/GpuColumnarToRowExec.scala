@@ -344,7 +344,10 @@ object GpuColumnarToRowExecParent {
   }
 
   /**
-   * Helper to check if GPU accelerated row-column transpose is supported
+   * Helper to check if GPU accelerated row-column transpose is supported.
+   * This is a workaround for [[https://github.com/rapidsai/cudf/issues/10569]],
+   * where CUDF JNI column->row transposition works incorrectly on certain
+   * GPU architectures.
    */
   private lazy val isAcceleratedTransposeSupported: Boolean = {
     // Check if the current CUDA device architecture exceeds Pascal.
@@ -367,7 +370,10 @@ object GpuColumnarToRowExecParent {
         // We are being conservative by only allowing 100M columns until we feel the need to
         // increase this number
         output.length <= 100000000 &&
-        // Check if the current CUDA device supports accelerated transpose.
+        // Work around {@link https://github.com/rapidsai/cudf/issues/10569}, where CUDF JNI
+        // acceleration of column->row transposition produces incorrect results on certain
+        // GPU architectures.
+        // Check that the accelerated transpose works correctly on the current CUDA device.
         isAcceleratedTransposeSupported) {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
