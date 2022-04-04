@@ -59,9 +59,8 @@ class ShimVectorizedColumnReader(
     writerVersion: ParsedVersion
 ) extends VectorizedColumnReader(
       columns.get(index),
-      types.get(index).getLogicalTypeAnnotation,
-      pageReadStore.getPageReader(columns.get(index)),
-      pageReadStore.getRowIndexes().orElse(null),
+      true,
+      pageReadStore,
       convertTz,
       datetimeRebaseMode,
       TimeZone.getDefault.getID, // use default zone because of no rebase
