@@ -17,12 +17,14 @@
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
 import java.time.ZoneId
+import java.util.TimeZone
 
 import org.apache.parquet.VersionParser.ParsedVersion
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.schema.{GroupType, Type}
 
+import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
@@ -32,8 +34,8 @@ class ShimParquetRowConverter(
     parquetType: GroupType,
     catalystType: StructType,
     convertTz: Option[ZoneId],
-    datetimeRebaseMode: LegacyBehaviorPolicy.Value,
-    int96RebaseMode: LegacyBehaviorPolicy.Value,
+    datetimeRebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.CORRECTED
+    int96RebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.EXCEPTION
     int96CDPHive3Compatibility: Boolean,
     updater: ParentContainerUpdater
 ) extends ParquetRowConverter(
@@ -41,9 +43,8 @@ class ShimParquetRowConverter(
       parquetType,
       catalystType,
       convertTz,
-      datetimeRebaseMode,
-      int96RebaseMode,
-      int96CDPHive3Compatibility,
+      RebaseSpec(datetimeRebaseMode), // no need to rebase, so set originTimeZone as default
+      RebaseSpec(int96RebaseMode), // no need to rebase, so set originTimeZone as default
       updater)
 
 class ShimVectorizedColumnReader(
@@ -52,15 +53,17 @@ class ShimVectorizedColumnReader(
     types: java.util.List[Type],
     pageReadStore: PageReadStore,
     convertTz: ZoneId,
-    datetimeRebaseMode: String,
-    int96RebaseMode: String,
+    datetimeRebaseMode: String, // always LegacyBehaviorPolicy.CORRECTED
+    int96RebaseMode: String, // always LegacyBehaviorPolicy.EXCEPTION
     int96CDPHive3Compatibility: Boolean,
     writerVersion: ParsedVersion
 ) extends VectorizedColumnReader(
       columns.get(index),
-      types.get(index).getOriginalType,
-      pageReadStore.getPageReader(columns.get(index)),
+      true,
+      pageReadStore,
       convertTz,
       datetimeRebaseMode,
+      TimeZone.getDefault.getID, // use default zone because of no rebase
       int96RebaseMode,
-      int96CDPHive3Compatibility)
+      TimeZone.getDefault.getID, // use default zone because of will throw exception if rebase
+      writerVersion)
