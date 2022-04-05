@@ -27,11 +27,13 @@
 
 ARG CUDA_VER=11.0
 ARG UBUNTU_VER=18.04
+ARG UCX_VER=1.12.1
+ARG UCX_CUDA_VER=11
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG UBUNTU_VER
-ARG UCX_VER=1.12.1
-ARG UCX_CUDA_VER=11
+ARG UCX_VER
+ARG UCX_CUDA_VER
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
