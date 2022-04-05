@@ -1079,7 +1079,20 @@ case class GpuRegExpExtract(
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
 
-    val groupIndex = idx.getValue.asInstanceOf[Int]
+    // When group index is 0, it means extract the entire pattern including those parts which
+    // don't belong to any group. For instance,
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 0) => 123abcE
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 1) => 123
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 2) => E
+    //
+    // To support the full match (group index 0), we wrap a pair of parentheses on the original
+    // cudfRegexPattern.
+    val (extractPattern, groupIndex) = idx.getValue match {
+      case i: Int if i == 0 =>
+        ("(" + cudfRegexPattern + ")", 0)
+      case i =>
+        (cudfRegexPattern, i.asInstanceOf[Int] - 1)
+    }
 
     // There are some differences in behavior between cuDF and Java so we have
     // to handle those cases here.
@@ -1096,27 +1109,13 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    if (groupIndex == 0) {
-      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-          withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
-            withResource(str.getBase.isNull) { isNull =>
-              withResource(matches.ifElse(str.getBase, emptyString)) {
+    withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+        withResource(str.getBase.containsRe(cudfRegexPattern)) { matches =>
+          withResource(str.getBase.isNull) { isNull =>
+            withResource(str.getBase.extractRe(extractPattern)) { extract =>
+              withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
                 isNull.ifElse(nullString, _)
-              }
-            }
-          }
-        }
-      }
-    } else {
-      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-          withResource(str.getBase.extractRe(cudfRegexPattern)) { extract =>
-            withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
-              withResource(str.getBase.isNull) { isNull =>
-                withResource(matches.ifElse(extract.getColumn(groupIndex - 1), emptyString)) {
-                  isNull.ifElse(nullString, _)
-                }
               }
             }
           }
