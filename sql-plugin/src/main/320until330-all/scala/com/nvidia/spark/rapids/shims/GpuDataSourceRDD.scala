@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.shims.ShimDataSourceRDD
+import com.nvidia.spark.rapids.{MetricsBatchIterator, PartitionIterator}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, SparkException, TaskContext}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
-import org.apache.spark.sql.execution.datasources.v2.DataSourceRDDPartition
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.connector.read.{InputPartition, PartitionReaderFactory}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceRDDPartition}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -35,8 +35,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuDataSourceRDD(
     sc: SparkContext,
     @transient private val inputPartitions: Seq[InputPartition],
-    partitionReaderFactory: PartitionReaderFactory)
-    extends ShimDataSourceRDD(sc, inputPartitions, partitionReaderFactory, columnarReads = true) {
+    partitionReaderFactory: PartitionReaderFactory
+) extends DataSourceRDD(sc, inputPartitions, partitionReaderFactory, columnarReads = true,
+  Map.empty[String, SQLMetric]) {
 
   private def castPartition(split: Partition): DataSourceRDDPartition = split match {
     case p: DataSourceRDDPartition => p
@@ -53,50 +54,11 @@ class GpuDataSourceRDD(
   }
 }
 
-private class PartitionIterator[T](reader: PartitionReader[T]) extends Iterator[T] {
-  private[this] var valuePrepared = false
-
-  override def hasNext: Boolean = {
-    if (!valuePrepared) {
-      valuePrepared = reader.next()
-    }
-    valuePrepared
+object GpuDataSourceRDD {
+  def apply(
+      sc: SparkContext,
+      inputPartitions: Seq[InputPartition],
+      partitionReaderFactory: PartitionReaderFactory): GpuDataSourceRDD = {
+    new GpuDataSourceRDD(sc, inputPartitions, partitionReaderFactory)
   }
-
-  override def next(): T = {
-    if (!hasNext) {
-      throw new java.util.NoSuchElementException("End of stream")
-    }
-    valuePrepared = false
-    reader.get()
-  }
-}
-
-private class MetricsBatchIterator(iter: Iterator[ColumnarBatch]) extends Iterator[ColumnarBatch] {
-  private[this] val inputMetrics = TaskContext.get().taskMetrics().inputMetrics
-
-  override def hasNext: Boolean = iter.hasNext
-
-  override def next(): ColumnarBatch = {
-    val batch = iter.next()
-    TrampolineUtil.incInputRecordsRows(inputMetrics, batch.numRows())
-    batch
-  }
-}
-
-/** Wraps a columnar PartitionReader to update bytes read metric based on filesystem statistics. */
-class PartitionReaderWithBytesRead(reader: PartitionReader[ColumnarBatch])
-    extends PartitionReader[ColumnarBatch] {
-  private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
-  private[this] val getBytesRead = TrampolineUtil.getFSBytesReadOnThreadCallback()
-
-  override def next(): Boolean = {
-    val result = reader.next()
-    TrampolineUtil.incBytesRead(inputMetrics, getBytesRead())
-    result
-  }
-
-  override def get(): ColumnarBatch = reader.get()
-
-  override def close(): Unit = reader.close()
 }

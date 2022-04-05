@@ -343,8 +343,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           override val childScans: scala.Seq[ScanMeta[_]] =
             Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
-          override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+          override def convertToGpu(): GpuExec = GpuBatchScanExec(p.output,
+            childScans.head.convertToGpu(), p.runtimeFilters, p.keyGroupedPartitioning)
         }),
       GpuOverrides.exec[CoalesceExec](
         "The backend for the dataframe coalesce method",

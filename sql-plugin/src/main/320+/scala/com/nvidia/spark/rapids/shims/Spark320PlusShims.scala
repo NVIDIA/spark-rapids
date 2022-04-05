@@ -422,7 +422,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           }
 
           override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu(), p.runtimeFilters)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
