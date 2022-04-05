@@ -23,7 +23,7 @@ The RAPIDS Accelerator for Apache Spark officially supports:
 - [Databricks Runtime 9.1, 10.4](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
-- Cloudera provides Spark RAPIDS plugin packaged through 
+- Cloudera provides the plugin packaged through 
   [CDS 3.2](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-spark-3-overview.html)
   which is supported on the following 
   [CDP Private Cloud Base releases](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-3-requirements.html).
