@@ -77,7 +77,7 @@ cluster.
    your workspace.  See [Managing
    Notebooks](https://docs.databricks.com/notebooks/notebooks-manage.html#id2) for instructions on
    how to import a notebook.  
-   Select the RAPIDS Accelerator version for Apache Spark based on the Databricks runtime
+   Select the version of the RAPIDS Accelerator for Apache Spark based on the Databricks runtime
    version:
     - [Databricks 9.1 LTS
     ML](https://docs.databricks.com/release-notes/runtime/9.1ml.html#system-environment) has CUDA 11
