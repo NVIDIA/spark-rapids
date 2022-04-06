@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-03-31
+Generated on 2022-04-06
 
 ## Release 22.04
 
@@ -7,6 +7,7 @@ Generated on 2022-03-31
 |||
 |:---|:---|
 |[#4734](https://github.com/NVIDIA/spark-rapids/issues/4734)|[FEA] Support approx_percentile in reduction context|
+|[#1922](https://github.com/NVIDIA/spark-rapids/issues/1922)|[FEA] Support ORC forced positional evolution|
 |[#123](https://github.com/NVIDIA/spark-rapids/issues/123)|[FEA] add in support for dayfirst formats in the CSV parser|
 |[#4863](https://github.com/NVIDIA/spark-rapids/issues/4863)|[FEA] Improve timestamp support in JSON and CSV readers|
 |[#4935](https://github.com/NVIDIA/spark-rapids/issues/4935)|[FEA] Support reading Avro: primitive types|
@@ -19,6 +20,7 @@ Generated on 2022-03-31
 |[#1111](https://github.com/NVIDIA/spark-rapids/issues/1111)|[FEA] support `spark.sql.legacy.timeParserPolicy` when parsing CSV files|
 |[#4849](https://github.com/NVIDIA/spark-rapids/issues/4849)|[FEA] Support parsing dates in JSON reader|
 |[#4789](https://github.com/NVIDIA/spark-rapids/issues/4789)|[FEA] Add Spark 3.1.4 shim|
+|[#4646](https://github.com/NVIDIA/spark-rapids/issues/4646)|[FEA] Make JSON parsing of `NaN` and `Infinity` values fully compatible with Spark|
 |[#4824](https://github.com/NVIDIA/spark-rapids/issues/4824)|[FEA] Support reading decimals from JSON and CSV|
 |[#4814](https://github.com/NVIDIA/spark-rapids/issues/4814)|[FEA] Support element_at with non-literal index|
 |[#4816](https://github.com/NVIDIA/spark-rapids/issues/4816)|[FEA] Support org.apache.spark.sql.catalyst.expressions.GetArrayStructFields|
@@ -27,9 +29,10 @@ Generated on 2022-03-31
 |[#4791](https://github.com/NVIDIA/spark-rapids/issues/4791)|Update Spark 3.1.3 to be released|
 |[#4712](https://github.com/NVIDIA/spark-rapids/issues/4712)|[FEA] Allow <WindowExec> to partition on Decimal 128 when running on the GPU|
 |[#4762](https://github.com/NVIDIA/spark-rapids/issues/4762)|[FEA] Improve support for reading JSON integer types|
+|[#4696](https://github.com/NVIDIA/spark-rapids/issues/4696)|[FEA] Support casting map to string|
+|[#1572](https://github.com/NVIDIA/spark-rapids/issues/1572)|[FEA] Add in decimal support for pmod, remainder and divide|
 |[#4763](https://github.com/NVIDIA/spark-rapids/issues/4763)|[FEA] Improve support for reading JSON boolean types|
 |[#4003](https://github.com/NVIDIA/spark-rapids/issues/4003)|[FEA] Add regular expression support to GPU implementation of StringSplit|
-|[#4286](https://github.com/NVIDIA/spark-rapids/issues/4286)|[Audit] [FEA] [SPARK-32940][SQL] Collect, first and last should be deterministic aggregate functions|
 |[#4626](https://github.com/NVIDIA/spark-rapids/issues/4626)|[FEA] <WindowExec> cannot run on GPU because unsupported data types in 'partitionSpec'|
 |[#33](https://github.com/NVIDIA/spark-rapids/issues/33)|[FEA] hypot SQL function|
 |[#4515](https://github.com/NVIDIA/spark-rapids/issues/4515)|[FEA] Set RMM async allocator as default|
@@ -39,7 +42,9 @@ Generated on 2022-03-31
 |:---|:---|
 |[#3026](https://github.com/NVIDIA/spark-rapids/issues/3026)|[FEA] [Audit]: Set the list of read columns in the task configuration to reduce reading of ORC data|
 |[#4895](https://github.com/NVIDIA/spark-rapids/issues/4895)|Add support for structs in GpuScalarSubquery |
+|[#4393](https://github.com/NVIDIA/spark-rapids/issues/4393)|[BUG] Columnar to Columnar transfers are very slow|
 |[#589](https://github.com/NVIDIA/spark-rapids/issues/589)|[FEA] Support ExistenceJoin|
+|[#4784](https://github.com/NVIDIA/spark-rapids/issues/4784)|[FEA] Improve copying decimal data from CPU columnar data |
 |[#4685](https://github.com/NVIDIA/spark-rapids/issues/4685)|[FEA] Avoid regexp cost in string_split for escaped characters|
 |[#4777](https://github.com/NVIDIA/spark-rapids/issues/4777)|Remove input upcast in GpuExtractChunk32|
 |[#4722](https://github.com/NVIDIA/spark-rapids/issues/4722)|Optimize DECIMAL128 average aggregations|
@@ -50,8 +55,10 @@ Generated on 2022-03-31
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#5125](https://github.com/NVIDIA/spark-rapids/issues/5125)|[BUG] GpuCast.hasSideEffects does not check if child expression has side effects|
+|[#5091](https://github.com/NVIDIA/spark-rapids/issues/5091)|[BUG] Profiling tool fails process custom task accumulators of type CollectionAccumulator|
+|[#5050](https://github.com/NVIDIA/spark-rapids/issues/5050)|[BUG] Release build of v22.04.0 FAILED on "Execution attach-javadoc failed: NullPointerException" with maven option '-P source-javadoc'|
 |[#5035](https://github.com/NVIDIA/spark-rapids/issues/5035)|[BUG] Different CSV parsing behavior between 22.04 and 22.02|
-|[#4908](https://github.com/NVIDIA/spark-rapids/issues/4908)|Update spark 2.x explain code for 22.04|
 |[#5065](https://github.com/NVIDIA/spark-rapids/issues/5065)|[BUG] spark330+ build error due to SPARK-37463|
 |[#5019](https://github.com/NVIDIA/spark-rapids/issues/5019)|[BUG] udf compiler failed to translate UDF in spark-shell |
 |[#5048](https://github.com/NVIDIA/spark-rapids/issues/5048)|[BUG] OOM for q18 of TPC-DS benchmark testing on Spark2a|
@@ -63,14 +70,15 @@ Generated on 2022-03-31
 |[#4913](https://github.com/NVIDIA/spark-rapids/issues/4913)|[BUG] Fall back to the CPU if we see a scale on Ceil or Floor|
 |[#4806](https://github.com/NVIDIA/spark-rapids/issues/4806)|[BUG] When running xgboost training, if PCBS is enabled, it fails with java.lang.AssertionError|
 |[#4542](https://github.com/NVIDIA/spark-rapids/issues/4542)|[BUG] test_write_round_trip failed Maximum pool size exceeded |
-|[#4911](https://github.com/NVIDIA/spark-rapids/issues/4911)|[FEA][Audit] [SPARK-38314] - Fail to read parquet files after writing the hidden file metadata|
-|[#4936](https://github.com/NVIDIA/spark-rapids/issues/4936)|[BUG]databricks nightly window_function_test failures|
+|[#4911](https://github.com/NVIDIA/spark-rapids/issues/4911)|[BUG][Audit] [SPARK-38314] - Fail to read parquet files after writing the hidden file metadata|
+|[#4936](https://github.com/NVIDIA/spark-rapids/issues/4936)|[BUG] databricks nightly window_function_test failures|
 |[#4931](https://github.com/NVIDIA/spark-rapids/issues/4931)|[BUG] Spark 3.3 IT test cache_test.py::test_passing_gpuExpr_as_Expr  fails with IllegalArgumentException|
 |[#4710](https://github.com/NVIDIA/spark-rapids/issues/4710)|[BUG] cudaErrorIllegalAddress for q95 (3TB) on GCP with ASYNC allocator|
 |[#4918](https://github.com/NVIDIA/spark-rapids/issues/4918)|[BUG] databricks nightly build failed|
 |[#4826](https://github.com/NVIDIA/spark-rapids/issues/4826)|[BUG] cache_test failures when testing with 128-bit decimal|
 |[#4855](https://github.com/NVIDIA/spark-rapids/issues/4855)|[BUG] Shim tests in sql-plugin module are not running|
 |[#4487](https://github.com/NVIDIA/spark-rapids/issues/4487)|[BUG] regexp_find hangs with some patterns|
+|[#4486](https://github.com/NVIDIA/spark-rapids/issues/4486)|[BUG] Regular expressions with hex digits not working as expected|
 |[#4879](https://github.com/NVIDIA/spark-rapids/issues/4879)|[BUG] [SPARK-38237][SQL] ClusteredDistribution clustering keys break build with wrong arguments|
 |[#4883](https://github.com/NVIDIA/spark-rapids/issues/4883)|[BUG] row-based_udf_test.py::test_hive_empty_* fail nightly tests|
 |[#4876](https://github.com/NVIDIA/spark-rapids/issues/4876)|[BUG] Nightly build failed on Databricks with "pip: No such file or directory"|
@@ -83,13 +91,17 @@ Generated on 2022-03-31
 |[#4526](https://github.com/NVIDIA/spark-rapids/issues/4526)|[BUG] Short circuit AND/OR in ANSI mode|
 |[#4787](https://github.com/NVIDIA/spark-rapids/issues/4787)|[BUG] Dataproc notebook IT test failure - NoSuchMethodError: org.apache.spark.network.util.ByteUnit.toBytes|
 |[#4704](https://github.com/NVIDIA/spark-rapids/issues/4704)|[BUG] Update the premerge and nightly tests after moving the UDF example to external repository|
+|[#4795](https://github.com/NVIDIA/spark-rapids/issues/4795)|[BUG] Read ORC does not ignoreCorruptFiles|
+|[#4802](https://github.com/NVIDIA/spark-rapids/issues/4802)|[BUG] GPU CSV read does not honor ignoreCorruptFiles or ignoreMissingFiles|
+|[#4803](https://github.com/NVIDIA/spark-rapids/issues/4803)|[BUG] GPU JSON read does not honor ignoreCorruptFiles or ignoreMissingFiles|
 |[#1986](https://github.com/NVIDIA/spark-rapids/issues/1986)|[BUG] CSV reading null inconsistent between spark.rapids.sql.format.csv.enabled=true&false|
 |[#126](https://github.com/NVIDIA/spark-rapids/issues/126)|[BUG] CSV parsing large number values overflow|
-|[#4759](https://github.com/NVIDIA/spark-rapids/issues/4759)|Profiling tool can miss datasources when they are GPU reads|
+|[#4759](https://github.com/NVIDIA/spark-rapids/issues/4759)|[BUG] Profiling tool can miss datasources when they are GPU reads|
 |[#4798](https://github.com/NVIDIA/spark-rapids/issues/4798)|[BUG] Integration test builds failing with worker_id not found|
 |[#4727](https://github.com/NVIDIA/spark-rapids/issues/4727)|[BUG] Read Parquet does not ignoreCorruptFiles|
 |[#4744](https://github.com/NVIDIA/spark-rapids/issues/4744)|[BUG] test_groupby_std_variance_partial_replace_fallback failed|
 |[#4761](https://github.com/NVIDIA/spark-rapids/issues/4761)|[BUG] test_simple_partitioned_read failed on Spark 3.3|
+|[#2071](https://github.com/NVIDIA/spark-rapids/issues/2071)|[BUG] parsing invalid boolean CSV values return true instead of null|
 |[#4749](https://github.com/NVIDIA/spark-rapids/issues/4749)|[BUG] test_write_empty_parquet_round_trip failed|
 |[#4730](https://github.com/NVIDIA/spark-rapids/issues/4730)|[BUG] python UDF tests are leaking|
 |[#4290](https://github.com/NVIDIA/spark-rapids/issues/4290)|[BUG] Investigate q32 and q67 for decimals potential regression|
@@ -100,6 +112,7 @@ Generated on 2022-03-31
 |[#4031](https://github.com/NVIDIA/spark-rapids/issues/4031)|[BUG] Spark 3.3.0 test failure: NoSuchMethodError org.apache.orc.TypeDescription.getAttributeValue|
 |[#4664](https://github.com/NVIDIA/spark-rapids/issues/4664)|[BUG] MortgageAdaptiveSparkSuite failed with duplicate buffer exception|
 |[#4564](https://github.com/NVIDIA/spark-rapids/issues/4564)|[BUG] map_test ansi failed in spark330|
+|[#119](https://github.com/NVIDIA/spark-rapids/issues/119)|[BUG] LIKE does not work if null chars are in the string|
 |[#124](https://github.com/NVIDIA/spark-rapids/issues/124)|[BUG] CSV/JSON Parsing some float values results in overflow|
 |[#4045](https://github.com/NVIDIA/spark-rapids/issues/4045)|[BUG] q93 failed in this week's NDS runs|
 |[#4488](https://github.com/NVIDIA/spark-rapids/issues/4488)|[BUG] isCastingStringToNegDecimalScaleSupported seems set wrong for some Spark versions|
@@ -107,6 +120,11 @@ Generated on 2022-03-31
 ### PRs
 |||
 |:---|:---|
+|[#5122](https://github.com/NVIDIA/spark-rapids/pull/5122)|Disable GPU accelerated row-column transpose for Pascal GPUs:|
+|[#5127](https://github.com/NVIDIA/spark-rapids/pull/5127)|GpuCast.hasSideEffects now checks to see if the child expression has side-effects|
+|[#5118](https://github.com/NVIDIA/spark-rapids/pull/5118)|On task failure catch some CUDA exceptions and kill executor|
+|[#5069](https://github.com/NVIDIA/spark-rapids/pull/5069)|Update for the public release [skip ci]|
+|[#5097](https://github.com/NVIDIA/spark-rapids/pull/5097)|Implement hasSideEffects for GpuGetArrayItem, GpuElementAt, GpuGetMapValue, GpuUnaryMinus, and GpuAbs|
 |[#5079](https://github.com/NVIDIA/spark-rapids/pull/5079)|Disable spark snapshot shims pre-merge build in 22.04|
 |[#5094](https://github.com/NVIDIA/spark-rapids/pull/5094)|Fix profiling tool reading collectionAccumulator|
 |[#5078](https://github.com/NVIDIA/spark-rapids/pull/5078)|Disable JSON and CSV floating-point reads by default|
@@ -274,6 +292,7 @@ Generated on 2022-03-31
 |||
 |:---|:---|
 |[#4305](https://github.com/NVIDIA/spark-rapids/issues/4305)|[FEA] write nvidia tool wrappers to allow old YARN versions to work with MIG|
+|[#4410](https://github.com/NVIDIA/spark-rapids/issues/4410)|[FEA] ReplicateRows - Support ReplicateRows for decimal 128 type|
 |[#4360](https://github.com/NVIDIA/spark-rapids/issues/4360)|[FEA] Add explain api for Spark 2.X|
 |[#3541](https://github.com/NVIDIA/spark-rapids/issues/3541)|[FEA] Support max on single-level struct in aggregation context|
 |[#4238](https://github.com/NVIDIA/spark-rapids/issues/4238)|[FEA] Add a Spark 3.X Explain only mode to the plugin|
@@ -324,6 +343,7 @@ Generated on 2022-03-31
 |[#4600](https://github.com/NVIDIA/spark-rapids/issues/4600)|[BUG] crash if we have a decimal128 in a struct in an array |
 |[#4581](https://github.com/NVIDIA/spark-rapids/issues/4581)|[BUG] Build error "GpuOverrides.scala:924: wrong number of arguments" on DB9.1.x spark-3.1.2 |
 |[#4593](https://github.com/NVIDIA/spark-rapids/issues/4593)|[BUG] dup GpuHashJoin.diff case-folding issue|
+|[#4559](https://github.com/NVIDIA/spark-rapids/issues/4559)|[BUG] regexp_replace with replacement string containing `\` can produce incorrect results|
 |[#4503](https://github.com/NVIDIA/spark-rapids/issues/4503)|[BUG] regexp_replace with back references produces incorrect results on GPU|
 |[#4567](https://github.com/NVIDIA/spark-rapids/issues/4567)|[BUG] Profile tool hangs in compare mode|
 |[#4315](https://github.com/NVIDIA/spark-rapids/issues/4315)|[BUG] test_hash_reduction_decimal_overflow_sum[30] failed OOM in integration tests|
@@ -335,6 +355,7 @@ Generated on 2022-03-31
 |[#4521](https://github.com/NVIDIA/spark-rapids/issues/4521)|[BUG] Inconsistencies in handling of newline characters and string and line anchors|
 |[#4548](https://github.com/NVIDIA/spark-rapids/issues/4548)|[BUG] ai.rapids.cudf.CudaException: an illegal instruction was encountered in databricks 9.1|
 |[#4475](https://github.com/NVIDIA/spark-rapids/issues/4475)|[BUG] `\D` and `\W` match newline in Spark but not in cuDF|
+|[#1866](https://github.com/NVIDIA/spark-rapids/issues/1866)|[BUG] GpuFileFormatWriter does not close the data writer|
 |[#4524](https://github.com/NVIDIA/spark-rapids/issues/4524)|[BUG] RegExp transpiler fails to detect some choice expressions that cuDF cannot compile|
 |[#3226](https://github.com/NVIDIA/spark-rapids/issues/3226)|[BUG]OOM happened when do cube operations|
 |[#2504](https://github.com/NVIDIA/spark-rapids/issues/2504)|[BUG] OOM when running NDS queries with UCX and GDS|
@@ -342,6 +363,7 @@ Generated on 2022-03-31
 |[#4060](https://github.com/NVIDIA/spark-rapids/issues/4060)|[BUG] test_hash_groupby_approx_percentile_long_repeated_keys failed intermittently|
 |[#4039](https://github.com/NVIDIA/spark-rapids/issues/4039)|[BUG] Spark 3.3.0 IT Array test failures|
 |[#3849](https://github.com/NVIDIA/spark-rapids/issues/3849)|[BUG] In ANSI mode we can fail in cases Spark would not due to conditionals|
+|[#4445](https://github.com/NVIDIA/spark-rapids/issues/4445)|[BUG] mvn clean prints an error message on a clean dir|
 |[#4421](https://github.com/NVIDIA/spark-rapids/issues/4421)|[BUG] the driver is trying to load CUDA with latest 22.02 |
 |[#4455](https://github.com/NVIDIA/spark-rapids/issues/4455)|[BUG] join_test.py::test_struct_self_join[IGNORE_ORDER({'local': True})] failed in spark330|
 |[#4442](https://github.com/NVIDIA/spark-rapids/issues/4442)|[BUG] mvn build FAILED with option `-P noSnapshotsWithDatabricks`|
