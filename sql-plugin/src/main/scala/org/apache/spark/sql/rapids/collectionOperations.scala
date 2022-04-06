@@ -84,6 +84,8 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
 case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
+
   override lazy val dataType: DataType = left.dataType match {
     case ArrayType(elementType, _) => elementType
     case MapType(_, valueType, _) => valueType
