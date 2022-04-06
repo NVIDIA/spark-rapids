@@ -29,7 +29,7 @@ def gen_top_schema(depth):
 
 def gen_schema(depth):
     """
-    Abstruct data type of JSON schema
+    Abstract data type of JSON schema
     type Schema = Object of Fields 
                 | Array of Schema 
                 | String
