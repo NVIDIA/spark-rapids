@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.ColumnarCopyHelper
+import com.nvidia.spark.rapids.{ColumnarCopyHelper, TypeSig}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
@@ -170,7 +170,64 @@ object GpuTypeShims {
     }
   }
 
-  def isDayTimeIntervalType(dt: DataType) : Boolean = dt.isInstanceOf[DayTimeIntervalType]
+  /**
+   * Alias supported types for this shim
+   */
+  def supportedTypesForAlias: TypeSig = TypeSig.ansiIntervals
 
-  def isYearMonthIntervalType(dt: DataType) : Boolean = dt.isInstanceOf[YearMonthIntervalType]
+  /**
+   * Abs supported types for this shim
+   */
+  def supportedTypesForAbs: TypeSig = TypeSig.ansiIntervals
+
+  def isDayTimeTypeAndAbsSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[DayTimeIntervalType]
+
+  def isYearMonthTypeAndAbsSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[YearMonthIntervalType]
+
+  /**
+   * Minus supported types for this shim
+   */
+  def supportedTypesForMinus: TypeSig = TypeSig.ansiIntervals
+
+  def isDayTimeTypeAndMinusSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[DayTimeIntervalType]
+
+  def isYearMonthTypeAndMinusSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[YearMonthIntervalType]
+
+  /**
+   * Add supported types for this shim
+   */
+  def supportedTypesForAdd: TypeSig = TypeSig.ansiIntervals
+
+  def isDayTimeTypeAndAddSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[DayTimeIntervalType]
+
+  def isYearMonthTypeAndAddSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[YearMonthIntervalType]
+
+  /**
+   * Subtract supported types for this shim
+   */
+  def supportedTypesForSubtract: TypeSig = TypeSig.ansiIntervals
+
+  def isDayTimeTypeAndSubtractSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[DayTimeIntervalType]
+
+  def isYearMonthTypeAndSubtractSupports(dt: DataType): Boolean =
+    dt.isInstanceOf[YearMonthIntervalType]
+
+  /**
+   * Positive supported types for this shim
+   */
+  def supportedTypesForPositive: TypeSig = TypeSig.ansiIntervals
+
+  def supportedTypesForCoalesce: TypeSig = TypeSig.ansiIntervals
+
+  def supportedTypesForShuffle: TypeSig = TypeSig.ansiIntervals
+
+  def supportedTypesForAttributeReference: TypeSig = TypeSig.ansiIntervals
+
 }

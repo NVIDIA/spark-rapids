@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
+import com.nvidia.spark.rapids.TypeSig
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnVector
@@ -82,15 +83,55 @@ object GpuTypeShims {
     throw new RuntimeException(s"Not support type $dt.")
 
   /**
-   * Spark supports interval type from 320; Spark supports to/from Parquet from 330,
-   * And lots of interval operators from 330, so just return false for Spark330-
+   * Alias supported types for this shim
    */
-  def isDayTimeIntervalType(dt: DataType) : Boolean = false
+  def supportedTypesForAlias: TypeSig = TypeSig.none
 
   /**
-   * Spark supports interval type from 320; Spark supports to/from Parquet from 330,
-   * And lots of interval operators from 330, so just return false for Spark330-
+   * Abs supported types for this shim
    */
-  def isYearMonthIntervalType(dt: DataType) : Boolean = false
+  def supportedTypesForAbs: TypeSig = TypeSig.none
+
+  def isDayTimeTypeAndAbsSupports(dt: DataType): Boolean = false
+
+  def isYearMonthTypeAndAbsSupports(dt: DataType): Boolean = false
+
+  /**
+   * Minus supported types for this shim
+   */
+  def supportedTypesForMinus: TypeSig = TypeSig.none
+
+  def isDayTimeTypeAndMinusSupports(dt: DataType): Boolean = false
+
+  def isYearMonthTypeAndMinusSupports(dt: DataType): Boolean = false
+
+  /**
+   * Add supported types for this shim
+   */
+  def supportedTypesForAdd: TypeSig = TypeSig.none
+
+  def isDayTimeTypeAndAddSupports(dt: DataType): Boolean = false
+
+  def isYearMonthTypeAndAddSupports(dt: DataType): Boolean = false
+
+  /**
+   * Subtract supported types for this shim
+   */
+  def supportedTypesForSubtract: TypeSig = TypeSig.none
+
+  def isDayTimeTypeAndSubtractSupports(dt: DataType): Boolean = false
+
+  def isYearMonthTypeAndSubtractSupports(dt: DataType): Boolean = false
+
+  /**
+   * Positive supported types for this shim
+   */
+  def supportedTypesForPositive: TypeSig = TypeSig.none
+
+  def supportedTypesForCoalesce: TypeSig = TypeSig.none
+
+  def supportedTypesForShuffle: TypeSig = TypeSig.none
+
+  def supportedTypesForAttributeReference: TypeSig = TypeSig.none
 
 }

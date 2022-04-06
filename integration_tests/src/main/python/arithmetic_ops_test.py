@@ -879,10 +879,11 @@ def test_unary_minus_day_time_interval(ansi_enabled):
         conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_unary_minus_ansi_overflow_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_unary_minus_ansi_overflow_day_time_interval(ansi_enabled):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), '-a').collect(),
-        conf=ansi_enabled_conf,
+        conf={'spark.sql.ansi.enabled': ansi_enabled},
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
@@ -894,10 +895,11 @@ def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
         conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_abs_ansi_overflow_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_abs_ansi_overflow_day_time_interval(ansi_enabled):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), 'abs(a)').collect(),
-        conf=ansi_enabled_conf,
+        conf={'spark.sql.ansi.enabled': ansi_enabled},
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
@@ -910,13 +912,14 @@ def test_addition_day_time_interval(ansi_enabled):
         conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_add_overflow_with_ansi_enabled_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_add_overflow_with_ansi_enabled_day_time_interval(ansi_enabled):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: spark.createDataFrame(
             SparkContext.getOrCreate().parallelize([(timedelta(microseconds=LONG_MAX), timedelta(microseconds=10)),]),
             StructType([StructField('a', DayTimeIntervalType()), StructField('b', DayTimeIntervalType())])
         ).selectExpr('a + b').collect(),
-        conf=ansi_enabled_conf,
+        conf={'spark.sql.ansi.enabled': ansi_enabled},
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
@@ -929,13 +932,14 @@ def test_subtraction_day_time_interval(ansi_enabled):
         conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_subtraction_overflow_with_ansi_enabled_day_time_interval():
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_subtraction_overflow_with_ansi_enabled_day_time_interval(ansi_enabled):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: spark.createDataFrame(
             SparkContext.getOrCreate().parallelize([(timedelta(microseconds=LONG_MIN), timedelta(microseconds=10)),]),
             StructType([StructField('a', DayTimeIntervalType()), StructField('b', DayTimeIntervalType())])
         ).selectExpr('a - b').collect(),
-        conf=ansi_enabled_conf,
+        conf={'spark.sql.ansi.enabled': ansi_enabled},
         error_message='ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')

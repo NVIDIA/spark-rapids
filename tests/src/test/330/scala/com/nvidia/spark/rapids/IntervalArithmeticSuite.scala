@@ -175,4 +175,19 @@ class IntervalArithmeticSuite extends SparkQueryCompareTestSuite {
     df => df.selectExpr("+c_day_time1")
   }
 
+  testSparkResultsAreEqual(
+    "test year month interval arithmetic: Positive, AST",
+    spark => {
+      val data = Seq(Row(Period.ofYears(100)))
+      val schema = StructType(Seq(StructField("c_year_month1", YearMonthIntervalType())))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    },
+    new SparkConf().set(RapidsConf.ENABLE_PROJECT_AST.key, "true"),
+    existClasses = "GpuProjectAstExec",
+    nonExistClasses = "GpuProjectExec"
+  ) {
+    df => {
+      df.selectExpr("+c_year_month1")
+    }
+  }
 }
