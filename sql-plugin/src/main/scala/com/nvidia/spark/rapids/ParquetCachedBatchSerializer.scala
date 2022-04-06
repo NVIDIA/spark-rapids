@@ -34,7 +34,8 @@ import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
-import org.apache.parquet.{HadoopReadOptions, ParquetReadOptions}
+import org.apache.parquet.{HadoopReadOptions, ParquetReadOptions, VersionParser}
+import org.apache.parquet.VersionParser.ParsedVersion
 import org.apache.parquet.column.{ColumnDescriptor, ParquetProperties}
 import org.apache.parquet.hadoop.{CodecFactory, MemoryManager, ParquetFileReader, ParquetFileWriter, ParquetInputFormat, ParquetOutputFormat, ParquetRecordWriter, ParquetWriter}
 import org.apache.parquet.hadoop.ParquetFileWriter.Mode
@@ -860,8 +861,17 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       var numBatched = 0
       var batchIdx = 0
       var totalCountLoadedSoFar: Long = 0
-      val parquetFileReader =
+      val parquetFileReader = {
         ParquetFileReader.open(new ByteArrayInputFile(parquetCachedBatch.buffer), options)
+      }
+      val writerVersion: ParsedVersion = try {
+        VersionParser.parse(parquetFileReader.getFileMetaData.getCreatedBy)
+      } catch {
+        case _: Exception =>
+          // If any problems occur trying to parse the writer version, fallback to sequential reads
+          // if the column is a delta byte array encoding (due to PARQUET-246).
+          null
+      }
       val (totalRowCount, columnsRequested, cacheSchemaToReqSchemaMap, missingColumns,
       columnsInCache, typesInCache) = {
         val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(hadoopConf)
@@ -954,9 +964,11 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
                   columnsInCache,
                   typesInCache,
                   pages,
-                  null /*convertTz*/ ,
+                  convertTz = null,
                   LegacyBehaviorPolicy.CORRECTED.toString,
-                  LegacyBehaviorPolicy.EXCEPTION.toString, false)
+                  LegacyBehaviorPolicy.EXCEPTION.toString,
+                  int96CDPHive3Compatibility = false,
+                  writerVersion)
           }
         }
         totalCountLoadedSoFar += pages.getRowCount

@@ -417,12 +417,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
           override def tagPlanForGpu(): Unit = {
             if (!p.runtimeFilters.isEmpty) {
-              willNotWorkOnGpu("Runtime filtering (DPP) on datasource V2 is not supported")
+              willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
             }
           }
 
           override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu(), p.runtimeFilters)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }

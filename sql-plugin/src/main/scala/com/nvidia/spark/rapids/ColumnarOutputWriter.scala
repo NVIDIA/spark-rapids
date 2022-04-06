@@ -61,7 +61,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
  * must provide a zero-argument constructor. This is the columnar version of
  * `org.apache.spark.sql.execution.datasources.OutputWriter`.
  */
-abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
+abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType, rangeName: String) extends HostBufferConsumer with Arm {
 
   val tableWriter: TableWriter
@@ -165,6 +165,11 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
     writeBufferedData()
     outputStream.close()
   }
+
+  /**
+   * The file path to write. Invoked on the executor side.
+   */
+  def path(): String
 }
 
 object ColumnarOutputWriter {

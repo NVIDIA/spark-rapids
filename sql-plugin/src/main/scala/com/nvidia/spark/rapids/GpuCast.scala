@@ -1528,7 +1528,7 @@ case class GpuCast(
   import GpuCast._
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
-  override def hasSideEffects: Boolean = {
+  override def hasSideEffects: Boolean = super.hasSideEffects || {
     (child.dataType, dataType) match {
       case (StringType, _) if ansiMode => true
       case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
@@ -1544,11 +1544,7 @@ case class GpuCast(
     }
   }
 
-  override def toString: String = if (ansiMode) {
-    s"ansi_cast($child as ${dataType.simpleString})"
-  } else {
-    s"cast($child as ${dataType.simpleString})"
-  }
+  override def toString: String = s"cast($child as ${dataType.simpleString})"
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (Cast.canCast(child.dataType, dataType)) {

@@ -18,6 +18,7 @@ package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
 import java.time.ZoneId
 
+import org.apache.parquet.VersionParser.ParsedVersion
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.schema.{GroupType, Type}
@@ -52,7 +53,8 @@ class ShimVectorizedColumnReader(
     convertTz: ZoneId,
     datetimeRebaseMode: String,
     int96RebaseMode: String,
-    int96CDPHive3Compatibility: Boolean
+    int96CDPHive3Compatibility: Boolean,
+    writerVersion: ParsedVersion
 ) extends VectorizedColumnReader(
       columns.get(index),
       types.get(index).getOriginalType,

@@ -259,13 +259,13 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 }
 
 class GpuParquetWriter(
-    path: String,
+    override val path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
     dateRebaseException: Boolean,
     timestampRebaseException: Boolean,
     context: TaskAttemptContext)
-  extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet") {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 

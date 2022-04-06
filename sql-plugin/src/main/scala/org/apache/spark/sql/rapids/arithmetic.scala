@@ -69,6 +69,9 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
 
   override def sql: String = s"(- ${child.sql})"
 
+  override def hasSideEffects: Boolean = super.hasSideEffects ||
+    (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType))
+
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
       // Because of 2s compliment we need to only worry about the min value for integer types.
@@ -143,6 +146,9 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
   override def unaryOp: UnaryOp = UnaryOp.ABS
 
+  override def hasSideEffects: Boolean = super.hasSideEffects ||
+    (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType))
+
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
       // Because of 2s compliment we need to only worry about the min value for integer types.
@@ -170,7 +176,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
   override def dataType: DataType = left.dataType
   // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = SQLConf.get.ansiEnabled
+  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
 }
 
 object GpuAdd extends Arm {

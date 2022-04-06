@@ -26,12 +26,10 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
@@ -44,40 +42,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
-
-case class GpuBatchScanExec(
-    output: Seq[AttributeReference],
-    @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
-  import GpuMetric._
-  @transient lazy val batch: Batch = scan.toBatch
-
-  override def supportsColumnar = true
-
-  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
-    BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)) ++
-      semaphoreMetrics
-
-  scan match {
-    case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
-    case _ =>
-  }
-
-  override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
-
-  override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
-
-  override lazy val inputRDD: RDD[InternalRow] = {
-    new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
-  }
-
-  override def doCanonicalize(): GpuBatchScanExec = {
-    this.copy(output = output.map(QueryPlan.normalizeExpressions(_, output)))
-  }
-}
 
 trait ScanWithMetrics {
   //this is initialized by the exec post creation

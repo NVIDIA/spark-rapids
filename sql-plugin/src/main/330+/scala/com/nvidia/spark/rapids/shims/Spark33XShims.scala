@@ -371,8 +371,17 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           override val childScans: scala.Seq[ScanMeta[_]] =
             Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
-          override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+          override def tagPlanForGpu(): Unit = {
+            if (!p.runtimeFilters.isEmpty) {
+              willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
+            }
+            if (!p.keyGroupedPartitioning.isEmpty) {
+              willNotWorkOnGpu("key grouped partitioning is not supported")
+            }
+          }
+
+          override def convertToGpu(): GpuExec = GpuBatchScanExec(p.output,
+            childScans.head.convertToGpu(), p.runtimeFilters, p.keyGroupedPartitioning)
         }),
       GpuOverrides.exec[CoalesceExec](
         "The backend for the dataframe coalesce method",
