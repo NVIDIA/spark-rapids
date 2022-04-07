@@ -37,19 +37,18 @@ else
 
     echo "Detected Spark version $VERSION_STRING (shim version: $SPARK_SHIM_VER)"
 
+    INTEGRATION_TEST_VERSION=$SPARK_SHIM_VER
+
+    if [[ ! -z $INTEGRATION_TEST_VERSION_OVERRIDE ]]; then
+        # Override auto detected shim version in case of non-standard version string, e.g. `spark3113172702000-53`
+        INTEGRATION_TEST_VERSION=$INTEGRATION_TEST_VERSION_OVERRIDE
+    fi
+
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         CUDF_JARS=$(echo "$LOCAL_JAR_PATH"/cudf-*.jar)
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
-
-        INTEGRATION_TEST_VERSION=$SPARK_SHIM_VER
-
-        if [[ ! -z $INTEGRATION_TEST_VERSION_OVERRIDE ]]; then
-            # Override auto detected shim version in case of non-standard version string, e.g. `spark3113172702000-53`
-            INTEGRATION_TEST_VERSION=$INTEGRATION_TEST_VERSION_OVERRIDE
-        fi
-
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     else
