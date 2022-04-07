@@ -17,9 +17,12 @@ package com.nvidia.spark.rapids.shims
 
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm
 
+import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND}
 import org.apache.spark.sql.types.{DayTimeIntervalType => DT}
 
 /**
@@ -554,6 +557,205 @@ object GpuIntervalUtils extends Arm {
     withResource(baseWithSignCv) { baseWithSign =>
       withResource(Scalar.fromLong(multiple)) { multipleScalar =>
         baseWithSign.mul(multipleScalar)
+      }
+    }
+  }
+
+  /**
+   * Cast day-time interval to string
+   * Rewrite from org.apache.spark.sql.catalyst.util.IntervalUtils.toDayTimeIntervalString
+   *
+   * @param micros     long micro seconds
+   * @param startField start field, valid values are [0, 3] indicates [DAY, HOUR, MINUTE, SECOND]
+   * @param endField   end field, should >= startField,
+   *                   valid values are [0, 3] indicates [DAY, HOUR, MINUTE, SECOND]
+   * @return ANSI day-time interval string, e.g.: interval '01 08:30:30.001' DAY TO SECOND
+   */
+  def toDayTimeIntervalString(
+      micros: ColumnVector,
+      startField: Byte,
+      endField: Byte): ColumnVector = {
+
+    val numRows = micros.getRowCount
+    val from = DT.fieldToString(startField).toUpperCase
+    val to = DT.fieldToString(endField).toUpperCase
+    val prefixStr = "INTERVAL '"
+    val postfixStr = s"' ${if (startField == endField) from else s"$from TO $to"}"
+
+    val retCv = withResource(new ArrayBuffer[ColumnVector]) { restHolder =>
+      // `restHolder` only hold one rest Cv;
+      // use `resetRest` to close the old one and set a new one
+      // make a copy of micros
+      restHolder += micros.incRefCount()
+
+      withResource(new ArrayBuffer[ColumnView]) { parts =>
+        // prefix part: INTERVAL '
+        parts += getConstStringVector(prefixStr, numRows)
+
+        // sign part: - or empty
+        parts += withResource(Scalar.fromLong(0L)) { zero =>
+          withResource(restHolder.head.lessThan(zero)) { less =>
+            withResource(getConstStringVector("-", numRows)) { neg =>
+              withResource(getConstStringVector("", numRows)) { empty =>
+                less.ifElse(neg, empty)
+              }
+            }
+          }
+        }
+
+        // calculate abs
+        resetRest(restHolder, restHolder.head.abs())
+
+        startField match {
+          case DT.DAY =>
+            // start day part
+            parts += devResult(restHolder.head, MICROS_PER_DAY)
+            resetRest(restHolder, getRest(restHolder.head, MICROS_PER_DAY))
+          case DT.HOUR =>
+            // start hour part
+            parts += devResult(restHolder.head, MICROS_PER_HOUR)
+            resetRest(restHolder, getRest(restHolder.head, MICROS_PER_HOUR))
+          case DT.MINUTE =>
+            // start minute part
+            parts += devResult(restHolder.head, MICROS_PER_MINUTE)
+            resetRest(restHolder, getRest(restHolder.head, MICROS_PER_MINUTE))
+          case DT.SECOND =>
+            // start second part
+            parts += getDecimalPart(restHolder.head)
+        }
+
+        if (startField < DT.HOUR && DT.HOUR <= endField) {
+          // if hour has precedent part
+          parts += getConstStringVector(" ", numRows)
+          parts += devResultWithPadding(restHolder.head, MICROS_PER_HOUR)
+          resetRest(restHolder, getRest(restHolder.head, MICROS_PER_HOUR))
+        }
+
+        if (startField < DT.MINUTE && DT.MINUTE <= endField) {
+          // if minute has precedent part
+          parts += getConstStringVector(":", numRows)
+          parts += devResultWithPadding(restHolder.head, MICROS_PER_MINUTE)
+          resetRest(restHolder, getRest(restHolder.head, MICROS_PER_MINUTE))
+        }
+
+        if (startField < DT.SECOND && DT.SECOND <= endField) {
+          // if second has precedent part
+          parts += getConstStringVector(":", numRows)
+
+          // generate padding zero part
+          // if second less than 10, should pad zero. e.g.: `9.500000` => `09.500000`
+          withResource(Scalar.fromString("0")) { padZero =>
+            withResource(Scalar.fromString("")) { empty =>
+              parts += withResource(Scalar.fromLong(10 * MICROS_PER_SECOND)) { tenSeconds =>
+                withResource(restHolder.head.lessThan(tenSeconds)) { lessThan10 =>
+                  lessThan10.ifElse(padZero, empty)
+                }
+              }
+            }
+          }
+
+          // decimal part
+          parts += getDecimalPart(restHolder.head)
+        }
+
+        // trailing part, e.g.:  ' DAY TO SECOND
+        parts += getConstStringVector(postfixStr, numRows)
+
+        // concatenate all the parts
+        ColumnVector.stringConcatenate(parts.toArray[ColumnView])
+      }
+    }
+
+    // special handling for Long.MinValue
+    // if micros are Long.MinValue, directly replace with const string
+    withResource(retCv) { ret =>
+      val minStr = s"INTERVAL '-106751991 04:00:54.775808$postfixStr"
+      withResource(Scalar.fromString(minStr)) { minStrScalar =>
+        withResource(Scalar.fromLong(Long.MinValue)) { minS =>
+          withResource(micros.equalTo(minS)) { eq =>
+            eq.ifElse(minStrScalar, ret)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * return (micros / div).toString
+   */
+  private def devResult(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(Scalar.fromLong(div)) { divS =>
+      withResource(micros.div(divS)) { ret =>
+        ret.castTo(DType.STRING)
+      }
+    }
+  }
+
+  /**
+   * return (micros / div).toString with padding zero
+   */
+  private def devResultWithPadding(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(devResult(micros, div)) { s =>
+      // pad 0 if value < 10, e.g.:  9 => 09
+      s.zfill(2)
+    }
+  }
+
+  /**
+   * return (micros % div)
+   */
+  private def getRest(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(Scalar.fromLong(div)) { divS =>
+      micros.mod(divS)
+    }
+  }
+
+  private def getConstStringVector(s: String, numRows: Long): ColumnVector = {
+    withResource(Scalar.fromString(s)) { scalar =>
+      ai.rapids.cudf.ColumnVector.fromScalar(scalar, numRows.toInt)
+    }
+  }
+
+  /**
+   * close the old cv and set a new one, this is used for ARM purpose
+   *
+   * @param holder cv holder
+   * @param newCv  new cv
+   */
+  private def resetRest(holder: ArrayBuffer[ColumnVector], newCv: ColumnVector): Unit = {
+    assert(holder.size == 1)
+    val old = holder.remove(0)
+    old.close()
+    holder += newCv
+  }
+
+  /**
+   * Generate second decimal part with strip trailing `0` and `.`
+   */
+  private def getDecimalPart(rest: ColumnVector) = {
+    // get the second strings with fractional microseconds
+    // the values always have dot and 6 fractional digits
+    val decimalType = DType.create(DType.DTypeEnum.DECIMAL64, -6)
+    val decimalStrCv = withResource(rest.castTo(decimalType)) { decimal =>
+      withResource(Scalar.fromDecimal(0, MICROS_PER_SECOND)) { microsPerSecond =>
+        withResource(decimal.div(microsPerSecond)) { r =>
+          r.castTo(DType.STRING)
+        }
+      }
+    }
+
+    // strip trailing `0`
+    // e.g.: 0.001000 => 0.001, 0.000000 => 0.
+    val stripedCv = withResource(decimalStrCv) { decimalStr =>
+      withResource(Scalar.fromString("0")) { zero =>
+        decimalStr.rstrip(zero)
+      }
+    }
+
+    // strip trailing `.` for spacial case:  0. => 0
+    withResource(stripedCv) { striped =>
+      withResource(Scalar.fromString(".")) { dot =>
+        striped.rstrip(dot)
       }
     }
   }

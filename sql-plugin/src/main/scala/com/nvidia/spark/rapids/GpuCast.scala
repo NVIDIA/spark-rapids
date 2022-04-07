@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{AnsiCheckUtil, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiCheckUtil, GpuIntervalUtils, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -553,6 +553,11 @@ object GpuCast extends Arm {
 
       case (from: MapType, _: StringType) =>
         castMapToString(input, from, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+
+      // TODO Shim
+      case (DayTimeIntervalType(startField, endField), _: StringType) =>
+        GpuIntervalUtils.toDayTimeIntervalString(
+          input.asInstanceOf[ColumnVector], startField, endField)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))

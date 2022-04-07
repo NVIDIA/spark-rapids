@@ -305,3 +305,16 @@ def test_cast_double_to_timestamp(type):
         df = spark.createDataFrame(data, DoubleType())
         return df.select(f.col('value').cast(TimestampType())).collect()
     assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "java.time.DateTimeException")
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_cast_day_time_interval_to_string():
+    _assert_cast_to_string_equal(DayTimeIntervalGen('day', 'day'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('day', 'hour'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('day', 'minute'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('day', 'second'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('hour', 'hour'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('hour', 'minute'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('hour', 'second'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('minute', 'minute'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('minute', 'second'), {})
+    _assert_cast_to_string_equal(DayTimeIntervalGen('second', 'second'), {})

@@ -1325,7 +1325,8 @@ class CastChecks extends ExprChecks {
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
 
-  val daytimeChecks: TypeSig = none
+  // TODO Shim to 330 after https://github.com/NVIDIA/spark-rapids/pull/5020 is merged
+  val daytimeChecks: TypeSig = DAYTIME + STRING
   val sparkDaytimeChecks: TypeSig = DAYTIME + STRING
 
   val yearmonthChecks: TypeSig = none
