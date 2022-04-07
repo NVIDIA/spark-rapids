@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 
 /**
@@ -44,4 +45,13 @@ trait Spark320PlusNonDBShims extends SparkShims {
   }
 
   def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = winPy.windowExpression
+
+  /**
+   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
+   * affecting the unapply method signature
+   */
+  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
+  }
 }
