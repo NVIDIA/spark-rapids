@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 class Plugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
-        s" by default. To enable it, set `spark.rapids.sql.udfCompiler.enabled` to true")
+        s" by default.")
     extensions.injectResolutionRule(logicalPlanRules)
   }
 
