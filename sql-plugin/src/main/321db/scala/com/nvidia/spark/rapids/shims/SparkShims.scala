@@ -66,7 +66,7 @@ object SparkShimImpl extends Spark321PlusShims {
   override def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
       newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, isSparkExchange = true)
+    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
 
   override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileCatalog.allFiles().map(_.toFileStatus)
