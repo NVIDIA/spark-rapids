@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@
 
 ARG RDMA_CORE_VERSION=32.1
 ARG CUDA_VER=11.2.2
-ARG UCX_VER=1.11.2
-ARG UCX_CUDA_VER=11.2
+ARG UCX_VER=1.12.1
+ARG UCX_CUDA_VER=11
 
 # Throw away image to build rdma_core
 FROM centos:7 as rdma_core
@@ -59,7 +59,7 @@ COPY --from=rdma_core /tmp/*.rpm /tmp/
 
 RUN yum update -y
 RUN yum install -y wget bzip2
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-centos7-mofed5.x-cuda$UCX_CUDA_VER.tar.bz2
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-centos7-mofed5-cuda$UCX_CUDA_VER.tar.bz2
 RUN cd /tmp && \
   yum install -y *.rpm && \
   tar -xvf *.bz2 && \

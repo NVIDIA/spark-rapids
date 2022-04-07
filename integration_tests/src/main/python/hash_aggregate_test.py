@@ -1051,7 +1051,7 @@ def test_generic_reductions(data_gen):
                 'count(1)'),
             conf = local_conf)
 
-@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_count(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \

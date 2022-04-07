@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange}
-import ai.rapids.cudf.nvcomp.{BatchedLZ4Compressor, BatchedLZ4Decompressor, CompressionType, LZ4Compressor, LZ4Decompressor}
+import ai.rapids.cudf.nvcomp.{BatchedLZ4Compressor, BatchedLZ4Decompressor}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 
@@ -37,56 +37,6 @@ class NvcompLZ4CompressionCodec(codecConfigs: TableCompressionCodecConfig)
       maxBatchMemoryBytes: Long,
       stream: Cuda.Stream): BatchedBufferDecompressor = {
     new BatchedNvcompLZ4Decompressor(maxBatchMemoryBytes, codecConfigs, stream)
-  }
-}
-
-object NvcompLZ4CompressionCodec extends Arm {
-  /**
-   * Compress a data buffer.
-   * @param input buffer containing data to compress
-   * @param codecConfigs codec specific configuration options
-   * @param stream CUDA stream to use
-   * @return the size of the compressed data in bytes and the (probably oversized) output buffer
-   */
-  def compress(
-      input: DeviceMemoryBuffer,
-      codecConfigs: TableCompressionCodecConfig,
-      stream: Cuda.Stream): (Long, DeviceMemoryBuffer) = {
-    val lz4Config = LZ4Compressor.configure(codecConfigs.lz4ChunkSize, input.getLength)
-    withResource(DeviceMemoryBuffer.allocate(lz4Config.getTempBytes)) { tempBuffer =>
-      var compressedSize: Long = 0L
-      val outputSize = lz4Config.getMaxCompressedBytes
-      closeOnExcept(DeviceMemoryBuffer.allocate(outputSize)) { outputBuffer =>
-        compressedSize = LZ4Compressor.compress(input, CompressionType.CHAR,
-          codecConfigs.lz4ChunkSize, tempBuffer, outputBuffer, stream)
-        require(compressedSize <= outputBuffer.getLength, "compressed buffer overrun")
-        (compressedSize, outputBuffer)
-      }
-    }
-  }
-
-  /**
-   * Decompress data asynchronously that was compressed with nvcomp's LZ4-GPU codec
-   * @param outputBuffer where the uncompressed data will be written
-   * @param inputBuffer buffer of compressed data to decompress
-   * @param stream CUDA stream to use
-   */
-  def decompressAsync(
-      outputBuffer: DeviceMemoryBuffer,
-      inputBuffer: DeviceMemoryBuffer,
-      stream: Cuda.Stream): Unit = {
-    withResource(LZ4Decompressor.configure(inputBuffer, stream)) { decompressConf =>
-      val outputSize = decompressConf.getUncompressedBytes
-      if (outputSize != outputBuffer.getLength) {
-        throw new IllegalStateException(
-          s"metadata uncompressed size is $outputSize, buffer size is ${outputBuffer.getLength}")
-      }
-      val tempSize = decompressConf.getTempBytes
-      withResource(DeviceMemoryBuffer.allocate(tempSize)) { tempBuffer =>
-        LZ4Decompressor.decompressAsync(inputBuffer, decompressConf, tempBuffer, outputBuffer,
-          stream)
-      }
-    }
   }
 }
 

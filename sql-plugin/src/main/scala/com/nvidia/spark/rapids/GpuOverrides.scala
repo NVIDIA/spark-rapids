@@ -2248,9 +2248,7 @@ object GpuOverrides extends Logging {
       ExprChecks.fullAgg(
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
-          "input", _gpuCommonTypes + TypeSig.DECIMAL_128 +
-              TypeSig.STRUCT.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
-          TypeSig.all))),
+          "input", TypeSig.all, TypeSig.all))),
       (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
