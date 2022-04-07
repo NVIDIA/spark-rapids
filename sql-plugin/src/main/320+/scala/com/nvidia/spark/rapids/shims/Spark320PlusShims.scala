@@ -918,15 +918,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     partitionDir.files.map(f => replaceFunc(f.getPath))
   }
 
-  /**
-   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
-   * affecting the unapply method signature
-   */
-  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
-  }
-
   /** dropped by SPARK-34234 */
   override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
       tree: TreeType,
