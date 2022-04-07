@@ -862,9 +862,9 @@ object GpuOverrides extends Logging {
     expr[Alias](
       "Gives a column a name",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.astTypes + GpuTypeShims.supportedTypesForAlias,
+        TypeSig.astTypes + GpuTypeShims.additionalSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
-            + TypeSig.DECIMAL_128 + GpuTypeShims.supportedTypesForAlias).nested(),
+            + TypeSig.DECIMAL_128 + GpuTypeShims.additionalSupportedTypes).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -873,10 +873,10 @@ object GpuOverrides extends Logging {
     expr[AttributeReference](
       "References an input column",
       ExprChecks.projectAndAst(
-        TypeSig.astTypes + GpuTypeShims.supportedTypesForAttributeReference,
+        TypeSig.astTypes + GpuTypeShims.additionalSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 +
-            GpuTypeShims.supportedTypesForAttributeReference).nested(),
+            GpuTypeShims.additionalSupportedTypes).nested(),
         TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         // This is the only NOOP operator.  It goes away when things are bound
@@ -1194,7 +1194,7 @@ object GpuOverrides extends Logging {
       "Negate a numeric value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForMinus,
+        TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1211,8 +1211,8 @@ object GpuOverrides extends Logging {
     expr[UnaryPositive](
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.astTypes + GpuTypeShims.supportedTypesForPositive,
-        TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForPositive,
+        TypeSig.astTypes + GpuTypeShims.additionalSupportedTypes,
+        TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
@@ -1501,11 +1501,11 @@ object GpuOverrides extends Logging {
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-          GpuTypeShims.supportedTypesForCoalesce).nested(),
+          GpuTypeShims.additionalSupportedTypes).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT+
-              GpuTypeShims.supportedTypesForCoalesce).nested(),
+              GpuTypeShims.additionalSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1864,10 +1864,10 @@ object GpuOverrides extends Logging {
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForAdd, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForAdd,
+        TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForAdd,
+        ("rhs", TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1885,10 +1885,10 @@ object GpuOverrides extends Logging {
       "Subtraction",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForSubtract, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForSubtract,
+        TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
             TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + GpuTypeShims.supportedTypesForSubtract,
+        ("rhs", TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -3626,7 +3626,7 @@ object GpuOverrides extends Logging {
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
       ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
-          TypeSig.MAP + GpuTypeShims.supportedTypesForCoalesce).nested(),
+          TypeSig.MAP + GpuTypeShims.additionalSupportedTypes).nested(),
         TypeSig.all),
       (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
         override def convertToGpu(): GpuExec =
@@ -3729,7 +3729,7 @@ object GpuOverrides extends Logging {
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
-          GpuTypeShims.supportedTypesForShuffle).nested()
+          GpuTypeShims.additionalSupportedTypes).nested()
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +

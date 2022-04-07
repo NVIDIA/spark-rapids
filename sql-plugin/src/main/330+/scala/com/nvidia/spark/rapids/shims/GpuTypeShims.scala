@@ -155,7 +155,6 @@ object GpuTypeShims {
     }
   }
 
-
   def supportCsvRead(dt: DataType) : Boolean = {
     dt match {
       case DayTimeIntervalType(_, _) => true
@@ -171,63 +170,20 @@ object GpuTypeShims {
   }
 
   /**
-   * Alias supported types for this shim
+   * Whether the Shim supports day-time interval type
+   * Alias, Add, Subtract, Positive... operators support day-time interval type
    */
-  def supportedTypesForAlias: TypeSig = TypeSig.ansiIntervals
+  def isSupportedDayTimeType(dt: DataType): Boolean = dt.isInstanceOf[DayTimeIntervalType]
 
   /**
-   * Abs supported types for this shim
+   * Whether the Shim supports year-month interval type
+   * Alias, Add, Subtract, Positive... operators support year-month interval type
    */
-  def supportedTypesForAbs: TypeSig = TypeSig.ansiIntervals
-
-  def isDayTimeTypeAndAbsSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[DayTimeIntervalType]
-
-  def isYearMonthTypeAndAbsSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[YearMonthIntervalType]
+  def isSupportedYearMonthType(dt: DataType): Boolean = dt.isInstanceOf[YearMonthIntervalType]
 
   /**
-   * Minus supported types for this shim
+   * Get additional supported types for this Shim
    */
-  def supportedTypesForMinus: TypeSig = TypeSig.ansiIntervals
-
-  def isDayTimeTypeAndMinusSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[DayTimeIntervalType]
-
-  def isYearMonthTypeAndMinusSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[YearMonthIntervalType]
-
-  /**
-   * Add supported types for this shim
-   */
-  def supportedTypesForAdd: TypeSig = TypeSig.ansiIntervals
-
-  def isDayTimeTypeAndAddSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[DayTimeIntervalType]
-
-  def isYearMonthTypeAndAddSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[YearMonthIntervalType]
-
-  /**
-   * Subtract supported types for this shim
-   */
-  def supportedTypesForSubtract: TypeSig = TypeSig.ansiIntervals
-
-  def isDayTimeTypeAndSubtractSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[DayTimeIntervalType]
-
-  def isYearMonthTypeAndSubtractSupports(dt: DataType): Boolean =
-    dt.isInstanceOf[YearMonthIntervalType]
-
-  /**
-   * Positive supported types for this shim
-   */
-  def supportedTypesForPositive: TypeSig = TypeSig.ansiIntervals
-
-  def supportedTypesForCoalesce: TypeSig = TypeSig.ansiIntervals
-
-  def supportedTypesForShuffle: TypeSig = TypeSig.ansiIntervals
-
-  def supportedTypesForAttributeReference: TypeSig = TypeSig.ansiIntervals
+  def additionalSupportedTypes: TypeSig = TypeSig.ansiIntervals
 
 }

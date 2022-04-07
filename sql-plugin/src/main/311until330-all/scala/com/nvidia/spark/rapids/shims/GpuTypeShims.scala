@@ -83,55 +83,20 @@ object GpuTypeShims {
     throw new RuntimeException(s"Not support type $dt.")
 
   /**
-   * Alias supported types for this shim
+   * Whether the Shim supports day-time interval type
+   * Alias, Add, Subtract, Positive... operators do not support day-time interval type
    */
-  def supportedTypesForAlias: TypeSig = TypeSig.none
+  def isSupportedDayTimeType(dt: DataType): Boolean = false
 
   /**
-   * Abs supported types for this shim
+   * Whether the Shim supports year-month interval type
+   * Alias, Add, Subtract, Positive... operators do not support year-month interval type
    */
-  def supportedTypesForAbs: TypeSig = TypeSig.none
-
-  def isDayTimeTypeAndAbsSupports(dt: DataType): Boolean = false
-
-  def isYearMonthTypeAndAbsSupports(dt: DataType): Boolean = false
+  def isSupportedYearMonthType(dt: DataType): Boolean
 
   /**
-   * Minus supported types for this shim
+   * Get additional supported types for this Shim
    */
-  def supportedTypesForMinus: TypeSig = TypeSig.none
-
-  def isDayTimeTypeAndMinusSupports(dt: DataType): Boolean = false
-
-  def isYearMonthTypeAndMinusSupports(dt: DataType): Boolean = false
-
-  /**
-   * Add supported types for this shim
-   */
-  def supportedTypesForAdd: TypeSig = TypeSig.none
-
-  def isDayTimeTypeAndAddSupports(dt: DataType): Boolean = false
-
-  def isYearMonthTypeAndAddSupports(dt: DataType): Boolean = false
-
-  /**
-   * Subtract supported types for this shim
-   */
-  def supportedTypesForSubtract: TypeSig = TypeSig.none
-
-  def isDayTimeTypeAndSubtractSupports(dt: DataType): Boolean = false
-
-  def isYearMonthTypeAndSubtractSupports(dt: DataType): Boolean = false
-
-  /**
-   * Positive supported types for this shim
-   */
-  def supportedTypesForPositive: TypeSig = TypeSig.none
-
-  def supportedTypesForCoalesce: TypeSig = TypeSig.none
-
-  def supportedTypesForShuffle: TypeSig = TypeSig.none
-
-  def supportedTypesForAttributeReference: TypeSig = TypeSig.none
+  def additionalSupportedTypes: TypeSig = TypeSig.none
 
 }
