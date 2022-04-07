@@ -90,14 +90,14 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
         withResource(GpuScalar.from(zeroLit, dt)) { scalar =>
           scalar.sub(input.getBase)
         }
-      case t if GpuTypeShims.isDayTimeTypeAndMinusSupports(t) =>
+      case t if GpuTypeShims.isSupportedDayTimeType(t) =>
         // For day-time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
           GpuAnsi.assertMinValueOverflow(minVal, input, "minus")
         }
         commonMinus(input)
-      case t if GpuTypeShims.isYearMonthTypeAndMinusSupports(t) =>
+      case t if GpuTypeShims.isSupportedYearMonthType(t) =>
         // For year-month interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
@@ -155,13 +155,13 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
       GpuAnsi.assertMinValueOverflow(input, "abs")
     }
 
-    if (GpuTypeShims.isDayTimeTypeAndAbsSupports(dataType)) {
+    if (GpuTypeShims.isSupportedDayTimeType(dataType)) {
       // For day-time interval, Spark throws an exception when overflow,
       // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflow(minVal, input, "abs")
       }
-    } else if (GpuTypeShims.isYearMonthTypeAndAbsSupports(dataType)) {
+    } else if (GpuTypeShims.isSupportedYearMonthType(dataType)) {
       // For year-month interval, Spark throws an exception when overflow,
       // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
@@ -269,8 +269,8 @@ case class GpuAdd(
     withResource(ret) { ret =>
       // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType) ||
-          GpuTypeShims.isDayTimeTypeAndAddSupports(dataType) ||
-          GpuTypeShims.isYearMonthTypeAndAddSupports(dataType)) {
+          GpuTypeShims.isSupportedDayTimeType(dataType) ||
+          GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
@@ -368,8 +368,8 @@ case class GpuSubtract(
     withResource(ret) { ret =>
       // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType) ||
-          GpuTypeShims.isDayTimeTypeAndSubtractSupports(dataType) ||
-          GpuTypeShims.isYearMonthTypeAndSubtractSupports(dataType)) {
+          GpuTypeShims.isSupportedDayTimeType(dataType) ||
+          GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         basicOpOverflowCheck(lhs, rhs, ret)

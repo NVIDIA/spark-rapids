@@ -92,7 +92,7 @@ object GpuTypeShims {
    * Whether the Shim supports year-month interval type
    * Alias, Add, Subtract, Positive... operators do not support year-month interval type
    */
-  def isSupportedYearMonthType(dt: DataType): Boolean
+  def isSupportedYearMonthType(dt: DataType): Boolean = false
 
   /**
    * Get additional supported types for this Shim
