@@ -1281,6 +1281,22 @@ def test_hash_groupby_approx_percentile_reduction(aqe_enabled):
 
 @incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_reduction_single_row(aqe_enabled):
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('v', DoubleGen())], length=1),
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf, reduction = True)
+
+@incompat
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_reduction_no_rows(aqe_enabled):
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('v', DoubleGen())], length=0),
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf, reduction = True)
+
+@incompat
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_byte(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
