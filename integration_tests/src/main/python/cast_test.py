@@ -318,3 +318,28 @@ def test_cast_day_time_interval_to_string():
     _assert_cast_to_string_equal(DayTimeIntervalGen(start_field='minute', end_field='minute', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)]), {})
     _assert_cast_to_string_equal(DayTimeIntervalGen(start_field='minute', end_field='second', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)]), {})
     _assert_cast_to_string_equal(DayTimeIntervalGen(start_field='second', end_field='second', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)]), {})
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_cast_string_to_day_time_interval():
+    gen = DayTimeIntervalGen(start_field='day', end_field='second', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)])
+    dtType = DayTimeIntervalType(0, 3) # 0 is day; 3 is second
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).select(f.col('a').cast(StringType()).cast(dtType)))
+
+    gen = DayTimeIntervalGen(start_field='hour', end_field='second', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)])
+    dtType = DayTimeIntervalType(1, 3) # 1 is hour; 3 is second
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).select(f.col('a').cast(StringType()).cast(dtType)))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('invalid_string', [
+    "INTERVAL 'xxx' DAY TO SECOND", # invalid format
+    "-999999999 04:00:54.775808000" # exceeds min value, min value is "-106751991 04:00:54.775808000"
+])
+def test_cast_string_to_day_time_interval_exception(invalid_string):
+    dtType = DayTimeIntervalType(0, 3)
+    def fun(spark):
+        data=[invalid_string]
+        df = spark.createDataFrame(data, StringType())
+        return df.select(f.col('value').cast(dtType)).collect()
+    assert_gpu_and_cpu_error(fun, {}, "java.lang.IllegalArgumentException")

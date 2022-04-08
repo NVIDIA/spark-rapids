@@ -863,8 +863,9 @@ object GpuOverrides extends Logging {
       "Gives a column a name",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
+        // TODO shim
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
-            + TypeSig.DECIMAL_128).nested(),
+            + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =

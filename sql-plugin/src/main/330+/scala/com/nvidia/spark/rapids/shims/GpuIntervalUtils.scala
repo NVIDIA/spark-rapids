@@ -135,9 +135,22 @@ object GpuIntervalUtils extends Arm {
   private val secondPatternString = s"$sign$secondBoundPattern$microPattern"
   private val secondLiteralRegex = s"^$INTERVAL$blanks$sign'$secondPatternString'$blanks$SECOND$$"
 
-  def checkAllValid(cv: ColumnVector, regexp: String): Unit = {
-    if (cv.hasNulls) {
-      throw new RuntimeException(s"Do not match the regular expression: $regexp")
+  /**
+   * Cast string column to long column, throw exception if the casting of a row failed
+   * Fail reasons includes: regexp not match, range check failed, overflow when adding
+   * @param cv string column
+   * @param t  day-time interval type
+   * @return long column of micros
+   * @throws IllegalArgumentException if have a row failed
+   */
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnVector, t: DT): ColumnVector = {
+    val ret = castStringToDTInterval(cv, t)
+    if(ret.getNullCount > cv.getNullCount) {
+      ret.close()
+      throw new IllegalArgumentException("Cast string to day time interval failed, " +
+          "may be the format is invalid, range check failed or overflow")
+    } else {
+      ret
     }
   }
 
@@ -147,21 +160,12 @@ object GpuIntervalUtils extends Arm {
    *
    * @param cv             string column
    * @param t              day-time interval type
-   * @param throwException throw exception if failed when throwException is true
-   *                       TODO: checked regexp match, should also check range, check overflow,
-   *                       seems there are no operators requiring this.
    * @return long column of micros
    */
-  def castStringToDTInterval(
-      cv: ColumnVector, t: DT, throwException: Boolean = false): ColumnVector = {
+  def castStringToDTInterval(cv: ColumnVector, t: DT): ColumnVector = {
     (t.startField, t.endField) match {
       case (DT.DAY, DT.DAY) => withResource(cv.extractRe(dayLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), dayLiteralRegex)
-          }
-
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToDay(sign,
               groupsTable.getColumn(2) // day
@@ -172,11 +176,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.DAY, DT.HOUR) => withResource(cv.extractRe(dayHourLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), dayHourLiteralRegex)
-          }
-
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToHour(sign,
               groupsTable.getColumn(2), // day
@@ -188,10 +187,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.DAY, DT.MINUTE) => withResource(cv.extractRe(dayMinuteLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), dayMinuteLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToMinute(sign,
               groupsTable.getColumn(2), // day
@@ -204,10 +199,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.DAY, DT.SECOND) => withResource(cv.extractRe(daySecondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), daySecondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToSecond(sign,
               groupsTable.getColumn(2), // day
@@ -221,10 +212,6 @@ object GpuIntervalUtils extends Arm {
       }
 
       case (DT.HOUR, DT.HOUR) => withResource(cv.extractRe(hourLiteralRegex)) { groupsTable => {
-        if (throwException) {
-          // check all match the regexp
-          checkAllValid(groupsTable.getColumn(2), hourLiteralRegex)
-        }
         withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
           addFromHourToHour(sign,
             groupsTable.getColumn(2) // hour
@@ -235,10 +222,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.HOUR, DT.MINUTE) => withResource(cv.extractRe(hourMinuteLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), hourMinuteLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromHourToMinute(sign,
               groupsTable.getColumn(2), // hour
@@ -250,10 +233,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.HOUR, DT.SECOND) => withResource(cv.extractRe(hourSecondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), hourSecondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) {
             sign =>
               addFromHourToSecond(sign,
@@ -268,10 +247,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.MINUTE, DT.MINUTE) => withResource(cv.extractRe(minuteLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), minuteLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromMinuteToMinute(sign,
               groupsTable.getColumn(2) // minute
@@ -282,10 +257,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.MINUTE, DT.SECOND) => withResource(cv.extractRe(minuteSecondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), minuteSecondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromMinuteToSecond(sign,
               groupsTable.getColumn(2), // minute
@@ -298,10 +269,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.SECOND, DT.SECOND) => withResource(cv.extractRe(secondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), secondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromSecondToSecond(sign,
               groupsTable.getColumn(2), // second

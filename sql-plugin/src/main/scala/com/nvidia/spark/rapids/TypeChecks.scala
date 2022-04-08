@@ -1287,9 +1287,11 @@ class CastChecks extends ExprChecks {
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
   val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
+  // TODO Shim to 330 after https://github.com/NVIDIA/spark-rapids/pull/5020 is merged
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
-    BINARY
-  val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
+      BINARY + DAYTIME
+  val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING +
+      BINARY + DAYTIME
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY

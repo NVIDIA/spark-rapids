@@ -559,6 +559,10 @@ object GpuCast extends Arm {
         GpuIntervalUtils.toDayTimeIntervalString(
           input.asInstanceOf[ColumnVector], startField, endField)
 
+      // TODO Shim
+      case (_: StringType, dt: DayTimeIntervalType) =>
+        GpuIntervalUtils.castStringToDayTimeIntervalWithThrow(input.asInstanceOf[ColumnVector], dt)
+
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
