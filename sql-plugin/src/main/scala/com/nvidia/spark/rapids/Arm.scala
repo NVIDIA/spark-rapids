@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -153,4 +153,26 @@ trait Arm {
         throw t
     }
   }
+
+  /** Executes the provided code block and then closes the resource */
+  def withResource[T <: AutoCloseable, V](h: CloseableHolder[T])
+      (block: CloseableHolder[T] => V): V = {
+    try {
+      block(h)
+    } finally {
+      h.close()
+    }
+  }
+}
+
+class CloseableHolder[T <: AutoCloseable](var t: T) {
+  def setAndCloseOld(newT: T): Unit = {
+    val oldT = t
+    t = newT
+    oldT.close()
+  }
+
+  def get: T = t
+
+  def close(): Unit = t.close()
 }

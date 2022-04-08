@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.CloseableHolder
 
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND}
 import org.apache.spark.sql.types.{DayTimeIntervalType => DT}
@@ -72,6 +73,10 @@ object GpuIntervalUtils extends Arm {
   val MAX_SECOND: Long = Long.MaxValue / SECONDS.toMicros(1)
   val MAX_HOUR_IN_DAY = 23L
   val MAX_MINUTE_IN_HOUR = 59L
+
+  val prefixStr = "INTERVAL '"
+  // used for casting Long.MinValue to string
+  val minLongBaseStr = "-106751991 04:00:54.775808000"
 
   // literals ignore upper and lower cases
   private val INTERVAL = "[iI][nN][tT][eE][rR][vV][aA][lL]"
@@ -580,24 +585,19 @@ object GpuIntervalUtils extends Arm {
     val numRows = micros.getRowCount
     val from = DT.fieldToString(startField).toUpperCase
     val to = DT.fieldToString(endField).toUpperCase
-    val prefixStr = "INTERVAL '"
     val postfixStr = s"' ${if (startField == endField) from else s"$from TO $to"}"
 
-    val retCv = withResource(new ArrayBuffer[ColumnVector]) { restHolder =>
+    val retCv = withResource(new CloseableHolder(micros.incRefCount())) { restHolder =>
       // `restHolder` only hold one rest Cv;
       // use `resetRest` to close the old one and set a new one
       // make a copy of micros
-      restHolder += micros.incRefCount()
 
       withResource(new ArrayBuffer[ColumnView]) { parts =>
-        // prefix part: INTERVAL '
-        parts += getConstStringVector(prefixStr, numRows)
-
-        // sign part: - or empty
+        // prefix with sign part: INTERVAL ' or INTERVAL '-
         parts += withResource(Scalar.fromLong(0L)) { zero =>
-          withResource(restHolder.head.lessThan(zero)) { less =>
-            withResource(getConstStringVector("-", numRows)) { neg =>
-              withResource(getConstStringVector("", numRows)) { empty =>
+          withResource(restHolder.get.lessThan(zero)) { less =>
+            withResource(getConstStringVector(prefixStr + "-", numRows)) { neg =>
+              withResource(getConstStringVector(prefixStr, numRows)) { empty =>
                 less.ifElse(neg, empty)
               }
             }
@@ -605,38 +605,38 @@ object GpuIntervalUtils extends Arm {
         }
 
         // calculate abs, abs(Long.MinValue) will overflow, handle in the last as special case
-        resetRest(restHolder, restHolder.head.abs())
+        restHolder.setAndCloseOld(restHolder.get.abs())
 
         startField match {
           case DT.DAY =>
             // start day part
-            parts += divResult(restHolder.head, MICROS_PER_DAY)
-            resetRest(restHolder, getRest(restHolder.head, MICROS_PER_DAY))
+            parts += divResult(restHolder.get, MICROS_PER_DAY)
+            restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_DAY))
           case DT.HOUR =>
             // start hour part
-            parts += divResultWithPadding(restHolder.head, MICROS_PER_HOUR)
-            resetRest(restHolder, getRest(restHolder.head, MICROS_PER_HOUR))
+            parts += divResultWithPadding(restHolder.get, MICROS_PER_HOUR)
+            restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_HOUR))
           case DT.MINUTE =>
             // start minute part
-            parts += divResultWithPadding(restHolder.head, MICROS_PER_MINUTE)
-            resetRest(restHolder, getRest(restHolder.head, MICROS_PER_MINUTE))
+            parts += divResultWithPadding(restHolder.get, MICROS_PER_MINUTE)
+            restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_MINUTE))
           case DT.SECOND =>
             // start second part
-            addDecimalParts(restHolder.head, parts)
+            addDecimalParts(restHolder.get, parts)
         }
 
         if (startField < DT.HOUR && DT.HOUR <= endField) {
           // if hour has precedent part
           parts += getConstStringVector(" ", numRows)
-          parts += divResultWithPadding(restHolder.head, MICROS_PER_HOUR)
-          resetRest(restHolder, getRest(restHolder.head, MICROS_PER_HOUR))
+          parts += divResultWithPadding(restHolder.get, MICROS_PER_HOUR)
+          restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_HOUR))
         }
 
         if (startField < DT.MINUTE && DT.MINUTE <= endField) {
           // if minute has precedent part
           parts += getConstStringVector(":", numRows)
-          parts += divResultWithPadding(restHolder.head, MICROS_PER_MINUTE)
-          resetRest(restHolder, getRest(restHolder.head, MICROS_PER_MINUTE))
+          parts += divResultWithPadding(restHolder.get, MICROS_PER_MINUTE)
+          restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_MINUTE))
         }
 
         if (startField < DT.SECOND && DT.SECOND <= endField) {
@@ -644,7 +644,7 @@ object GpuIntervalUtils extends Arm {
           parts += getConstStringVector(":", numRows)
 
           // start second part
-          addDecimalParts(restHolder.head, parts)
+          addDecimalParts(restHolder.get, parts)
         }
 
         // trailing part, e.g.:  ' DAY TO SECOND
@@ -658,7 +658,6 @@ object GpuIntervalUtils extends Arm {
     // special handling for Long.MinValue
     // if micros are Long.MinValue, directly replace with const string
     withResource(retCv) { ret =>
-      val baseStr = "-106751991 04:00:54.775808000"
       val firstStr = startField match {
         case DT.DAY => s"-$MAX_DAY"
         case DT.HOUR => s"-$MAX_HOUR"
@@ -678,7 +677,7 @@ object GpuIntervalUtils extends Arm {
           case DT.MINUTE => 16
           case DT.SECOND => 26
         }
-        baseStr.substring(substrStart, substrEnd)
+        minLongBaseStr.substring(substrStart, substrEnd)
       }
       val minStr = s"$prefixStr$firstStr$followingStr$postfixStr"
       withResource(Scalar.fromString(minStr)) { minStrScalar =>
@@ -725,19 +724,6 @@ object GpuIntervalUtils extends Arm {
     withResource(Scalar.fromString(s)) { scalar =>
       ai.rapids.cudf.ColumnVector.fromScalar(scalar, numRows.toInt)
     }
-  }
-
-  /**
-   * close the old cv and set a new one, this is used for ARM purpose
-   *
-   * @param holder cv holder
-   * @param newCv  new cv
-   */
-  private def resetRest(holder: ArrayBuffer[ColumnVector], newCv: ColumnVector): Unit = {
-    assert(holder.size == 1)
-    val old = holder.remove(0)
-    holder += newCv
-    old.close()
   }
 
   /**
