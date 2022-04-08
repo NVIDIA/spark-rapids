@@ -490,7 +490,7 @@ def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Reading day-time interval type is supported from Spark3.3.0')
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-def test_1round_trip_for_interval(spark_tmp_path, v1_enabled_list):
+def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
     csv_interval_gens = [
         DayTimeIntervalGen(start_field="day", end_field="day"),
         DayTimeIntervalGen(start_field="day", end_field="hour"),
