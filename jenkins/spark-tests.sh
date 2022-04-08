@@ -117,7 +117,8 @@ export TEST_PARALLEL=0  # disable spark local parallel in run_pyspark_from_build
 export TEST_TYPE="nightly"
 export LOCAL_JAR_PATH=$ARTF_ROOT
 # test collect-only in advance to terminate earlier if ENV issue
-./run_pyspark_from_build.sh --collect-only -qqq
+COLLECT_BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS" # if passed custom params
+SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" ./run_pyspark_from_build.sh --collect-only -qqq
 
 export SPARK_TASK_MAXFAILURES=1
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
@@ -206,7 +207,7 @@ export -f run_test_not_parallel
 get_cases_by_tags() {
   local cases
   local args=${2}
-  cases=$(TEST_TAGS="${1}" \
+  cases=$(TEST_TAGS="${1}" SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" \
            ./run_pyspark_from_build.sh "${args}" --collect-only -p no:warnings -qq 2>/dev/null \
            | grep -oP '(?<=::).*?(?=\[)' | uniq | xargs)
   echo "$cases"
@@ -216,7 +217,7 @@ export -f get_cases_by_tags
 get_tests_by_tags() {
   local tests
   local args=${2}
-  tests=$(TEST_TAGS="${1}" \
+  tests=$(TEST_TAGS="${1}" SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" \
            ./run_pyspark_from_build.sh "${args}" --collect-only -qqq -p no:warnings 2>/dev/null \
            | grep -oP '(?<=python/).*?(?=.py)' | xargs)
   echo "$tests"
