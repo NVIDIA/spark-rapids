@@ -14,29 +14,89 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from src.main.python.marks import approximate_float, allow_non_gpu
+from conftest import is_databricks_runtime
+from marks import approximate_float, allow_non_gpu, ignore_order
 
-from src.main.python.spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_spark_330_or_later
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
     # This would require multiLine reads to work correctly, so we avoid these chars
     StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
     StringGen('[aAbB ]{0,10}'),
+    StringGen('[nN][aA][nN]'),
+    StringGen('[+-]?[iI][nN][fF]([iI][nN][iI][tT][yY])?'),
     byte_gen, short_gen, int_gen, long_gen, boolean_gen,
-    # Once https://github.com/NVIDIA/spark-rapids/issues/125 and https://github.com/NVIDIA/spark-rapids/issues/124
-    # are fixed we should not have to special case float values any more.
-    pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-    pytest.param(FloatGen(no_nans=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124')),
-    pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-    DoubleGen(no_nans=True)
+    pytest.param(double_gen),
+    pytest.param(FloatGen(no_nans=False)),
+    pytest.param(float_gen),
+    DoubleGen(no_nans=False)
 ]
 
 _enable_all_types_conf = {
     'spark.rapids.sql.format.json.enabled': 'true',
-    'spark.rapids.sql.format.json.read.enabled': 'true'}
+    'spark.rapids.sql.format.json.read.enabled': 'true',
+    'spark.rapids.sql.json.read.float.enabled': 'true',
+    'spark.rapids.sql.json.read.double.enabled': 'true',
+    'spark.rapids.sql.json.read.decimal.enabled': 'true'
+}
+
+_bool_schema = StructType([
+    StructField('number', BooleanType())])
+
+_byte_schema = StructType([
+    StructField('number', ByteType())])
+
+_short_schema = StructType([
+    StructField('number', ShortType())])
+
+_int_schema = StructType([
+    StructField('number', IntegerType())])
+
+_long_schema = StructType([
+    StructField('number', LongType())])
+
+_float_schema = StructType([
+    StructField('number', FloatType())])
+
+_double_schema = StructType([
+    StructField('number', DoubleType())])
+
+_decimal_10_2_schema = StructType([
+    StructField('number', DecimalType(10, 2))])
+
+_decimal_10_3_schema = StructType([
+    StructField('number', DecimalType(10, 3))])
+
+_date_schema = StructType([
+    StructField('number', DateType())])
+
+_timestamp_schema = StructType([
+    StructField('number', TimestampType())])
+
+_string_schema = StructType([
+    StructField('a', StringType())])
+
+def read_json_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
+    def read_impl(spark):
+        reader = spark.read
+        if not schema is None:
+            reader = reader.schema(schema)
+        for key, value in options.items():
+            reader = reader.option(key, value)
+        return debug_df(reader.json(data_path))
+    return read_impl
+
+def read_json_sql(data_path, schema, spark_tmp_table_factory, options = {}):
+    opts = options
+    if not schema is None:
+        opts = copy_and_update(options, {'schema': schema})
+    def read_impl(spark):
+        tmp_name = spark_tmp_table_factory.get()
+        return spark.catalog.createTable(tmp_name, source='json', path=data_path, **opts)
+    return read_impl
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -91,7 +151,7 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
             conf=updated_conf)
 
 json_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
-        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
+        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 @pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
@@ -139,3 +199,150 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .option('timestampFormat', full_format)\
                     .json(data_path),
             conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'boolean.json',
+    pytest.param('boolean_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
+    'ints.json',
+    pytest.param('ints_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4793')),
+    'nan_and_inf.json',
+    pytest.param('nan_and_inf_strings.json', marks=pytest.mark.skipif(is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060 fixed in Spark 3.3.0')),
+    'nan_and_inf_invalid.json',
+    'floats.json',
+    'floats_leading_zeros.json',
+    'floats_invalid.json',
+    pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
+    'decimals.json',
+    'dates.json',
+    'dates_invalid.json',
+])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, \
+                                    _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, \
+                                    _date_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
+@pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory):
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.ansi.enabled': ansi_enabled,
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+        schema,
+        spark_tmp_table_factory,
+        { "allowNonNumericNumbers": allow_non_numeric_numbers,
+          "allowNumericLeadingZeros": allow_numeric_leading_zeros}),
+        conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'dates.json',
+])
+@pytest.mark.parametrize('schema', [_date_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                                   {'spark.sql.ansi.enabled': ansi_enabled,
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
+    if time_parser_policy == 'LEGACY' and ansi_enabled == 'true':
+        assert_gpu_fallback_collect(
+            f,
+            'FileSourceScanExec',
+            conf=updated_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'dates_invalid.json',
+])
+@pytest.mark.parametrize('schema', [_date_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                                   {'spark.sql.ansi.enabled': ansi_enabled,
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy })
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
+    if time_parser_policy == 'EXCEPTION':
+        assert_gpu_and_cpu_error(
+            df_fun=lambda spark: f(spark).collect(),
+            conf=updated_conf,
+            error_message='DateTimeException')
+    elif time_parser_policy == 'LEGACY' and ansi_enabled == 'true':
+        assert_gpu_fallback_collect(
+            f,
+            'FileSourceScanExec',
+            conf=updated_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'timestamps.json',
+])
+@pytest.mark.parametrize('schema', [_timestamp_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
+    'CORRECTED',
+    'EXCEPTION'
+])
+def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, \
+        spark_tmp_table_factory):
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                                   {'spark.sql.ansi.enabled': ansi_enabled,
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
+    assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
+
+@pytest.mark.parametrize('schema', [_string_schema])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('allow_unquoted_chars', ["true"])
+@pytest.mark.parametrize('filename', ['unquotedChars.json'])
+def test_json_unquotedCharacters(std_input_path, filename, schema, read_func, allow_unquoted_chars, spark_tmp_table_factory):
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+        schema,
+        spark_tmp_table_factory,
+        {"allowUnquotedControlChars": allow_unquoted_chars}),
+        conf=_enable_all_types_conf)
+
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
+def test_json_read_with_corrupt_files(spark_tmp_path, v1_enabled_list):
+    first_data_path = spark_tmp_path + '/JSON_DATA/first'
+    with_cpu_session(lambda spark : spark.range(1).toDF("a").write.json(first_data_path))
+    second_data_path = spark_tmp_path + '/JSON_DATA/second'
+    with_cpu_session(lambda spark : spark.range(1, 2).toDF("a").write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/JSON_DATA/third'
+    with_cpu_session(lambda spark : spark.range(2, 3).toDF("a").write.json(third_data_path))
+
+    all_confs = copy_and_update(_enable_all_types_conf,
+                                {'spark.sql.files.ignoreCorruptFiles': "true",
+                                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    schema = StructType([StructField("a", IntegerType())])
+
+    # when ignoreCorruptFiles is enabled, gpu reading should not throw exception, while CPU can successfully
+    # read the three files without ignore corrupt files. So we just check if GPU will throw exception.
+    with_gpu_session(
+            lambda spark : spark.read.schema(schema)
+                .json([first_data_path, second_data_path, third_data_path])
+                .collect(),
+            conf=all_confs)

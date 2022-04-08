@@ -32,8 +32,6 @@ $MVN_GET_CMD -DremoteRepositories=$CUDF_REPO \
     -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER -Dclassifier=$CUDA_CLASSIFIER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
@@ -45,7 +43,6 @@ else
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
 fi
 export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
-RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
@@ -54,7 +51,7 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=pytest -Dpackaging=tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
-# The version of pytest.tar.gz that is uploaded is the one built against spark301 but its being pushed without classifier for now
+# The version of pytest.tar.gz that is uploaded is the one built against spark311 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 
 tmp_info=${TMP_INFO_FILE:-'/tmp/artifacts-build.info'}
@@ -77,22 +74,20 @@ getRevision() {
 set +x
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 echo "-------------------- cudf JNI BUILD INFO --------------------" >> "$tmp_info"
-c_ver=$(getRevision $JARS_PATH/$CUDF_JAR cudf-java-version-info.properties)
+c_ver=$(getRevision $CUDF_JAR cudf-java-version-info.properties)
 echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
-p_ver=$(getRevision $JARS_PATH/$RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
+p_ver=$(getRevision $RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"
-it_ver=$(getRevision $JARS_PATH/$RAPIDS_TEST_JAR rapids4spark-version-info.properties)
+it_ver=$(getRevision $RAPIDS_TEST_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" >> "$tmp_info"
-pt_ver=$(getRevision $JARS_PATH/$RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
-echo "-------------------- rapids-4-spark-udf-examples BUILD INFO --------------------" >> "$tmp_info"
-u_ver=$(getRevision $JARS_PATH/$RAPIDS_UDF_JAR rapids4spark-version-info.properties)
+pt_ver=$(getRevision $RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 set -x
 cat "$tmp_info" || true
 
 SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
 if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
-      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver" || "$p_ver" != "$u_ver") ]]; then
+      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver") ]]; then
   echo "Artifacts revisions are inconsistent!"
   exit 1
 fi
@@ -114,12 +109,18 @@ PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
 # to import the right pandas from conda instead of spark binary path.
 export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
 
-IS_SPARK_311_OR_LATER=0
-[[ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
+
+echo "----------------------------START TEST------------------------------------"
+pushd $RAPIDS_INT_TESTS_HOME
+
+export TEST_PARALLEL=0  # disable spark local parallel in run_pyspark_from_build.sh
+export TEST_TYPE="nightly"
+export LOCAL_JAR_PATH=$ARTF_ROOT
+# test collect-only in advance to terminate earlier if ENV issue
+COLLECT_BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS" # if passed custom params
+SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" ./run_pyspark_from_build.sh --collect-only -qqq
 
 export SPARK_TASK_MAXFAILURES=1
-[[ "$IS_SPARK_311_OR_LATER" -eq "0" ]] && SPARK_TASK_MAXFAILURES=4
-
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 # enable worker cleanup to avoid "out of space" issue
 # if failed, we abort the test instantly, so the failed executor log should still be left there for debugging
@@ -130,9 +131,6 @@ stop-master.sh
 start-master.sh
 start-slave.sh spark://$HOSTNAME:7077
 jps
-
-echo "----------------------------START TEST------------------------------------"
-pushd $RAPIDS_INT_TESTS_HOME
 
 export BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
 --master spark://$HOSTNAME:7077 \
@@ -161,9 +159,6 @@ export CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
 --conf spark.pyspark.python=/opt/conda/bin/python \
 --py-files ${RAPIDS_PLUGIN_JAR}"
 
-export TEST_PARALLEL=0  # disable spark local parallel in run_pyspark_from_build.sh
-export TEST_TYPE="nightly"
-export LOCAL_JAR_PATH=$ARTF_ROOT
 export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
@@ -212,7 +207,7 @@ export -f run_test_not_parallel
 get_cases_by_tags() {
   local cases
   local args=${2}
-  cases=$(TEST_TAGS="${1}" \
+  cases=$(TEST_TAGS="${1}" SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" \
            ./run_pyspark_from_build.sh "${args}" --collect-only -p no:warnings -qq 2>/dev/null \
            | grep -oP '(?<=::).*?(?=\[)' | uniq | xargs)
   echo "$cases"
@@ -222,7 +217,7 @@ export -f get_cases_by_tags
 get_tests_by_tags() {
   local tests
   local args=${2}
-  tests=$(TEST_TAGS="${1}" \
+  tests=$(TEST_TAGS="${1}" SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" \
            ./run_pyspark_from_build.sh "${args}" --collect-only -qqq -p no:warnings 2>/dev/null \
            | grep -oP '(?<=python/).*?(?=.py)' | xargs)
   echo "$tests"
@@ -268,17 +263,15 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     run_test_not_parallel all
   fi
 
-  if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-    if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-      cache_test_cases=$(get_cases_by_tags "" "-k cache_test")
-      # hardcode parallelism as 5
-      export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
-      --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
-      --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
-      parallel --group --halt "now,fail=1" -j5 run_test_not_parallel ::: ${cache_test_cases}
-    else
-      run_test_not_parallel cache_serializer
-    fi
+  if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
+    cache_test_cases=$(get_cases_by_tags "" "-k cache_test")
+    # hardcode parallelism as 5
+    export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
+    --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
+    --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
+    parallel --group --halt "now,fail=1" -j5 run_test_not_parallel ::: ${cache_test_cases}
+  else
+    run_test_not_parallel cache_serializer
   fi
 fi
 

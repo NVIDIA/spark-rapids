@@ -2,5 +2,18 @@
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-37a38
+6c6
+<   extends TernaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
+---
+>   extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
+11a12
+>     GpuRegExpUtils.tagForRegExpEnabled(this)
+36a38,43
+> 
+>     GpuOverrides.extractLit(expr.pos).foreach { lit =>
+>       if (lit.value.asInstanceOf[Int] != 1) {
+>         willNotWorkOnGpu("only a search starting position of 1 is supported")
+>       }
+>     }
+37a45
 > 

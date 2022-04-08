@@ -4,42 +4,152 @@ This is a set of integration tests for the RAPIDS Plugin for Apache Spark. These
 are intended to be able to be run against any Spark-compatible cluster/release to help
 verify that the plugin is doing the right thing in as many cases as possible.
 
-There are two sets of tests here. The pyspark tests are described here. The scala tests
-are described [here](../tests/README.md)
+There are two sets of tests. The PySpark tests are described on this page. The scala tests are
+described [here](../tests/README.md).
 
-## Dependencies
+## Setting Up the Environment
 
 The tests are based off of `pyspark` and `pytest` running on Python 3. There really are
 only a small number of Python dependencies that you need to install for the tests. The
 dependencies also only need to be on the driver.  You can install them on all nodes
 in the cluster but it is not required.
 
-### pytest
-`pip install pytest`
+### Prerequisities
 
-Should be enough to get the basics started.
+The build requires `OpenJDK 8`, `maven`, and `python`.
+Skip to the next section if you have already installed them.
 
-### sre_yield
-`pip install sre_yield`
+#### Java Environment
 
-`sre_yield` provides a set of APIs to generate string data from a regular expression.
+It is recommended to use `alternatives` to manage multiple java versions.
+Then you can simply set `JAVA_HOME` to JDK directory:
 
-### pandas
-`pip install pandas`
+  ```shell script
+  JAVA_HOME=$(readlink -nf $(which java) | xargs dirname | xargs dirname | xargs dirname)
+  ```
 
-`pandas` is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool and is
-only needed when testing integration with pandas.
+#### Installing python using pyenv
 
-### pyarrow
-`pip install pyarrow`
+It is recommended that you use `pyenv` to manage Python installations.
 
-`pyarrow` provides a Python API for functionality provided by the Arrow C++ libraries, along with tools for Arrow
-integration and interoperability with pandas, NumPy, and other software in the Python ecosystem. This is used
-to test improved transfer performance to pandas based user defined functions.
+- First, make sure to install all the required dependencies listed
+  [here](https://github.com/pyenv/pyenv/wiki#suggested-build-environment).
+- Follow instructions to use the right method of installation described
+  [here](https://github.com/pyenv/pyenv#installation)
+- Verify that `pyenv` is set correctly
+  
+  ```shell script
+  which pyenv  
+  ```
 
-## pytest-xdist and findspark
+- Using `pyenv` to set Python installation
+  - To check versions to be installed (will return a long list)
+  
+    ```shell script
+    ls ~/.pyenv/versions/
+    ```
 
-`pytest-xdist` and `findspark` can be used to speed up running the tests by running them in parallel.
+  - To install a specific version from the available list
+  
+    ```shell script
+    pyenv install 3.X.Y
+    ```
+
+  - To check available versions locally
+
+    ```shell script
+    ls ~/.pyenv/versions/
+    ```
+
+  - To set python environment to one of the installed versions
+
+    ```shell script
+    pyenv global 3.X.Y
+    ```
+
+For full details on `pyenv` and instructions, see [pyenv github page](https://github.com/pyenv/pyenv).
+
+#### Installing specific version of Maven
+
+All package managers like `brew` and `apt` offer maven. However, it may lag behind some
+versions. In that case, you can install the latest binary from the [Maven download page](https://maven.apache.org/download.cgi).
+For manual installation, you need to setup your environment:
+
+  ```shell script
+  export M2_HOME=PATH_TO_MAVEN_ROOT_DIRECTOTY
+  export M2=${M2_HOME}/bin
+  export PATH=$M2:$PATH
+  ```
+
+### Dependencies
+
+- pytest
+  : A framework that makes it easy to write small, readable tests, and can scale to support complex
+  functional testing for applications and libraries (requires  Python 3.6+).
+- sre_yield
+  : Provides a set of APIs to generate string data from a regular expression.
+- pandas
+  : A fast, powerful, flexible and easy to use open source data analysis and manipulation
+  tool and is only needed when testing integration with pandas.
+- pyarrow
+  : Provides a Python API for functionality provided by the Arrow C++ libraries, along with
+  tools for Arrow integration and interoperability with pandas, NumPy, and other software in
+  the Python ecosystem. This is used to test improved transfer performance to pandas based user
+  defined functions.
+- pytest-xdist
+  : A plugin that extends pytest with new test execution modes, the most used being distributing
+  tests across multiple CPUs to speed up test execution
+- findspark
+  : Adds pyspark to sys.path at runtime
+
+You can install all the dependencies using `pip` by running the following command:
+
+  ```shell script
+  pip install pytest \
+              sre_yield \
+              pandas \
+              pyarrow \
+              pytest-xdist \
+              findspark
+  ```
+
+### Installing Spark
+
+You need to install spark-3.x and set `$SPARK_HOME/bin` to your `$PATH`, where
+`SPARK_HOME` points to the directory of a runnable Spark distribution.  
+This can be done in the following three steps:
+
+1. Choose the appropriate way to create Spark distribution:
+
+   - To run the plugin against a non-snapshot version of spark, download a distribution from Apache-Spark [download page](https://spark.apache.org/downloads.html);
+   - To run the plugin against a snapshot version of Spark, you will need to buid
+     the distribution from source:
+
+      ```shell script
+      ## clone locally
+      git clone https://github.com/apache/spark.git spark-src-latest
+      cd spark-src-latest
+      ## build a distribution with hive support
+      ## generate a single tgz file $MY_SPARK_BUILD.tgz
+      ./dev/make-distribution.sh --name $MY_SPARK_BUILD --tgz -Pkubernetes -Phive
+      ```
+
+      For more details about the configurations, and the arguments, visit [Apache Spark Docs::Building Spark](https://spark.apache.org/docs/latest/building-spark.html#building-a-runnable-distribution).
+
+2. Extract the `.tgz` file to a suitable work directory `$SPARK_INSTALLS_DIR/$MY_SPARK_BUILD`.
+
+3. Set the  variables to appropriate values:
+
+    ```shell script
+    export SPARK_HOME=$SPARK_INSTALLS_DIR/$MY_SPARK_BUILD
+    export PATH=${SPARK_HOME}/bin:$PATH
+    ```
+
+### Building The Plugin
+
+Next, visit [CONTRIBUTING::Building From Source](../CONTRIBUTING.md#building-from-source) to learn
+about building the plugin for different versions of Spark.
+Make sure that you compile the plugin against the same version of Spark that it is going to run with.
 
 ## Running
 
@@ -59,6 +169,15 @@ The python tests run with pytest and the script honors pytest parameters. Some h
 - `-v` Increase the verbosity of the tests
 - `-r fExXs` Show extra test summary info as specified by chars: (f)ailed, (E)rror, (x)failed, (X)passed, (s)kipped
 - For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
+
+Examples:
+
+  ```shell script
+  ## running all integration tests for Map
+  ./integration_tests/run_pyspark_from_build.sh -k map_test.py
+  ## Running a single integration test in map_test
+  ./integration_tests/run_pyspark_from_build.sh -k test_map_integration_1
+  ```
 
 ### Spark execution mode
 
@@ -126,7 +245,7 @@ The test files are everything under `./integration_tests/src/test/resources/`  B
 where you placed them because you will need to tell the tests where they are.
 
 When running these tests you will need to include the test jar, the integration test jar,
-the udf-examples jar, scala-test and scalactic. You can find scala-test and scalactic under
+the scala-test and scalactic. You can find scala-test and scalactic under
 `~/.m2/repository`.
 
 It is recommended that you use `spark-shell` and the scalatest shell to run each test
@@ -134,7 +253,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-22.02.0-tests.jar,rapids-4-spark-udf-examples_2.12-22.02.0.jar,rapids-4-spark-integration-tests_2.12-22.02.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-22.04.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-22.04.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -157,7 +276,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.02.0.jar,rapids-4-spark-udf-examples_2.12-22.02.0.jar,cudf-22.02.0-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -256,7 +375,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.02.0.jar,rapids-4-spark-udf-examples_2.12-22.02.0.jar,cudf-22.02.0-cuda11.jar,rapids-4-spark-tests_2.12-22.02.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-22.02.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-22.02.0.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-cuda11.jar,rapids-4-spark-tests_2.12-22.04.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests

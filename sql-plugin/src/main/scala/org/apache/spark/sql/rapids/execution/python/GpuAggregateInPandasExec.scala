@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -114,7 +114,7 @@ case class GpuAggregateInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(cpuGroupingExpressions.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
+    Seq(cpuGroupingExpressions.map(SparkShimImpl.sortOrder(_, Ascending)))
 
   // One batch as input to keep the integrity for each group.
   // (This should be replaced by an iterator that can split batches on key boundaries eventually.

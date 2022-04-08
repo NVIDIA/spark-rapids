@@ -20,7 +20,6 @@ from pyspark.context import SparkContext
 from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-import pytest
 import random
 from spark_session import is_tz_utc
 import sre_yield
@@ -613,6 +612,45 @@ class NullGen(DataGen):
             return None
         self._start(rand, make_null)
 
+# DayTimeIntervalGen is for Spark 3.3.0+
+# DayTimeIntervalType(startField, endField):
+# Represents a day-time interval which is made up of a contiguous subset of the following fields:
+#   SECOND, seconds within minutes and possibly fractions of a second [0..59.999999],
+#   Note Spark now uses 99 as max second, see issue https://issues.apache.org/jira/browse/SPARK-38324
+#   If second is start field, its max value is long.max / microseconds in one second
+#   MINUTE, minutes within hours [0..59],
+#   If minute is start field, its max value is long.max / microseconds in one minute
+#   HOUR, hours within days [0..23],
+#   If hour is start field, its max value is long.max / microseconds in one hour
+#   DAY, days in the range [0..106751991]. 106751991 is long.max / microseconds in one day
+# For more details: https://spark.apache.org/docs/latest/sql-ref-datatypes.html
+MIN_DAY_TIME_INTERVAL = timedelta(microseconds=-pow(2, 63))
+MAX_DAY_TIME_INTERVAL = timedelta(microseconds=(pow(2, 63) - 1))
+class DayTimeIntervalGen(DataGen):
+    """Generate DayTimeIntervalType values"""
+    def __init__(self, min_value=MIN_DAY_TIME_INTERVAL, max_value=MAX_DAY_TIME_INTERVAL, start_field="day", end_field="second",
+                 nullable=True, special_cases=[timedelta(seconds=0)]):
+        # Note the nano seconds are truncated for min_value and max_value
+        self._min_micros = (math.floor(min_value.total_seconds()) * 1000000) + min_value.microseconds
+        self._max_micros = (math.floor(max_value.total_seconds()) * 1000000) + max_value.microseconds
+        fields = ["day", "hour", "minute", "second"]
+        start_index = fields.index(start_field)
+        end_index = fields.index(end_field)
+        if start_index > end_index:
+            raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field index should <= end '
+                               'field index'.format(start_field, end_field, fields))
+        super().__init__(DayTimeIntervalType(start_index, end_index), nullable=nullable, special_cases=special_cases)
+
+    def _gen_random(self, rand):
+        micros = rand.randint(self._min_micros, self._max_micros)
+        # issue: Interval types are not truncated to the expected endField when creating a DataFrame via Duration
+        # https://issues.apache.org/jira/browse/SPARK-38577
+        # If above issue is fixed, should update this DayTimeIntervalGen.
+        return timedelta(microseconds=micros)
+
+    def start(self, rand):
+        self._start(rand, lambda: self._gen_random(rand))
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
@@ -845,22 +883,6 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
-decimal_gen_default = DecimalGen()
-decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
-decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
-decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
-decimal_gen_64bit = DecimalGen(precision=12, scale=2)
-decimal_gen_12_2 = DecimalGen(precision=12, scale=2)
-decimal_gen_18_3 = DecimalGen(precision=18, scale=3)
-decimal_gen_128bit = DecimalGen(precision=20, scale=2)
-decimal_gen_20_2 = DecimalGen(precision=20, scale=2)
-decimal_gen_30_2 = DecimalGen(precision=30, scale=2)
-decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
-decimal_gen_36_neg5 = DecimalGen(precision=36, scale=-5)
-decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
-decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
-decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
-
 null_gen = NullGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
@@ -871,15 +893,13 @@ integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
-decimal_gens_no_neg = [decimal_gen_default, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision, decimal_gen_64bit]
 
-decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
+decimal_gen_32bit = DecimalGen(precision=7, scale=3)
+decimal_gen_32bit_neg_scale = DecimalGen(precision=7, scale=-3)
+decimal_gen_64bit = DecimalGen(precision=12, scale=2)
+decimal_gen_128bit = DecimalGen(precision=20, scale=2)
 
-decimal_128_gens_no_neg = [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5,
-        decimal_gen_38_0, decimal_gen_38_10]
-
-decimal_128_gens = decimal_128_gens_no_neg + [decimal_gen_36_neg5, decimal_gen_38_neg10]
+decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
 
 # all of the basic gens
 all_basic_gens_no_null = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -908,9 +928,8 @@ date_n_time_gens = [date_gen, timestamp_gen]
 boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
-single_array_gens_sample_with_decimal128 = [ArrayGen(sub_gen) for sub_gen in decimal_128_gens]
 
-single_level_array_gens_no_null = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_null + decimal_gens_no_neg]
+single_level_array_gens_no_null = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_null + decimal_gens]
 
 single_level_array_gens_no_nan = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_nan + decimal_gens]
 
@@ -926,7 +945,6 @@ nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_len
 
 # Some array gens, but not all because of nesting
 array_gens_sample = single_level_array_gens + nested_array_gens_sample
-array_gens_sample_with_decimal128 = single_level_array_gens + nested_array_gens_sample + single_array_gens_sample_with_decimal128
 
 # all of the basic types in a single struct
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
@@ -938,26 +956,24 @@ nonempty_struct_gens_sample = [all_basic_struct_gen,
 
 struct_gens_sample = nonempty_struct_gens_sample + [StructGen([])]
 struct_gen_decimal128 = StructGen(
-    [['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_128_gens)])
-struct_gens_sample_with_decimal128 = struct_gens_sample + [
-    struct_gen_decimal128]
+    [['child' + str(ind), sub_gen] for ind, sub_gen in enumerate([decimal_gen_128bit])])
+struct_gens_sample_with_decimal128 = struct_gens_sample + [struct_gen_decimal128]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)
 
 all_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen]] + [simple_string_to_string_map_gen]
-decimal_64_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(7, 3, nullable=False), DecimalGen(12, 2, nullable=False), DecimalGen(18, -3, nullable=False)]]
-decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(20, 2, nullable=False), DecimalGen(36, 5, nullable=False), DecimalGen(38, 38, nullable=False),
-                                                                                       DecimalGen(36, -5, nullable=False)]]
-decimal_128_no_neg_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(20, 2, nullable=False), DecimalGen(36, 5, nullable=False), DecimalGen(38, 38, nullable=False)]]
+decimal_64_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(7, 3, nullable=False), DecimalGen(12, 2, nullable=False)]]
+decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(20, 2, nullable=False)]]
 
 # Some map gens, but not all because of nesting
 map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
-allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
+ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 
 def copy_and_update(conf, *more_confs):
@@ -968,8 +984,7 @@ def copy_and_update(conf, *more_confs):
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
-           decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-           decimal_gen_64bit, decimal_gen_128bit, decimal_gen_36_5, decimal_gen_38_10]
+           decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
 
 # Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
 # so narrow down the time range to avoid exceptions causing test failures.

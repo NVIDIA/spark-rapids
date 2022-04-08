@@ -20,7 +20,8 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -205,7 +206,7 @@ case class GpuFileSourceScanExec(
         // the RDD partition will not be sorted even if the relation has sort columns set
         // Current solution is to check if all the buckets have a single file in it
 
-        val filesPartNames = ShimLoader.getSparkShims.getPartitionFileNames(selectedPartitions)
+        val filesPartNames = SparkShimImpl.getPartitionFileNames(selectedPartitions)
         val bucketToFilesGrouping =
           filesPartNames.groupBy(file => BucketingUtils.getBucketId(file))
         val singleFilePartitions = bucketToFilesGrouping.forall(p => p._2.length <= 1)
@@ -353,7 +354,7 @@ case class GpuFileSourceScanExec(
       partitions: Seq[PartitionDirectory],
       static: Boolean): Unit = {
     val filesNum = partitions.map(_.files.size.toLong).sum
-    val filesSize = ShimLoader.getSparkShims.getPartitionFileStatusSize(partitions)
+    val filesSize = SparkShimImpl.getPartitionFileStatusSize(partitions)
     if (!static || !partitionFilters.exists(isDynamicPruningFilter)) {
       driverMetrics("numFiles") = filesNum
       driverMetrics("filesSize") = filesSize
@@ -450,7 +451,7 @@ case class GpuFileSourceScanExec(
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
 
     val partitionedFiles =
-      ShimLoader.getSparkShims.getPartitionedFiles(selectedPartitions)
+      SparkShimImpl.getPartitionedFiles(selectedPartitions)
 
     val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
       BucketingUtils
@@ -474,11 +475,11 @@ case class GpuFileSourceScanExec(
         val partitionedFiles = coalescedBuckets.get(bucketId).map {
           _.values.flatten.toArray
         }.getOrElse(Array.empty)
-        ShimLoader.getSparkShims.createFilePartition(bucketId, partitionedFiles)
+        SparkShimImpl.createFilePartition(bucketId, partitionedFiles)
       }
     }.getOrElse {
       Seq.tabulate(bucketSpec.numBuckets) { bucketId =>
-        ShimLoader.getSparkShims.createFilePartition(bucketId,
+        SparkShimImpl.createFilePartition(bucketId,
           prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
@@ -504,7 +505,7 @@ case class GpuFileSourceScanExec(
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
 
-    val splitFiles = ShimLoader.getSparkShims
+    val splitFiles = SparkShimImpl
       .getPartitionSplitFiles(selectedPartitions, maxSplitBytes, relation)
       .sortBy(_.length)(implicitly[Ordering[Long]].reverse)
 
@@ -521,7 +522,7 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions,
+      SparkShimImpl.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
@@ -594,8 +595,7 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
       case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      case f =>
-        meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
+      case _ => ExternalSource.tagSupportForGpuFileSourceScanExec(meta)
     }
   }
 
@@ -605,8 +605,7 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
       case _: JsonFileFormat => new GpuReadJsonFileFormat
-      case f =>
-        throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
+      case _ => ExternalSource.convertFileFormatForGpuFileSourceScanExec(format)
     }
   }
 }

@@ -27,7 +27,12 @@ import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 
-class InternalExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Logging {
+/**
+ * Note, this class should not be referenced directly in source code.
+ * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
+ */
+protected class InternalExclusiveModeGpuDiscoveryPlugin
+  extends ResourceDiscoveryPlugin with Logging {
   override def discoverResource(
     request: ResourceRequest,
     sparkconf: SparkConf

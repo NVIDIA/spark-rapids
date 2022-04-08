@@ -16,15 +16,32 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable
-
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+trait TaskAutoCloseableResource extends AutoCloseable {
+  protected var closed = false
+  // iteration-independent resources
+  private val resources = scala.collection.mutable.ArrayBuffer[AutoCloseable]()
+  def use[T <: AutoCloseable](ac: T): T = {
+    resources += ac
+    ac
+  }
+
+  override def close() = if (!closed) {
+    closed = true
+    resources.reverse.safeClose()
+    resources.clear()
+  }
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+}
 
 /**
  * Base class for iterators producing the results of a join.
@@ -37,13 +54,12 @@ abstract class AbstractGpuJoinIterator(
     gatherNvtxName: String,
     targetSize: Long,
     val opTime: GpuMetric,
-    joinTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
+    joinTime: GpuMetric)
+    extends Iterator[ColumnarBatch]
+    with Arm
+    with TaskAutoCloseableResource {
   private[this] var nextCb: Option[ColumnarBatch] = None
   private[this] var gathererStore: Option[JoinGatherer] = None
-
-  protected[this] var closed = false
-
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   /** Returns whether there are any more batches on the stream side of the join */
   protected def hasNextStreamBatch: Boolean
@@ -158,7 +174,7 @@ abstract class SplittableJoinIterator(
   // For some join types even if there is no stream data we might output something
   private var isInitialJoin = true
   // If the join explodes this holds batches from the stream side split into smaller pieces.
-  private val pendingSplits = mutable.Queue[SpillableColumnarBatch]()
+  private val pendingSplits = scala.collection.mutable.Queue[SpillableColumnarBatch]()
 
   protected def computeNumJoinRows(cb: ColumnarBatch): Long
 

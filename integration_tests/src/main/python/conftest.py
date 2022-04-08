@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import pytest
 import random
 from spark_init_internal import get_spark_i_know_what_i_am_doing
@@ -232,13 +233,23 @@ def std_input_path(request):
     else:
         yield path
 
+def get_worker_id(request):
+    try:
+        import xdist
+        return xdist.plugin.get_xdist_worker_id(request)
+    except ImportError:
+        return 'main'
+
 @pytest.fixture
 def spark_tmp_path(request):
     debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
-    ret = ret + '/' + str(random.randint(0, 1000000)) + '/'
+    worker_id = get_worker_id(request)
+    pid = os.getpid()
+    hostname = os.uname()[1]
+    ret = f'{ret}/{hostname}-{worker_id}-{pid}-{random.randrange(0, 1<<31)}/'
     # Make sure it is there and accessible
     sc = get_spark_i_know_what_i_am_doing().sparkContext
     config = sc._jsc.hadoopConfiguration()
@@ -261,7 +272,9 @@ class TmpTableFactory:
 
 @pytest.fixture
 def spark_tmp_table_factory(request):
-    base_id = 'tmp_table_{}'.format(random.randint(0, 1000000))
+    worker_id = get_worker_id(request)
+    table_id = random.getrandbits(31)
+    base_id = f'tmp_table_{worker_id}_{table_id}'
     yield TmpTableFactory(base_id)
     sp = get_spark_i_know_what_i_am_doing()
     tables = sp.sql("SHOW TABLES".format(base_id)).collect()
@@ -321,10 +334,3 @@ def enable_cudf_udf(request):
     if not enable_udf_cudf:
         # cudf_udf tests are not required for any test runs
         pytest.skip("cudf_udf not configured to run")
-
-@pytest.fixture(scope="session")
-def enable_rapids_udf_example_native(request):
-    native_enabled = request.config.getoption("rapids_udf_example_native")
-    if not native_enabled:
-        # udf_example_native tests are not required for any test runs
-        pytest.skip("rapids_udf_example_native is not configured to run")

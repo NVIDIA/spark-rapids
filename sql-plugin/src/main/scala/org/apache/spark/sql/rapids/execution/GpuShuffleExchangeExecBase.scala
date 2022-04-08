@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{GpuHashPartitioning, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
@@ -82,7 +82,7 @@ class GpuShuffleMeta(
 
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning
-        if ShimLoader.getSparkShims.sessionFromPlan(shuffle).sessionState.conf
+        if SparkShimImpl.sessionFromPlan(shuffle).sessionState.conf
             .sortBeforeRepartition =>
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128
         shuffle.output.map(_.dataType)
@@ -107,7 +107,7 @@ class GpuShuffleMeta(
   }
 
   override def convertToGpu(): GpuExec =
-    ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+    SparkShimImpl.getGpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
       childPlans.head.convertIfNeeded(),
       shuffle.outputPartitioning,
@@ -218,7 +218,7 @@ abstract class GpuShuffleExchangeExecBase(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = ShimLoader.getSparkShims
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = SparkShimImpl
     .attachTreeIfSupported(this, "execute") {
       // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
       if (cachedShuffleRDD == null) {
@@ -254,7 +254,7 @@ object GpuShuffleExchangeExecBase {
      * task when indeterminate tasks re-run.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
-      val shim = ShimLoader.getSparkShims
+      val shim = SparkShimImpl
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
         shim.sortOrder(GpuBoundReference(index, attr.dataType,
           attr.nullable)(attr.exprId, attr.name), Ascending)

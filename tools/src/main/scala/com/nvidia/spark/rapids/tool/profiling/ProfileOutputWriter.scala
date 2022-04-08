@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,12 +62,14 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
         val csvWriter = new ToolTextFileWriter(outputDir,
           s"${suffix}.csv", s"$header CSV:")
         try {
-          val headerString = outRows.head.outputHeaders.mkString(",")
+          val headerString = outRows.head.outputHeaders.mkString(ProfileOutputWriter.CSVDelimiter)
           csvWriter.write(headerString + "\n")
           val rows = outRows.map(_.convertToSeq)
           rows.foreach { row =>
-            val formattedRow = row.map(stringIfempty(_))
-            val outStr = formattedRow.mkString(",")
+            val delimiterHandledRow =
+              row.map(ProfileUtils.replaceDelimiter(_, ProfileOutputWriter.CSVDelimiter))
+            val formattedRow = delimiterHandledRow.map(stringIfempty(_))
+            val outStr = formattedRow.mkString(ProfileOutputWriter.CSVDelimiter)
             csvWriter.write(outStr + "\n")
           }
         } finally {
@@ -89,6 +91,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
 }
 
 object ProfileOutputWriter {
+  val CSVDelimiter = ","
 
   /**
    * Regular expression matching full width characters.

@@ -22,7 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -66,6 +66,9 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
   override def toString: String = s"-$child"
 
   override def sql: String = s"(- ${child.sql})"
+
+  override def hasSideEffects: Boolean = super.hasSideEffects ||
+    (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType))
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
@@ -122,6 +125,9 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
   override def unaryOp: UnaryOp = UnaryOp.ABS
 
+  override def hasSideEffects: Boolean = super.hasSideEffects ||
+    (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType))
+
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
       // Because of 2s compliment we need to only worry about the min value for integer types.
@@ -134,7 +140,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
   override def dataType: DataType = left.dataType
   // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = SQLConf.get.ansiEnabled
+  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
 }
 
 object GpuAdd extends Arm {
@@ -172,14 +178,14 @@ object GpuAdd extends Arm {
     // Overflow happens if the arguments have the same signs and it is different from the sign of
     // the result
     val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0)
-    withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignSame = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
+    val zero = BigDecimal(0).bigDecimal
+    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
         lhsLz.equalTo(rhsLz)
       }
       withResource(argsSignSame) { argsSignSame =>
         val resultAndRhsDifferentSign =
-          withResource(DecimalUtil.lessThan(ret, zero)) { resultLz =>
+          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
             rhsLz.notEqualTo(resultLz)
           }
         withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
@@ -286,14 +292,14 @@ case class GpuSubtract(
     // Overflow happens if the arguments have different signs and the sign of the result is
     // different from the sign of subtractend (RHS).
     val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0)
-    val overflow = withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignDifferent = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
+    val zero = BigDecimal(0).bigDecimal
+    val overflow = withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignDifferent = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
         lhsLz.notEqualTo(rhsLz)
       }
       withResource(argsSignDifferent) { argsSignDifferent =>
         val resultAndSubtrahendSameSign =
-          withResource(DecimalUtil.lessThan(ret, zero)) { resultLz =>
+          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
             rhsLz.equalTo(resultLz)
           }
         withResource(resultAndSubtrahendSameSign) { resultAndSubtrahendSameSign =>
@@ -662,7 +668,7 @@ object GpuDivModLike extends Arm {
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
   lazy val failOnError: Boolean =
-    ShimLoader.getSparkShims.shouldFailDivByZero()
+    SparkShimImpl.shouldFailDivByZero()
 
   override def nullable: Boolean = true
 
@@ -728,7 +734,7 @@ case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
-    failOnError: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero()) extends
+    failOnError: Boolean = SparkShimImpl.shouldFailDivByZero()) extends
     ShimExpression with GpuExpression {
 
   override def toString: String = s"($left / $right)"
@@ -856,7 +862,7 @@ object GpuDecimalDivide {
 }
 
 case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero())
+    failOnErrorOverride: Boolean = SparkShimImpl.shouldFailDivByZero())
       extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
@@ -876,7 +882,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   lazy val failOnOverflow: Boolean =
-    ShimLoader.getSparkShims.shouldFailDivOverflow
+    SparkShimImpl.shouldFailDivOverflow
 
   override def checkDivideOverflow: Boolean = left.dataType match {
     case LongType if failOnOverflow => true

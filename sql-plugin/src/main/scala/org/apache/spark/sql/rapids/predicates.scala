@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPredicateHelper {
   protected def splitConjunctivePredicates(condition: Expression): Seq[Expression] = {
@@ -57,8 +58,72 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
   }
 }
 
-case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
+abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with Predicate {
+  
   override def inputType: AbstractDataType = BooleanType
+
+  def shortCircuitVal: Boolean
+  def shouldShortCircuit(col: GpuColumnVector): Boolean
+  def processLHS(col: ColumnVector): ColumnVector
+    
+  import GpuExpressionWithSideEffectUtils._
+
+  def applyShortCircuit(col: GpuColumnVector): GpuColumnVector =
+    shortCircuitWithBool(col, shortCircuitVal)
+  
+  /**
+   * When computing logical expressions on the CPU, the true and false
+   * expressions are evaluated lazily, meaning that the RHS expression
+   * of logical-AND is not evaluated when LHS is False. For logical-OR,
+   * RHS is not evaluated when LHS is True.
+   * This is important in the case where the expressions can have
+   * side-effects, such as throwing exceptions for invalid inputs.
+   *
+   * This method performs lazy evaluation on the GPU by first filtering
+   * the input batch where the LHS predicate is True.
+   * The RHS predicate is evaluated against these batches and then the
+   * results are combined back into a single batch using the gather
+   * algorithm.
+   */
+  def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+    val leftExpr = left.asInstanceOf[GpuExpression]
+    withResource(GpuColumnVector.from(batch)) { tbl =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
+        if (shouldShortCircuit(lhsBool)) {
+          applyShortCircuit(lhsBool)
+        } else {
+          val rightExpr = right.asInstanceOf[GpuExpression]
+          val colTypes = GpuColumnVector.extractTypes(batch)
+          // Process the LHS. It may imply replacing null values (if any) with true.
+          withResource(processLHS(lhsBool.getBase)) { lhsNoNulls =>
+            withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
+              withResource(GpuExpressionsUtils.columnarEvalToColumn(rightExpr, leftTrueBatch)) {
+                rEval =>
+                  withResource(gather(lhsNoNulls, rEval)) { combinedVector =>
+                    GpuColumnVector.from(
+                      doColumnar(lhsBool, GpuColumnVector.from(combinedVector, dataType)),
+                      dataType)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val rightExpr = right.asInstanceOf[GpuExpression]
+
+    if (rightExpr.hasSideEffects) {
+      columnarEvalWithSideEffects(batch)
+    } else {
+      super.columnarEval(batch)
+    }
+  }
+}
+
+case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryPredicateWithSideEffect {
 
   override def symbol: String = "&&"
 
@@ -66,10 +131,17 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
 
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_AND
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_AND)
+
+  override def shortCircuitVal: Boolean = false
+
+  override def shouldShortCircuit(col: GpuColumnVector): Boolean =
+    GpuExpressionWithSideEffectUtils.isAllFalse(col, false)
+
+  override def processLHS(col: ColumnVector): ColumnVector =
+    GpuExpressionWithSideEffectUtils.replaceNulls(col, true)
 }
 
-case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
-  override def inputType: AbstractDataType = BooleanType
+case class GpuOr(left: Expression, right: Expression) extends CudfBinaryPredicateWithSideEffect { 
 
   override def symbol: String = "||"
 
@@ -77,6 +149,14 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
 
   override def binaryOp: BinaryOp = BinaryOp.NULL_LOGICAL_OR
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.NULL_LOGICAL_OR)
+
+  override def shortCircuitVal: Boolean = true
+  
+  override def shouldShortCircuit(col: GpuColumnVector): Boolean =
+    GpuExpressionWithSideEffectUtils.isAllTrue(col)
+
+  override def processLHS(col: ColumnVector): ColumnVector =
+    GpuExpressionWithSideEffectUtils.boolInverted(col)
 }
 
 abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {

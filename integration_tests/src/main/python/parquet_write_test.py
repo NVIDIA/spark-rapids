@@ -19,11 +19,10 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
-from spark_session import is_before_spark_311
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -34,9 +33,7 @@ multithreaded_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.
 coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
         coalesce_parquet_file_reader_conf]
-parquet_decimal_gens=[decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit,
-                      decimal_gen_20_2, decimal_gen_36_5, decimal_gen_38_0, decimal_gen_38_10]
-parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_decimal_gens)])
+parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
@@ -56,16 +53,23 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
                     # see https://github.com/rapidsai/cudf/issues/8070
                     limited_timestamp()]
 
-parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in
-                          [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
-                           limited_timestamp]] + [simple_string_to_string_map_gen] + decimal_128_no_neg_map_gens
+parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [
+    BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
+    limited_timestamp]] + [simple_string_to_string_map_gen,
+                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit)]
 
-parquet_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
-                      StructGen([['child0', StructGen([['child1', byte_gen]])]]),
-                      StructGen([['child0', MapGen(StringGen(nullable=False), StringGen())], ['child1', IntegerGen()]])]
+parquet_struct_gen_no_maps = [
+    StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
+    StructGen([['child0', StructGen([['child1', byte_gen]])]])
+]
+
+parquet_struct_of_map_gen = StructGen([['child0', MapGen(StringGen(nullable=False), StringGen(), max_length=5)], ['child1', IntegerGen()]])
+
+parquet_struct_gen = parquet_struct_gen_no_maps + [parquet_struct_of_map_gen]
 
 parquet_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen] + [
-    ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen]
+    ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen_no_maps] + [
+    ArrayGen(ArrayGen(parquet_struct_of_map_gen, max_length=4), max_length=4)]
 
 parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False),
                                                            ArrayGen(string_gen), max_length=10),
@@ -77,26 +81,34 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
     MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
-parquet_write_gens_list = [parquet_basic_gen, parquet_decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
+parquet_write_gens_list = [parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
-                                  reader_confs):
+def test_write_round_trip(spark_tmp_path, parquet_gens):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, writer_confs, {
-        'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
             lambda spark, path: spark.read.parquet(path),
             data_path,
-            conf=all_confs)
+            conf=writer_confs)
+
+@pytest.mark.parametrize('parquet_gens', [[
+    limited_timestamp(),
+    ArrayGen(limited_timestamp(), max_length=10),
+    MapGen(limited_timestamp(nullable=False), limited_timestamp())]], ids=idfn)
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
+def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=all_confs)
 
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
@@ -128,21 +140,15 @@ parquet_part_write_gens = [
 @ignore_order
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_type, reader_confs):
+def test_part_write_round_trip(spark_tmp_path, parquet_gen):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, writer_confs, {
-        'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),
             lambda spark, path: spark.read.parquet(path),
             data_path,
-            conf=all_confs)
+            conf=writer_confs)
 
 # we are limiting TimestampGen to avoid overflowing the INT96 value
 # see https://github.com/rapidsai/cudf/issues/8070
@@ -177,13 +183,9 @@ def test_all_null_int96(spark_tmp_path):
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
+def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {
-        'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.parquet.compression.codec': compress})
+    all_confs = {'spark.sql.parquet.compression.codec': compress}
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
@@ -192,16 +194,14 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
+def test_write_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),
             data_path,
-            conf=all_confs)
+            conf=writer_confs)
 
 def write_parquet_sql_from(spark, df, data_path, write_to_table):
     tmp_view_name = 'tmp_view_{}'.format(random.randint(0, 1000000))
@@ -211,16 +211,14 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
+def test_write_sql_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: write_parquet_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),
             data_path,
-            conf=all_confs)
+            conf=writer_confs)
 
 def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_factory, int96_rebase, datetime_rebase, ts_write):
     spark.conf.set('spark.sql.parquet.outputTimestampType', ts_write)
@@ -239,27 +237,17 @@ def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, sp
     data_path = spark_tmp_path + '/PARQUET_DATA'
     int96_rebase = "EXCEPTION" if (ts_write == "INT96") else rebase
     date_time_rebase = "EXCEPTION" if (ts_write == "TIMESTAMP_MICROS") else rebase
-    if is_before_spark_311() and ts_write == 'INT96':
-        all_confs = {'spark.sql.parquet.outputTimestampType': ts_write}
-        all_confs.update({'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': date_time_rebase,
-                          'spark.sql.legacy.parquet.int96RebaseModeInWrite': int96_rebase})
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            conf=all_confs)
-    else:
-        with_gpu_session(
-            lambda spark : writeParquetUpgradeCatchException(spark,
-                                                             unary_op_df(spark, gen),
-                                                             data_path,
-                                                             spark_tmp_table_factory,
-                                                             int96_rebase, date_time_rebase, ts_write))
-        with_cpu_session(
-            lambda spark: writeParquetUpgradeCatchException(spark,
-                                                            unary_op_df(spark, gen), data_path,
-                                                            spark_tmp_table_factory,
-                                                            int96_rebase, date_time_rebase, ts_write))
+    with_gpu_session(
+        lambda spark : writeParquetUpgradeCatchException(spark,
+                                                         unary_op_df(spark, gen),
+                                                         data_path,
+                                                         spark_tmp_table_factory,
+                                                         int96_rebase, date_time_rebase, ts_write))
+    with_cpu_session(
+        lambda spark: writeParquetUpgradeCatchException(spark,
+                                                        unary_op_df(spark, gen), data_path,
+                                                        spark_tmp_table_factory,
+                                                        int96_rebase, date_time_rebase, ts_write))
 
 def writeParquetNoOverwriteCatchException(spark, df, data_path, table_name):
     with pytest.raises(Exception) as e_info:
@@ -393,23 +381,40 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
     with_gpu_session(test_it, conf)
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_empty_parquet_round_trip(spark_tmp_path,
-                                        parquet_gens,
-                                        v1_enabled_list,
-                                        ts_type,
-                                        reader_confs):
+def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
     def create_empty_df(spark, path):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
         return gen_df(spark, gen_list, length=0).write.parquet(path)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, writer_confs, {
-        'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
         create_empty_df,
         lambda spark, path: spark.read.parquet(path),
         data_path,
-        conf=all_confs)
+        conf=writer_confs)
+
+# should fallback when trying to write field ID metadata
+@pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
+@allow_non_gpu('DataWritingCommandExec')
+def test_parquet_write_field_id(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    schema = StructType([
+        StructField("c1", IntegerType(), metadata={'parquet.field.id' : 1}),
+    ])
+    data = [(1,),(2,),(3,),]
+    assert_gpu_fallback_write(
+            lambda spark, path: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite").parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec',
+            conf = {"spark.sql.parquet.fieldId.write.enabled" : "true"}) # default is true
+
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_write_daytime_interval(spark_tmp_path):
+    gen_list = [('_c1', DayTimeIntervalGen())]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=writer_confs)

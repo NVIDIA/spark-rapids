@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -105,7 +105,9 @@ class GroupingIterator(
 
   override def next(): ColumnarBatch = {
     if (groupBatches.nonEmpty) {
-      groupBatches.dequeue().getColumnarBatch()
+      withResource(groupBatches.dequeue()) { gb =>
+        gb.getColumnarBatch()
+      }
     } else {
       val batch = wrapped.next()
       inputBatches += 1
@@ -145,8 +147,9 @@ class GroupingIterator(
             withResource(GpuColumnVector.from(cb)) { table =>
               withResource(table.contiguousSplit(splitIndices:_*)) { tables =>
                 // Return the first one and enqueue others
-                val splitBatches = tables.safeMap(table =>
-                  GpuColumnVectorFromBuffer.from(table, GpuColumnVector.extractTypes(batch)))
+                val splitBatches = tables.safeMap { table =>
+                  GpuColumnVectorFromBuffer.from(table, GpuColumnVector.extractTypes(batch))
+                }
                 groupBatches.enqueue(splitBatches.tail.map(sb =>
                   SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
                     spillCallback)): _*)
@@ -202,7 +205,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(cpuPartitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ cpuOrderSpec)
+    Seq(cpuPartitionSpec.map(SparkShimImpl.sortOrder(_, Ascending)) ++ cpuOrderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 

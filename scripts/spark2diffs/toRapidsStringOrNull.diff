@@ -1,4 +1,4 @@
-1,20c1,31
+1,22c1,34
 <   def toRapidsStringOrNull(dtype: DataType): Option[String] = {
 <     dtype match {
 <       case _: LongType => Some("INT64")
@@ -17,10 +17,12 @@
 <         // Decimal supportable check has been conducted in the GPU plan overriding stage.
 <         // So, we don't have to handle decimal-supportable problem at here.
 <         val dt = dtype.asInstanceOf[DecimalType]
-<         createCudfDecimal(dt.precision, dt.scale)
+<         createCudfDecimal(dt)
+<       case _: GpuUnsignedIntegerType => Some("UINT32")
+<       case _: GpuUnsignedLongType => Some("UINT64")
 <       case _ => None
 ---
->   private static DType toRapidsOrNull(DataType type) {
+>   private static DType toRapidsOrNullCommon(DataType type) {
 >     if (type instanceof LongType) {
 >       return DType.INT64;
 >     } else if (type instanceof DoubleType) {
@@ -49,7 +51,10 @@
 >     } else if (type instanceof DecimalType) {
 >       // Decimal supportable check has been conducted in the GPU plan overriding stage.
 >       // So, we don't have to handle decimal-supportable problem at here.
->       DecimalType dt = (DecimalType) type;
->       return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
-21a33
+>       return DecimalUtil.createCudfDecimal((DecimalType) type);
+>     } else if (type instanceof GpuUnsignedIntegerType) {
+>       return DType.UINT32;
+>     } else if (type instanceof GpuUnsignedLongType) {
+>       return DType.UINT64;
+23a36
 >     return null;

@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330
+from spark_session import is_before_spark_320, is_before_spark_330
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -75,7 +75,6 @@ struct_of_maps = StructGen([['child0', BooleanGen()]] + [
                                       # right_struct(child0 = missing map, child1 = Map[Boolean, Boolean])
                                       (StructGen([['child0', simple_string_to_string_map_gen]], nullable=False),
                                        StructGen([['child1', MapGen(BooleanGen(nullable=False), boolean_gen)]], nullable=False))], ids=idfn)
-@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of DF of structs with different types of cols as long as the struct itself
 # isn't null. This is a limitation in cudf because we don't support nested types as literals
 def test_union_struct_missing_children(data_gen):
@@ -84,7 +83,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -92,10 +91,9 @@ def test_union_struct_missing_children(data_gen):
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
-            conf=allow_negative_scale_of_decimal_conf)
+            lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -103,10 +101,9 @@ def test_union(data_gen):
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_unionAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
-            conf=allow_negative_scale_of_decimal_conf)
+            lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)))
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]])),
@@ -114,14 +111,12 @@ def test_unionAll(data_gen):
                                       StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
                                                             StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]]),
                                       struct_of_maps], ids=idfn)
-@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
 def test_union_by_missing_col_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
-                                .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True),
-        conf=allow_negative_scale_of_decimal_conf)
+                                .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True))
 
 
 # the first number ('1' and '2') is the nest level
@@ -154,39 +149,36 @@ def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
 
 
 
-@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample_with_decimal128 +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)),
-            conf=allow_negative_scale_of_decimal_conf)
+            lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
 
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
+    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
     pytest.param([('struct' + str(i), gen) for i, gen in enumerate(struct_gens_sample)]),
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample)]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
 ], ids=idfn)
 def test_coalesce_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen).coalesce(2),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+        lambda spark: gen_df(spark, data_gen).coalesce(2))
 
 @pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
     pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
     pytest.param([('a', ArrayGen(string_gen))]),
     pytest.param([('m', simple_string_to_string_map_gen)]),
@@ -200,8 +192,7 @@ def test_repartition_df(data_gen, num_parts, length):
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
             lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
             # disable sort before shuffle so round robin works for arrays
-            conf = {'spark.sql.execution.sortBeforeRepartition': 'false',
-                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
 @allow_non_gpu('ShuffleExchangeExec', 'RoundRobinPartitioning')
 @pytest.mark.parametrize('data_gen', [[('ag', ArrayGen(string_gen))],
@@ -235,19 +226,9 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', double_gen)], ['a']),
     ([('a', timestamp_gen)], ['a']),
     ([('a', date_gen)], ['a']),
-    ([('a', decimal_gen_default)], ['a']),
-    ([('a', decimal_gen_neg_scale)], ['a']),
-    ([('a', decimal_gen_scale_precision)], ['a']),
-    ([('a', decimal_gen_same_scale_precision)], ['a']),
-    ([('a', decimal_gen_64bit)], ['a']),
+    ([('a', decimal_gen_32bit)], ['a']),
     ([('a', decimal_gen_64bit)], ['a']),
     ([('a', decimal_gen_128bit)], ['a']),
-    ([('a', decimal_gen_30_2)], ['a']),
-    ([('a', decimal_gen_36_5)], ['a']),
-    ([('a', decimal_gen_36_neg5)], ['a']),
-    ([('a', decimal_gen_38_0)], ['a']),
-    ([('a', decimal_gen_38_10)], ['a']),
-    ([('a', decimal_gen_38_neg10)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
     ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('c1_0', byte_gen), ('c1_1', string_gen), ('c1_2', boolean_gen)]))]))], ['a']), 
@@ -263,8 +244,8 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', float_gen), ('b', double_gen), ('c', short_gen)], ['a', 'b', 'c']),
     ([('a', timestamp_gen), ('b', date_gen), ('c', int_gen)], ['a', 'b', 'c']),
     ([('a', short_gen), ('b', string_gen), ('c', int_gen)], ['a', 'b', 'c']),
-    ([('a', decimal_gen_default), ('b', decimal_gen_64bit), ('c', decimal_gen_scale_precision)], ['a', 'b', 'c']),
-    ([('a', decimal_gen_128bit), ('b', decimal_gen_38_neg10), ('c', decimal_gen_36_5)], ['a', 'b', 'c']),
+    ([('a', decimal_gen_64bit), ('b', decimal_gen_64bit), ('c', decimal_gen_64bit)], ['a', 'b', 'c']),
+    ([('a', decimal_gen_128bit), ('b', decimal_gen_128bit), ('c', decimal_gen_128bit)], ['a', 'b', 'c']),
     ], ids=idfn)
 def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
@@ -274,8 +255,7 @@ def test_hash_repartition_exact(gen, num_parts):
                     .repartition(num_parts, *part_on)\
                     .withColumn('id', f.spark_partition_id())\
                     .withColumn('hashed', f.hash(*part_on))\
-                    .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)),
-            conf = allow_negative_scale_of_decimal_conf)
+                    .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)))
 
 # Test a query that should cause Spark to leverage getShuffleRDD
 @ignore_order(local=True)

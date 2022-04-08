@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat, ShimLoader}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.reflect.ConstructorUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -47,7 +48,7 @@ import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
-import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
+import org.apache.spark.sql.types.{CalendarIntervalType, DataType, StructType}
 import org.apache.spark.sql.util.SchemaUtils
 import org.apache.spark.util.{ThreadUtils, Utils}
 
@@ -163,7 +164,7 @@ case class GpuDataSource(
       format.inferSchema(
         sparkSession,
         caseInsensitiveOptions - "path",
-        ShimLoader.getSparkShims.filesFromFileIndex(tempFileIndex))
+        SparkShimImpl.filesFromFileIndex(tempFileIndex))
     }.getOrElse {
       throw new AnalysisException(
         s"Unable to infer schema for $format. It must be specified manually.")
@@ -208,7 +209,7 @@ case class GpuDataSource(
       case (dataSource: RelationProvider, Some(schema)) =>
         val baseRelation =
           dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
-        if (baseRelation.schema != schema) {
+        if (!DataType.equalsIgnoreCompatibleNullability(baseRelation.schema, schema)) {
           throw new AnalysisException(
             "The user-specified schema doesn't match the actual schema: " +
             s"user-specified: ${schema.toDDL}, actual: ${baseRelation.schema.toDDL}. If " +
@@ -234,7 +235,7 @@ case class GpuDataSource(
           format.inferSchema(
             sparkSession,
             caseInsensitiveOptions - "path",
-            ShimLoader.getSparkShims.filesFromFileIndex(fileCatalog))
+            SparkShimImpl.filesFromFileIndex(fileCatalog))
         }.getOrElse {
           throw new AnalysisException(
             s"Unable to infer schema for $format at ${fileCatalog.allFiles().mkString(",")}. " +
@@ -285,17 +286,17 @@ case class GpuDataSource(
 
     relation match {
       case hs: HadoopFsRelation =>
-        ShimLoader.getSparkShims.checkColumnNameDuplication(
+        SparkShimImpl.checkColumnNameDuplication(
           hs.dataSchema,
           "in the data schema",
           equality)
-        ShimLoader.getSparkShims.checkColumnNameDuplication(
+        SparkShimImpl.checkColumnNameDuplication(
           hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        ShimLoader.getSparkShims.checkColumnNameDuplication(
+        SparkShimImpl.checkColumnNameDuplication(
           relation.schema,
           "in the data schema",
            equality)
@@ -636,7 +637,7 @@ object GpuDataSource extends Logging {
     val allPaths = globbedPaths ++ nonGlobPaths
     if (checkFilesExist) {
       val (filteredOut, filteredIn) = allPaths.partition { path =>
-        ShimLoader.getSparkShims.shouldIgnorePath(path.getName)
+        SparkShimImpl.shouldIgnorePath(path.getName)
       }
       if (filteredIn.isEmpty) {
         logWarning(

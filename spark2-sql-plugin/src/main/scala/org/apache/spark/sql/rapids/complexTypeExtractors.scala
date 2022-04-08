@@ -16,9 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuOverrides, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuOverrides, RapidsConf, RapidsMeta, UnaryExprMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{GetArrayItem, GetMapValue}
+import org.apache.spark.sql.catalyst.expressions.{GetArrayItem, GetArrayStructFields, GetMapValue}
 
 class GpuGetArrayItemMeta(
     expr: GetArrayItem,
@@ -26,17 +26,6 @@ class GpuGetArrayItemMeta(
     parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
     extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
-  import GpuOverrides._
-
-  override def tagExprForGpu(): Unit = {
-    extractLit(expr.ordinal).foreach { litOrd =>
-      // Once literal array/struct types are supported this can go away
-      val ord = litOrd.value
-      if ((ord == null || ord.asInstanceOf[Int] < 0) && DataTypeUtils.isNestedType(expr.dataType)) {
-        willNotWorkOnGpu("negative and null indexes are not supported for nested types")
-      }
-    }
-  }
 }
 
 class GpuGetMapValueMeta(
@@ -45,4 +34,12 @@ class GpuGetMapValueMeta(
   parent: Option[RapidsMeta[_, _]],
   rule: DataFromReplacementRule)
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
+}
+
+class GpuGetArrayStructFieldsMeta(
+     expr: GetArrayStructFields,
+     conf: RapidsConf,
+     parent: Option[RapidsMeta[_, _]],
+     rule: DataFromReplacementRule)
+  extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,8 @@
 package com.nvidia.spark
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, ShimLoader}
+import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -75,9 +76,9 @@ object RebaseHelper extends Arm {
 
   def newRebaseExceptionInRead(format: String): Exception = {
     val config = if (format == "Parquet") {
-      ShimLoader.getSparkShims.parquetRebaseReadKey
+      SparkShimImpl.parquetRebaseReadKey
     } else if (format == "Avro") {
-      ShimLoader.getSparkShims.avroRebaseReadKey
+      SparkShimImpl.avroRebaseReadKey
     } else {
       throw new IllegalStateException("unrecognized format " + format)
     }

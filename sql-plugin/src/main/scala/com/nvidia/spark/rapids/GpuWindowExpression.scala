@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
-import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimExpression}
+import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -1524,5 +1524,41 @@ case class GpuLag(input: Expression, offset: Expression, default: Expression)
     } else {
       RollingAggregation.lag(parsedOffset).onColumn(in.head._2)
     }
+  }
+}
+
+/**
+ * percent_rank() is a running window function in that it only operates on a window of unbounded
+ * preceding to current row. But, an entire window has to be in the batch because the rank is
+ * divided by the number of entries in the window to get the percent rank. We cannot know the number
+ * of entries in the window without the entire window. This is why it is not a
+ * `GpuBatchedRunningWindowWithFixer`.
+ */
+case class GpuPercentRank(children: Seq[Expression]) extends GpuRunningWindowFunction {
+  override def nullable: Boolean = false
+  override def dataType: DataType = DoubleType
+
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
+    val orderedBy = if (children.length == 1) {
+      children.head
+    } else {
+      val childrenWithNames = children.zipWithIndex.flatMap {
+        case (expr, idx) => Seq(GpuLiteral(idx.toString, StringType), expr)
+      }
+      GpuCreateNamedStruct(childrenWithNames)
+    }
+    Seq(orderedBy)
+  }
+  
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
+    Seq(AggAndReplace(GroupByScanAggregation.percentRank(), None))
+  }
+
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    groupByScanInputProjection(isRunningBatched)
+
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
+    Seq(AggAndReplace(ScanAggregation.percentRank(), None))
   }
 }

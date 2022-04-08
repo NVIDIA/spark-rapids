@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
@@ -88,12 +90,10 @@ class AdaptiveQueryExecSuite
   }
 
   private def findReusedExchange(plan: SparkPlan): Seq[ReusedExchangeExec] = {
-    collectWithSubqueries(plan)(ShimLoader.getSparkShims.reusedExchangeExecPfn)
+    collectWithSubqueries(plan)(SparkShimImpl.reusedExchangeExecPfn)
   }
 
   test("get row counts from executed shuffle query stages") {
-    assumeSpark301orLater
-
     skewJoinTest { spark =>
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
@@ -150,8 +150,6 @@ class AdaptiveQueryExecSuite
   }
 
   test("Join partitioned tables DPP fallback") {
-    assumeSpark301orLater
-
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1") // force shuffle exchange
@@ -177,33 +175,53 @@ class AdaptiveQueryExecSuite
       spark.sql("INSERT INTO TABLE t1 SELECT a, b FROM testData").collect()
       spark.sql("INSERT INTO TABLE t2 SELECT a, b FROM testData").collect()
 
-      val df = spark.sql(
-        "SELECT t1.a, t2.b " +
+      // This test checks that inputs to the SHJ are coalesced. We need to check both sides
+      // if we are not optimizing the build-side coalescing logic, and only the stream side
+      // if the optimization is enabled (default).
+      // See `RapidsConf.SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE` for more information.
+      Seq(true, false).foreach { shouldOptimizeHashJoinShuffle =>
+        spark.conf.set(
+          RapidsConf.SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE.key,
+          shouldOptimizeHashJoinShuffle.toString)
+        val df = spark.sql(
+          "SELECT t1.a, t2.b " +
             "FROM t1 " +
             "JOIN t2 " +
             "ON t1.a = t2.a " +
             "WHERE t2.a = 5" // filter on partition key to force dynamic partition pruning
-      )
-      df.collect()
+        )
+        df.collect()
 
-      val isAdaptiveQuery = df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec]
-      if (cmpSparkVersion(3, 2, 0) < 0) {
-        // assert that DPP did cause this to run as a non-AQE plan prior to Spark 3.2.0
-        assert(!isAdaptiveQuery)
-      } else {
-        // In 3.2.0 AQE works with DPP
-        assert(isAdaptiveQuery)
+        val isAdaptiveQuery = df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec]
+        if (cmpSparkVersion(3, 2, 0) < 0) {
+          // assert that DPP did cause this to run as a non-AQE plan prior to Spark 3.2.0
+          assert(!isAdaptiveQuery)
+        } else {
+          // In 3.2.0 AQE works with DPP
+          assert(isAdaptiveQuery)
+        }
+
+        val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
+          _.isInstanceOf[GpuShuffledHashJoinExec]).get
+          .asInstanceOf[GpuShuffledHashJoinExec]
+        assert(shj.children.length == 2)
+        val childrenToCheck = if (shouldOptimizeHashJoinShuffle) {
+          // assert that the stream side of SHJ is coalesced
+          shj.buildSide match {
+            case GpuBuildLeft => Seq(shj.right)
+            case GpuBuildRight => Seq(shj.left)
+          }
+        } else {
+          // assert that both the build and stream side of SHJ are coalesced
+          // if we are not optimizing the build side shuffle
+          shj.children
+        }
+        assert(childrenToCheck.forall {
+          case GpuShuffleCoalesceExec(_, _) => true
+          case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
+          case _ => false
+        })
       }
-
-      // assert that both inputs to the SHJ are coalesced
-      val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
-        _.isInstanceOf[GpuShuffledHashJoinExec]).get
-      assert(shj.children.length == 2)
-      assert(shj.children.forall {
-        case GpuShuffleCoalesceExec(_, _) => true
-        case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
-        case _ => false
-      })
 
     }, conf)
   }
@@ -330,7 +348,7 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[AdaptiveSparkPlanExec])
           .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      if (ShimLoader.getSparkShims.supportsColumnarAdaptivePlans) {
+      if (SparkShimImpl.supportsColumnarAdaptivePlans) {
         // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
         // support columnar adaptive plans
         assert(adaptiveSparkPlanExec
@@ -413,7 +431,6 @@ class AdaptiveQueryExecSuite
 
   test("Exchange reuse") {
     logError("Exchange reuse")
-    assumeSpark301orLater
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -446,7 +463,6 @@ class AdaptiveQueryExecSuite
 
   test("Change merge join to broadcast join without local shuffle reader") {
     logError("Change merge join to broadcast join without local shuffle reader")
-    assumeSpark301orLater
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -477,7 +493,6 @@ class AdaptiveQueryExecSuite
 
   test("Verify the reader is LocalShuffleReaderExec") {
     logError("Verify the reader is LocalShuffleReaderExec")
-    assumeSpark301orLater
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -597,8 +612,6 @@ class AdaptiveQueryExecSuite
   }
 
   def skewJoinTest(fun: SparkSession => Unit) {
-    assumeSpark301orLater
-
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")

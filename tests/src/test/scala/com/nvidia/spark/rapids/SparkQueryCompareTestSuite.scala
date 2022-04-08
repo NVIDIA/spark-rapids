@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.scalatest.{Assertion, FunSuite}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
-
-import org.scalatest.{Assertion, FunSuite}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -150,13 +150,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def enableCsvConf(): SparkConf = {
     new SparkConf()
-        .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_BYTES.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_SHORTS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_LONGS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
-        .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
+      .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
+      .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
+      .set(RapidsConf.ENABLE_READ_CSV_DECIMALS.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_FLOATS.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_DOUBLES.key, "true")
+      .set(RapidsConf.ENABLE_READ_JSON_DECIMALS.key, "true")
   }
 
   //  @see java.lang.Float#intBitsToFloat
@@ -1747,6 +1746,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
+  def timestampsAsDatesCsvDf= {
+    fromCsvDf("timestamps.csv", StructType(Array(
+      StructField("dates", DateType, false),
+      StructField("ints", IntegerType, false)
+    )))(_)
+  }
+
   private def setNullableStateForAllColumns(df: DataFrame, nullable: Boolean) : DataFrame = {
     // get schema
     val schema = df.schema
@@ -1822,13 +1828,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
-  /** most of the AQE tests requires Spark 3.0.1 or later */
-  def assumeSpark301orLater: Assertion =
-    assume(VersionUtils.isSpark301OrLater, "Spark version not 3.0.1+")
-
-  def assumeSpark311orLater: Assertion =
-    assume(VersionUtils.isSpark311OrLater, "Spark version not 3.1.1+")
-
   def assumePriorToSpark320: Assertion =
     assume(!VersionUtils.isSpark320OrLater, "Spark version not before 3.2.0")
 
@@ -1836,7 +1835,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     assume(VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val sparkShimVersion = SparkShimImpl.getSparkShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)

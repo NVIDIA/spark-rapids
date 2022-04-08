@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ name: auto-merge HEAD to BASE
 on:
   pull_request_target:
     branches:
-    - branch-22.02
+    - branch-22.04
     types: [closed]
 
 jobs:
@@ -29,13 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          ref: branch-22.02 # force to fetch from latest upstream instead of PR ref
+          ref: branch-22.04 # force to fetch from latest upstream instead of PR ref
 
       - name: auto-merge job
         uses: ./.github/workflows/auto-merge
         env:
           OWNER: NVIDIA
           REPO_NAME: spark-rapids
-          HEAD: branch-22.02
-          BASE: branch-22.04
+          HEAD: branch-22.04
+          BASE: branch-22.06
           AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }} # use to merge PR
