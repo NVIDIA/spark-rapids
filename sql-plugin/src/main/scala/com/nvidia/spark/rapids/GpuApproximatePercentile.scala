@@ -21,6 +21,7 @@ import ai.rapids.cudf.{DType, GroupByAggregation, ReductionAggregation}
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.shims.ShimExpression
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
@@ -64,9 +65,12 @@ case class GpuApproximatePercentile (
   // Attributes of fields in the aggregation buffer.
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
-  // initialValues is only used in reduction and this is not currently supported
-  override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException(
-    "approx_percentile does not support reduction")
+  override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(
+    InternalRow(
+      ArrayData.toArrayData(Array.empty), // centroids (mean, weight)
+      0d, // min
+      0d), // max
+    CudfTDigest.dataType))
 
   // the update expression will create a t-digest (List[Struct[Double, Double])
   override lazy val updateAggregates: Seq[CudfAggregate] =
