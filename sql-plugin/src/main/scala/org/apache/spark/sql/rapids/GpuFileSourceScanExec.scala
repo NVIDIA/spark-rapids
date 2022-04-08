@@ -579,9 +579,12 @@ case class GpuFileSourceScanExec(
           rapidsConf,
           allMetrics,
           queryUsesInputFile)
-      case _ =>
-        // never reach here
-        throw new RuntimeException(s"File format ${relation.fileFormat} is not supported yet")
+      case f =>
+        ExternalSource.createMultiFileFactoryForGpuFileSourceScanExec(
+          f,
+          broadcastedHadoopConf,
+          pushedDownFilters.toArray,
+          this)
     }
   }
 

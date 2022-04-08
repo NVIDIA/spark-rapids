@@ -30,16 +30,19 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.avro.enabled': 'true',
     'spark.rapids.sql.format.avro.read.enabled': 'true'}
 
+rapids_reader_types = ['PERFILE', 'MULTITHREADED']
 
 @pytest.mark.parametrize('gen', support_gens)
 @pytest.mark.parametrize('v1_enabled_list', ["avro", ""])
-def test_basic_read(spark_tmp_path, gen, v1_enabled_list):
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_basic_read(spark_tmp_path, gen, v1_enabled_list, reader_type):
     data_path = spark_tmp_path + '/AVRO_DATA'
     with_cpu_session(
         lambda spark: unary_op_df(spark, gen).write.format("avro").save(data_path)
     )
 
     all_confs = copy_and_update(_enable_all_types_conf, {
+        'spark.rapids.sql.format.avro.reader.type': reader_type,
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.format("avro").load(data_path),
@@ -47,7 +50,8 @@ def test_basic_read(spark_tmp_path, gen, v1_enabled_list):
 
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "avro"])
-def test_avro_simple_partitioned_read(spark_tmp_path, v1_enabled_list):
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_avro_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(support_gens)]
     first_data_path = spark_tmp_path + '/AVRO_DATA/key=0/key2=20'
     with_cpu_session(
@@ -62,6 +66,7 @@ def test_avro_simple_partitioned_read(spark_tmp_path, v1_enabled_list):
     data_path = spark_tmp_path + '/AVRO_DATA'
 
     all_confs = copy_and_update(_enable_all_types_conf, {
+        'spark.rapids.sql.format.avro.reader.type': reader_type,
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.format("avro").load(data_path),
@@ -69,7 +74,8 @@ def test_avro_simple_partitioned_read(spark_tmp_path, v1_enabled_list):
 
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "avro"])
-def test_avro_input_meta(spark_tmp_path, v1_enabled_list):
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_avro_input_meta(spark_tmp_path, v1_enabled_list, reader_type):
     first_data_path = spark_tmp_path + '/AVRO_DATA/key=0'
     with_cpu_session(
         lambda spark: unary_op_df(spark, long_gen).write.format("avro").save(first_data_path))
@@ -79,6 +85,7 @@ def test_avro_input_meta(spark_tmp_path, v1_enabled_list):
     data_path = spark_tmp_path + '/AVRO_DATA'
 
     all_confs = copy_and_update(_enable_all_types_conf, {
+        'spark.rapids.sql.format.avro.reader.type': reader_type,
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.format("avro").load(data_path)

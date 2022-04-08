@@ -20,12 +20,14 @@ import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.avro.AvroFileFormat
-import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
+import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 object ExternalSource {
 
@@ -41,17 +43,15 @@ object ExternalSource {
   }
 
   def tagSupportForGpuFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    val format = meta.wrapped.relation.fileFormat
     if (hasSparkAvroJar) {
-      meta.wrapped.relation.fileFormat match {
+       format match {
         case _: AvroFileFormat => GpuReadAvroFileFormat.tagSupport(meta)
         case f =>
           meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
       }
     } else {
-      meta.wrapped.relation.fileFormat match {
-        case f =>
-          meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
-      }
+      meta.willNotWorkOnGpu(s"unsupported file format: ${format.getClass.getCanonicalName}")
     }
   }
 
@@ -63,11 +63,37 @@ object ExternalSource {
           throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
       }
     } else {
-      format match {
-        case f =>
-          throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
-      }
+      throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }
+  }
+
+  def createMultiFileFactoryForGpuFileSourceScanExec(
+      format: FileFormat,
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    if (hasSparkAvroJar) {
+      format match {
+        case _: AvroFileFormat =>
+          GpuAvroMultiFilePartitionReaderFactory(
+            fileScan.relation.sparkSession.sessionState.conf,
+            broadcastedConf,
+            fileScan.relation.dataSchema,
+            fileScan.requiredSchema,
+            fileScan.relation.partitionSchema,
+            pushedFilters,
+            fileScan.rapidsConf,
+            new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
+            fileScan.allMetrics,
+            fileScan.queryUsesInputFile)
+        case _ =>
+          // never reach here
+          throw new RuntimeException(s"File format $format is not supported yet")
+      }
+    } else {
+      throw new RuntimeException(s"File format $format is not supported yet")
+    }
+
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -85,6 +111,7 @@ object ExternalSource {
                 a.readDataSchema,
                 a.readPartitionSchema,
                 a.options,
+                a.pushedFilters,
                 conf,
                 a.partitionFilters,
                 a.dataFilters)

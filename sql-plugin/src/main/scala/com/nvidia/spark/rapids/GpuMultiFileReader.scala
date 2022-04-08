@@ -114,6 +114,24 @@ object MultiFileThreadPoolUtil {
   }
 }
 
+/** A factory class to get a thread pool */
+class MultiFileThreadPoolFactory {
+  private var threadPool: Option[ThreadPoolExecutor] = None
+
+  private def initThreadPool(
+      threadTag: String,
+      numThreads: Int): ThreadPoolExecutor = synchronized {
+    if (threadPool.isEmpty) {
+      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
+    }
+    threadPool.get
+  }
+
+  def getThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
+    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
+  }
+}
+
 /**
  * The base multi-file partition reader factory to create the cloud reading or
  * coalescing reading respectively.
