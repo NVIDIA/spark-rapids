@@ -19,8 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, \
-    is_before_spark_330, is_databricks91_or_later, is_spark_330_or_later
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later
 import pyspark.sql.functions as f
 from datetime import timedelta
 
@@ -781,7 +780,6 @@ div_overflow_exprs = [
 # Only run this test for Spark v3.2.0 and later to verify IntegralDivide will
 # throw exceptions for overflow when ANSI mode is enabled.
 @pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
-@pytest.mark.skipif(is_spark_330_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/5182')
 @pytest.mark.parametrize('expr', div_overflow_exprs)
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
@@ -790,7 +788,7 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
-            error_message='java.lang.ArithmeticException: Overflow in integral divide')
+            error_message='ArithmeticException: Overflow in integral divide')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_div_overflow_df(spark, expr),
