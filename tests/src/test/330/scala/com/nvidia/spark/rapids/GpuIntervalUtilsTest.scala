@@ -24,7 +24,7 @@ import org.apache.spark.sql.types.{DayTimeIntervalType => DT}
 
 class GpuIntervalUtilsTest extends FunSuite {
 
-  test("testToDayTimeIntervalString") {
+  test("testToDayTimeIntervalString 1") {
     val testData = Array(
       (0L, "INTERVAL '0 00:00:00' DAY TO SECOND"),
       (1L, "INTERVAL '0 00:00:00.000001' DAY TO SECOND"),
@@ -38,6 +38,43 @@ class GpuIntervalUtilsTest extends FunSuite {
 
     // cast dt to string
     val actual = GpuIntervalUtils.toDayTimeIntervalString(micros, DT.DAY, DT.SECOND)
+    val expected = ColumnVector.fromStrings(testData.map(e => e._2): _*)
+
+    // assert
+    CudfTestHelper.assertColumnsAreEqual(expected, actual)
+  }
+
+  test("testToDayTimeIntervalString 2") {
+    val testData = Array(
+      (1790552632L * 3600L * 1000000L + 5, "INTERVAL '1790552632' HOUR"),
+      (-2350919938L * 3600L * 1000000L - 100 , "INTERVAL '-2350919938' HOUR"),
+      (0L, "INTERVAL '00' HOUR")
+    )
+
+    val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
+
+    // cast dt to string
+    val actual = GpuIntervalUtils.toDayTimeIntervalString(micros, DT.HOUR, DT.HOUR)
+    val expected = ColumnVector.fromStrings(testData.map(e => e._2): _*)
+
+    // assert
+    CudfTestHelper.assertColumnsAreEqual(expected, actual)
+  }
+
+  test("testToDayTimeIntervalString 3") {
+    val testData = Array(
+      (5L * 1000000L, "INTERVAL '05' SECOND"),
+      (-2350919938L * 1000000L, "INTERVAL '-2350919938' SECOND"),
+      (19938L * 1000000L, "INTERVAL '19938' SECOND"),
+      (0L, "INTERVAL '00' SECOND"),
+      (Long.MinValue, "INTERVAL '-9223372036854.775808' SECOND"),
+      (Long.MaxValue, "INTERVAL '9223372036854.775807' SECOND")
+    )
+
+    val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
+
+    // cast dt to string
+    val actual = GpuIntervalUtils.toDayTimeIntervalString(micros, DT.SECOND, DT.SECOND)
     val expected = ColumnVector.fromStrings(testData.map(e => e._2): _*)
 
     // assert

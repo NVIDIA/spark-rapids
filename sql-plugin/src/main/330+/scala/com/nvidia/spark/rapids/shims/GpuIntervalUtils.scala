@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import java.math.BigInteger
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 
 import scala.collection.mutable.ArrayBuffer
@@ -603,38 +604,38 @@ object GpuIntervalUtils extends Arm {
           }
         }
 
-        // calculate abs
+        // calculate abs, abs(Long.MinValue) will overflow, handle in the last as special case
         resetRest(restHolder, restHolder.head.abs())
 
         startField match {
           case DT.DAY =>
             // start day part
-            parts += devResult(restHolder.head, MICROS_PER_DAY)
+            parts += divResult(restHolder.head, MICROS_PER_DAY)
             resetRest(restHolder, getRest(restHolder.head, MICROS_PER_DAY))
           case DT.HOUR =>
             // start hour part
-            parts += devResult(restHolder.head, MICROS_PER_HOUR)
+            parts += divResultWithPadding(restHolder.head, MICROS_PER_HOUR)
             resetRest(restHolder, getRest(restHolder.head, MICROS_PER_HOUR))
           case DT.MINUTE =>
             // start minute part
-            parts += devResult(restHolder.head, MICROS_PER_MINUTE)
+            parts += divResultWithPadding(restHolder.head, MICROS_PER_MINUTE)
             resetRest(restHolder, getRest(restHolder.head, MICROS_PER_MINUTE))
           case DT.SECOND =>
             // start second part
-            parts += getDecimalPart(restHolder.head)
+            addDecimalParts(restHolder.head, parts)
         }
 
         if (startField < DT.HOUR && DT.HOUR <= endField) {
           // if hour has precedent part
           parts += getConstStringVector(" ", numRows)
-          parts += devResultWithPadding(restHolder.head, MICROS_PER_HOUR)
+          parts += divResultWithPadding(restHolder.head, MICROS_PER_HOUR)
           resetRest(restHolder, getRest(restHolder.head, MICROS_PER_HOUR))
         }
 
         if (startField < DT.MINUTE && DT.MINUTE <= endField) {
           // if minute has precedent part
           parts += getConstStringVector(":", numRows)
-          parts += devResultWithPadding(restHolder.head, MICROS_PER_MINUTE)
+          parts += divResultWithPadding(restHolder.head, MICROS_PER_MINUTE)
           resetRest(restHolder, getRest(restHolder.head, MICROS_PER_MINUTE))
         }
 
@@ -642,20 +643,8 @@ object GpuIntervalUtils extends Arm {
           // if second has precedent part
           parts += getConstStringVector(":", numRows)
 
-          // generate padding zero part
-          // if second less than 10, should pad zero. e.g.: `9.500000` => `09.500000`
-          withResource(Scalar.fromString("0")) { padZero =>
-            withResource(Scalar.fromString("")) { empty =>
-              parts += withResource(Scalar.fromLong(10 * MICROS_PER_SECOND)) { tenSeconds =>
-                withResource(restHolder.head.lessThan(tenSeconds)) { lessThan10 =>
-                  lessThan10.ifElse(padZero, empty)
-                }
-              }
-            }
-          }
-
-          // decimal part
-          parts += getDecimalPart(restHolder.head)
+          // start second part
+          addDecimalParts(restHolder.head, parts)
         }
 
         // trailing part, e.g.:  ' DAY TO SECOND
@@ -669,7 +658,29 @@ object GpuIntervalUtils extends Arm {
     // special handling for Long.MinValue
     // if micros are Long.MinValue, directly replace with const string
     withResource(retCv) { ret =>
-      val minStr = s"INTERVAL '-106751991 04:00:54.775808$postfixStr"
+      val baseStr = "-106751991 04:00:54.775808000"
+      val firstStr = startField match {
+        case DT.DAY => s"-$MAX_DAY"
+        case DT.HOUR => s"-$MAX_HOUR"
+        case DT.MINUTE => s"-$MAX_MINUTE"
+        case DT.SECOND => s"-$MAX_SECOND.775808"
+      }
+      val followingStr = if (startField == endField) {
+        ""
+      } else {
+        val substrStart = startField match {
+          case DT.DAY => 10
+          case DT.HOUR => 13
+          case DT.MINUTE => 16
+        }
+        val substrEnd = endField match {
+          case DT.HOUR => 13
+          case DT.MINUTE => 16
+          case DT.SECOND => 26
+        }
+        baseStr.substring(substrStart, substrEnd)
+      }
+      val minStr = s"$prefixStr$firstStr$followingStr$postfixStr"
       withResource(Scalar.fromString(minStr)) { minStrScalar =>
         withResource(Scalar.fromLong(Long.MinValue)) { minS =>
           withResource(micros.equalTo(minS)) { eq =>
@@ -683,7 +694,7 @@ object GpuIntervalUtils extends Arm {
   /**
    * return (micros / div).toString
    */
-  private def devResult(micros: ColumnVector, div: Long): ColumnVector = {
+  private def divResult(micros: ColumnVector, div: Long): ColumnVector = {
     withResource(Scalar.fromLong(div)) { divS =>
       withResource(micros.div(divS)) { ret =>
         ret.castTo(DType.STRING)
@@ -694,8 +705,8 @@ object GpuIntervalUtils extends Arm {
   /**
    * return (micros / div).toString with padding zero
    */
-  private def devResultWithPadding(micros: ColumnVector, div: Long): ColumnVector = {
-    withResource(devResult(micros, div)) { s =>
+  private def divResultWithPadding(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(divResult(micros, div)) { s =>
       // pad 0 if value < 10, e.g.:  9 => 09
       s.zfill(2)
     }
@@ -725,19 +736,32 @@ object GpuIntervalUtils extends Arm {
   private def resetRest(holder: ArrayBuffer[ColumnVector], newCv: ColumnVector): Unit = {
     assert(holder.size == 1)
     val old = holder.remove(0)
-    old.close()
     holder += newCv
+    old.close()
   }
 
   /**
    * Generate second decimal part with strip trailing `0` and `.`
    */
-  private def getDecimalPart(rest: ColumnVector) = {
+  private def addDecimalParts(rest: ColumnVector, parts: ArrayBuffer[ColumnView]) = {
+    // if second less than 10, should pad zero. e.g.: `9.500000` => `09.500000`
+    withResource(Scalar.fromString("0")) { padZero =>
+      withResource(Scalar.fromString("")) { empty =>
+        parts += withResource(Scalar.fromLong(10 * MICROS_PER_SECOND)) { tenSeconds =>
+          withResource(rest.lessThan(tenSeconds)) { lessThan10 =>
+            lessThan10.ifElse(padZero, empty)
+          }
+        }
+      }
+    }
+
     // get the second strings with fractional microseconds
     // the values always have dot and 6 fractional digits
-    val decimalType = DType.create(DType.DTypeEnum.DECIMAL64, -6)
+    val decimalType = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+    // use big int to generate Decimal128 decimal scalar
+    val microsPerSecondBigInt = new BigInteger(MICROS_PER_SECOND.toString)
     val decimalStrCv = withResource(rest.castTo(decimalType)) { decimal =>
-      withResource(Scalar.fromDecimal(0, MICROS_PER_SECOND)) { microsPerSecond =>
+      withResource(Scalar.fromDecimal(0, microsPerSecondBigInt)) { microsPerSecond =>
         withResource(decimal.div(microsPerSecond)) { r =>
           r.castTo(DType.STRING)
         }
@@ -753,7 +777,7 @@ object GpuIntervalUtils extends Arm {
     }
 
     // strip trailing `.` for spacial case:  0. => 0
-    withResource(stripedCv) { striped =>
+    parts += withResource(stripedCv) { striped =>
       withResource(Scalar.fromString(".")) { dot =>
         striped.rstrip(dot)
       }
