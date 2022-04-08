@@ -109,12 +109,17 @@ PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
 # to import the right pandas from conda instead of spark binary path.
 export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
 
-IS_SPARK_311_OR_LATER=0
-[[ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
+
+echo "----------------------------START TEST------------------------------------"
+pushd $RAPIDS_INT_TESTS_HOME
+
+export TEST_PARALLEL=0  # disable spark local parallel in run_pyspark_from_build.sh
+export TEST_TYPE="nightly"
+export LOCAL_JAR_PATH=$ARTF_ROOT
+# test collect-only in advance to terminate earlier if ENV issue
+./run_pyspark_from_build.sh --collect-only -qqq
 
 export SPARK_TASK_MAXFAILURES=1
-[[ "$IS_SPARK_311_OR_LATER" -eq "0" ]] && SPARK_TASK_MAXFAILURES=4
-
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 # enable worker cleanup to avoid "out of space" issue
 # if failed, we abort the test instantly, so the failed executor log should still be left there for debugging
@@ -125,9 +130,6 @@ stop-master.sh
 start-master.sh
 start-slave.sh spark://$HOSTNAME:7077
 jps
-
-echo "----------------------------START TEST------------------------------------"
-pushd $RAPIDS_INT_TESTS_HOME
 
 export BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
 --master spark://$HOSTNAME:7077 \
@@ -156,9 +158,6 @@ export CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
 --conf spark.pyspark.python=/opt/conda/bin/python \
 --py-files ${RAPIDS_PLUGIN_JAR}"
 
-export TEST_PARALLEL=0  # disable spark local parallel in run_pyspark_from_build.sh
-export TEST_TYPE="nightly"
-export LOCAL_JAR_PATH=$ARTF_ROOT
 export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
@@ -263,17 +262,15 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
     run_test_not_parallel all
   fi
 
-  if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-    if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-      cache_test_cases=$(get_cases_by_tags "" "-k cache_test")
-      # hardcode parallelism as 5
-      export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
-      --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
-      --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
-      parallel --group --halt "now,fail=1" -j5 run_test_not_parallel ::: ${cache_test_cases}
-    else
-      run_test_not_parallel cache_serializer
-    fi
+  if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
+    cache_test_cases=$(get_cases_by_tags "" "-k cache_test")
+    # hardcode parallelism as 5
+    export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
+    --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
+    --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
+    parallel --group --halt "now,fail=1" -j5 run_test_not_parallel ::: ${cache_test_cases}
+  else
+    run_test_not_parallel cache_serializer
   fi
 fi
 
