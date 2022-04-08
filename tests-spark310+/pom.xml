@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.04.0-SNAPSHOT</version>
+        <version>22.04.0</version>
     </parent>
     <artifactId>rapids-4-spark-tests-next-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests For 3.1.X+</name>
     <description>RAPIDS plugin for Apache Spark integration tests For 3.1.X+</description>
-    <version>22.04.0-SNAPSHOT</version>
+    <version>22.04.0</version>
 
     <dependencies>
         <dependency>
