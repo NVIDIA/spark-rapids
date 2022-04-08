@@ -54,7 +54,7 @@ import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
@@ -916,15 +916,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def replacePartitionDirectoryFiles(partitionDir: PartitionDirectory,
       replaceFunc: Path => Path): Seq[Path] = {
     partitionDir.files.map(f => replaceFunc(f.getPath))
-  }
-
-  /**
-   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
-   * affecting the unapply method signature
-   */
-  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
   }
 
   /** dropped by SPARK-34234 */
