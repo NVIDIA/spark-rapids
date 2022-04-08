@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode, SparkShimImpl}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
@@ -32,6 +32,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
@@ -93,12 +94,12 @@ object HostColumnarToGpu extends Logging {
     }
 
     val nullCount = valVector.getNullCount()
-    val dataBuf = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowDataBuf(valVector))
-    val validity = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowValidityBuf(valVector))
+    val dataBuf = getBufferAndAddReference(SparkShimImpl.getArrowDataBuf(valVector))
+    val validity = getBufferAndAddReference(SparkShimImpl.getArrowValidityBuf(valVector))
     // this is a bit ugly, not all Arrow types have the offsets buffer
     var offsets: ByteBuffer = null
     try {
-      offsets = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector))
+      offsets = getBufferAndAddReference(SparkShimImpl.getArrowOffsetsBuf(valVector))
     } catch {
       case _: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer
@@ -107,155 +108,51 @@ object HostColumnarToGpu extends Logging {
     referenceManagers.result().asJava
   }
 
-  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
-      nullable: Boolean, rows: Int): Unit = {
-    (cv.dataType(), nullable) match {
-      case (BooleanType, true) if cv.isInstanceOf[ArrowColumnVector] =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getBoolean(i))
-          }
-        }
-      case (BooleanType, false) if cv.isInstanceOf[ArrowColumnVector] =>
-        for (i <- 0 until rows) {
-          b.append(cv.getBoolean(i))
-        }
-      case (ByteType | BooleanType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getByte(i))
-          }
-        }
-      case (ByteType | BooleanType, false) =>
-        for (i <- 0 until rows) {
-          b.append(cv.getByte(i))
-        }
-      case (ShortType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getShort(i))
-          }
-        }
-      case (ShortType, false) =>
-        for (i <- 0 until rows) {
-          b.append(cv.getShort(i))
-        }
-      case (IntegerType | DateType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getInt(i))
-          }
-        }
-      case (IntegerType | DateType, false) =>
-        for (i <- 0 until rows) {
-          b.append(cv.getInt(i))
-        }
-      case (LongType | TimestampType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getLong(i))
-          }
-        }
-      case (LongType | TimestampType, false) =>
-        for (i <- 0 until rows) {
-          b.append(cv.getLong(i))
-        }
-      case (FloatType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getFloat(i))
-          }
-        }
-      case (FloatType, false) =>
-        for (i <- 0 until rows) {
-          b.append(cv.getFloat(i))
-        }
-      case (DoubleType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.append(cv.getDouble(i))
-          }
-        }
-      case (DoubleType, false) =>
-        for (i <- 0 until rows) {
-          b.append(cv.getDouble(i))
-        }
-      case (StringType, true) =>
-        for (i <- 0 until rows) {
-          if (cv.isNullAt(i)) {
-            b.appendNull()
-          } else {
-            b.appendUTF8String(cv.getUTF8String(i).getBytes)
-          }
-        }
-      case (StringType, false) =>
-        for (i <- 0 until rows) {
-          b.appendUTF8String(cv.getUTF8String(i).getBytes)
-        }
-      case (NullType, true) =>
-        for (_ <- 0 until rows) {
-          b.appendNull()
-        }
-      case (dt: DecimalType, nullable) =>
-        if (nullable) {
-          if (DecimalType.is32BitDecimalType(dt)) {
-            for (i <- 0 until rows) {
-              if (cv.isNullAt(i)) {
-                b.appendNull()
-              } else {
-                // The precision here matters for cpu column vectors (such as OnHeapColumnVector).
-                b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
-              }
+  def columnarCopy(cv: ColumnVector,
+      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = {
+    cv.dataType() match {
+      case NullType =>
+        ColumnarCopyHelper.nullCopy(b, rows)
+      case BooleanType if cv.isInstanceOf[ArrowColumnVector] =>
+        ColumnarCopyHelper.booleanCopy(cv, b, rows)
+      case ByteType | BooleanType =>
+        ColumnarCopyHelper.byteCopy(cv, b, rows)
+      case ShortType =>
+        ColumnarCopyHelper.shortCopy(cv, b, rows)
+      case IntegerType | DateType =>
+        ColumnarCopyHelper.intCopy(cv, b, rows)
+      case LongType | TimestampType =>
+        ColumnarCopyHelper.longCopy(cv, b, rows)
+      case FloatType =>
+        ColumnarCopyHelper.floatCopy(cv, b, rows)
+      case DoubleType =>
+        ColumnarCopyHelper.doubleCopy(cv, b, rows)
+      case StringType =>
+        ColumnarCopyHelper.stringCopy(cv, b, rows)
+      case dt: DecimalType =>
+        cv match {
+          case wcv: WritableColumnVector =>
+            if (DecimalType.is32BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal32Copy(wcv, b, rows)
+            } else if (DecimalType.is64BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal64Copy(wcv, b, rows)
+            } else {
+              ColumnarCopyHelper.decimal128Copy(wcv, b, rows)
             }
-          } else if (DecimalType.is64BitDecimalType(dt)) {
-            for (i <- 0 until rows) {
-              if (cv.isNullAt(i)) {
-                b.appendNull()
-              } else {
-                b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
-              }
+          case _ =>
+            if (DecimalType.is32BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal32Copy(cv, b, rows, dt.precision, dt.scale)
+            } else if (DecimalType.is64BitDecimalType(dt)) {
+              ColumnarCopyHelper.decimal64Copy(cv, b, rows, dt.precision, dt.scale)
+            } else {
+              ColumnarCopyHelper.decimal128Copy(cv, b, rows, dt.precision, dt.scale)
             }
-          } else {
-            for (i <- 0 until rows) {
-              if (cv.isNullAt(i)) {
-                b.appendNull()
-              } else {
-                b.append(cv.getDecimal(i, dt.precision, dt.scale).toJavaBigDecimal)
-              }
-            }
-          }
-        } else {
-          if (DecimalType.is32BitDecimalType(dt)) {
-            for (i <- 0 until rows) {
-              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
-            }
-          } else if (DecimalType.is64BitDecimalType(dt)) {
-            for (i <- 0 until rows) {
-              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
-            }
-          } else {
-            for (i <- 0 until rows) {
-              b.append(cv.getDecimal(i, dt.precision, dt.scale).toJavaBigDecimal)
-            }
-          }
         }
-      case (t, _) =>
-        throw new UnsupportedOperationException(s"Converting to GPU for $t is not currently " +
-          s"supported")
+      case other if GpuTypeShims.isColumnarCopySupportedForType(other) =>
+        GpuTypeShims.columnarCopy(cv, b, rows)
+      case t =>
+        throw new UnsupportedOperationException(
+          s"Converting to GPU for $t is not currently supported")
     }
   }
 }
@@ -274,6 +171,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputBatches: GpuMetric,
     streamTime: GpuMetric,
     concatTime: GpuMetric,
+    copyBufTime: GpuMetric,
     semTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
@@ -343,11 +241,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
-    val rows = batch.numRows()
-    for (i <- 0 until batch.numCols()) {
-      batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
+    withResource(new MetricRange(copyBufTime)) { _ =>
+      val rows = batch.numRows()
+      for (i <- 0 until batch.numCols()) {
+        batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
+      }
+      totalRows += rows
     }
-    totalRows += rows
   }
 
   override def getBatchDataSize(batch: ColumnarBatch): Long = {
@@ -407,8 +307,9 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
+    COPY_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_BUFFER_TIME),
     PEAK_DEVICE_MEMORY -> createMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  ) ++ semaphoreMetrics
+    ) ++ semaphoreMetrics
 
   override def output: Seq[Attribute] = child.output
 
@@ -437,6 +338,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
+    val copyBufTime = gpuLongMetric(COPY_BUFFER_TIME)
     val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
@@ -449,8 +351,9 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val confUseArrow = new RapidsConf(child.conf).useArrowCopyOptimization
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, streamTime, concatTime,
-        semTime, opTime, peakDevMemory, "HostColumnarToGpu", confUseArrow)
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+        streamTime, concatTime, copyBufTime, semTime, opTime,
+        peakDevMemory, "HostColumnarToGpu", confUseArrow)
     }
   }
 }

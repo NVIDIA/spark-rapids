@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,5 +67,22 @@ object ProfileUtils {
 
   def truncateFailureStr(failureStr: String): String = {
     failureStr.substring(0, Math.min(failureStr.size, 100))
+  }
+
+  // if a string contains what we are going to use for a delimiter, replace
+  // it with something else
+  def replaceDelimiter(str: String, delimiter: String): String = {
+    if (str != null && str.contains(delimiter)) {
+      val replaceWith = if (delimiter.equals(",")) {
+        ";"
+      } else if (delimiter.equals(";")) {
+        ":"
+      } else {
+        ";"
+      }
+      str.replace(delimiter, replaceWith)
+    } else {
+      str
+    }
   }
 }

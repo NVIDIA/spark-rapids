@@ -106,7 +106,7 @@ final class CastExprMeta[INPUT <: Cast](
         // NOOP for anything prior to 3.2.0
       case (_: StringType, dt:DecimalType) =>
         // Spark 2.x: removed check for
-        // !ShimLoader.getSparkShims.isCastingStringToNegDecimalScaleSupported
+        // !SparkShimImpl.isCastingStringToNegDecimalScaleSupported
         // this dealt with handling a bug fix that is only in newer versions of Spark
         // (https://issues.apache.org/jira/browse/SPARK-37451)
         // Since we don't know what version of Spark 3 they will be using
@@ -133,6 +133,10 @@ final class CastExprMeta[INPUT <: Cast](
       case (MapType(keyFrom, valueFrom, _), MapType(keyTo, valueTo, _)) =>
         recursiveTagExprForGpuCheck(keyFrom, keyTo, depth + 1)
         recursiveTagExprForGpuCheck(valueFrom, valueTo, depth + 1)
+
+      case (MapType(keyFrom, valueFrom, _), StringType) =>
+        recursiveTagExprForGpuCheck(keyFrom, StringType, depth + 1)
+        recursiveTagExprForGpuCheck(valueFrom, StringType, depth + 1)
 
       case _ =>
     }

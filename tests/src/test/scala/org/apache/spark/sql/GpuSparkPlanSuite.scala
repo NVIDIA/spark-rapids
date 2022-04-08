@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql
 
-import com.nvidia.spark.rapids.{ShimLoader, SparkSessionHolder}
+import com.nvidia.spark.rapids.SparkSessionHolder
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -31,7 +32,7 @@ class GpuSparkPlanSuite extends FunSuite {
       .set("spark.rapids.sql.enabled", "true")
 
     SparkSessionHolder.withSparkSession(conf, spark => {
-      val defaultSlice = ShimLoader.getSparkShims.leafNodeDefaultParallelism(spark)
+      val defaultSlice = SparkShimImpl.leafNodeDefaultParallelism(spark)
       val ds = new Dataset(spark, Range(0, 20, 1, None), Encoders.LONG)
       val partitions = ds.rdd.getNumPartitions
       assert(partitions == defaultSlice)

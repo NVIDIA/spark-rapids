@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuExec, ShimLoader}
+import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 
@@ -41,7 +42,7 @@ trait GpuDataSourceScanExec extends LeafExecNode with GpuExec {
   // Metadata that describes more details of this scan.
   protected def metadata: Map[String, String]
 
-  protected val maxMetadataValueLength = ShimLoader.getSparkShims
+  protected val maxMetadataValueLength = SparkShimImpl
     .getFileSourceMaxMetadataValueLength(sparkSession.sessionState.conf)
 
   override def simpleString(maxFields: Int): String = {

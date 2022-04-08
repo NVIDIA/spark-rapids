@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -29,7 +29,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.csv.CSVOptions
+import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
@@ -39,6 +39,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -84,31 +85,6 @@ trait ScanWithMetrics {
 }
 
 object GpuCSVScan {
-  private val supportedDateFormats = Set(
-    "yyyy-MM-dd",
-    "yyyy/MM/dd",
-    "yyyy-MM",
-    "yyyy/MM",
-    "MM-yyyy",
-    "MM/yyyy",
-    "MM-dd-yyyy",
-    "MM/dd/yyyy"
-    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
-    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
-    // and would need to coordinate with the timestamp format too, because both cannot
-    // coexist
-  )
-
-  private val supportedTsPortionFormats = Set(
-    "HH:mm:ss.SSSXXX",
-    "HH:mm:ss[.SSS][XXX]",
-    "HH:mm",
-    "HH:mm:ss",
-    "HH:mm[:ss]",
-    "HH:mm:ss.SSS",
-    "HH:mm:ss[.SSS]"
-  )
-
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
@@ -210,75 +186,44 @@ object GpuCSVScan {
 
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
-    if (readSchema.map(_.dataType).contains(DateType)) {
-      if (!meta.conf.isCsvDateReadEnabled) {
-        meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading dates. " +
-            s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DATES} to true.")
-      }
-      ShimLoader.getSparkShims.dateFormatInRead(parsedOptions).foreach { dateFormat =>
-        if (!supportedDateFormats.contains(dateFormat)) {
-          meta.willNotWorkOnGpu(s"the date format '${dateFormat}' is not supported'")
-        }
-      }
+    val types = readSchema.map(_.dataType).toSet
+    if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy &&
+        (types.contains(DateType) ||
+        types.contains(TimestampType))) {
+      // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
+      // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
+      // so we fall back to CPU
+      meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
     }
 
-    if (!meta.conf.isCsvBoolReadEnabled && readSchema.map(_.dataType).contains(BooleanType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading boolean. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BOOLS} to true.")
+    if (types.contains(DateType)) {
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
-    if (!meta.conf.isCsvByteReadEnabled && readSchema.map(_.dataType).contains(ByteType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading bytes. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BYTES} to true.")
-    }
-
-    if (!meta.conf.isCsvShortReadEnabled && readSchema.map(_.dataType).contains(ShortType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading shorts. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_SHORTS} to true.")
-    }
-
-    if (!meta.conf.isCsvIntReadEnabled && readSchema.map(_.dataType).contains(IntegerType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading integers. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_INTEGERS} to true.")
-    }
-
-    if (!meta.conf.isCsvLongReadEnabled && readSchema.map(_.dataType).contains(LongType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading longs. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_LONGS} to true.")
-    }
-
-    if (!meta.conf.isCsvFloatReadEnabled && readSchema.map(_.dataType).contains(FloatType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
-    }
-
-    if (!meta.conf.isCsvDoubleReadEnabled && readSchema.map(_.dataType).contains(DoubleType)) {
-      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading doubles. " +
-          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
-    }
-
-    if (readSchema.map(_.dataType).contains(TimestampType)) {
-      if (!meta.conf.isCsvTimestampReadEnabled) {
-        meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
-          s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
-      }
+    if (types.contains(TimestampType)) {
       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>
-        val parts = tsFormat.split("'T'", 2)
-        if (parts.isEmpty) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-      }
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
     // TODO parsedOptions.emptyValueInRead
+
+    if (!meta.conf.isCsvFloatReadEnabled && types.contains(FloatType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
+    }
+
+    if (!meta.conf.isCsvDoubleReadEnabled && types.contains(DoubleType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading doubles. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
+    }
+
+    if (!meta.conf.isCsvDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading decimals. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
+    }
 
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
@@ -423,4 +368,30 @@ class CSVPartitionReader(
    * @return the file format short name
    */
   override def getFileFormatShortName: String = "CSV"
+
+  /**
+   * CSV supports "true" and "false" (case-insensitive) as valid boolean values.
+   */
+  override def castStringToBool(input: ColumnVector): ColumnVector = {
+    withResource(input.strip()) { stripped =>
+      withResource(stripped.lower()) { lower =>
+        withResource(Scalar.fromString("true")) { t =>
+          withResource(Scalar.fromString("false")) { f =>
+            withResource(lower.equalTo(t)) { isTrue =>
+              withResource(lower.equalTo(f)) { isFalse =>
+                withResource(isTrue.or(isFalse)) { isValidBool =>
+                  withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+                    isValidBool.ifElse(isTrue, nullBool)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def dateFormat: String = GpuCsvUtils.dateFormatInRead(parsedOptions)
+  override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
 }

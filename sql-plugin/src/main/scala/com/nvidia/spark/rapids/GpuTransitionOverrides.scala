@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
+
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -60,7 +62,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   private def getColumnarToRowExec(plan: SparkPlan, exportColumnRdd: Boolean = false) = {
-    ShimLoader.getSparkShims.getGpuColumnarToRowTransition(plan, exportColumnRdd)
+    SparkShimImpl.getGpuColumnarToRowTransition(plan, exportColumnRdd)
   }
 
   /** Adds the appropriate coalesce after a shuffle depending on the type of shuffle configured */
@@ -92,7 +94,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         case a: AdaptiveSparkPlanExec =>
           // we hit this case when we have an adaptive plan wrapped in a write
           // to columnar file format on the GPU
-          val columnarAdaptivePlan = ShimLoader.getSparkShims.columnarAdaptivePlan(a, goal)
+          val columnarAdaptivePlan = SparkShimImpl.columnarAdaptivePlan(a, goal)
           optimizeAdaptiveTransitions(columnarAdaptivePlan, None)
         case _ =>
           val preProcessing = child.getTagValue(GpuOverrides.preRowToColProjection)
@@ -141,7 +143,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         parent match {
-          case Some(x) if ShimLoader.getSparkShims.isCustomReaderExec(x) =>
+          case Some(x) if SparkShimImpl.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
@@ -237,6 +239,28 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(optimizeCoalesce))
   }
 
+  /**
+   * Removes `GpuCoalesceBatches(GpuShuffleCoalesceExec(build side))` for the build side
+   * for the shuffled hash join. The coalesce logic has been moved to the
+   * `GpuShuffleCoalesceExec` class, and is handled differently to prevent holding onto the
+   * GPU semaphore for stream IO.
+   */
+  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = plan match {
+    case x@GpuShuffledHashJoinExec(
+         _, _, _, buildSide, _,
+        left: GpuShuffleCoalesceExec,
+        GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_) if buildSide == GpuBuildRight =>
+      x.withNewChildren(
+        Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
+    case x@GpuShuffledHashJoinExec(
+         _, _, _, buildSide, _,
+        GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
+        right: GpuShuffleCoalesceExec, _) if buildSide == GpuBuildLeft =>
+      x.withNewChildren(
+        Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
+    case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
+  }
+
   private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal],
       disableUntilInput: Boolean): Seq[SparkPlan] = {
     plans.zip(goals).map {
@@ -316,13 +340,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       if ((batchScan.scan.isInstanceOf[GpuParquetScanBase] ||
         batchScan.scan.isInstanceOf[GpuOrcScanBase]) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
-        ShimLoader.getSparkShims.copyBatchScanExec(batchScan, true)
+        SparkShimImpl.copyBatchScanExec(batchScan, true)
       } else {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
       if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, true)
+        SparkShimImpl.copyFileSourceScanExec(fileSourceScan, true)
       } else {
         fileSourceScan
       }
@@ -431,7 +455,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val wrapped = GpuOverrides.wrapExpr(expr, rapidsConf, None)
       wrapped.tagForGpu()
       assert(wrapped.canThisBeReplaced)
-      ShimLoader.getSparkShims.sortOrder(
+      SparkShimImpl.sortOrder(
         wrapped.convertToGpu(),
         Ascending,
         Ascending.defaultNullOrdering)
@@ -459,7 +483,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
           if isAdaptiveEnabled =>
         // broadcasts are left on CPU for now when AQE is enabled
-      case p if ShimLoader.getSparkShims.isAqePlan(p)  =>
+      case p if SparkShimImpl.isAqePlan(p)  =>
         // we do not yet fully support GPU-acceleration when AQE is enabled, so we skip checking
         // the plan in this case - https://github.com/NVIDIA/spark-rapids/issues/5
       case lts: LocalTableScanExec =>
@@ -477,7 +501,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: DropTableExec =>
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case p if ShimLoader.getSparkShims.skipAssertIsOnTheGpu(p) => () // Ignored
+      case p if SparkShimImpl.skipAssertIsOnTheGpu(p) => () // Ignored
       case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
@@ -550,6 +574,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
         updatedPlan = fixupHostColumnarTransitions(updatedPlan)
         updatedPlan = optimizeCoalesce(updatedPlan)
+        if (rapidsConf.shuffledHashJoinOptimizeShuffle) {
+          updatedPlan = shuffledHashJoinOptimizeShuffle(updatedPlan)
+        }
         if (rapidsConf.exportColumnarRdd) {
           updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
         }

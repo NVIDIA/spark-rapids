@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.File
 
 import org.apache.spark.SparkConf
-import org.apache.spark.rapids.shims.v2.storage.ShimDiskBlockManager
+import org.apache.spark.rapids.shims.storage.ShimDiskBlockManager
 import org.apache.spark.storage.BlockId
 
 /** Maps logical blocks to local disk locations. */

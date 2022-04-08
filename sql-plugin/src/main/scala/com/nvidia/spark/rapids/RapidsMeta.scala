@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import scala.collection.mutable
+
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -858,7 +860,7 @@ object ExpressionContext {
     val parent = findParentPlanMeta(meta)
     assert(parent.isDefined, "It is expected that an aggregate function is a child of a SparkPlan")
     parent.get.wrapped match {
-      case agg: SparkPlan if ShimLoader.getSparkShims.isWindowFunctionExec(agg) =>
+      case agg: SparkPlan if SparkShimImpl.isWindowFunctionExec(agg) =>
         WindowAggExprContext
       case agg: BaseAggregateExec =>
         if (agg.groupingExpressions.isEmpty) {

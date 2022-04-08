@@ -58,14 +58,7 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       val nljCount =
         PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExec])
 
-      ShimLoader.getSparkShims.getSparkShimVersion match {
-        case SparkShimVersion(3, 0, 0) =>
-          // we didn't start supporting GPU exchanges with AQE until 3.0.1
-          assert(nljCount.size === 0)
-        case _ =>
-          assert(nljCount.size === 1)
-      }
-
+      assert(nljCount.size === 1)
     }, conf)
   }
 

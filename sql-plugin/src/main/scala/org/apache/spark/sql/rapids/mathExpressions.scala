@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.rapids.shims.RapidsFloorCeilUtils
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -166,11 +167,7 @@ object GpuFloorCeil {
 }
 
 case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
-  override def dataType: DataType = child.dataType match {
-    case dt: DecimalType =>
-      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
-    case _ => LongType
-  }
+  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
 
   override def hasSideEffects: Boolean = true
 
@@ -181,7 +178,7 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
+        DecimalUtil.createCudfDecimal(dt)
       case _ =>
         DType.INT64
     }
@@ -242,11 +239,7 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
 }
 
 case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
-  override def dataType: DataType = child.dataType match {
-    case dt: DecimalType =>
-      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
-    case _ => LongType
-  }
+  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
 
   override def hasSideEffects: Boolean = true
 
@@ -258,7 +251,7 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
+        DecimalUtil.createCudfDecimal(dt)
       case _ =>
         DType.INT64
     }
@@ -420,6 +413,141 @@ case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
   }
 }
 
+object GpuHypot extends Arm {
+  def chooseXandY(lhs: ColumnVector, rhs: ColumnVector): Seq[ColumnVector] = {
+    withResource(lhs.abs) { lhsAbs =>
+      withResource(rhs.abs) { rhsAbs => 
+        withResource(lhsAbs.greaterThan(rhsAbs)) { lhsGreater =>
+          closeOnExcept(lhsGreater.ifElse(lhsAbs, rhsAbs)) { x => 
+            Seq(x, lhsGreater.ifElse(rhsAbs, lhsAbs))
+          }
+        }
+      }
+    }
+  }
+
+  def either(value: Scalar, x: ColumnVector, y: ColumnVector): ColumnVector = {
+    withResource(x.equalTo(value)) { xIsVal =>
+      withResource(y.equalTo(value)) { yIsVal =>
+        xIsVal.or(yIsVal)
+      }
+    }
+  }
+
+  def both(value: Scalar, x: ColumnVector, y: ColumnVector): ColumnVector = {
+    withResource(x.equalTo(value)) { xIsVal =>
+      withResource(y.equalTo(value)) { yIsVal =>
+        xIsVal.and(yIsVal)
+      }
+    }
+  }
+
+  def eitherNan(x: ColumnVector, 
+                y: ColumnVector): ColumnVector = {
+    withResource(x.isNan) { xIsNan =>
+      withResource(y.isNan) { yIsNan =>
+        xIsNan.or(yIsNan)
+      }
+    }
+  }
+
+  def eitherNull(x: ColumnVector,
+                 y: ColumnVector): ColumnVector = {
+    withResource(x.isNull) { xIsNull =>
+      withResource(y.isNull) { yIsNull =>
+        xIsNull.or(yIsNull)
+      }
+    }
+  }
+
+  def computeHypot(x: ColumnVector, y: ColumnVector): ColumnVector = {
+    val yOverXSquared = withResource(y.div(x)) { yOverX =>
+      yOverX.mul(yOverX)
+    }
+
+    val onePlusTerm = withResource(yOverXSquared) { _ => 
+      withResource(Scalar.fromDouble(1)) { one =>
+        one.add(yOverXSquared)
+      }
+    }
+
+    val onePlusTermSqrt = withResource(onePlusTerm) { _ => 
+      onePlusTerm.sqrt
+    } 
+
+    withResource(onePlusTermSqrt) { _ => 
+      x.mul(onePlusTermSqrt)
+    }
+  }
+}
+
+case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathExpression("HYPOT") {
+
+  override def binaryOp: BinaryOp = BinaryOp.ADD
+
+  // naive implementation of hypot
+  // r = sqrt(lhs^2 + rhs^2) 
+  // This is prone to overflow with regards either square term
+  // However, we can reduce it to
+  // r = sqrt(x^2 + y^2) = x * sqrt(1 + (y/x)^2)
+  // where x = max(abs(lhs), abs(rhs)), y = min(abs(lhs), abs(rhs))
+  // which will only overflow if both terms are near the maximum representation space
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+
+    // in spark SQL HYPOT (java.math.Math.hypot), there are a couple of edge cases that produce
+    // specific results. Note that terms are absolute values (always positive)
+    //  - if either term is inf, then the answer is inf
+    //  - if either term is nan, and neither is inf, then the answer is nan
+    //  - if both terms are 0, then the answer is 0
+
+    withResource(GpuHypot.chooseXandY(lhs.getBase, rhs.getBase)) { case Seq(x, y) =>
+      val zeroOrBase = withResource(Scalar.fromDouble(0)) { zero =>
+        withResource(GpuHypot.both(zero, x, y)) { bothZero =>
+          withResource(GpuHypot.computeHypot(x, y)) { hypotComputed =>
+            bothZero.ifElse(zero, hypotComputed) 
+          }
+        }
+      }
+
+      val nanOrRest = withResource(zeroOrBase) { _ =>
+        withResource(Scalar.fromDouble(Double.NaN)) { nan => 
+          withResource(GpuHypot.eitherNan(x, y)) { eitherNan =>
+            eitherNan.ifElse(nan, zeroOrBase)
+          }
+        }
+      }
+
+      val infOrRest = withResource(nanOrRest) { _ => 
+          withResource(Scalar.fromDouble(Double.PositiveInfinity)) { inf =>
+          withResource(GpuHypot.either(inf, x, y)) { eitherInf =>
+            eitherInf.ifElse(inf, nanOrRest)
+          }
+        }
+      }
+
+      withResource(infOrRest) { _ =>
+        withResource(Scalar.fromNull(x.getType)) { nullS => 
+          withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
+            eitherNull.ifElse(nullS, infOrRest)
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType)) { expandedRhs =>
+      doColumnar(lhs, expandedRhs)
+    }
+  }
+}
+
 abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpression
     with Serializable with ImplicitCastInputTypes {
   override def inputTypes: Seq[DataType] = Seq(DoubleType, DoubleType)
@@ -464,7 +592,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
     dataType match {
       case DecimalType.Fixed(_, scaleVal) =>
-        DecimalUtil.round(lhsValue, scaleVal, roundMode)
+        lhsValue.round(scaleVal, roundMode)
       case ByteType =>
         fixUpOverflowInts(() => Scalar.fromByte(0.toByte), scaleVal, lhsValue)
       case ShortType =>
@@ -508,7 +636,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
     // overflow. Otherwise, we only need to handle round down situations.
     if (-scale == 19 && lhs.getType == DType.INT64) {
       fixUpInt64OnBounds(lhs)
-    } else if (-scale >= DecimalUtil.getPrecisionForIntegralType(lhs.getType)) {
+    } else if (-scale >= lhs.getType.getPrecisionForInt) {
       withResource(zeroFn()) { s =>
         withResource(ColumnVector.fromScalar(s, lhs.getRowCount.toInt)) { zero =>
           // set null mask if necessary

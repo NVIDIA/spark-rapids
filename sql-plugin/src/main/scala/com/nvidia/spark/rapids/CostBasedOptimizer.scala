@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
+
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
@@ -260,7 +262,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
   private def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
-    ShimLoader.getSparkShims.isExchangeOp(plan)
+    SparkShimImpl.isExchangeOp(plan)
   }
 }
 

@@ -21,6 +21,7 @@ import java.util.{Date, UUID}
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.{RapidsFileSourceMetaUtils, SparkShimImpl}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._
@@ -116,7 +117,11 @@ object GpuFileFormatWriter extends Logging {
     FileOutputFormat.setOutputPath(job, new Path(outputSpec.outputPath))
 
     val partitionSet = AttributeSet(partitionColumns)
-    val dataColumns = outputSpec.outputColumns.filterNot(partitionSet.contains)
+    // cleanup the internal metadata information of
+    // the file source metadata attribute if any before write out when needed.
+    val finalOutputSpec = outputSpec.copy(outputColumns = outputSpec.outputColumns
+      .map(RapidsFileSourceMetaUtils.cleanupFileSourceMetadataInformation))
+    val dataColumns = finalOutputSpec.outputColumns.filterNot(partitionSet.contains)
 
     var needConvert = false
     val projectList: List[NamedExpression] = plan.output.map {
@@ -152,12 +157,12 @@ object GpuFileFormatWriter extends Logging {
       uuid = UUID.randomUUID.toString,
       serializableHadoopConf = new SerializableConfiguration(job.getConfiguration),
       outputWriterFactory = outputWriterFactory,
-      allColumns = outputSpec.outputColumns,
+      allColumns = finalOutputSpec.outputColumns,
       dataColumns = dataColumns,
       partitionColumns = partitionColumns,
       bucketSpec = writerBucketSpec,
-      path = outputSpec.outputPath,
-      customPartitionLocations = outputSpec.customPartitionLocations,
+      path = finalOutputSpec.outputPath,
+      customPartitionLocations = finalOutputSpec.customPartitionLocations,
       maxRecordsPerFile = caseInsensitiveOptions.get("maxRecordsPerFile").map(_.toLong)
           .getOrElse(sparkSession.sessionState.conf.maxRecordsPerFile),
       timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
@@ -196,10 +201,9 @@ object GpuFileFormatWriter extends Logging {
         // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
         // the physical plan may have different attribute ids due to optimizer removing some
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
-        val sparkShims = ShimLoader.getSparkShims
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
-            .map(attr => sparkShims.sortOrder(attr, Ascending)), outputSpec.outputColumns)
+            .map(attr => SparkShimImpl.sortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
         val sortType = if (RapidsConf.STABLE_SORT.get(plan.conf)) {
           FullSortSingleBatch
         } else {

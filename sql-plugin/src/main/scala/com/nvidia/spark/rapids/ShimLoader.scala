@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,6 @@ import org.apache.spark.util.MutableURLClassLoader
 
     spark3xx-common/com/nvidia/spark/rapids/CastExprMeta.class
 
-    spark301/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark311/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
 
@@ -53,13 +52,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.02.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.04.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -76,6 +75,7 @@ object ShimLoader extends Logging {
 
   private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
   @volatile private var shimProviderClass: String = _
+  @volatile private var shimProvider: SparkShimServiceProvider = _
   @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
@@ -310,6 +310,7 @@ object ShimLoader extends Logging {
         shimServiceProvider.matchesVersion(sparkVersion)
     }.map { case (inst, url) =>
       shimURL = url
+      shimProvider = inst
       // this class will be loaded again by the real executor classloader
       inst.getClass.getName
     }
@@ -331,11 +332,9 @@ object ShimLoader extends Logging {
     shimProviderClass
   }
 
-  def getSparkShims: SparkShims = {
-    if (sparkShims == null) {
-      sparkShims = newInstanceOf[SparkShimServiceProvider](findShimProvider()).buildShim
-    }
-    sparkShims
+  def getShimVersion: ShimVersion = {
+    initShimProviderIfNeeded()
+    shimProvider.getShimVersion
   }
 
   def getSparkVersion: String = {

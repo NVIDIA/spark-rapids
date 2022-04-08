@@ -23,7 +23,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
 
   private val conf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
-    .set("spark.rapids.sql.expression.RLike", "true")
+    .set(RapidsConf.ENABLE_REGEXP.key, "true")
 
   testSparkResultsAreEqual("CASE WHEN test all branches", testData, conf) { df =>
     df.withColumn("test", expr(

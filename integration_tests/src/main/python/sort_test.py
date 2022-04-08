@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,13 +19,12 @@ from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311
 
 orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), IntegerGen(nullable=False),
         LongGen(nullable=False), FloatGen(nullable=False), DoubleGen(nullable=False), BooleanGen(nullable=False),
-        TimestampGen(nullable=False), DateGen(nullable=False), StringGen(nullable=False), DecimalGen(nullable=False),
-        DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen(precision=7, scale=3, nullable=False),
-        DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2, nullable=False)]
+        TimestampGen(nullable=False), DateGen(nullable=False), StringGen(nullable=False),
+        DecimalGen(precision=7, scale=3, nullable=False), DecimalGen(precision=12, scale=2, nullable=False),
+        DecimalGen(precision=20, scale=2, nullable=False)]
 
 @allow_non_gpu('SortExec', 'ShuffleExchangeExec', 'RangePartitioning', 'SortOrder')
 @pytest.mark.parametrize('data_gen', [StringGen(nullable=False)], ids=idfn)
@@ -43,12 +42,11 @@ def test_sort_nonbinary_carry_binary(data_gen):
                 .withColumn("binary_string", f.col("a").cast(BinaryType()))
                 .orderBy(f.col('a')))
 
-@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            conf = allow_negative_scale_of_decimal_conf)
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order))
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
@@ -57,7 +55,7 @@ def test_single_orderby(data_gen, order):
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
-    pytest.param(StructGen([['child0', decimal_gen_38_10]])),
+    pytest.param(StructGen([['child0', decimal_gen_128bit]])),
     pytest.param(StructGen([['child0', all_basic_struct_gen]])),
     pytest.param(ArrayGen(string_gen),
         marks=pytest.mark.xfail(reason="arrays are not supported")),
@@ -78,11 +76,8 @@ def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             conf = {
-                **allow_negative_scale_of_decimal_conf,
-                **{
-                    'spark.sql.shuffle.partitions': shuffle_parts,
-                    'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'
-                }
+                'spark.sql.shuffle.partitions': shuffle_parts,
+                'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'
             })
 
 # only default null ordering for direction is supported for nested types
@@ -98,13 +93,10 @@ def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort
 def test_single_nested_orderby_fallback_for_nullorder(data_gen, order):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            "SortExec",
-            conf = {
-                **allow_negative_scale_of_decimal_conf,
-            })
+            "SortExec")
 
 # SPARK CPU itself has issue with negative scale for take ordered and project
-orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen + decimal_128_gens) if not (isinstance(n, DecimalGen) and n.scale < 0)]
+orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_orderby_with_limit(data_gen, order):
@@ -141,13 +133,12 @@ def test_single_nested_orderby_with_limit_fallback(data_gen, order):
             'spark.rapids.allowCpuRangePartitioning': False
         })
 
-@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen + decimal_128_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_sort_in_part(data_gen, order):
     # We set `num_slices` to handle https://github.com/NVIDIA/spark-rapids/issues/2477
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order),
-        conf = allow_negative_scale_of_decimal_conf)
+        lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order))
 
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
@@ -170,22 +161,17 @@ def test_single_nested_sort_in_part(data_gen, order, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order),
-        conf={**allow_negative_scale_of_decimal_conf, **sort_conf})
+        conf=sort_conf)
 
-orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen,
-        pytest.param(float_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
-            reason='Spark has -0.0 < 0.0 before Spark 3.1')),
-        pytest.param(double_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
-            reason='Spark has -0.0 < 0.0 before Spark 3.1')),
-        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])] + decimal_gens + decimal_128_gens
+orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])] + decimal_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
 def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()),
-            conf = allow_negative_scale_of_decimal_conf)
+            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
 
 # SPARK CPU itself has issue with negative scale for take ordered and project
-orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort + decimal_128_gens if not (isinstance(n, DecimalGen) and n.scale < 0)]
+orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal, ids=idfn)
 def test_multi_orderby_with_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -233,8 +219,7 @@ def test_single_orderby_with_skew(data_gen):
                     .selectExpr('a', 'random(1) > 0.5 as b')\
                     .repartition(f.col('b'))\
                     .orderBy(f.col('a'))\
-                    .selectExpr('a'),
-            conf = allow_negative_scale_of_decimal_conf)
+                    .selectExpr('a'))
 
 
 # We are not trying all possibilities, just doing a few with numbers so the query works.
@@ -251,7 +236,7 @@ def test_single_nested_orderby_with_skew(data_gen, stable_sort):
             .repartition(f.col('b')) \
             .orderBy(f.col('a')) \
             .selectExpr('a'),
-        conf={**allow_negative_scale_of_decimal_conf, **sort_conf})
+        conf=sort_conf)
 
 
 # This is primarily to test the out of core sort with multiple batches. For this we set the data size to
@@ -276,8 +261,8 @@ def test_large_orderby(data_gen, stable_sort):
     float_gen,
     date_gen,
     timestamp_gen,
-    decimal_gen_default,
-    decimal_gen_38_10,
+    decimal_gen_64bit,
+    decimal_gen_128bit,
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
@@ -295,15 +280,16 @@ def test_large_orderby_nested_ridealong(data_gen):
     float_gen,
     date_gen,
     timestamp_gen,
-    decimal_gen_default,
-    decimal_gen_38_10,
+    decimal_gen_64bit,
+    decimal_gen_128bit,
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
-    ArrayGen(byte_gen, max_length=5)] + decimal_128_gens_no_neg + single_array_gens_sample_with_decimal128, ids=idfn)
+    ArrayGen(byte_gen, max_length=5),
+    ArrayGen(decimal_gen_128bit, max_length=5)], ids=idfn)
 @pytest.mark.order(2)
 def test_orderby_nested_ridealong_limit(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
     #  results, especially on distributed clusters.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, LongRangeGen(), data_gen)\
-                    .orderBy(f.col('a').desc()).limit(100), conf=allow_negative_scale_of_decimal_conf)
+                    .orderBy(f.col('a').desc()).limit(100))

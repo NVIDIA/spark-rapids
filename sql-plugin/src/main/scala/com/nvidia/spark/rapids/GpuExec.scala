@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -44,6 +45,7 @@ object MetricsLevel {
 object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
+  val COPY_BUFFER_TIME = "copyBufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
   val NUM_INPUT_ROWS = "numInputRows"
   val NUM_INPUT_BATCHES = "numInputBatches"
@@ -73,6 +75,7 @@ object GpuMetric extends Logging {
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
+  val DESCRIPTION_COPY_BUFFER_TIME = "copy buffer time"
   val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
   val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
   val DESCRIPTION_NUM_INPUT_BATCHES = "input columnar batches"
@@ -208,7 +211,7 @@ object GpuExec {
 trait GpuExec extends SparkPlan with Arm {
   import GpuMetric._
   def sparkSession: SparkSession = {
-    ShimLoader.getSparkShims.sessionFromPlan(this)
+    SparkShimImpl.sessionFromPlan(this)
   }
 
   /**
@@ -314,7 +317,7 @@ trait GpuExec extends SparkPlan with Arm {
         // normalize that for equality testing, by assigning expr id from 0 incrementally. The
         // alias name doesn't matter and should be erased.
         val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
-        ShimLoader.getSparkShims.alias(normalizedChild, "")(ExprId(id), a.qualifier)
+        SparkShimImpl.alias(normalizedChild, "")(ExprId(id), a.qualifier)
       case a: GpuAlias =>
         id += 1
         // As the root of the expression, Alias will always take an arbitrary exprId, we need to

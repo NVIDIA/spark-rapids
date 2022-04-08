@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,11 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.profiling._
 
+import org.apache.spark.TaskFailedReason
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
@@ -200,8 +202,8 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
         app.accumIdToStageId.put(res.id, event.stageId)
         arrBuf += thisMetric
       } catch {
-        case e: ClassCastException =>
-          logWarning("ClassCastException when parsing accumulables for task "
+        case NonFatal(e) =>
+          logWarning("Exception when parsing accumulables for task "
             + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
             + ": ")
           logWarning(e.toString)
@@ -209,12 +211,18 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
             + res.name + ",value=" + res.value + ",update=" + res.update)
       }
     }
+    val reason = event.reason match {
+      case failed: TaskFailedReason =>
+        failed.toErrorString
+      case _ =>
+        event.reason.toString
+    }
 
     val thisTask = TaskCase(
       event.stageId,
       event.stageAttemptId,
       event.taskType,
-      event.reason.toString,
+      reason,
       event.taskInfo.taskId,
       event.taskInfo.attemptNumber,
       event.taskInfo.launchTime,
@@ -397,8 +405,8 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
         app.accumIdToStageId.put(res._2.id, event.stageInfo.stageId)
         arrBuf += thisMetric
       } catch {
-        case e: ClassCastException =>
-          logWarning("ClassCastException when parsing accumulables for task " +
+        case NonFatal(e) =>
+          logWarning("Exception when parsing accumulables for task " +
               "stageID=" + event.stageInfo.stageId + ": ")
           logWarning(e.toString)
           logWarning("The problematic accumulable is: name="
@@ -436,7 +444,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
 
   // To process all other unknown events
   override def doOtherEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
-    logInfo("Processing other event: " + event.getClass)
+    logDebug("Skipping unhandled event: " + event.getClass)
     // not used
   }
 }

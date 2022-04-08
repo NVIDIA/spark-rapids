@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,6 +37,12 @@ function check-shims-revisions() {
       if [ -n "$pre_revision" ] && [[ "$curr_revision" != "$pre_revision" ]] ; then
         echo >&2 "Check Failed: git revisions between shims are not equal"
         echo >&2 "Please check the revisions of each shim to see which one is inconsistent. Note, if building with Databricks those jars are built separately."
+
+        echo >&2 "-------------"
+        echo >&2 "Version file ${pre_shim_version_path}, revision is ${pre_revision}"
+        echo >&2 "Version file ${shim_version_path}, revision is ${curr_revision}"
+        echo >&2 "------------"
+
         exit 1
       fi
       pre_revision="${curr_revision}"
