@@ -20,9 +20,13 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 7.3, 9.1](get-started/getting-started-databricks.md)
+- [Databricks Runtime 9.1, 10.4](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
+- Cloudera provides the plugin packaged through 
+  [CDS 3.2](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-spark-3-overview.html)
+  which is supported on the following 
+  [CDP Private Cloud Base releases](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-3-requirements.html).
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
 replaces parts of the physical plan that Apache Spark considers to be internal the code for those
@@ -40,7 +44,7 @@ The plugin is tested and supported on V100, T4, A2, A10, A30 and A100 datacenter
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
 does not support [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
-and will need CUDA 11.2 installed. If not, the following error will be displayed:
+and will need CUDA 11.5 installed. If not, the following error will be displayed:
 
 ```
 ai.rapids.cudf.CudaException: forward compatibility was attempted on non supported HW
@@ -75,8 +79,9 @@ Turing or Ampere.
 
 Currently a limited set of SQL and DataFrame operations are supported, please see the
 [configs](configs.md) and [supported operations](supported_ops.md) for a more complete list of what
-is supported. Some of structured streaming is likely to be accelerated, but it has not been an area
-of focus right now. Other areas like MLLib, GraphX or RDDs are not accelerated.
+is supported. Some of the MLlib functions, such as `PCA` are supported.
+Some of structured streaming is likely to be accelerated, but it has not been an area
+of focus right now. Other areas like GraphX or RDDs are not accelerated.
 
 ### Is the Spark `Dataset` API supported?
 
@@ -370,7 +375,9 @@ There are multiple reasons why this a problematic configuration:
 ### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
-for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
+for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`, 
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/MIG-Support) 
+or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
 reduces the amount of GPU memory that can be used by the Accelerator for each executor instance.
@@ -378,6 +385,9 @@ If the cluster is purpose-built to run Spark with the RAPIDS Accelerator then we
 without MIG. Also note that the UCX-based shuffle plugin will not work as well in this
 configuration because
 [MIG does not support direct GPU to GPU transfers](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#app-considerations).
+
+However MIG can be advantageous if the cluster is intended to be shared amongst other processes 
+(like ML / DL jobs).
 
 ### How can I run custom expressions/UDFs on the GPU?
 
@@ -468,3 +478,28 @@ later) finishes before the slow task that triggered speculation. If the speculat
 finishes first then that's good, it is working as intended. If many tasks are speculating, but the
 original task always finishes first then this is a pure loss, the speculation is adding load to
 the Spark cluster with no benefit.
+
+### Why is my query in GPU mode slower than CPU mode?
+
+Below are some troubleshooting tips on GPU query performance issue:
+* Identify the most time consuming part of the query. You can use the
+  [Profiling tool](./spark-profiling-tool.md) to process the Spark event log to get more insights of
+  the query performance. For example, if I/O is the bottleneck, we suggest optimizing the backend
+  storage I/O performance because the most suitable query type is computation bound instead of
+  I/O or network bound.
+  
+* Make sure at least the most time consuming part of the query is on the GPU. Please refer to
+  [Getting Started on Spark workload qualification](./get-started/getting-started-workload-qualification.md)
+  for more details. Ideally we hope the whole query is fully on the GPU, but if some minor part of 
+  the query, eg. a small JDBC table scan, can not run on the GPU, it won't cause much performance 
+  overhead. If there are some CPU fallbacks, check if those are some known features which can be 
+  enabled by turning on some RAPIDS Accelerator parameters. If the features needed do not exist in 
+  the most recent release of the RAPIDS Accelerator, please file a
+  [feature request](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproducing example.
+
+* Tune the Spark and RAPIDS Accelerator parameters such as `spark.sql.shuffle.partitions`, 
+  `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
+  Please refer to [Tuning Guide](./tuning-guide.md) for more details.
+
+
+  
