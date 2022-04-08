@@ -184,6 +184,6 @@ object GpuTypeShims {
   /**
    * Get additional supported types for this Shim
    */
-  def additionalSupportedTypes: TypeSig = TypeSig.ansiIntervals
+  def additionalArithmeticSupportedTypes: TypeSig = TypeSig.ansiIntervals
 
 }

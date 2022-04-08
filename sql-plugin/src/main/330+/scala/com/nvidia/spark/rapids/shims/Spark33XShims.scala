@@ -282,8 +282,8 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           "Absolute value",
           ExprChecks.unaryProjectAndAstInputMatchesOutput(
             TypeSig.implicitCastsAstTypes,
-            TypeSig.gpuNumeric + GpuTypeShims.additionalSupportedTypes,
-            TypeSig.cpuNumeric + GpuTypeShims.additionalSupportedTypes),
+            TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
+            TypeSig.cpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes),
           (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
             val ansiEnabled = SQLConf.get.ansiEnabled
 

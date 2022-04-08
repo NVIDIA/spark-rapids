@@ -97,6 +97,6 @@ object GpuTypeShims {
   /**
    * Get additional supported types for this Shim
    */
-  def additionalSupportedTypes: TypeSig = TypeSig.none
+  def additionalArithmeticSupportedTypes: TypeSig = TypeSig.none
 
 }
