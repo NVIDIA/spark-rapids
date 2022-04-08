@@ -41,7 +41,7 @@ case class GpuOrcScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = true)
+    queryUsesInputFile: Boolean = false)
   extends GpuOrcScanBase(sparkSession, hadoopConf, dataSchema, readDataSchema,
     readPartitionSchema, pushedFilters, rapidsConf, queryUsesInputFile) with FileScan {
 
