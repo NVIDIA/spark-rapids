@@ -90,6 +90,14 @@ object RapidsPluginUtils extends Logging {
       logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to true.")
     }
+
+    if (conf.isUdfCompilerEnabled) {
+      logWarning("RAPIDS UDF compiler is enabled, to disable it " +
+      s"set `${RapidsConf.UDF_COMPILER_ENABLED}` to false.")
+    } else {
+      logWarning("RAPIDS UDF compiler is disabled, to enable it " +
+      s"set `${RapidsConf.UDF_COMPILER_ENABLED}` to true.")
+    }
   }
 
   def fixupConfigs(conf: SparkConf): Unit = {
