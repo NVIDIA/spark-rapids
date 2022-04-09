@@ -395,7 +395,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
             TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP)
             .withPsNote(TypeEnum.MAP, "If it's map, only primitive key types are supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.INT + TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL))
+        ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
           .withPsNote(TypeEnum.INT, "Only ints are supported as array indexes"),
           TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {

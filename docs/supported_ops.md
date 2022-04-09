@@ -5066,17 +5066,17 @@ are limited.
 </tr>
 <tr>
 <td>index/key</td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Only ints are supported as array indexes;<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP;<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>max DECIMAL precision of 18;<br/>Literal value only</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>Only ints are supported as array indexes</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
