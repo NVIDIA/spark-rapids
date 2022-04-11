@@ -95,8 +95,29 @@ object GpuTypeShims {
   def isSupportedYearMonthType(dt: DataType): Boolean = false
 
   /**
-   * Get additional supported types for this Shim
+   * Get additional arithmetic supported types for this Shim
    */
   def additionalArithmeticSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional predicate supported types for this Shim
+   */
+  def additionalPredicateSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional Csv supported types for this Shim
+   */
+  def additionalCsvSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional Parquet supported types for this Shim
+   */
+  def additionalParquetSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional common operators supported types for this Shim
+   * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
+   */
+  def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.none
 
 }

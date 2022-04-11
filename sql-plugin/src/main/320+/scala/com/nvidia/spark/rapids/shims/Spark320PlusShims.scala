@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.{FileSourceScanExec, _}
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources._
@@ -337,93 +337,14 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
           TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
-        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-
-          // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
-          // if possible. Instead regarding filters as childExprs of current Meta, we create
-          // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
-          // FileSourceScan is independent from the replacement of the partitionFilters. It is
-          // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
-          // are on the GPU. And vice versa.
-          private lazy val partitionFilters = {
-            val convertBroadcast = (bc: SubqueryBroadcastExec) => {
-              val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
-              meta.tagForExplain()
-              meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
-            }
-            wrapped.partitionFilters.map { filter =>
-              filter.transformDown {
-                case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
-                  inSub.plan match {
-                    case bc: SubqueryBroadcastExec =>
-                      dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
-                    case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-                      dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
-                    case _ =>
-                      dpe
-                  }
-              }
-            }
-          }
-
-          // partition filters and data filters are not run on the GPU
-          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
-
-          override def tagPlanForGpu(): Unit = tagFileSourceScanExec(this)
-
-          override def convertToCpu(): SparkPlan = {
-            wrapped.copy(partitionFilters = partitionFilters)
-          }
-
-          override def convertToGpu(): GpuExec = {
-            val sparkSession = wrapped.relation.sparkSession
-            val options = wrapped.relation.options
-
-            val location = AlluxioUtils.replacePathIfNeeded(
-              conf,
-              wrapped.relation,
-              partitionFilters,
-              wrapped.dataFilters)
-
-            val newRelation = HadoopFsRelation(
-              location,
-              wrapped.relation.partitionSchema,
-              wrapped.relation.dataSchema,
-              wrapped.relation.bucketSpec,
-              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              options)(sparkSession)
-
-            GpuFileSourceScanExec(
-              newRelation,
-              wrapped.output,
-              wrapped.requiredSchema,
-              partitionFilters,
-              wrapped.optionalBucketSet,
-              wrapped.optionalNumCoalescedBuckets,
-              wrapped.dataFilters,
-              wrapped.tableIdentifier,
-              wrapped.disableBucketedScan)(conf)
-          }
-        }),
+        (fsse, conf, p, r) => new FileSourceScanExecMeta320Plus(fsse, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.DECIMAL_128).nested(),
           TypeSig.all),
-        (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
-          override val childScans: scala.Seq[ScanMeta[_]] =
-            Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
-
-          override def tagPlanForGpu(): Unit = {
-            if (!p.runtimeFilters.isEmpty) {
-              willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
-            }
-          }
-
-          override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu(), p.runtimeFilters)
-        })
+        (p, conf, parent, r) => new BatchScanExecMeta320Plus(p, conf, parent, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
@@ -491,5 +412,96 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     GpuFileSourceScanExec.tagSupport(meta)
+  }
+
+  class FileSourceScanExecMeta320Plus(plan: FileSourceScanExec,
+      conf: RapidsConf,
+      parent: Option[RapidsMeta[_, _, _]],
+      rule: DataFromReplacementRule)
+      extends SparkPlanMeta[FileSourceScanExec](plan, conf, parent, rule) {
+
+    // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+    // if possible. Instead regarding filters as childExprs of current Meta, we create
+    // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+    // FileSourceScan is independent from the replacement of the partitionFilters. It is
+    // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+    // are on the GPU. And vice versa.
+    private lazy val partitionFilters = {
+      val convertBroadcast = (bc: SubqueryBroadcastExec) => {
+        val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
+        meta.tagForExplain()
+        meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+      }
+      wrapped.partitionFilters.map { filter =>
+        filter.transformDown {
+          case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+            inSub.plan match {
+              case bc: SubqueryBroadcastExec =>
+                dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+              case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
+                dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+              case _ =>
+                dpe
+            }
+        }
+      }
+    }
+
+    // partition filters and data filters are not run on the GPU
+    override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+
+    override def tagPlanForGpu(): Unit = tagFileSourceScanExec(this)
+
+    override def convertToCpu(): SparkPlan = {
+      wrapped.copy(partitionFilters = partitionFilters)
+    }
+
+    override def convertToGpu(): GpuExec = {
+      val sparkSession = wrapped.relation.sparkSession
+      val options = wrapped.relation.options
+
+      val location = AlluxioUtils.replacePathIfNeeded(
+        conf,
+        wrapped.relation,
+        partitionFilters,
+        wrapped.dataFilters)
+
+      val newRelation = HadoopFsRelation(
+        location,
+        wrapped.relation.partitionSchema,
+        wrapped.relation.dataSchema,
+        wrapped.relation.bucketSpec,
+        GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+        options)(sparkSession)
+
+      GpuFileSourceScanExec(
+        newRelation,
+        wrapped.output,
+        wrapped.requiredSchema,
+        partitionFilters,
+        wrapped.optionalBucketSet,
+        wrapped.optionalNumCoalescedBuckets,
+        wrapped.dataFilters,
+        wrapped.tableIdentifier,
+        wrapped.disableBucketedScan)(conf)
+    }
+  }
+
+  class BatchScanExecMeta320Plus(p: BatchScanExec,
+      conf: RapidsConf,
+      parent: Option[RapidsMeta[_, _, _]],
+      rule: DataFromReplacementRule)
+      extends SparkPlanMeta[BatchScanExec](p, conf, parent, rule) {
+    override val childScans: scala.Seq[ScanMeta[_]] =
+      Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+    override def tagPlanForGpu(): Unit = {
+      if (!p.runtimeFilters.isEmpty) {
+        willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
+      }
+    }
+
+    override def convertToGpu(): GpuExec =
+      GpuBatchScanExec(p.output, childScans.head.convertToGpu(), p.runtimeFilters)
   }
 }
