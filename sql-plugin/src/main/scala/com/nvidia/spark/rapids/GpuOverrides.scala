@@ -3218,8 +3218,7 @@ object GpuOverrides extends Logging {
       }),
     expr[CollectList](
       "Collect a list of non-unique elements, not supported in reduction",
-      // GpuCollectList is not yet supported in Reduction context.
-      ExprChecks.aggNotReduction(
+      ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -3249,10 +3248,7 @@ object GpuOverrides extends Logging {
       }),
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction",
-      // GpuCollectSet is not yet supported in Reduction context.
-      // Compared to CollectList, ArrayType and MapType are NOT supported in GpuCollectSet
-      // because underlying cuDF operator drop_list_duplicates doesn't support LIST type.
-      ExprChecks.aggNotReduction(
+      ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
