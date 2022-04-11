@@ -73,7 +73,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
     super.tagFileSourceScanExec(meta)
   }
 
-  // 330+ supports DAYTIME interval types
+  // GPU support ANSI interval types from 330
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[RoundCeil](
@@ -195,14 +195,14 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
               TypeSig.DECIMAL_128 + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
-        (p, conf, parent, r) => new BatchScanExecMeta320Plus(p, conf, parent, r)),
+        (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY + TypeSig.DECIMAL_128 +
             GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
-        (fsse, conf, p, r) => new FileSourceScanExecMeta320Plus(fsse, conf, p, r))
+        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ map
   }

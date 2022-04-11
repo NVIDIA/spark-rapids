@@ -337,14 +337,14 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
           TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
-        (fsse, conf, p, r) => new FileSourceScanExecMeta320Plus(fsse, conf, p, r)),
+        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.DECIMAL_128).nested(),
           TypeSig.all),
-        (p, conf, parent, r) => new BatchScanExecMeta320Plus(p, conf, parent, r))
+        (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
@@ -414,7 +414,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuFileSourceScanExec.tagSupport(meta)
   }
 
-  class FileSourceScanExecMeta320Plus(plan: FileSourceScanExec,
+  class FileSourceScanExecMeta(plan: FileSourceScanExec,
       conf: RapidsConf,
       parent: Option[RapidsMeta[_, _, _]],
       rule: DataFromReplacementRule)
@@ -487,7 +487,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     }
   }
 
-  class BatchScanExecMeta320Plus(p: BatchScanExec,
+  class BatchScanExecMeta(p: BatchScanExec,
       conf: RapidsConf,
       parent: Option[RapidsMeta[_, _, _]],
       rule: DataFromReplacementRule)
