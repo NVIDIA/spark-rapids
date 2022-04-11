@@ -254,10 +254,10 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    throw new IllegalStateException("Map lookup keys must be scalar values")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    throw new IllegalStateException("Map lookup keys must be scalar values")
 
   override def left: Expression = child
 
