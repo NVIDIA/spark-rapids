@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.{And, Ascending, Attribute, Att
 import org.apache.spark.sql.catalyst.json.rapids.GpuReadJsonFileFormat
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, UnknownPartitioning}
+import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
@@ -483,7 +484,7 @@ case class GpuFileSourceScanExec(
           prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
-    getFinalRDD(relation, readFile, filePartitions)
+    getFinalRDD(readFile, filePartitions)
   }
 
   /**
@@ -512,56 +513,58 @@ case class GpuFileSourceScanExec(
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
-    getFinalRDD(relation, readFile, partitions)
+    getFinalRDD(readFile, partitions)
   }
 
   private def getFinalRDD(
-      fsRelation: HadoopFsRelation,
       readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
       partitions: Seq[FilePartition]): RDD[InternalRow] = {
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      SparkShimImpl.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions,
+      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
-      // here we are making an optimization to read more then 1 file at a time on the CPU side
-      // if they are small files before sending it down to the GPU
-      val sqlConf = relation.sparkSession.sessionState.conf
-      val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
-      val broadcastedHadoopConf =
-        relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-
-      val factory = fsRelation.fileFormat match {
-        case _: ParquetFileFormat =>
-          GpuParquetMultiFilePartitionReaderFactory(
-            sqlConf,
-            broadcastedHadoopConf,
-            relation.dataSchema,
-            requiredSchema,
-            relation.partitionSchema,
-            pushedDownFilters.toArray,
-            rapidsConf,
-            allMetrics,
-            queryUsesInputFile)
-        case _: OrcFileFormat =>
-          GpuOrcMultiFilePartitionReaderFactory(
-            sqlConf,
-            broadcastedHadoopConf,
-            relation.dataSchema,
-            requiredSchema,
-            relation.partitionSchema,
-            pushedDownFilters.toArray,
-            rapidsConf,
-            allMetrics,
-            queryUsesInputFile)
-        case _ =>
-          // never reach here
-          throw new RuntimeException(s"File format ${fsRelation.fileFormat} is not supported yet")
-      }
-
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      new GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, factory)
+      new GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
+    }
+  }
+
+  /** visible for testing */
+  lazy val readerFactory: PartitionReaderFactory = {
+    // here we are making an optimization to read more then 1 file at a time on the CPU side
+    // if they are small files before sending it down to the GPU
+    val sqlConf = relation.sparkSession.sessionState.conf
+    val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
+    val broadcastedHadoopConf =
+      relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+
+    relation.fileFormat match {
+      case _: ParquetFileFormat =>
+        GpuParquetMultiFilePartitionReaderFactory(
+          sqlConf,
+          broadcastedHadoopConf,
+          relation.dataSchema,
+          requiredSchema,
+          relation.partitionSchema,
+          pushedDownFilters.toArray,
+          rapidsConf,
+          allMetrics,
+          queryUsesInputFile)
+      case _: OrcFileFormat =>
+        GpuOrcMultiFilePartitionReaderFactory(
+          sqlConf,
+          broadcastedHadoopConf,
+          relation.dataSchema,
+          requiredSchema,
+          relation.partitionSchema,
+          pushedDownFilters.toArray,
+          rapidsConf,
+          allMetrics,
+          queryUsesInputFile)
+      case _ =>
+        // never reach here
+        throw new RuntimeException(s"File format ${relation.fileFormat} is not supported yet")
     }
   }
 
