@@ -57,6 +57,7 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 
 object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
+  val JNI_PROPS_FILENAME = "spark-rapids-jni-version-info.properties"
   val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
@@ -71,6 +72,8 @@ object RapidsPluginUtils extends Logging {
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
+    val jniProps = loadProps(RapidsPluginUtils.JNI_PROPS_FILENAME)
+    logInfo(s"RAPIDS Accelerator JNI build: $jniProps")
     val cudfProps = loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
     logInfo(s"cudf build: $cudfProps")
     val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")

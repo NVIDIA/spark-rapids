@@ -27,9 +27,7 @@ MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
-# maven download SNAPSHOT jars: cudf, rapids-4-spark, spark3.0
-$MVN_GET_CMD -DremoteRepositories=$CUDF_REPO \
-    -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER -Dclassifier=$CUDA_CLASSIFIER
+# maven download SNAPSHOT jars: rapids-4-spark, Spark
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 
@@ -38,11 +36,10 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -Dtransitive=false \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
 if [ "$CUDA_CLASSIFIER"x == x ];then
-    CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
+    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 else
-    CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
+    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CUDA_CLASSIFIER}.jar"
 fi
-export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
@@ -73,8 +70,6 @@ getRevision() {
 
 set +x
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
-echo "-------------------- cudf JNI BUILD INFO --------------------" >> "$tmp_info"
-c_ver=$(getRevision $CUDF_JAR cudf-java-version-info.properties)
 echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
 p_ver=$(getRevision $RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"

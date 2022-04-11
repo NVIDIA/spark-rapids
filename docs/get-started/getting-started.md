@@ -23,12 +23,10 @@ default `SortShuffleManager`.
 
 To enable GPU processing acceleration you will need:
 - Apache Spark 3.1+
-- A spark cluster configured with GPUs that comply with the requirements for the version of 
-  [cudf](https://github.com/rapidsai/cudf).
+- A Spark cluster configured with GPUs that comply with the
+  [requirements for RAPIDS](https://rapids.ai/start.html#prerequisites).
     - One GPU per executor.
-- The following jars:
-    - A cudf jar that corresponds to the version of CUDA available on your cluster.
-    - RAPIDS Spark accelerator plugin jar.
+- The RAPIDS Accelerator for Apache Spark plugin jar.
 - To set the config `spark.plugins` to `com.nvidia.spark.SQLPlugin`
 
 ## Spark GPU Scheduling Overview
