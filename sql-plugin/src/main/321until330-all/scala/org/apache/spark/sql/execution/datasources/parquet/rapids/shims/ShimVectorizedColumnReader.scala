@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 import java.time.ZoneId
 import java.util.TimeZone
 
+import org.apache.parquet.VersionParser.ParsedVersion
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.schema.{GroupType, Type}
@@ -54,7 +55,8 @@ class ShimVectorizedColumnReader(
     convertTz: ZoneId,
     datetimeRebaseMode: String, // always LegacyBehaviorPolicy.CORRECTED
     int96RebaseMode: String, // always LegacyBehaviorPolicy.EXCEPTION
-    int96CDPHive3Compatibility: Boolean
+    int96CDPHive3Compatibility: Boolean,
+    writerVersion: ParsedVersion
 ) extends VectorizedColumnReader(
       columns.get(index),
       types.get(index).getLogicalTypeAnnotation,

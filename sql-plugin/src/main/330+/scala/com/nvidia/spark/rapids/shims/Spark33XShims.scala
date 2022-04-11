@@ -24,16 +24,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.{BaseSubqueryExec, CoalesceExec, FileSourceScanExec, FilterExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, FileSourceScanExec, FilterExec, InSubqueryExec, ProjectExec, ReusedSubqueryExec, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.GpuShuffleMeta
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -86,50 +84,17 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         sparkSig = TypeSig.cpuAtomics)),
       (ParquetFormatType, FileFormatChecks(
         cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.ansiIntervals).nested(),
         cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-            TypeSig.ARRAY + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.ansiIntervals).nested(),
         sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-            TypeSig.UDT + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested())))
+            TypeSig.UDT + TypeSig.ansiIntervals).nested())))
   }
 
   // 330+ supports DAYTIME interval types
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[Coalesce](
-        "Returns the first non-null argument if exists. Otherwise, null",
-        ExprChecks.projectOnly(
-          (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-              TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
-          TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck("param",
-            (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
-            TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
-          override def convertToGpu():
-          GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
-        }),
-      GpuOverrides.expr[AttributeReference](
-        "References an input column",
-        ExprChecks.projectAndAst(
-          TypeSig.astTypes,
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
-          TypeSig.all),
-        (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
-          // This is the only NOOP operator.  It goes away when things are bound
-          override def convertToGpu(): Expression = att
-
-          // There are so many of these that we don't need to print them out, unless it
-          // will not work on the GPU
-          override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-            if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
-              super.print(append, depth, all)
-            }
-          }
-        }),
       GpuOverrides.expr[RoundCeil](
         "Computes the ceiling of the given expression to d decimal places",
         ExprChecks.binaryProject(
@@ -312,48 +277,54 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuLessThanOrEqual(lhs, rhs)
-        })
+        }),
+        GpuOverrides.expr[Abs](
+          "Absolute value",
+          ExprChecks.unaryProjectAndAstInputMatchesOutput(
+            TypeSig.implicitCastsAstTypes,
+            TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
+            TypeSig.cpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes),
+          (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+            val ansiEnabled = SQLConf.get.ansiEnabled
+
+            override def tagSelfForAst(): Unit = {
+              if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+                willNotWorkInAst("AST unary minus does not support ANSI mode.")
+              }
+            }
+
+            // ANSI support for ABS was added in 3.2.0 SPARK-33275
+            override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
+          })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map
   }
 
   // 330+ supports DAYTIME interval types
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
+    val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL
     val map: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-      GpuOverrides.exec[ShuffleExchangeExec](
-        "The backend for most data being exchanged between processes",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested()
-            .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
-                s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
-            .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
-                s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
-            .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported if " +
-                s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
-          TypeSig.all),
-        (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.DECIMAL_128 + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
+              TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
           override val childScans: scala.Seq[ScanMeta[_]] =
             Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
-          override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
-        }),
-      GpuOverrides.exec[CoalesceExec](
-        "The backend for the dataframe coalesce method",
-        ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
-            TypeSig.MAP + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
-          TypeSig.all),
-        (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
-          override def convertToGpu(): GpuExec =
-            GpuCoalesceExec(coalesce.numPartitions, childPlans.head.convertIfNeeded())
+          override def tagPlanForGpu(): Unit = {
+            if (!p.runtimeFilters.isEmpty) {
+              willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
+            }
+            if (!p.keyGroupedPartitioning.isEmpty) {
+              willNotWorkOnGpu("key grouped partitioning is not supported")
+            }
+          }
+
+          override def convertToGpu(): GpuExec = GpuBatchScanExec(p.output,
+            childScans.head.convertToGpu(), p.runtimeFilters, p.keyGroupedPartitioning)
         }),
       GpuOverrides.exec[DataWritingCommandExec](
         "Writing data",
@@ -362,7 +333,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
             TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
             TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-            TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
+            TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
           override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -376,7 +347,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME + TypeSig.YEARMONTH).nested(),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
@@ -449,14 +420,14 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         // NullType is actually supported
-        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.DAYTIME + TypeSig.YEARMONTH,
+        ExecChecks(TypeSig.commonCudfTypesWithNested + TypeSig.ansiIntervals,
           TypeSig.all),
         (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[ProjectExec](
         "The backend for most select, withColumn and dropColumn statements",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-              TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.DAYTIME).nested(),
+              TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.ansiIntervals).nested(),
           TypeSig.all),
         (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
       GpuOverrides.exec[FilterExec](

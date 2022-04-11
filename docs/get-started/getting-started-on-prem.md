@@ -301,7 +301,7 @@ $SPARK_HOME/bin/spark-shell \
 
 ### MIG GPU on YARN
 Using [MIG](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#introduction)
-enabled GPUs on YARN requires enabling YARN GPU scheduling, cgroups, and using
+enabled GPUs on YARN requires enabling YARN GPU scheduling and using
 NVIDIA Docker runtime v2. The way to set this up depends on the version of YARN and the version
 of Spark. It is important to note that CUDA 11 only supports enumeration of a single MIG instance.
 This means that using any MIG device on YARN means only 1 GPU per container is allowed. See the
@@ -311,7 +311,7 @@ are using.
 #### YARN version 3.3.0+
 YARN version 3.3.0 and newer support a pluggable device framework which allows adding support for
 MIG devices via a plugin. See
-[NVIDIA GPU Plugin for YARN with MIG support for YARN 3.3.0+](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.02/examples/MIG-Support/device-plugins/gpu-mig).
+[NVIDIA GPU Plugin for YARN with MIG support for YARN 3.3.0+](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/MIG-Support/device-plugins/gpu-mig).
 If you are using that plugin with a Spark version older than 3.2.1 and/or specifying the resource
 as `nvidia/miggpu` you will also need to specify the config:
 
@@ -328,7 +328,7 @@ required.
 If you are using YARN version from 3.1.2 up until 3.3.0, it requires making modifications to YARN
 and deploying a version that adds support for MIG to the built-in YARN GPU resource plugin.
 
-See [NVIDIA Support for GPU for YARN with MIG support for YARN 3.1.2 until YARN 3.3.0](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.02/examples/MIG-Support/resource-types/gpu-mig)
+See [NVIDIA Support for GPU for YARN with MIG support for YARN 3.1.2 until YARN 3.3.0](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/MIG-Support/resource-types/gpu-mig)
 for details.
 
 ## Running on Kubernetes

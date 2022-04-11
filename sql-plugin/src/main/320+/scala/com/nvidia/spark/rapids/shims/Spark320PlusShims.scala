@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
@@ -417,12 +417,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
           override def tagPlanForGpu(): Unit = {
             if (!p.runtimeFilters.isEmpty) {
-              willNotWorkOnGpu("Runtime filtering (DPP) on datasource V2 is not supported")
+              willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
             }
           }
 
           override def convertToGpu(): GpuExec =
-            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu(), p.runtimeFilters)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
@@ -438,15 +438,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "CSV parsing",
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  /**
-   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
-   * affecting the unapply method signature
-   */
-  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
-  }
 
   /** dropped by SPARK-34234 */
   override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
