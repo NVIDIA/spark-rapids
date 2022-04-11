@@ -116,23 +116,23 @@
                 </dependency>
            </dependencies>
        </profile>
-       <profile>
-            <id>release311cdh</id>
+        <profile>
+            <id>release321cdh</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>311cdh</value>
+                    <value>321cdh</value>
                 </property>
             </activation>
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
                         <exclusion>
-                            <groupId>org.apache.curator</groupId>
-                            <artifactId>curator-recipes</artifactId>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
                         </exclusion>
                     </exclusions>
                     <scope>provided</scope>
@@ -140,44 +140,25 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
                         <exclusion>
                             <groupId>org.apache.spark</groupId>
                             <artifactId>spark-core_${scala.binary.version}</artifactId>
                         </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
                     </exclusions>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.curator</groupId>
-                    <artifactId>curator-recipes</artifactId>
-                    <version>4.3.0.7.2.7.0-184</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <!-- it seems CDH jars pull an old version of Guava but need new version
-                         to run with, so here we override Guava version for testing -->
-                    <groupId>com.google.guava</groupId>
-                    <artifactId>guava</artifactId>
-                    <version>${guava.cdh.version}</version>
-                    <scope>test</scope>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>2.0.0</version>
                 </dependency>
             </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <configuration>
-                            <archive>
-                                <!-- transient jar, writing compressed can take several x time -->
-                                <compress>false</compress>
-                            </archive>
-                            <classifier>${spark.version.classifier}</classifier>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
     </profiles>
 

@@ -402,6 +402,7 @@
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/320until330-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -463,6 +464,7 @@
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/320until330-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/321until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
@@ -483,6 +485,78 @@
                     </plugin>
                 </plugins>
             </build>
+            <modules>
+                <module>common</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>tools</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release321cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>321cdh</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version>${spark321cdh.version}</spark.version>
+                <spark.test.version>${spark321cdh.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/321cdh/scala</source>
+<!--                                        <source>${project.basedir}/src/main/321/scala</source>-->
+                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
+<!--                                        <source>${project.basedir}/src/main/311until320-all/scala</source>-->
+                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/scala</source>
+                                        <source>${project.basedir}/src/main/320+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/320until330-cdh/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/321until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>add-test-profile-src-321cdh</id>
+                                <goals><goal>add-test-source</goal></goals>
+                                <phase>generate-test-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/test/321cdh/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <repositories>
+                <repository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </repository>
+            </repositories>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -526,6 +600,7 @@
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/320until330-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/321until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
@@ -600,6 +675,7 @@
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/320until330-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/321until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
@@ -669,64 +745,6 @@
                     </plugin>
                 </plugins>
             </build>
-            <modules>
-                <module>common</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>tools</module>
-                <module>aggregator</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release311cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311cdh</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version>${spark311cdh.version}</spark.version>
-                <spark.test.version>${spark311cdh.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-31+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/311-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311cdh/scala</source>
-                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311cdh/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/pre320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-            <repositories>
-                <repository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                </repository>
-            </repositories>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -822,6 +840,7 @@
         <spark314.version>3.1.4-SNAPSHOT</spark314.version>
         <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
+        <spark321cdh.version>3.2.1.3.2.7171000.0-3</spark321cdh.version>
         <spark321db.version>3.2.1-databricks</spark321db.version>
         <spark322.version>3.2.2-SNAPSHOT</spark322.version>
         <spark330.version>3.3.0-SNAPSHOT</spark330.version>

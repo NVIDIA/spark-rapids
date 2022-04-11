@@ -42,11 +42,11 @@
         <target.classifier/>
         <noSnapshot.buildvers>
             311,
-            311cdh,
             312,
             313,
             320,
-            321
+            321,
+            321cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
@@ -98,7 +98,7 @@
                 <included_buildvers>
                     312,
                     320,
-                    311cdh
+                    321cdh
                 </included_buildvers>
             </properties>
         </profile>
@@ -120,44 +120,6 @@
                     ${databricks.buildvers}
                 </included_buildvers>
             </properties>
-        </profile>
-        <profile>
-            <id>release311cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311cdh</value>
-                </property>
-            </activation>
-            <properties>
-                <included_buildvers>${buildver}</included_buildvers>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>org.apache.curator</groupId>
-                            <artifactId>curator-recipes</artifactId>
-                        </exclusion>
-                    </exclusions>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.curator</groupId>
-                    <artifactId>curator-recipes</artifactId>
-                    <version>4.3.0.7.2.7.0-184</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-            <pluginRepositories>
-                <pluginRepository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                </pluginRepository>
-            </pluginRepositories>
         </profile>
         <profile>
             <id>individual</id>

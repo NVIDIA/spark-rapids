@@ -22,8 +22,8 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
-import org.apache.arrow.memory.{ArrowBuf, ReferenceManager}
+import com.nvidia.spark.rapids.shims.{ArrowShims, GpuTypeShims, ShimUnaryExecNode}
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.TaskContext
@@ -80,25 +80,23 @@ object HostColumnarToGpu extends Logging {
               "access its Arrow ValueVector", e)
         }
       case av: AccessibleArrowColumnVector =>
-        av.getArrowValueVector
+        av.getArrowValueVector()
       case _ =>
         throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
     }
 
     val referenceManagers = new mutable.ListBuffer[ReferenceManager]
-
-    def getBufferAndAddReference(buf: ArrowBuf): ByteBuffer = {
-      referenceManagers += buf.getReferenceManager
-      buf.nioBuffer()
-    }
-
     val nullCount = valVector.getNullCount
-    val dataBuf = getBufferAndAddReference(valVector.getDataBuffer)
-    val validity = getBufferAndAddReference(valVector.getValidityBuffer)
+
+    val dataBuf = ArrowShims.getBufferAndAddReference(ArrowShims.getArrowDataBuf(valVector),
+      referenceManagers)
+    val validity = ArrowShims.getBufferAndAddReference(ArrowShims.getArrowValidityBuf(valVector),
+      referenceManagers)
     // this is a bit ugly, not all Arrow types have the offsets buffer
     var offsets: ByteBuffer = null
     try {
-      offsets = getBufferAndAddReference(valVector.getOffsetBuffer)
+      offsets = ArrowShims.getBufferAndAddReference(ArrowShims.getArrowOffsetsBuf(valVector),
+        referenceManagers)
     } catch {
       case _: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer
