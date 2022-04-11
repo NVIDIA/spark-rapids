@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
+from spark_session import is_before_spark_320
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -226,3 +227,57 @@ def test_conditional_with_side_effects_sequence(data_gen):
             WHEN length(a) > 0 THEN sequence(1, length(a), 1) \
             ELSE null END'),
         conf = ansi_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+def test_conditional_with_side_effects_sequence_cast(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE \
+            WHEN length(a) > 0 THEN CAST(sequence(1, length(a), 1) AS STRING) \
+            ELSE null END'),
+        conf = ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(mk_str_gen('[a-z]{0,3}'))], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_element_at(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN size(a) > 1 THEN element_at(a, 2) ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(mk_str_gen('[a-z]{0,3}'))], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_array_index(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN size(a) > 1 THEN a[1] ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('map_gen',
+                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+                                 mk_str_gen('[a-z]{0,3}'), max_length=6)])
+@pytest.mark.parametrize('data_gen', [StringGen(pattern='neverempty_[0-9]', nullable=False)])
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_map_key_not_found(map_gen, data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, map_gen, data_gen).selectExpr(
+            'CASE WHEN length(b) = 0 THEN a["not_found"] ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('data_gen', [ShortGen().with_special_case(SHORT_MIN)], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_abs(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN a > -32768 THEN abs(a) ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('data_gen', [ShortGen().with_special_case(SHORT_MIN)], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_conditional_with_side_effects_unary_minus(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE WHEN a > -32768 THEN -a ELSE null END'),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
+

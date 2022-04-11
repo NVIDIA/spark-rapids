@@ -773,24 +773,44 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 object GpuRegExpUtils {
 
   /**
-   * Determine if a string contains back-references such as `$1` but ignoring
-   * if preceded by escape character.
+   * Convert symbols of back-references if input string contains any.
+   * In spark's regex rule, there are two patterns of back-references:
+   * \group_index and $group_index
+   * This method transforms above two patterns into cuDF pattern ${group_index}, except they are
+   * preceded by escape character.
+   *
+   * @param rep replacement string
+   * @return A pair consists of a boolean indicating whether containing any backref and the
+   *         converted replacement.
    */
-  def containsBackrefs(s: String): Boolean = {
+  def backrefConversion(rep: String): (Boolean, String) = {
+    val b = new StringBuilder
     var i = 0
-    while (i < s.length) {
-      if (s.charAt(i) == '\\') {
+    while (i < rep.length) {
+      // match $group_index or \group_index
+      if (Seq('$', '\\').contains(rep.charAt(i))
+        && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
+
+        b.append("${")
+        var j = i + 1
+        do {
+          b.append(rep.charAt(j))
+          j += 1
+        } while (j < rep.length && rep.charAt(j).isDigit)
+        b.append("}")
+        i = j
+      } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
+        // skip potential \$group_index or \\group_index
+        b.append('\\').append(rep.charAt(i + 1))
         i += 2
       } else {
-        if (s.charAt(i) == '$'  && i+1 < s.length) {
-          if (s.charAt(i+1).isDigit) {
-            return true
-          }
-        }
+        b.append(rep.charAt(i))
         i += 1
       }
     }
-    false
+
+    val converted = b.toString
+    !rep.equals(converted) -> converted
   }
 
   /**
@@ -956,6 +976,22 @@ case class GpuRegExpReplace(
 
 }
 
+case class GpuRegExpReplaceWithBackref(
+    override val child: Expression,
+    cudfRegexPattern: String,
+    cudfReplacementString: String)
+  extends GpuUnaryExpression with ImplicitCastInputTypes {
+
+  override def inputTypes: Seq[DataType] = Seq(StringType)
+
+  override def dataType: DataType = StringType
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    input.getBase.stringReplaceWithBackrefs(cudfRegexPattern, cudfReplacementString)
+  }
+
+}
+
 class GpuRegExpExtractMeta(
     expr: RegExpExtract,
     conf: RapidsConf,
@@ -1043,7 +1079,20 @@ case class GpuRegExpExtract(
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
 
-    val groupIndex = idx.getValue.asInstanceOf[Int]
+    // When group index is 0, it means extract the entire pattern including those parts which
+    // don't belong to any group. For instance,
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 0) => 123abcE
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 1) => 123
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 2) => E
+    //
+    // To support the full match (group index 0), we wrap a pair of parentheses on the original
+    // cudfRegexPattern.
+    val (extractPattern, groupIndex) = idx.getValue match {
+      case i: Int if i == 0 =>
+        ("(" + cudfRegexPattern + ")", 0)
+      case i =>
+        (cudfRegexPattern, i.asInstanceOf[Int] - 1)
+    }
 
     // There are some differences in behavior between cuDF and Java so we have
     // to handle those cases here.
@@ -1060,27 +1109,13 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    if (groupIndex == 0) {
-      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-          withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
-            withResource(str.getBase.isNull) { isNull =>
-              withResource(matches.ifElse(str.getBase, emptyString)) {
+    withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+        withResource(str.getBase.containsRe(cudfRegexPattern)) { matches =>
+          withResource(str.getBase.isNull) { isNull =>
+            withResource(str.getBase.extractRe(extractPattern)) { extract =>
+              withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
                 isNull.ifElse(nullString, _)
-              }
-            }
-          }
-        }
-      }
-    } else {
-      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-        withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-          withResource(str.getBase.extractRe(cudfRegexPattern)) { extract =>
-            withResource(str.getBase.matchesRe(cudfRegexPattern)) { matches =>
-              withResource(str.getBase.isNull) { isNull =>
-                withResource(matches.ifElse(extract.getColumn(groupIndex - 1), emptyString)) {
-                  isNull.ifElse(nullString, _)
-                }
               }
             }
           }

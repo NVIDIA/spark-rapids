@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.sql.catalyst.trees.Origin
+
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
@@ -23,7 +25,10 @@ object RapidsErrorUtils {
     new ArrayIndexOutOfBoundsException(s"Invalid index: $index, numElements: $numElements")
   }
 
-  def mapKeyNotExistError(key: String, isElementAtF: Boolean = false): NoSuchElementException = {
+  def mapKeyNotExistError(
+      key: String,
+      isElementAtFunction: Boolean,
+      origin: Origin): NoSuchElementException = {
     // Follow the Spark string format before 3.3.0
     new NoSuchElementException(s"Key $key does not exist.")
   }

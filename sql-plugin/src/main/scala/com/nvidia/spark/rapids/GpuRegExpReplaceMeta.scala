@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpUtils, GpuStringReplace}
+import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -29,13 +29,15 @@ class GpuRegExpReplaceMeta(
 
   private var pattern: Option[String] = None
   private var replacement: Option[String] = None
+  private var canUseGpuStringReplace = false
+  private var containsBackref: Boolean = false
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
-          // use GpuStringReplace
+          canUseGpuStringReplace = true
         } else {
           try {
             pattern = Some(new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString))
@@ -51,10 +53,11 @@ class GpuRegExpReplaceMeta(
 
     expr.rep match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        if (GpuRegExpUtils.containsBackrefs(s.toString)) {
-          willNotWorkOnGpu("regexp_replace with back-references is not supported")
+        GpuRegExpUtils.backrefConversion(s.toString) match {
+          case (hasBackref, convertedRep) =>
+            containsBackref = hasBackref
+            replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
         }
-        replacement = Some(GpuRegExpUtils.unescapeReplaceString(s.toString))
       case _ =>
     }
 
@@ -73,13 +76,16 @@ class GpuRegExpReplaceMeta(
     // ignore the pos expression which must be a literal 1 after tagging check
     require(childExprs.length == 4,
       s"Unexpected child count for RegExpReplace: ${childExprs.length}")
-    val Seq(subject, regexp, rep) = childExprs.take(3).map(_.convertToGpu())
-    if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
-      GpuStringReplace(subject, regexp, rep)
+    if (canUseGpuStringReplace) {
+      GpuStringReplace(lhs, regexp, rep)
     } else {
       (pattern, replacement) match {
         case (Some(cudfPattern), Some(cudfReplacement)) =>
-          GpuRegExpReplace(lhs, regexp, rep, cudfPattern, cudfReplacement)
+          if (containsBackref) {
+            GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)
+          } else {
+            GpuRegExpReplace(lhs, regexp, rep, cudfPattern, cudfReplacement)
+          }
         case _ =>
           throw new IllegalStateException("Expression has not been tagged correctly")
       }
