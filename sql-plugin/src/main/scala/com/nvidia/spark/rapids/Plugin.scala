@@ -92,11 +92,10 @@ object RapidsPluginUtils extends Logging {
     }
 
     if (conf.isUdfCompilerEnabled) {
-      logWarning("RAPIDS UDF compiler is enabled, to disable it " +
-      s"set `${RapidsConf.UDF_COMPILER_ENABLED}` to false.")
-    } else {
-      logWarning("RAPIDS UDF compiler is disabled, to enable it " +
-      s"set `${RapidsConf.UDF_COMPILER_ENABLED}` to true.")
+      logWarning("Experimental RAPIDS UDF compiler is enabled, in case of related failures " +
+      s"disable it by setting `${RapidsConf.UDF_COMPILER_ENABLED}` to false. " +
+      "More information is available at https://nvidia.github.io/spark-rapids/docs/FAQ.html#" +
+      "automatic-translation-of-scala-udfs-to-apache-spark-operations" )
     }
   }
 
