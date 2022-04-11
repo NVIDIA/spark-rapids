@@ -176,9 +176,11 @@ object IntervalUtils extends Arm {
         (p, q) match {
           case (lCv: ColumnVector, rCv: ColumnVector) =>
             withResource(lCv.equalTo(minScalar)) { isMin =>
-              withResource(rCv.equalTo(negOneScalar)) { isOne =>
-                if (BoolUtils.isAnyValidTrue(isMin) && BoolUtils.isAnyValidTrue(isOne)) {
-                  throw new ArithmeticException("overflow occurs")
+              withResource(rCv.equalTo(negOneScalar)) { isNegOne =>
+                withResource(isMin.and(isNegOne)) { invalid =>
+                  if (BoolUtils.isAnyValidTrue(invalid)) {
+                    throw new ArithmeticException("overflow occurs")
+                  }
                 }
               }
             }
