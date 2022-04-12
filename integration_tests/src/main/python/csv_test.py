@@ -238,7 +238,7 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     pytest.param('simple_float_values.csv', _int_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _long_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}),
-    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}),
+    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/5211')),
     pytest.param('simple_float_values.csv', _decimal_10_2_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _decimal_10_3_schema, {'header': 'true'}),
     pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}),
