@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.{ShimSparkPlan, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -567,13 +567,12 @@ case class GpuRangeExec(
   ) ++ semaphoreMetrics
 
   override def outputOrdering: Seq[SortOrder] = {
-    val shim = ShimLoader.getSparkShims
     val order = if (step > 0) {
       Ascending
     } else {
       Descending
     }
-    output.map(a => shim.sortOrder(a, order))
+    output.map(a => SparkShimImpl.sortOrder(a, order))
   }
 
   override def outputPartitioning: Partitioning = {

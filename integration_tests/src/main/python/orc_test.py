@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330
 from parquet_test import _nested_pruning_schemas
+from conftest import is_databricks_runtime
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -59,7 +60,7 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
     TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
-                  ] + decimal_gens_no_neg + decimal_128_gens_no_neg
+                  ] + decimal_gens
 
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
 
@@ -67,7 +68,7 @@ orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
-    ArrayGen(ArrayGen(decimal_gen_default, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(decimal_gen_64bit, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
 # Some struct gens, but not all because of nesting.
@@ -91,9 +92,9 @@ orc_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=Fals
 # Some map gens, but not all because of nesting
 orc_map_gens_sample = orc_basic_map_gens + [
     MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
-    MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(decimal_gen_36_5), max_length=10),
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(decimal_gen_128bit), max_length=10),
     MapGen(StringGen(pattern='key_[0-9]', nullable=False),
-           ArrayGen(StructGen([["c0", decimal_gen_18_3], ["c1", decimal_gen_20_2]])), max_length=10),
+           ArrayGen(StructGen([["c0", decimal_gen_64bit], ["c1", decimal_gen_128bit]])), max_length=10),
     MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
     MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
     MapGen(StructGen([['child0', byte_gen], ['child1', long_gen]], nullable=False),
@@ -230,6 +231,30 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path),
             conf=all_confs)
+
+# Setup external table by altering column names
+def setup_external_table_with_forced_positions(spark, table_name, data_path):
+    rename_cols_query = "CREATE EXTERNAL TABLE `{}` (`col10` INT, `_c1` STRING, `col30` DOUBLE) STORED AS orc LOCATION '{}'".format(table_name, data_path)
+    spark.sql(rename_cols_query).collect
+
+@pytest.mark.skipif(is_before_spark_320(), reason='ORC forced positional evolution support is added in Spark-3.2')
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('forced_position', ["true", "false"])
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_orc_forced_position(spark_tmp_path, spark_tmp_table_factory, reader_confs, forced_position, orc_impl):
+    orc_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + 'ORC_DATA'
+    with_cpu_session(lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_external_table_with_forced_positions(spark, table_name, data_path))
+
+    all_confs = copy_and_update(reader_confs, {
+        'orc.force.positional.evolution': forced_position,
+        'spark.sql.orc.impl': orc_impl})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
+        conf=all_confs)
 
 # In this we are reading the data, but only reading the key the data was partitioned by
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
@@ -444,3 +469,151 @@ def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enable
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(rs).orc(data_path),
             conf=all_confs)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
+@allow_non_gpu(any = True)
+@pytest.mark.parametrize('metadata_column', ["file_path", "file_name", "file_size", "file_modification_time"])
+def test_orc_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column):
+    data_path = spark_tmp_path + "/hidden_metadata.orc"
+    with_cpu_session(lambda spark : spark.range(10) \
+                     .selectExpr("id", "id % 3 as p") \
+                     .write \
+                     .partitionBy("p") \
+                     .mode("overwrite") \
+                     .orc(data_path))
+
+    def do_orc_scan(spark):
+        df = spark.read.orc(data_path).selectExpr("id", "_metadata.{}".format(metadata_column))
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_orc_scan,
+        exist_classes= "FileSourceScanExec",
+        non_exist_classes= "GpuBatchScanExec")
+
+
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
+def test_orc_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_list):
+    first_data_path = spark_tmp_path + '/ORC_DATA/first'
+    with_cpu_session(lambda spark : spark.range(1).toDF("a").write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/second'
+    with_cpu_session(lambda spark : spark.range(1, 2).toDF("a").write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/ORC_DATA/third'
+    with_cpu_session(lambda spark : spark.range(2, 3).toDF("a").write.json(third_data_path))
+
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.files.ignoreCorruptFiles': "true",
+                                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc([first_data_path, second_data_path, third_data_path]),
+            conf=all_confs)
+
+# Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+# Note that Min/Max don't push down partition column. Only Count does.
+# The following tests that GPU falls back to CPU when aggregates are pushed down on ORC.
+#
+# When the spark configuration is enabled we check the following:
+# ----------------------------------------------+
+# | Aggregate | Partition Column | FallBack CPU |
+# +-----------+------------------+--------------+
+# |   COUNT   |        Y         |      Y       |
+# |    MIN    |        Y         |      N       |
+# |    MAX    |        Y         |      N       |
+# |   COUNT   |        N         |      Y       |
+# |    MIN    |        N         |      Y       |
+# |    MAX    |        N         |      Y       |
+
+_aggregate_orc_list_col_partition = ['COUNT']
+_aggregate_orc_list_no_col_partition = ['MAX', 'MIN']
+_aggregate_orc_list = _aggregate_orc_list_col_partition + _aggregate_orc_list_no_col_partition
+_orc_aggregate_pushdown_enabled_conf = {'spark.sql.orc.aggregatePushdown': 'true',
+                                        "spark.sql.sources.useV1SourceList": ""}
+
+def _do_orc_scan_with_agg(spark, path, agg):
+    return spark.read.orc(path).selectExpr('{}(p)'.format(agg))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+@pytest.mark.parametrize('aggregate', _aggregate_orc_list)
+@allow_non_gpu(any = True)
+def test_orc_scan_with_aggregate_pushdown(spark_tmp_path, aggregate):
+    """
+    Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+    When the spark configuration is enabled we check the following:
+    ---------------------------+
+    | Aggregate | FallBack CPU |
+    +-----------+--------------+
+    |   COUNT   |      Y       |
+    |    MIN    |      Y       |
+    |    MAX    |      Y       |
+    """
+    data_path = spark_tmp_path + '/ORC_DATA/pushdown_00.orc'
+    # GPU ORC write with statistics is not correctly working.
+    # Create ORC file in CPU session as a workaround
+    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .orc(data_path))
+    
+    # fallback to CPU
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+        exist_classes="BatchScanExec",
+        non_exist_classes="GpuBatchScanExec",
+        conf=_orc_aggregate_pushdown_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+@pytest.mark.parametrize('aggregate', _aggregate_orc_list_col_partition)
+@allow_non_gpu(any = True)
+def test_orc_scan_with_aggregate_pushdown_on_col_partition(spark_tmp_path, aggregate):
+    """
+    Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+    Note that Min/Max don't push down partition column. Only Count does.
+    This test checks that GPU falls back to CPU when aggregates are pushed down on ORC.
+    When the spark configuration is enabled we check the following:
+    ----------------------------------------------+
+    | Aggregate | Partition Column | FallBack CPU |
+    +-----------+------------------+--------------+
+    |   COUNT   |        Y         |      Y       |
+    """
+    data_path = spark_tmp_path + '/ORC_DATA/pushdown_01.orc'
+    # GPU ORC write with statistics is not correctly working.
+    # Create ORC file in CPU session as a workaround
+    # Partition column P
+    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .partitionBy("p")
+                                .orc(data_path))
+    
+    # fallback to CPU only if aggregate is COUNT
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+            exist_classes="BatchScanExec",
+            non_exist_classes="GpuBatchScanExec",
+            conf=_orc_aggregate_pushdown_enabled_conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
+@pytest.mark.parametrize('aggregate', _aggregate_orc_list_no_col_partition)
+def test_orc_scan_with_aggregate_no_pushdown_on_col_partition(spark_tmp_path, aggregate):
+    """
+    Spark(330,_) allows aggregate pushdown on ORC by enabling spark.sql.orc.aggregatePushdown.
+    Note that Min/Max don't push down partition column.
+    When the spark configuration is enabled we check the following:
+    ----------------------------------------------+
+    | Aggregate | Partition Column | FallBack CPU |
+    +-----------+------------------+--------------+
+    |    MIN    |        Y         |      N       |
+    |    MAX    |        Y         |      N       |
+    """
+    data_path = spark_tmp_path + '/ORC_DATA/pushdown_02.orc'
+    # GPU ORC write with statistics is not correctly working.
+    # Create ORC file in CPU session as a workaround
+    # Partition column P
+    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
+                                .partitionBy("p")
+                                .orc(data_path))
+    
+    # should not fallback to CPU
+    assert_gpu_and_cpu_are_equal_collect(
+                lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+                conf=_orc_aggregate_pushdown_enabled_conf)

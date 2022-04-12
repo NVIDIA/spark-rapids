@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,7 +105,9 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
    * then no result returned. Because of 1582-10-03 in hybrid calender
    * is actually 1582-09-23 in proleptic Gregorian calendar.
    */
-  test("test hybrid Julian Gregorian calendar vs proleptic Gregorian calendar") {
+  ignore("test hybrid Julian Gregorian calendar vs proleptic Gregorian calendar") {
+    // After Spark 3.1.1, Orc failed to prune when converting Hybrid calendar to Proleptic calendar
+    // Orc bug: https://issues.apache.org/jira/browse/ORC-1083
 
     withCpuSparkSession(spark => {
       val df = frameFromOrcWithSchema("hybrid-Julian-calendar.orc",

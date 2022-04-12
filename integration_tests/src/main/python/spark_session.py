@@ -31,6 +31,32 @@ _spark = get_spark_i_know_what_i_am_doing()
 _orig_conf = _from_scala_map(_spark.conf._jconf.getAll())
 _orig_conf_keys = _orig_conf.keys()
 
+# Default settings that should apply to CPU and GPU sessions.
+# These settings can be overridden by specific tests if necessary.
+# Many of these are redundant with default settings for the configs but are set here explicitly
+# to ensure any cluster settings do not interfere with tests that assume the defaults.
+_default_conf = {
+    'spark.ansi.enabled': 'false',
+    'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
+    'spark.rapids.sql.castDecimalToString.enabled': 'false',
+    'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
+    'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
+    'spark.rapids.sql.castFloatToString.enabled': 'false',
+    'spark.rapids.sql.castStringToFloat.enabled': 'false',
+    'spark.rapids.sql.castStringToTimestamp.enabled': 'false',
+    'spark.rapids.sql.fast.sample': 'false',
+    'spark.rapids.sql.hasExtendedYearValues': 'true',
+    'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
+    'spark.rapids.sql.hasNans': 'true',
+    'spark.rapids.sql.improvedFloatOps.enabled': 'false',
+    'spark.rapids.sql.improvedTimeOps.enabled': 'false',
+    'spark.rapids.sql.incompatibleDateFormats.enabled': 'false',
+    'spark.rapids.sql.incompatibleOps.enabled': 'false',
+    'spark.rapids.sql.mode': 'executeongpu',
+    'spark.rapids.sql.variableFloatAgg.enabled': 'false',
+    'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+}
+
 def is_tz_utc(spark=_spark):
     """
     true if the tz is UTC else false
@@ -42,7 +68,9 @@ def is_tz_utc(spark=_spark):
     return utc == sys_tz
 
 def _set_all_confs(conf):
-    for key, value in conf.items():
+    newconf = _default_conf.copy()
+    newconf.update(conf)
+    for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
             _spark.conf.set(key, value)
 
@@ -102,15 +130,25 @@ def with_gpu_session(func, conf={}):
     copy['spark.rapids.sql.test.validateExecsInGpuPlan'] = ','.join(get_validate_execs_in_gpu_plan())
     return with_spark_session(func, conf=copy)
 
-def is_before_spark_311():
-    return spark_version() < "3.1.0"
-
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
 
-def is_databricks91_or_later():
+def is_spark_330_or_later():
+    return spark_version() >= "3.3.0"
+
+def is_databricks_version_or_later(major, minor):
     spark = get_spark_i_know_what_i_am_doing()
-    return spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "") >= "9.1"
+    version = spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "0.0")
+    parts = version.split(".")
+    if (len(parts) < 2):
+        raise RuntimeError("Unable to determine Databricks version from version string: " + version)
+    return int(parts[0]) >= major and int(parts[1]) >= minor
+
+def is_databricks91_or_later():
+    return is_databricks_version_or_later(9, 1)
+
+def is_databricks104_or_later():
+    return is_databricks_version_or_later(10, 4)

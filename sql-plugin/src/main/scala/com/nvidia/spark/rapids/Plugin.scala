@@ -21,11 +21,14 @@ import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.{Map => MutableMap}
 import scala.util.Try
+import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
@@ -272,6 +275,25 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuDeviceManager.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
   }
+
+  override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
+    failureReason match {
+      case ef: ExceptionFailure =>
+        val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
+          "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
+          "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
+          "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
+          "cudaErrorECCUncorrectable")
+        if (unrecoverableErrors.exists(ef.description.contains(_)) ||
+          unrecoverableErrors.exists(ef.toErrorString.contains(_))) {
+          logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+            s"${ef.toErrorString}")
+          System.exit(20)
+        }
+      case other =>
+        logDebug(s"Executor onTaskFailed not a CUDA fatal error: ${other.toString}")
+    }
+  }
 }
 
 object RapidsExecutorPlugin {
@@ -384,32 +406,41 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    ShimLoader.getSparkShims.getSparkShimVersion.toString
+    SparkShimImpl.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
     PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
+  private def containsExpression(exp: Expression, className: String,
+    regexMap: MutableMap[String, Regex] // regex memoization
+  ): Boolean = exp.find {
     case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
-    case e: ExecSubqueryExpression => containsPlan(e.plan, className)
+    case e: ExecSubqueryExpression => containsPlan(e.plan, className, regexMap)
     case _ => false
   }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+  private def containsPlan(plan: SparkPlan, className: String,
+    regexMap: MutableMap[String, Regex] = MutableMap.empty // regex memoization
+  ): Boolean = plan.find {
     case p if PlanUtils.sameClass(p, className) =>
       true
     case p: AdaptiveSparkPlanExec =>
-      containsPlan(p.executedPlan, className)
+      containsPlan(p.executedPlan, className, regexMap)
     case p: QueryStageExec =>
-      containsPlan(p.plan, className)
+      containsPlan(p.plan, className, regexMap)
     case p: ReusedSubqueryExec =>
-      containsPlan(p.child, className)
+      containsPlan(p.child, className, regexMap)
     case p: ReusedExchangeExec =>
-      containsPlan(p.child, className)
-    case p =>
-      p.expressions.exists(containsExpression(_, className))
+      containsPlan(p.child, className, regexMap)
+    case p if p.expressions.exists(containsExpression(_, className, regexMap)) =>
+      true
+    case p: SparkPlan =>
+      val sparkPlanStringForRegex = p.verboseStringWithSuffix(1000)
+      regexMap.getOrElseUpdate(className, className.r)
+        .findFirstIn(sparkPlanStringForRegex)
+        .nonEmpty
   }.nonEmpty
 }
 

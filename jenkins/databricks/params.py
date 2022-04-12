@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ local_script = 'build.sh'
 script_dest = '/home/ubuntu/build.sh'
 source_tgz = 'spark-rapids-ci.tgz'
 tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
-base_spark_pom_version = '3.0.1'
+base_spark_pom_version = '3.1.1'
 base_spark_version_to_install_databricks_jars = base_spark_pom_version
 clusterid = ''
 build_profiles = 'databricks,!snapshot-shims'

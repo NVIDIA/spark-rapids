@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2021, NVIDIA CORPORATION.
+  Copyright (c) 2021-2022, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.02.0</version>
+        <version>22.04.0</version>
     </parent>
     <artifactId>rapids-4-spark-tests-next-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests For 3.1.X+</name>
     <description>RAPIDS plugin for Apache Spark integration tests For 3.1.X+</description>
-    <version>22.02.0</version>
+    <version>22.04.0</version>
 
     <dependencies>
         <dependency>
@@ -51,12 +51,6 @@
             <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

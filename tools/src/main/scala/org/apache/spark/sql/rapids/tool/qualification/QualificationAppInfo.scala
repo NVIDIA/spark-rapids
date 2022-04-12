@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -227,11 +227,10 @@ class QualificationAppInfo(
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
-    checkJdbcScan(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
-      checkGraphNodeForBatchScan(sqlID, node)
+      checkGraphNodeForReads(sqlID, node)
       if (isDataSetOrRDDPlan(node.desc)) {
         sqlIDToDataSetOrRDDCase += sqlID
       }

@@ -22,17 +22,17 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.02.0</version>
+        <version>22.04.0</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tools_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark tools</name>
     <description>RAPIDS Accelerator for Apache Spark tools</description>
-    <version>22.02.0</version>
+    <version>22.04.0</version>
     <packaging>jar</packaging>
 
     <properties>
-        <hadoop.version>3.1.1</hadoop.version>
+        <hadoop.version>3.1.4</hadoop.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
         <spark.version.classifier>spark311</spark.version.classifier>
@@ -40,6 +40,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-common_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
@@ -100,18 +105,14 @@
                             <artifactSet>
                                 <includes>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
+                                    <include>com.nvidia:rapids-4-spark-common_${scala.binary.version}</include>
                                 </includes>
                             </artifactSet>
                             <filters>
                                 <filter>
-                                    <artifact>org.rogach:scallop_${scala.binary.version}:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.MF</exclude>
-                                    </excludes>
-                                </filter>
-                                <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
+                                        <exclude>META-INF/*.MF</exclude>
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>

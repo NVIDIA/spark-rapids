@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.02.0</version>
+        <version>22.04.0</version>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>22.02.0</version>
+    <version>22.04.0</version>
 
     <dependencies>
         <dependency>
@@ -36,9 +36,9 @@
             <classifier>${cuda.version}</classifier>
         </dependency>
         <dependency>
-            <groupId>com.google.flatbuffers</groupId>
-            <artifactId>flatbuffers-java</artifactId>
-            <scope>compile</scope>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-common_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
@@ -49,41 +49,18 @@
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Flat buffers is a small jar, it's appropriate to use a fixed version -->
+        <!-- Shade and relocate it in the aggregator module-->
         <dependency>
-          <groupId>org.apache.orc</groupId>
-          <artifactId>orc-core</artifactId>
-          <classifier>${orc.classifier}</classifier>
-          <exclusions>
-            <exclusion>
-              <groupId>org.slf4j</groupId>
-              <artifactId>slf4j-api</artifactId>
-            </exclusion>
-          </exclusions>
+            <groupId>com.google.flatbuffers</groupId>
+            <artifactId>flatbuffers-java</artifactId>
         </dependency>
         <dependency>
-          <groupId>org.apache.orc</groupId>
-          <artifactId>orc-mapreduce</artifactId>
-          <classifier>${orc.classifier}</classifier>
-          <exclusions>
-            <exclusion>
-              <groupId>com.google.code.findbugs</groupId>
-              <artifactId>jsr305</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hive</groupId>
-          <artifactId>hive-storage-api</artifactId>
-          <exclusions>
-            <exclusion>
-              <groupId>org.slf4j</groupId>
-              <artifactId>slf4j-api</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>com.google.protobuf</groupId>
-          <artifactId>protobuf-java</artifactId>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-avro_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
@@ -149,6 +126,24 @@
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                 </dependency>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-avro_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+		    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.avro</groupId>
+                    <artifactId>avro-mapred</artifactId>
+                    <version>${spark.version}</version>
+		    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.avro</groupId>
+                    <artifactId>avro</artifactId>
+                    <version>${spark.version}</version>
+		    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.hive</groupId>
                     <artifactId>hive-exec</artifactId>
                     <version>${spark.version}</version>
@@ -197,6 +192,12 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-network-common_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-network-shuffle_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -280,13 +281,37 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-common</artifactId>
+                    <artifactId>hadoop-client</artifactId>
+                    <version>${hadoop.client.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.orc</groupId>
+                    <artifactId>orc-core</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-mapreduce-client</artifactId>
+                    <groupId>org.apache.orc</groupId>
+                    <artifactId>orc-shims</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.orc</groupId>
+                    <artifactId>orc-mapreduce</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-storage-api</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.google.protobuf</groupId>
+                    <artifactId>protobuf-java</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -363,6 +388,22 @@
                         <mapper type="glob" from="*-binary" to="*"/>
                       </copy>
                     </target>
+                  </configuration>
+                </execution>
+                <execution>
+                  <id>generate-shim-service</id>
+                  <phase>generate-resources</phase>
+                  <goals>
+                      <goal>run</goal>
+                  </goals>
+                  <configuration>
+                      <target>
+                          <property name="servicesDir"
+                                    value="${project.build.directory}/extra-resources/META-INF/services"/>
+                          <mkdir dir="${servicesDir}"/>
+                          <echo file="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                message="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider${line.separator}"/>
+                      </target>
                   </configuration>
                 </execution>
               </executions>

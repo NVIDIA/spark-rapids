@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
-import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -343,6 +343,19 @@ object GpuColumnarToRowExecParent {
     Option(Tuple2(arg.child, arg.exportColumnarRdd))
   }
 
+  /**
+   * Helper to check if GPU accelerated row-column transpose is supported.
+   * This is a workaround for [[https://github.com/rapidsai/cudf/issues/10569]],
+   * where CUDF JNI column->row transposition works incorrectly on certain
+   * GPU architectures.
+   */
+  private lazy val isAcceleratedTransposeSupported: Boolean = {
+    // Check if the current CUDA device architecture exceeds Pascal.
+    // i.e. CUDA compute capability > 6.x.
+    // Reference:  https://developer.nvidia.com/cuda-gpus
+    Cuda.getComputeCapabilityMajor > 6
+  }
+
   def makeIteratorFunc(
       output: Seq[Attribute],
       numOutputRows: GpuMetric,
@@ -356,7 +369,12 @@ object GpuColumnarToRowExecParent {
         // This number includes the 1-bit validity per column, but doesn't include padding.
         // We are being conservative by only allowing 100M columns until we feel the need to
         // increase this number
-        output.length <= 100000000) {
+        output.length <= 100000000 &&
+        // Work around {@link https://github.com/rapidsai/cudf/issues/10569}, where CUDF JNI
+        // acceleration of column->row transposition produces incorrect results on certain
+        // GPU architectures.
+        // Check that the accelerated transpose works correctly on the current CUDA device.
+        isAcceleratedTransposeSupported) {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)

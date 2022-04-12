@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, DecimalUtils, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
@@ -47,7 +47,7 @@ case class GpuCheckOverflow(child: Expression,
     val rounded = if (resultDType.equals(base.getType)) {
       base.incRefCount()
     } else {
-      withResource(DecimalUtil.round(base, dataType.scale, cudf.RoundMode.HALF_UP)) { rounded =>
+      withResource(base.round(dataType.scale, cudf.RoundMode.HALF_UP)) { rounded =>
         if (resultDType.getTypeId != base.getType.getTypeId) {
           rounded.castTo(resultDType)
         } else {
@@ -98,12 +98,12 @@ case class GpuMakeDecimal(
   override def toString: String = s"MakeDecimal($child,$precision,$sparkScale)"
 
   private lazy val (minValue, maxValue) = {
-    val (minDec, maxDec) = DecimalUtil.bounds(dataType)
-    (minDec.bigDecimal.unscaledValue().longValue(), maxDec.bigDecimal.unscaledValue().longValue())
+    val bounds = DecimalUtils.bounds(dataType.precision, dataType.scale)
+    (bounds.getKey.unscaledValue().longValue(), bounds.getValue.unscaledValue().longValue())
   }
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val outputType = DecimalUtil.createCudfDecimal(precision, sparkScale)
+    val outputType = DecimalUtils.createDecimalType(precision, sparkScale)
     val base = input.getBase
     val outOfBounds = withResource(Scalar.fromLong(maxValue)) { maxScalar =>
       withResource(base.greaterThan(maxScalar)) { over =>

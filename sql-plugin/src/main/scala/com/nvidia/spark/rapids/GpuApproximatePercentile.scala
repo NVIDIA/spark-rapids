@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.GroupByAggregation
+import ai.rapids.cudf.{DType, GroupByAggregation, ReductionAggregation}
 import com.nvidia.spark.rapids.GpuCast.doCast
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.ShimExpression
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
@@ -64,9 +65,12 @@ case class GpuApproximatePercentile (
   // Attributes of fields in the aggregation buffer.
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
-  // initialValues is only used in reduction and this is not currently supported
-  override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException(
-    "approx_percentile does not support reduction")
+  override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(
+    InternalRow(
+      ArrayData.toArrayData(Array.empty), // centroids (mean, weight)
+      0d, // min
+      0d), // max
+    CudfTDigest.dataType))
 
   // the update expression will create a t-digest (List[Struct[Double, Double])
   override lazy val updateAggregates: Seq[CudfAggregate] =
@@ -178,8 +182,12 @@ case class ApproxPercentileFromTDigestExpr(
 
 class CudfTDigestUpdate(accuracyExpression: GpuLiteral)
   extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
+
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) =>
+      col.reduce(ReductionAggregation.createTDigest(CudfTDigest.accuracy(accuracyExpression)),
+        DType.STRUCT)
+
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.createTDigest(CudfTDigest.accuracy(accuracyExpression))
   override val name: String = "CudfTDigestUpdate"
@@ -189,8 +197,10 @@ class CudfTDigestUpdate(accuracyExpression: GpuLiteral)
 class CudfTDigestMerge(accuracyExpression: GpuLiteral)
   extends CudfAggregate {
 
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) =>
+      col.reduce(ReductionAggregation.mergeTDigest(CudfTDigest.accuracy(accuracyExpression)))
+
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeTDigest(CudfTDigest.accuracy(accuracyExpression))
   override val name: String = "CudfTDigestMerge"

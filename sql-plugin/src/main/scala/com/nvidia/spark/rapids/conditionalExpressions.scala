@@ -18,44 +18,19 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, NullPolicy, Scalar, ScanAggregation, ScanType, Table, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
 import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
-  with ShimExpression {
+object GpuExpressionWithSideEffectUtils extends Arm {
 
-  protected def computeIfElse(
-      batch: ColumnarBatch,
-      predExpr: Expression,
-      trueExpr: Expression,
-      falseValue: Any): GpuColumnVector = {
-    withResourceIfAllowed(falseValue) { falseRet =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
-        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
-          val finalRet = (trueRet, falseRet) match {
-            case (t: GpuColumnVector, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuColumnVector) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuColumnVector, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t: GpuScalar, f: GpuScalar) =>
-              pred.getBase.ifElse(t.getBase, f.getBase)
-            case (t, f) =>
-              throw new IllegalStateException(s"Unexpected inputs" +
-                s" ($t: ${t.getClass}, $f: ${f.getClass})")
-          }
-          GpuColumnVector.from(finalRet, dataType)
-        }
-      }
-    }
-  }
-
-  protected def isAllTrue(col: GpuColumnVector): Boolean = {
+  /**
+   * Returns true only if all rows are true. Nulls are considered false.
+   */
+  def isAllTrue(col: GpuColumnVector): Boolean = {
     assert(BooleanType == col.dataType())
     if (col.getRowCount == 0) {
       return true
@@ -69,19 +44,30 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     }
   }
 
-  protected def isAllFalse(col: GpuColumnVector): Boolean = {
+  /**
+   * Used to shortcircuit predicates and filter conditions.
+   * 
+   * @param nullsAsFalse when true, null values are considered false.
+   * @param col the input being evaluated.
+   * @return boolean. When nullsAsFalse is set, it returns True if none of the rows is true;
+   *         Otherwise, returns true if at least one row exists and all rows are false.   
+   */
+  def isAllFalse(col: GpuColumnVector, nullsAsFalse: Boolean = true): Boolean = {
     assert(BooleanType == col.dataType())
-    if (col.getRowCount == col.numNulls()) {
-      // all nulls, and null values are false values here
-      return true
+    if (nullsAsFalse) {
+      if (col.getRowCount == col.numNulls()) {
+        return true
+      }
+    } else if (col.hasNull() || col.getRowCount == 0) {
+      return false
     }
     withResource(col.getBase.any()) { anyTrue =>
-      // null values are considered false values in this context
+      // null values are considered false values in the context of nullsAsFalse true
       !anyTrue.getBoolean
     }
   }
 
-  protected def filterBatch(
+  def filterBatch(
       tbl: Table,
       pred: ColumnVector,
       colTypes: Array[DataType]): ColumnarBatch = {
@@ -109,7 +95,7 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
     }
   }
 
-  protected def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
+  def gather(predicate: ColumnVector, t: GpuColumnVector): ColumnVector = {
     // convert the predicate boolean column to numeric where 1 = true
     // and 0 (or null) = false and then use `scan` with `sum` to convert to
     // indices.
@@ -143,13 +129,61 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
       }
     }
   }
+
+  def replaceNulls(cv: ColumnVector, bool: Boolean) : ColumnVector = {
+    if (!cv.hasNulls) {
+      return cv.incRefCount()
+    }
+    withResource(Scalar.fromBool(bool)) { booleanScalar =>
+      cv.replaceNulls(booleanScalar)
+    }
+  }
+
+  def shortCircuitWithBool(gpuCV: GpuColumnVector, bool: Boolean) : GpuColumnVector = {
+    withResource(GpuScalar.from(bool, BooleanType)) { boolScalar =>
+      GpuColumnVector.from(boolScalar, gpuCV.getRowCount.toInt, BooleanType)
+    }
+  }
+}
+
+trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
+  with ShimExpression {
+
+  protected def computeIfElse(
+      batch: ColumnarBatch,
+      predExpr: Expression,
+      trueExpr: Expression,
+      falseValue: Any): GpuColumnVector = {
+    withResourceIfAllowed(falseValue) { falseRet =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
+          val finalRet = (trueRet, falseRet) match {
+            case (t: GpuColumnVector, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuColumnVector, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t, f) =>
+              throw new IllegalStateException(s"Unexpected inputs" +
+                s" ($t: ${t.getClass}, $f: ${f.getClass})")
+          }
+          GpuColumnVector.from(finalRet, dataType)
+        }
+      }
+    }
+  }
 }
 
 case class GpuIf(
     predicateExpr: Expression,
     trueExpr: Expression,
     falseExpr: Expression) extends GpuConditionalExpression {
-
+  
+  import GpuExpressionWithSideEffectUtils._
+  
   @transient
   override lazy val inputTypesForMerging: Seq[DataType] = {
     Seq(trueExpr.dataType, falseExpr.dataType)
@@ -275,6 +309,8 @@ case class GpuIf(
 case class GpuCaseWhen(
     branches: Seq[(Expression, Expression)],
     elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
+
+  import GpuExpressionWithSideEffectUtils._
 
   override def children: Seq[Expression] = branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue
 
@@ -476,10 +512,7 @@ case class GpuCaseWhen(
     cumulativePred match {
       case Some(prev) =>
         withResource(boolInverted(prev.getBase)) { notPrev =>
-          val whenReplaced = withResource(Scalar.fromBool(false)) { falseScalar =>
-            whenBool.getBase.replaceNulls(falseScalar)
-          }
-          withResource(whenReplaced) { _ =>
+          withResource(replaceNulls(whenBool.getBase, false)) { whenReplaced =>
             GpuColumnVector.from(whenReplaced.and(notPrev), DataTypes.BooleanType)
           }
         }

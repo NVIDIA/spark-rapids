@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.02.0</version>
+        <version>22.04.0</version>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>22.02.0</version>
+    <version>22.04.0</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -52,24 +52,21 @@
     <properties>
         <target.classifier/>
         <noSnapshot.buildvers>
-            301,
-            302,
-            303,
             311,
             311cdh,
             312,
+            313,
             320,
             321
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            304,
-            313,
+            314,
             322,
             330
         </snapshot.buildvers>
         <databricks.buildvers>
-            301db,
-            312db
+            312db,
+            321db
         </databricks.buildvers>
     </properties>
     <profiles>
@@ -110,7 +107,6 @@
             <id>minimumFeatureVersionMix</id>
             <properties>
                 <included_buildvers>
-                    302,
                     312,
                     320,
                     311cdh
@@ -323,7 +319,7 @@
                             <target>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <equals arg1="spark301" arg2="${spark.version.classifier}"/>
+                                    <equals arg1="spark311" arg2="${spark.version.classifier}"/>
                                     <ac:then>
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>
@@ -357,6 +353,11 @@
                                 <artifactId>curator-recipes</artifactId>
                             </exclusion>
                         </exclusions>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.spark</groupId>
+                        <artifactId>spark-avro_${scala.binary.version}</artifactId>
+                        <version>${spark.version}</version>
                     </dependency>
                 </dependencies>
             </plugin>

@@ -20,7 +20,7 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
+import com.nvidia.spark.rapids.shims.TypeSigUtil
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
@@ -528,6 +528,30 @@ object TypeSig {
     TypeSig.none.withLit(dataType)
 
   /**
+   * Create a TypeSig that only supports literals of certain given types.
+   */
+  def lit(dataTypes: TypeEnum.ValueSet): TypeSig =
+    new TypeSig(dataTypes)
+
+  /**
+   * Create a TypeSig that supports only literals of common primitive CUDF types.
+   */
+  def commonCudfTypesLit(): TypeSig = {
+    lit(TypeEnum.ValueSet(
+      TypeEnum.BOOLEAN,
+      TypeEnum.BYTE,
+      TypeEnum.SHORT,
+      TypeEnum.INT,
+      TypeEnum.LONG,
+      TypeEnum.FLOAT,
+      TypeEnum.DOUBLE,
+      TypeEnum.DATE,
+      TypeEnum.TIMESTAMP,
+      TypeEnum.STRING
+    ))
+  }
+
+  /**
    * Create a TypeSig that has partial support for the given type.
    */
   def psNote(dataType: TypeEnum.Value, note: String): TypeSig =
@@ -667,6 +691,12 @@ object TypeSig {
   val comparable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL_128 + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
       UDT).nested()
+
+  /**
+   * commonCudfTypes plus decimal, null and nested types.
+   */
+  val commonCudfTypesWithNested: TypeSig = (commonCudfTypes + DECIMAL_128 + NULL +
+      ARRAY + STRUCT + MAP).nested()
 
   /**
    * Different types of Pandas UDF support different sets of output type. Please refer to
@@ -884,7 +914,7 @@ object FileFormatChecks {
  * The namedChecks map can be used to provide checks for specific groups of expressions.
  */
 class ExecChecks private(
-    check: TypeSig,
+    val check: TypeSig,
     sparkSig: TypeSig,
     val namedChecks: Map[String, InputCheck],
     override val shown: Boolean = true)
@@ -1097,7 +1127,7 @@ object CaseWhenCheck extends ExprChecks {
 }
 
 /**
- * This is specific to WidowSpec, because it does not follow the typical parameter convention.
+ * This is specific to WindowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
   val check: TypeSig =
@@ -1281,7 +1311,8 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY +
       STRUCT + MAP) +
       psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
-      "desired child types")
+      "desired child types") +
+      psNote(TypeEnum.STRING, "the map's key and value must also support being cast to string")
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
@@ -2106,31 +2137,14 @@ object SupportedOpsForTools {
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
+          case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
         val read = ioMap(ReadFileOp)
         // we have lots of configs for various operations, just try to get the main ones
         val readOps = types.map { t =>
-          val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
-            t.toString match {
-              case "BOOLEAN" => conf.isCsvBoolReadEnabled
-              case "BYTE" => conf.isCsvByteReadEnabled
-              case "SHORT" => conf.isCsvShortReadEnabled
-              case "INT" => conf.isCsvIntReadEnabled
-              case "LONG" => conf.isCsvLongReadEnabled
-              case "FLOAT" => conf.isCsvFloatReadEnabled
-              case "DOUBLE" => conf.isCsvDoubleReadEnabled
-              case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
-              case "DATE" => conf.isCsvDateReadEnabled
-              case _ => true
-            }
-          } else {
-            t.toString match {
-              case _ => true
-            }
-          }
-          if (!formatEnabled || !typeEnabled) {
+          if (!formatEnabled) {
             // indicate configured off by default
             "CO"
           } else {

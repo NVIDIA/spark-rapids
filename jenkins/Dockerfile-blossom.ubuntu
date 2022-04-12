@@ -44,7 +44,8 @@ RUN python3.8 -m easy_install pip
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
 
-RUN ln -s /usr/bin/python3.8 /usr/bin/python
+RUN ln -sfn /usr/bin/python3.8 /usr/bin/python
+RUN ln -sfn /usr/bin/python3.8 /usr/bin/python3
 RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order
 
 # libnuma1 and libgomp1 are required by ucx packaging
@@ -55,3 +56,6 @@ RUN mkdir -p /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-v${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5.x-cuda${CUDA_VER}.deb && \
     dpkg -i *.deb && \
     rm -rf /tmp/ucx
+
+# export JAVA_HOME for mvn option 'source-javadoc'
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
