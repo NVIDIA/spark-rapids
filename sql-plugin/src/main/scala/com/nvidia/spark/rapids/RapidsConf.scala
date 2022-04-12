@@ -415,7 +415,7 @@ object RapidsConf {
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly.")
     .stringConf
-    .createWithDefault("ARENA")
+    .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -1393,7 +1393,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0-SNAPSHOT.jar,cudf-22.04.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.06.0-SNAPSHOT.jar,cudf-22.06.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```

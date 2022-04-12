@@ -60,7 +60,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
 object GpuReadParquetFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
-    GpuParquetScanBase.tagSupport(
+    GpuParquetScan.tagSupport(
       SparkShimImpl.sessionFromPlan(fsse),
       fsse.requiredSchema,
       meta

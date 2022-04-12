@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import approximate_float
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 
 # Each descriptor contains a list of data generators and a corresponding boolean
@@ -103,6 +103,11 @@ def test_bitwise_not(data_descr):
     (float_gen, True),
     (double_gen, True)], ids=idfn)
 def test_unary_positive(data_descr):
+    assert_unary_ast(data_descr, lambda df: df.selectExpr('+a'))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_unary_positive_for_daytime_interval():
+    data_descr = (DayTimeIntervalGen(), True)
     assert_unary_ast(data_descr, lambda df: df.selectExpr('+a'))
 
 @pytest.mark.parametrize('data_descr', ast_arithmetic_descrs, ids=idfn)
