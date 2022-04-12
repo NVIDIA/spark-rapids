@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, DecimalType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -133,16 +133,6 @@ object GpuJsonScan {
       }
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
-    }
-
-    if (!meta.conf.isJsonFloatReadEnabled && types.contains(FloatType)) {
-      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
-        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
-    }
-
-    if (!meta.conf.isJsonDoubleReadEnabled && types.contains(DoubleType)) {
-      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading doubles. " +
-        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
     }
 
     if (!meta.conf.isJsonDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
