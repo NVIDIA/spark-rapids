@@ -847,9 +847,11 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
+            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
+            + GpuTypeShims.additionalCommonOperatorSupportedTypes)
             .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-                TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
+                TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT +
+                GpuTypeShims.additionalCommonOperatorSupportedTypes),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
