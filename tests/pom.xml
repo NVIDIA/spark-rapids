@@ -86,6 +86,12 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-hadoop</artifactId>
+            <version>1.10.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
