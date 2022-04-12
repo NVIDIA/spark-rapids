@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -80,7 +81,7 @@ abstract class RapidsBufferStore(
       // We need to release the `RapidsBufferStore` lock to prevent a lock order inversion
       // deadlock: (1) `RapidsBufferBase.free`     calls  (2) `RapidsBufferStore.remove` and
       //           (1) `RapidsBufferStore.freeAll` calls  (2) `RapidsBufferBase.free`.
-      values.foreach(_.free())
+      values.safeFree()
     }
 
     def nextSpillableBuffer(): RapidsBufferBase = synchronized {

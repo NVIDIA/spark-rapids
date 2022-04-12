@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, Rmm, Table}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -145,7 +146,7 @@ class RapidsBufferCatalog extends Logging {
   def removeBuffer(id: RapidsBufferId): Unit = {
     val buffers = bufferMap.remove(id)
     if (buffers != null) {
-      buffers.foreach(_.free())
+      buffers.safeFree()
     }
   }
 
