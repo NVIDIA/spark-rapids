@@ -182,6 +182,17 @@ final class TypeSig private(
   }
 
   /**
+   * Add a literal restriction to the signature
+   * @param dataTypes the types that have to be literal. Will be added if they do not already exist.
+   * @return the new signature.
+   */
+  def withLit(dataTypes: TypeEnum.ValueSet): TypeSig = {
+    val it = initialTypes ++ dataTypes
+    val lt = litOnlyTypes ++ dataTypes
+    new TypeSig(it, maxAllowedDecimalPrecision, childTypes, lt, notes)
+  }
+
+  /**
    * All currently supported types can only be literal values.
    * @return the new signature.
    */
@@ -531,7 +542,7 @@ object TypeSig {
    * Create a TypeSig that only supports literals of certain given types.
    */
   def lit(dataTypes: TypeEnum.ValueSet): TypeSig =
-    new TypeSig(dataTypes)
+    TypeSig.none.withLit(dataTypes)
 
   /**
    * Create a TypeSig that supports only literals of common primitive CUDF types.

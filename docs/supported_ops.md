@@ -5066,17 +5066,17 @@ are limited.
 </tr>
 <tr>
 <td>index/key</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>Only ints are supported as array indexes</em></td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18;<br/>Literal value only</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Supported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.;<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6005,16 +6005,16 @@ are limited.
 </tr>
 <tr>
 <td>key</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP;<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18;<br/>Literal value only</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
