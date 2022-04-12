@@ -55,7 +55,10 @@ Generated on 2022-04-12
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#5180](https://github.com/NVIDIA/spark-rapids/issues/5180)|[BUG] create_map failed with java.lang.IllegalStateException: This is not supported yet|
+|[#5181](https://github.com/NVIDIA/spark-rapids/issues/5181)|[BUG] Dataproc tests failing when trying to detect for accelerated row conversions|
 |[#5154](https://github.com/NVIDIA/spark-rapids/issues/5154)|[BUG] build failed in databricks 10.4 runtime (updated recently)|
+|[#5159](https://github.com/NVIDIA/spark-rapids/issues/5159)|[BUG] Approx percentile query fails with UnsupportedOperationException|
 |[#5164](https://github.com/NVIDIA/spark-rapids/issues/5164)|[BUG] Databricks 9.1ML failed with "java.lang.NoSuchMethodError: org.apache.spark.sql.execution.metric.SQLMetrics$.createSizeMetric"|
 |[#5125](https://github.com/NVIDIA/spark-rapids/issues/5125)|[BUG] GpuCast.hasSideEffects does not check if child expression has side effects|
 |[#5091](https://github.com/NVIDIA/spark-rapids/issues/5091)|[BUG] Profiling tool fails process custom task accumulators of type CollectionAccumulator|
