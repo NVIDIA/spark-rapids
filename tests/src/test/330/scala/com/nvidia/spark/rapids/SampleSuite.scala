@@ -23,7 +23,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  * Can not put this suite to Pyspark test cases
  * because of currently Pyspark not have year-month type.
  * See: https://github.com/apache/spark/blob/branch-3.3/python/pyspark/sql/types.py
- * Should the year-month scala test cases to the integration test module,
+ * Should move the year-month scala test cases to the integration test module,
  * filed an issue to track: https://github.com/NVIDIA/spark-rapids/issues/5212
  */
 class SampleSuite extends SparkQueryCompareTestSuite {
