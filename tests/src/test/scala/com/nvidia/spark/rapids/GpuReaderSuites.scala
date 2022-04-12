@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.GpuBatchScanExec
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.FileUtils.withTempPath
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
@@ -134,10 +136,10 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
   }
 }
 
-class ParquetSuites extends FileSourceSuite {
+class GpuParquetReaderSuites extends FileSourceSuite {
   override protected def format: String = "parquet"
 }
 
-class OrcSuites extends FileSourceSuite {
+class GpuOrcReaderSuites extends FileSourceSuite {
   override protected def format: String = "orc"
 }
