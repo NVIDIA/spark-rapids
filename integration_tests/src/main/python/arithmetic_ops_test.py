@@ -788,7 +788,7 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
-            error_message='java.lang.ArithmeticException: Overflow in integral divide')
+            error_message='ArithmeticException: Overflow in integral divide')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_div_overflow_df(spark, expr),

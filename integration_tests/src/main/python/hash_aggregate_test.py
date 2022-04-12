@@ -1038,18 +1038,18 @@ def test_first_last_reductions_nested_types(data_gen):
 def test_generic_reductions(data_gen):
     local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
-            # Coalesce and sort are to make sure that first and last, which are non-deterministic
-            # become deterministic
-            lambda spark : unary_op_df(spark, data_gen)\
-                    .coalesce(1).selectExpr(
-                'min(a)',
-                'max(a)',
-                'first(a)',
-                'last(a)',
-                'count(a)',
-                'count()',
-                'count(1)'),
-            conf = local_conf)
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark : unary_op_df(spark, data_gen) \
+            .coalesce(1).selectExpr(
+            'min(a)',
+            'max(a)',
+            'first(a)',
+            'last(a)',
+            'count(a)',
+            'count()',
+            'count(1)'),
+        conf=local_conf)
 
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_count(data_gen):
@@ -1082,6 +1082,31 @@ def test_arithmetic_reductions(data_gen):
                 'sum(a)',
                 'avg(a)'),
             conf = _no_nans_float_conf)
+
+@pytest.mark.parametrize('data_gen',
+                         non_nan_all_basic_gens + decimal_gens + _nested_gens,
+                         ids=idfn)
+def test_collect_list_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('collect_list(a)'),
+        conf=_no_nans_float_conf)
+
+_struct_only_nested_gens = [all_basic_struct_gen,
+                            StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
+                            StructGen([])]
+@pytest.mark.parametrize('data_gen',
+                         non_nan_all_basic_gens + decimal_gens + _struct_only_nested_gens,
+                         ids=idfn)
+def test_collect_set_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('sort_array(collect_set(a))'),
+        conf=_no_nans_float_conf)
+
+def test_collect_empty():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("select collect_list(null)"))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("select collect_set(null)"))
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
