@@ -41,11 +41,6 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-common_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
             <scope>compile</scope>
@@ -105,7 +100,6 @@
                             <artifactSet>
                                 <includes>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
-                                    <include>com.nvidia:rapids-4-spark-common_${scala.binary.version}</include>
                                 </includes>
                             </artifactSet>
                             <filters>
