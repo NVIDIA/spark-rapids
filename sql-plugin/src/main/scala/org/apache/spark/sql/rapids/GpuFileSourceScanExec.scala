@@ -543,7 +543,7 @@ case class GpuFileSourceScanExec(
         requiredSchema)
     } else {
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      new GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
+      GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
     }
   }
 
