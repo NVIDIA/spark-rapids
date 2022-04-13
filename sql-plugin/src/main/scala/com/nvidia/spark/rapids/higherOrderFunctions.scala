@@ -349,12 +349,10 @@ case class GpuArrayExists(
       DType.BOOL8)
   }
 
-  private def replaceChildNullsByFalseView(cv: cudf.ColumnView): cudf.ColumnView = {
+  private def replaceChildNullsByFalse(cv: cudf.ColumnView): cudf.ColumnView = {
     withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
       withResource(cv.getChildColumnView(0)) { childView =>
-        withResource(childView.replaceNulls(falseScalar)) { noNullsChildView =>
-            cv.replaceListChild(noNullsChildView)
-        }
+        childView.replaceNulls(falseScalar)
       }
     }
   }
@@ -366,8 +364,10 @@ case class GpuArrayExists(
    * to aggregation
    */
   private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
-    withResource(replaceChildNullsByFalseView(cv)) { reduceInput =>
-      existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+    withResource(replaceChildNullsByFalse(cv)) { noNullsChildView =>
+      withResource(cv.replaceListChild(noNullsChildView)) { reduceInput =>
+        existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+      }
     }
   }
 
