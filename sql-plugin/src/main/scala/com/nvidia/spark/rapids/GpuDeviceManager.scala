@@ -301,7 +301,9 @@ object GpuDeviceManager extends Logging {
         Rmm.initialize(init, logConf, poolAllocation)
         RapidsBufferCatalog.init(conf)
       } catch {
-        case e: Exception => logError("Could not initialize RMM", e)
+        case e: CudfException =>
+          logError("Could not initialize RMM, exiting!", e)
+          throw e
       }
     }
   }
