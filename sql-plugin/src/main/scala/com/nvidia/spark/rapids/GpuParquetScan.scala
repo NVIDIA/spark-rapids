@@ -99,7 +99,7 @@ case class GpuParquetScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = true)
+    queryUsesInputFile: Boolean = false)
   extends ScanWithMetrics with FileScan with Logging {
 
   override def isSplitable(path: Path): Boolean = true
