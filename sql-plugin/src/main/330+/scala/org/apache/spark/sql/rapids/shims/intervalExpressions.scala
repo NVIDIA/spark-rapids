@@ -40,8 +40,28 @@ object IntervalUtils extends Arm {
     }
   }
 
+  def checkDecimal128CvInRange(decimal128Cv: ColumnVector, minValue: Long, maxValue: Long): Unit = {
+    // check min
+    withResource(Scalar.fromLong(minValue)) { minScalar =>
+      withResource(decimal128Cv.lessThan(minScalar)) { lessThanMin =>
+        if (BoolUtils.isAnyValidTrue(lessThanMin)) {
+          throw new ArithmeticException("overflow occurs")
+        }
+      }
+    }
+
+    // check max
+    withResource(Scalar.fromLong(maxValue)) { maxScalar =>
+      withResource(decimal128Cv.greaterThan(maxScalar)) { greaterThanMax =>
+        if (BoolUtils.isAnyValidTrue(greaterThanMax)) {
+          throw new ArithmeticException("overflow occurs")
+        }
+      }
+    }
+  }
+
   /**
-   * compute multiple with overflow check, then cast to long
+   * Multiple with overflow check, then cast to long
    * Equivalent to Math.multiplyExact
    *
    * @param left   cv or scalar
@@ -51,50 +71,24 @@ object IntervalUtils extends Arm {
   def multipleToLongWithOverflowCheck(left: BinaryOperable, right: BinaryOperable): ColumnVector = {
     val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, 0)
     withResource(left.mul(right, decimal128Type)) { ret =>
-      withResource(Scalar.fromLong(Long.MaxValue)) { max =>
-        withResource(Scalar.fromLong(Long.MinValue)) { min =>
-          withResource(ret.greaterThan(max)) { gtm =>
-            if (BoolUtils.isAnyValidTrue(gtm)) {
-              throw new ArithmeticException("overflow occurs")
-            }
-            withResource(ret.lessThan(min)) { ltm =>
-              if (BoolUtils.isAnyValidTrue(ltm)) {
-                throw new ArithmeticException("overflow occurs")
-              }
-              ret.castTo(DType.INT64)
-            }
-          }
-        }
-      }
+      checkDecimal128CvInRange(ret, Long.MinValue, Long.MaxValue)
+      ret.castTo(DType.INT64)
     }
   }
 
   /**
-   * compute multiple with overflow check, then cast to int
+   * Multiple with overflow check, then cast to int
    * Equivalent to Math.multiplyExact
    *
    * @param left   cv or scalar
    * @param right  cv or scalar, will not be scalar if left is scalar
-   * @return the long result of left * right
+   * @return the int result of left * right
    */
   def multipleToIntWithOverflowCheck(left: BinaryOperable, right: BinaryOperable): ColumnVector = {
     val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, 0)
     withResource(left.mul(right, decimal128Type)) { ret =>
-      withResource(Scalar.fromInt(Int.MaxValue)) { max =>
-        withResource(Scalar.fromInt(Int.MinValue)) { min =>
-          withResource(ret.greaterThan(max)) { gtm =>
-            if (BoolUtils.isAnyValidTrue(gtm)) {
-              throw new ArithmeticException("overflow occurs")
-            }
-            withResource(ret.lessThan(min)) { ltm =>
-              if (BoolUtils.isAnyValidTrue(ltm)) {
-                throw new ArithmeticException("overflow occurs")
-              }
-              ret.castTo(DType.INT32)
-            }
-          }
-        }
-      }
+      checkDecimal128CvInRange(ret, Int.MinValue, Int.MaxValue)
+      ret.castTo(DType.INT32)
     }
   }
 
