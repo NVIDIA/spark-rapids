@@ -28,7 +28,7 @@ object IntervalUtils extends Arm {
    * Convert long cv to int cv, throws exception if any value in `longCv` exceeds the int limits.
    * Check (int)(long_value) == long_value
    */
-  def castLongToIntWithCheck(longCv: ColumnVector): ColumnVector = {
+  def castLongToIntWithOverflowCheck(longCv: ColumnVector): ColumnVector = {
     withResource(longCv.castTo(DType.INT32)) { intResult =>
       withResource(longCv.notEqualTo(intResult)) { notEquals =>
         if (BoolUtils.isAnyValidTrue(notEquals)) {
@@ -41,131 +41,27 @@ object IntervalUtils extends Arm {
   }
 
   /**
-   * Check if the long result of long * long is overflow
-   * See Math.multiplyExact:
-   * r = x * y;
-   * if (y != 0) && (r/y != x) throw exception;
-   * if(x == Long.MIN_VALUE && y == -1) throw exception
+   * compute multiple with overflow check, then cast to long
+   * Equivalent to Math.multiplyExact
    *
-   * @param leftLong  long cv or scalar
-   * @param rightLong long cv or scalar, will not be scalar if leftLong is scalar
-   * @param result    is the result of x * y
+   * @param left   cv or scalar
+   * @param right  cv or scalar, will not be scalar if left is scalar
+   * @return the long result of left * right
    */
-  def checkMultiplyOverflow(leftLong: BinaryOperable, rightLong: BinaryOperable,
-      result: ColumnVector): Unit = {
-    rightLong match {
-      case rightVector: ColumnVector =>
-        checkMultiplyOverflowWithRightCv(leftLong, rightVector, result)
-      case _ =>
-        checkMultiplyOverflowWithRightCv(rightLong, leftLong.asInstanceOf[ColumnVector], result)
-    }
-  }
-
-  /**
-   * Check if the long result of long * long is overflow
-   * See Math.multiplyExact:
-   * r = x * y;
-   * if (y != 0) && (r/y != x) throw exception;
-   * if(x == Long.MIN_VALUE && y == -1) throw exception
-   *
-   * @param x long cv or scalar
-   * @param y long cv
-   * @param r is the result of x * y
-   */
-  def checkMultiplyOverflowWithRightCv(x: BinaryOperable, y: ColumnVector,
-      r: ColumnVector): Unit = {
-    // check (y != 0) && (r/y != x)
-    checkMultiplyOverflowSimple(x, y, r)
-
-    // check (x == Long.MIN_VALUE && y == -1)
-    x match {
-      case scalar: Scalar =>
-        if (getLong(scalar) == Long.MinValue) { // x == Long.MIN_VALUE
-          withResource(Scalar.fromLong(-1L)) { negOne =>
-            withResource(y.equalTo(negOne)) { negOneBool =>
-              if (BoolUtils.isAnyValidTrue(negOneBool)) { // y = -1L
+  def multipleToLongWithOverflowCheck(left: BinaryOperable, right: BinaryOperable): ColumnVector = {
+    val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, 0)
+    withResource(left.mul(right, decimal128Type)) { ret =>
+      withResource(Scalar.fromLong(Long.MaxValue)) { max =>
+        withResource(Scalar.fromLong(Long.MinValue)) { min =>
+          withResource(ret.greaterThan(max)) { gtm =>
+            if (BoolUtils.isAnyValidTrue(gtm)) {
+              throw new ArithmeticException("overflow occurs")
+            }
+            withResource(ret.lessThan(min)) { ltm =>
+              if (BoolUtils.isAnyValidTrue(ltm)) {
                 throw new ArithmeticException("overflow occurs")
               }
-            }
-          }
-        }
-      case _ =>
-        // check (x == Long.MIN_VALUE && y == -1)
-        withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
-          withResource(Scalar.fromLong(-1L)) { negOneLong =>
-            withResource(x.equalTo(minLong)) { minBool =>
-              withResource(y.equalTo(negOneLong)) { oneBool =>
-                withResource(minBool.and(oneBool)) { overflow =>
-                  if (BoolUtils.isAnyValidTrue(overflow)) {
-                    throw new ArithmeticException("overflow occurs")
-                  }
-                }
-              }
-            }
-          }
-        }
-    }
-  }
-
-  /**
-   * Check if the long result of long * long is overflow
-   * See Math.multiplyExact:
-   * r = x * y;
-   * if (y != 0) && (r/y != x) throw exception;
-   *
-   * Here is a little different with `Math.multiplyExact`,
-   * omits the `check x == Long.MIN_VALUE && y == -1`,
-   * Because of the `toIntWithCheck` will throw exception
-   * for the value of `Long.MIN_VALUE * -1` exceeds int limits
-   *
-   * @param leftLong  long cv or scalar
-   * @param rightLong long cv or scalar, will not be scalar if leftLong is scalar
-   * @param result    is the result of x * y
-   */
-  def checkMultiplyOverflowSimple(leftLong: BinaryOperable, rightLong: BinaryOperable,
-      result: ColumnVector): Unit = {
-    rightLong match {
-      case rightVector: ColumnVector =>
-        checkMultiplyOverflowSimpleWithRightCv(leftLong, rightVector, result)
-      case _ =>
-        checkMultiplyOverflowSimpleWithRightCv(rightLong, leftLong.asInstanceOf[ColumnVector],
-          result)
-    }
-  }
-
-  /**
-   * Check if the long result of long * long is overflow
-   * See Math.multiplyExact:
-   * r = x * y;
-   * if (y != 0) && (r/y != x) throw exception;
-   * if(x == Long.MIN_VALUE && y == -1) throw exception
-   *
-   * Here is a little different with `Math.multiplyExact`,
-   * omits the `check x == Long.MIN_VALUE && y == -1`,
-   * Because of the `toIntWithCheck` will throw exception
-   * for the value of `Long.MIN_VALUE * -1` exceeds int limits
-   *
-   * @param x long cv or scalar
-   * @param y long cv or scalar, will not be scalar if x is scalar
-   * @param r is the result of x * y
-   */
-  def checkMultiplyOverflowSimpleWithRightCv(x: BinaryOperable, y: ColumnVector,
-      r: ColumnVector): Unit = {
-    // throws exception if multipy(long, long) is overflow
-    // See Math.multiplyExact:
-    //   r = x * y; check (y != 0) && (r/y != x); check x == Long.MIN_VALUE && y == -1
-    // Here is a little different with `Math.multiplyExact`,
-    // omits the `check x == Long.MIN_VALUE && y == -1`,
-    // because of the `toIntWithCheck` will throw exception
-    // for the value of `Long.MIN_VALUE * -1` that is not in the int range
-    withResource(Scalar.fromLong(0L)) { zeroScalar =>
-      withResource(y.notEqualTo(zeroScalar)) { numIsNotZero => // y != 0
-        withResource(r.div(y)) { expected => // (r/y)
-          withResource(expected.notEqualTo(x)) { notEquals => // x != (r/y)
-            withResource(numIsNotZero.and(notEquals)) { wrong => // x != (r/y) and y != 0
-              if (BoolUtils.isAnyValidTrue(wrong)) {
-                throw new ArithmeticException("overflow occurs")
-              }
+              ret.castTo(DType.INT64)
             }
           }
         }
@@ -173,13 +69,32 @@ object IntervalUtils extends Arm {
     }
   }
 
-  private def getLong(s: Scalar): Long = {
-    s.getType match {
-      case DType.INT8 => s.getByte.toLong
-      case DType.INT16 => s.getShort.toLong
-      case DType.INT32 => s.getInt.toLong
-      case DType.INT64 => s.getLong
-      case _ => throw new IllegalArgumentException()
+  /**
+   * compute multiple with overflow check, then cast to int
+   * Equivalent to Math.multiplyExact
+   *
+   * @param left   cv or scalar
+   * @param right  cv or scalar, will not be scalar if left is scalar
+   * @return the long result of left * right
+   */
+  def multipleToIntWithOverflowCheck(left: BinaryOperable, right: BinaryOperable): ColumnVector = {
+    val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, 0)
+    withResource(left.mul(right, decimal128Type)) { ret =>
+      withResource(Scalar.fromInt(Int.MaxValue)) { max =>
+        withResource(Scalar.fromInt(Int.MinValue)) { min =>
+          withResource(ret.greaterThan(max)) { gtm =>
+            if (BoolUtils.isAnyValidTrue(gtm)) {
+              throw new ArithmeticException("overflow occurs")
+            }
+            withResource(ret.lessThan(min)) { ltm =>
+              if (BoolUtils.isAnyValidTrue(ltm)) {
+                throw new ArithmeticException("overflow occurs")
+              }
+              ret.castTo(DType.INT32)
+            }
+          }
+        }
+      }
     }
   }
 
@@ -211,18 +126,18 @@ object IntervalUtils extends Arm {
   }
 
   /**
-   * round double cv to int with overflow check
+   * Round double cv to int with overflow check
    * equivalent to
    * com.google.common.math.DoubleMath.roundToInt(double value, RoundingMode.HALF_UP)
    */
-  def roundToIntWithOverflowCheck(doubleCv: ColumnVector): ColumnVector = {
+  def roundDoubleToIntWithOverflowCheck(doubleCv: ColumnVector): ColumnVector = {
     // check Inf, -Inf, NaN
     checkDoubleInfNan(doubleCv)
 
     withResource(doubleCv.round(RoundMode.HALF_UP)) { roundedDouble =>
       // throws exception if the result exceeds int limits
       withResource(roundedDouble.castTo(DType.INT64)) { long =>
-        castLongToIntWithCheck(long)
+        castLongToIntWithOverflowCheck(long)
       }
     }
   }
@@ -232,7 +147,7 @@ object IntervalUtils extends Arm {
    * equivalent to
    * com.google.common.math.DoubleMath.roundToInt(double value, RoundingMode.HALF_UP)
    */
-  def roundToLongWithCheckForDouble(doubleCv: ColumnVector): ColumnVector = {
+  def roundDoubleToLongWithOverflowCheck(doubleCv: ColumnVector): ColumnVector = {
     // check Inf, -Inf, NaN
     checkDoubleInfNan(doubleCv)
 
@@ -240,7 +155,7 @@ object IntervalUtils extends Arm {
   }
 
   /**
-   * check if double Cv exceeds long limits
+   * Check if double cv exceeds long limits
    * Rewrite from
    * com.google.common.math.DoubleMath.roundToLong:
    * z = roundIntermediate(x, mode)
@@ -319,44 +234,26 @@ case class GpuMultiplyYMInterval(
       numType: DataType): ColumnVector = {
     numType match {
       case ByteType | ShortType | IntegerType => // num is byte, short or int
-        // compute interval.asLong * num
+        // compute interval * num
         // interval and num are both in the range: [Int.MinValue, Int.MaxValue],
-        // so long fits the result and no need to check the overflow
+        // so long fits the result and no need to check overflow
         val longResultCv: ColumnVector = interval.mul(numOperable, DType.INT64)
 
         withResource(longResultCv) { longResult =>
           // throws exception if exceeds int limits
-          IntervalUtils.castLongToIntWithCheck(longResult)
+          IntervalUtils.castLongToIntWithOverflowCheck(longResult)
         }
 
       case LongType => // num is long
-        // The following is equivalent to Math.toIntExact(Math.multiplyExact(months, long num))
-
-        // compute interval.asLong * num
-        // should check the overflow
-        val longResultCv: ColumnVector = numOperable.mul(interval)
-
-        withResource(longResultCv) { longResult =>
-          // check overflow, skipped a check: `check x == Long.MIN_VALUE && y == -1`
-          // for r = x * y;
-          // if (y != 0) && (r/y != x) throw exception;
-          // if(x == Long.MIN_VALUE && y == -1) throw exception
-          // here skipped the check: `x == Long.MIN_VALUE && y == -1`,
-          // because of `castLongToIntWithCheck` will cover it
-          IntervalUtils.checkMultiplyOverflowSimple(interval, numOperable, longResult)
-
-          // throws exception if exceeds int limits
-          // Note: here covers: `check x == Long.MIN_VALUE && y == -1`, it exceeds int limits
-          IntervalUtils.castLongToIntWithCheck(longResult)
-        }
+        // The following is equivalent to Math.toIntExact(Math.multiplyExact(months, num))
+        IntervalUtils.multipleToIntWithOverflowCheck(interval, numOperable)
 
       case FloatType | DoubleType => // num is float or double
-        // compute interval.toDouble * num.toDouble
         val doubleResultCv = interval.mul(numOperable, DType.FLOAT64)
 
         withResource(doubleResultCv) { doubleResult =>
-          // check overflow for (interval.toDouble * num.toDouble), then round to int
-          IntervalUtils.roundToIntWithOverflowCheck(doubleResult)
+          // round to long with overflow check
+          IntervalUtils.roundDoubleToIntWithOverflowCheck(doubleResult)
         }
       case _ => throw new IllegalArgumentException(
         s"Not support num type $numType in GpuMultiplyYMInterval")
@@ -410,26 +307,16 @@ case class GpuMultiplyDTInterval(
   private def doColumnarImp(interval: BinaryOperable, numOperable: BinaryOperable,
       numType: DataType): ColumnVector = {
     numType match {
-      case ByteType | ShortType | IntegerType | LongType => // num is byte, short, int or long
-        // compute interval.asLong * num
-        // interval and num are both in the range: [Int.MinValue, Int.MaxValue],
-        // so long fits the result and no need to check the overflow
-        val longResultCv: ColumnVector = interval.mul(numOperable, DType.INT64)
-
-        withResource(longResultCv) { longResult =>
-          // check overflow
-          IntervalUtils.checkMultiplyOverflow(interval, numOperable, longResult)
-
-          longResult.incRefCount()
-        }
-      case _: FloatType | DoubleType => // num is float
-        // compute interval * num
+      case ByteType | ShortType | IntegerType | LongType =>
+        // interval is long type; num is byte, short, int or long
+        IntervalUtils.multipleToLongWithOverflowCheck(interval, numOperable)
+      case _: FloatType | DoubleType =>
+        // interval is long type; num is float or double
         val doubleResultCv = interval.mul(numOperable, DType.FLOAT64)
         withResource(doubleResultCv) { doubleResult =>
-          // check overflow for (interval * num.toDouble), then round to long
-          IntervalUtils.roundToLongWithCheckForDouble(doubleResult)
+          // round to long with overflow check
+          IntervalUtils.roundDoubleToLongWithOverflowCheck(doubleResult)
         }
-
       case _ => throw new IllegalArgumentException(
         s"Not support num type $numType in MultiplyDTInterval")
     }
