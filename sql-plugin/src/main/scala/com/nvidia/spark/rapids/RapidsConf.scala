@@ -727,6 +727,24 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  object ParquetFooterReaderType extends Enumeration {
+    val JAVA, NATIVE = Value
+  }
+
+  val PARQUET_READER_FOOTER_TYPE =
+    conf("spark.rapids.sql.format.parquet.reader.footer.type")
+      .doc("In some cases reading the footer of the file is very expensive. Typically this " +
+          "happens when there are a large number of columns, several hundred, relatively few " +
+          "of them are being read, and there are a large number of files. " +
+          "This provides the ability to use a different path to parse and filter the footer. " +
+          "JAVA is the default and should match closely with Apache Spark. NATIVE will parse and " +
+          "filter the footer using C++. In the worst case this can be slower than JAVA, but " +
+          "not by much if anything.")
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(ParquetFooterReaderType.values.map(_.toString))
+      .createWithDefault(ParquetFooterReaderType.JAVA.toString)
+
   // This is an experimental feature now. And eventually, should be enabled or disabled depending
   // on something that we don't know yet but would try to figure out.
   val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
@@ -1638,6 +1656,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
+
+  lazy val parquetReaderFooterType: ParquetFooterReaderType.Value = {
+    get(PARQUET_READER_FOOTER_TYPE) match {
+      case "NATIVE" => ParquetFooterReaderType.NATIVE
+      case _ => ParquetFooterReaderType.JAVA
+    }
+  }
 
   lazy val isParquetPerFileReadEnabled: Boolean =
     ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
