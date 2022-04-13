@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-04-06
+Generated on 2022-04-12
 
 ## Release 22.04
 
@@ -55,6 +55,11 @@ Generated on 2022-04-06
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#5180](https://github.com/NVIDIA/spark-rapids/issues/5180)|[BUG] create_map failed with java.lang.IllegalStateException: This is not supported yet|
+|[#5181](https://github.com/NVIDIA/spark-rapids/issues/5181)|[BUG] Dataproc tests failing when trying to detect for accelerated row conversions|
+|[#5154](https://github.com/NVIDIA/spark-rapids/issues/5154)|[BUG] build failed in databricks 10.4 runtime (updated recently)|
+|[#5159](https://github.com/NVIDIA/spark-rapids/issues/5159)|[BUG] Approx percentile query fails with UnsupportedOperationException|
+|[#5164](https://github.com/NVIDIA/spark-rapids/issues/5164)|[BUG] Databricks 9.1ML failed with "java.lang.NoSuchMethodError: org.apache.spark.sql.execution.metric.SQLMetrics$.createSizeMetric"|
 |[#5125](https://github.com/NVIDIA/spark-rapids/issues/5125)|[BUG] GpuCast.hasSideEffects does not check if child expression has side effects|
 |[#5091](https://github.com/NVIDIA/spark-rapids/issues/5091)|[BUG] Profiling tool fails process custom task accumulators of type CollectionAccumulator|
 |[#5050](https://github.com/NVIDIA/spark-rapids/issues/5050)|[BUG] Release build of v22.04.0 FAILED on "Execution attach-javadoc failed: NullPointerException" with maven option '-P source-javadoc'|
@@ -120,6 +125,16 @@ Generated on 2022-04-06
 ### PRs
 |||
 |:---|:---|
+|[#5190](https://github.com/NVIDIA/spark-rapids/pull/5190)|Fix column->row conversion GPU check:|
+|[#5184](https://github.com/NVIDIA/spark-rapids/pull/5184)|Fix CPU fallback for Map lookup|
+|[#5191](https://github.com/NVIDIA/spark-rapids/pull/5191)|Update version-def to use released cudfjni 22.04.0 [skip ci]|
+|[#5167](https://github.com/NVIDIA/spark-rapids/pull/5167)|Update cudfjni version to released 22.04.0|
+|[#5169](https://github.com/NVIDIA/spark-rapids/pull/5169)|Terminate test earlier if pytest ENV issue [skip ci]|
+|[#5160](https://github.com/NVIDIA/spark-rapids/pull/5160)|Fix approximate percentile reduction UnsupportedOperationException|
+|[#5165](https://github.com/NVIDIA/spark-rapids/pull/5165)|Update Databricks 10.4 for changes to the QueryStageExec and ClusteredDistribution|
+|[#4997](https://github.com/NVIDIA/spark-rapids/pull/4997)|Update docs for the 22.04 release[skip ci]|
+|[#5146](https://github.com/NVIDIA/spark-rapids/pull/5146)|Support env var INTEGRATION_TEST_VERSION to override shim version|
+|[#5103](https://github.com/NVIDIA/spark-rapids/pull/5103)|Init 22.04 changelog [skip ci]|
 |[#5122](https://github.com/NVIDIA/spark-rapids/pull/5122)|Disable GPU accelerated row-column transpose for Pascal GPUs:|
 |[#5127](https://github.com/NVIDIA/spark-rapids/pull/5127)|GpuCast.hasSideEffects now checks to see if the child expression has side-effects|
 |[#5118](https://github.com/NVIDIA/spark-rapids/pull/5118)|On task failure catch some CUDA exceptions and kill executor|

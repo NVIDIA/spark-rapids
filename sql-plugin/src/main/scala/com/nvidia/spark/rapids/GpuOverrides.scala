@@ -2630,8 +2630,29 @@ object GpuOverrides extends Logging {
             TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP)
             .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.INT + TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL))
-          .withPsNote(TypeEnum.INT, "Only ints are supported as array indexes"),
+        ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
+          .withPsNote(TypeEnum.INT, "Supported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.BOOLEAN, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.BYTE, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.SHORT, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.LONG, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.FLOAT, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.DOUBLE, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.DATE, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.TIMESTAMP, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.STRING, "Unsupported as array index. " +
+            "Only Literals supported as map keys.")
+          .withPsNote(TypeEnum.DECIMAL, "Unsupported as array index. " +
+            "Only Literals supported as map keys."),
           TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
