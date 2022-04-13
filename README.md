@@ -38,12 +38,12 @@ See the [build instructions in the contributing guide](CONTRIBUTING.md#building-
 
 ## Testing 
 
-Tests are described [here](tests/README.md).
+Tests are described [here](https://github.com/NVIDIA/spark-rapids/blob/main/tests/README.md).
 
 ## Integration
 The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero copy data
 transfer into other GPU enabled applications.  It is described
-[here](docs/ml-integration.md).
+[here](docs/additional-functionality/ml-integration.md).
 
 Currently, we are working with XGBoost to try to provide this integration out of the box. 
 
