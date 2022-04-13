@@ -296,15 +296,9 @@ object GpuDeviceManager extends Logging {
         logInfo("Using legacy default stream")
       }
 
-      try {
-        Cuda.setDevice(gpuId)
-        Rmm.initialize(init, logConf, poolAllocation)
-        RapidsBufferCatalog.init(conf)
-      } catch {
-        case e: CudfException =>
-          logError("Could not initialize RMM, exiting!", e)
-          throw e
-      }
+      Cuda.setDevice(gpuId)
+      Rmm.initialize(init, logConf, poolAllocation)
+      RapidsBufferCatalog.init(conf)
     }
   }
 
