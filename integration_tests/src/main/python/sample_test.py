@@ -16,6 +16,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from pyspark.sql.types import *
+from spark_session import is_before_spark_330
 
 from marks import *
 
@@ -48,4 +49,18 @@ def test_sample_with_replacement(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices = 10).sample(
             withReplacement =True, fraction = 0.5, seed = 1)
+    )
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_sample_for_interval():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DayTimeIntervalGen(), num_slices=10)
+            .sample(fraction=0.9, seed=1)
+    )
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_sample_with_replacement_for_interval():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DayTimeIntervalGen(), num_slices=10).sample(
+            withReplacement=True, fraction=0.5, seed=1)
     )

@@ -3904,7 +3904,8 @@ object GpuOverrides extends Logging {
     exec[SampleExec](
       "The backend for the sample operator",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-        TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+        TypeSig.ARRAY + TypeSig.DECIMAL_128 + GpuTypeShims.additionalCommonOperatorSupportedTypes)
+          .nested(), TypeSig.all),
       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
     ),
     exec[SubqueryBroadcastExec](
