@@ -349,14 +349,6 @@ case class GpuArrayExists(
       DType.BOOL8)
   }
 
-  private def replaceChildNullsByFalse(cv: cudf.ColumnView): cudf.ColumnView = {
-    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
-      withResource(cv.getChildColumnView(0)) { childView =>
-        childView.replaceNulls(falseScalar)
-      }
-    }
-  }
-
   /*
    * The difference between legacyExists and EXCLUDE nulls reduction
    * is that the list without valid values (all nulls) should produce false
@@ -364,9 +356,13 @@ case class GpuArrayExists(
    * to aggregation
    */
   private def legacyExists(cv: cudf.ColumnView): cudf.ColumnView = {
-    withResource(replaceChildNullsByFalse(cv)) { noNullsChildView =>
-      withResource(cv.replaceListChild(noNullsChildView)) { reduceInput =>
-        existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+      withResource(cv.getChildColumnView(0)) { childView =>
+        withResource(childView.replaceNulls(falseScalar)) { noNullsChildView =>
+          withResource(cv.replaceListChild(noNullsChildView)) { reduceInput =>
+            existsReduce(reduceInput, cudf.NullPolicy.EXCLUDE)
+          }
+        }
       }
     }
   }
