@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-04-12
+Generated on 2022-04-14
 
 ## Release 22.04
 
@@ -55,6 +55,8 @@ Generated on 2022-04-12
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#5233](https://github.com/NVIDIA/spark-rapids/issues/5233)|[BUG] rapids-tools v22.04.0 release jar reports maven dependency issue :  rapids-4-spark-common_2.12:jar:22.04.0 NOT FOUND|
+|[#5183](https://github.com/NVIDIA/spark-rapids/issues/5183)|[BUG] UCX EGX integration test array_test.py::test_array_exists failures|
 |[#5180](https://github.com/NVIDIA/spark-rapids/issues/5180)|[BUG] create_map failed with java.lang.IllegalStateException: This is not supported yet|
 |[#5181](https://github.com/NVIDIA/spark-rapids/issues/5181)|[BUG] Dataproc tests failing when trying to detect for accelerated row conversions|
 |[#5154](https://github.com/NVIDIA/spark-rapids/issues/5154)|[BUG] build failed in databricks 10.4 runtime (updated recently)|
@@ -125,6 +127,9 @@ Generated on 2022-04-12
 ### PRs
 |||
 |:---|:---|
+|[#5232](https://github.com/NVIDIA/spark-rapids/pull/5232)|Fix issue in GpuArrayExists where a parent view outlived the child|
+|[#5239](https://github.com/NVIDIA/spark-rapids/pull/5239)|Fix tools depending on the common jar|
+|[#5205](https://github.com/NVIDIA/spark-rapids/pull/5205)|Update 22.04 changelog to latest [skip ci]|
 |[#5190](https://github.com/NVIDIA/spark-rapids/pull/5190)|Fix column->row conversion GPU check:|
 |[#5184](https://github.com/NVIDIA/spark-rapids/pull/5184)|Fix CPU fallback for Map lookup|
 |[#5191](https://github.com/NVIDIA/spark-rapids/pull/5191)|Update version-def to use released cudfjni 22.04.0 [skip ci]|
