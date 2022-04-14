@@ -651,7 +651,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
-          .map(x => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent])
+          .map(x => x match {
+            case RegexChar(ch) if "^$".contains(ch) => x
+            case _ => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent]
+          })
 
         if (negated) {
           // There are differences between cuDF and Java handling of newlines
