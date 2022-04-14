@@ -246,8 +246,13 @@ object IntervalUtils extends Arm {
       throw new ArithmeticException("overflow: interval / zero")
     }
 
-    // 2. overflow check (p == Long.MIN_VALUE && q == -1)
-    withResource(Scalar.fromLong(Long.MinValue)) { minScalar =>
+    // 2. overflow check (p == min(int min or long min) && q == -1)
+    val min = p.getType match {
+      case DType.INT32 => Int.MinValue.toLong
+      case DType.INT64 => Long.MinValue
+      case _ => throw new IllegalStateException()
+    }
+    withResource(Scalar.fromLong(min)) { minScalar =>
       withResource(Scalar.fromLong(-1L)) { negOneScalar =>
         (p, q) match {
           case (lCv: ColumnVector, rCv: ColumnVector) =>
@@ -268,12 +273,12 @@ object IntervalUtils extends Arm {
             }
           case (lS: Scalar, rCv: ColumnVector) =>
             withResource(rCv.equalTo(negOneScalar)) { isNegOne =>
-              if (getLong(lS) == Long.MinValue && BoolUtils.isAnyValidTrue(isNegOne)) {
+              if (getLong(lS) == min && BoolUtils.isAnyValidTrue(isNegOne)) {
                 throw new ArithmeticException("overflow occurs")
               }
             }
           case (lS: Scalar, rS: Scalar) =>
-            getLong(lS) == Long.MinValue && getLong(rS) == -1L
+            getLong(lS) == min && getLong(rS) == -1L
         }
       }
     }

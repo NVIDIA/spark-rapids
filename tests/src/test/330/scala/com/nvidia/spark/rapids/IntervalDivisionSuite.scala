@@ -282,4 +282,6 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
   testDivideYMOverflow("year-month divide overflow 2", Int.MaxValue, 0.1d)
   testDivideYMOverflow("year-month divide overflow 3", Int.MinValue, 0.1f)
   testDivideYMOverflow("year-month divide overflow 4", Int.MinValue, 0.1d)
+
+  testDivideYMOverflow("year-month divide overflow 5", Int.MinValue, -1)
 }
