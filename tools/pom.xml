@@ -124,7 +124,7 @@
                                     <mainClass>com.nvidia.spark.rapids.tool.profiling.ProfileMain</mainClass>
                                 </transformer>
                             </transformers>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <createDependencyReducedPom>true</createDependencyReducedPom>
                         </configuration>
                     </execution>
                 </executions>
