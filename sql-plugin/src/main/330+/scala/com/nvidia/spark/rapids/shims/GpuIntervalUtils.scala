@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.Arm
 import com.nvidia.spark.rapids.CloseableHolder
 
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND}
-import org.apache.spark.sql.types.{DayTimeIntervalType => DT}
+import org.apache.spark.sql.types.{DataType, DayTimeIntervalType => DT}
 
 /**
  * Parse DayTimeIntervalType string column to long column of micro seconds
@@ -135,6 +135,10 @@ object GpuIntervalUtils extends Arm {
   private val secondPatternString = s"$sign$secondBoundPattern$microPattern"
   private val secondLiteralRegex = s"^$INTERVAL$blanks$sign'$secondPatternString'$blanks$SECOND$$"
 
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnVector, t: DataType): ColumnVector = {
+    castStringToDayTimeIntervalWithThrow(cv, t.asInstanceOf[DT])
+  }
+
   /**
    * Cast string column to long column, throw exception if the casting of a row failed
    * Fail reasons includes: regexp not match, range check failed, overflow when adding
@@ -144,13 +148,13 @@ object GpuIntervalUtils extends Arm {
    * @throws IllegalArgumentException if have a row failed
    */
   def castStringToDayTimeIntervalWithThrow(cv: ColumnVector, t: DT): ColumnVector = {
-    val ret = castStringToDTInterval(cv, t)
-    if(ret.getNullCount > cv.getNullCount) {
-      ret.close()
-      throw new IllegalArgumentException("Cast string to day time interval failed, " +
-          "may be the format is invalid, range check failed or overflow")
-    } else {
-      ret
+    withResource(castStringToDTInterval(cv, t)) { ret =>
+      if(ret.getNullCount > cv.getNullCount) {
+        throw new IllegalArgumentException("Cast string to day time interval failed, " +
+            "may be the format is invalid, range check failed or overflow")
+      } else {
+        ret.incRefCount()
+      }
     }
   }
 
@@ -534,6 +538,11 @@ object GpuIntervalUtils extends Arm {
     }
   }
 
+  def toDayTimeIntervalString(micros: ColumnVector, dayTimeType: DataType): ColumnVector = {
+    val t = dayTimeType.asInstanceOf[DT]
+    toDayTimeIntervalString(micros, t.startField, t.endField)
+  }
+
   /**
    * Cast day-time interval to string
    * Rewrite from org.apache.spark.sql.catalyst.util.IntervalUtils.toDayTimeIntervalString
@@ -555,17 +564,13 @@ object GpuIntervalUtils extends Arm {
     val postfixStr = s"' ${if (startField == endField) from else s"$from TO $to"}"
 
     val retCv = withResource(new CloseableHolder(micros.incRefCount())) { restHolder =>
-      // `restHolder` only hold one rest Cv;
-      // use `resetRest` to close the old one and set a new one
-      // make a copy of micros
-
       withResource(new ArrayBuffer[ColumnView]) { parts =>
         // prefix with sign part: INTERVAL ' or INTERVAL '-
         parts += withResource(Scalar.fromLong(0L)) { zero =>
           withResource(restHolder.get.lessThan(zero)) { less =>
-            withResource(getConstStringVector(prefixStr + "-", numRows)) { neg =>
-              withResource(getConstStringVector(prefixStr, numRows)) { empty =>
-                less.ifElse(neg, empty)
+            withResource(Scalar.fromString(prefixStr + "-")) { negPrefix =>
+              withResource(Scalar.fromString(prefixStr)) { prefix =>
+                less.ifElse(negPrefix, prefix)
               }
             }
           }

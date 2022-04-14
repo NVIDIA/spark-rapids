@@ -20,7 +20,7 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.TypeSigUtil
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
@@ -63,6 +63,9 @@ trait TypeSigUtilBase {
 
   /** Get numeric and interval TypeSig */
   def getNumericAndInterval: TypeSig
+
+  /** Get Ansi year-month and day-time TypeSig */
+  def getAnsiInterval: TypeSig
 }
 
 /**
@@ -178,6 +181,17 @@ final class TypeSig private(
   def withLit(dataType: TypeEnum.Value): TypeSig = {
     val it = initialTypes + dataType
     val lt = litOnlyTypes + dataType
+    new TypeSig(it, maxAllowedDecimalPrecision, childTypes, lt, notes)
+  }
+
+  /**
+   * Add a literal restriction to the signature
+   * @param dataTypes the types that have to be literal. Will be added if they do not already exist.
+   * @return the new signature.
+   */
+  def withLit(dataTypes: TypeEnum.ValueSet): TypeSig = {
+    val it = initialTypes ++ dataTypes
+    val lt = litOnlyTypes ++ dataTypes
     new TypeSig(it, maxAllowedDecimalPrecision, childTypes, lt, notes)
   }
 
@@ -531,7 +545,7 @@ object TypeSig {
    * Create a TypeSig that only supports literals of certain given types.
    */
   def lit(dataTypes: TypeEnum.ValueSet): TypeSig =
-    new TypeSig(dataTypes)
+    TypeSig.none.withLit(dataTypes)
 
   /**
    * Create a TypeSig that supports only literals of common primitive CUDF types.
@@ -670,6 +684,11 @@ object TypeSig {
    * numeric + CALENDAR
    */
   val numericAndInterval: TypeSig = TypeSigUtil.getNumericAndInterval()
+
+  /**
+   * ANSI year-month and day-time interval for Spark 320+
+   */
+  val ansiIntervals: TypeSig = TypeSigUtil.getAnsiInterval
 
   /**
    * All types that CUDF supports sorting/ordering on.
@@ -1287,11 +1306,10 @@ class CastChecks extends ExprChecks {
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
   val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
-  // TODO Shim to 330 after https://github.com/NVIDIA/spark-rapids/pull/5020 is merged
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
-      BINARY + DAYTIME
+      BINARY + GpuTypeShims.additionalTypesStringCanCastTo
   val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING +
-      BINARY + DAYTIME
+      BINARY + GpuTypeShims.additionalTypesStringCanCastTo
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
@@ -1327,8 +1345,7 @@ class CastChecks extends ExprChecks {
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
 
-  // TODO Shim to 330 after https://github.com/NVIDIA/spark-rapids/pull/5020 is merged
-  val daytimeChecks: TypeSig = DAYTIME + STRING
+  val daytimeChecks: TypeSig = GpuTypeShims.typesDayTimeCanCastTo
   val sparkDaytimeChecks: TypeSig = DAYTIME + STRING
 
   val yearmonthChecks: TypeSig = none

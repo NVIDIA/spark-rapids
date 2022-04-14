@@ -140,12 +140,12 @@ abstract class MultiFilePartitionReaderFactoryBase(
   /**
    * An abstract method to indicate if coalescing reading can be used
    */
-  def canUseCoalesceFilesReader: Boolean
+  protected def canUseCoalesceFilesReader: Boolean
 
   /**
    * An abstract method to indicate if cloud reading can be used
    */
-  def canUseMultiThreadReader: Boolean
+  protected def canUseMultiThreadReader: Boolean
 
   /**
    * Build the PartitionReader for cloud reading
@@ -154,7 +154,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
    * @param conf configuration
    * @return cloud reading PartitionReader
    */
-  def buildBaseColumnarReaderForCloud(
+  protected def buildBaseColumnarReaderForCloud(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch]
 
@@ -165,7 +165,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
    * @param conf  the configuration
    * @return coalescing reading PartitionReader
    */
-  def buildBaseColumnarReaderForCoalescing(
+  protected def buildBaseColumnarReaderForCoalescing(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch]
 
@@ -175,7 +175,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
    *
    * @return the file format short name
    */
-  def getFileFormatShortName: String
+  protected def getFileFormatShortName: String
 
   override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
     assert(partition.isInstanceOf[FilePartition])
@@ -184,7 +184,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
     val filePaths = files.map(_.filePath)
     val conf = broadcastedConf.value.value
 
-    if (!canUseCoalesceFilesReader || (canUseMultiThreadReader && arePathsInCloud(filePaths))) {
+    if (useMultiThread(filePaths)) {
       logInfo("Using the multi-threaded multi-file " + getFileFormatShortName + " reader, " +
         s"files: ${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
       buildBaseColumnarReaderForCloud(files, conf)
@@ -193,6 +193,11 @@ abstract class MultiFilePartitionReaderFactoryBase(
         s"${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
       buildBaseColumnarReaderForCoalescing(files, conf)
     }
+  }
+
+  /** for testing */
+  private[rapids] def useMultiThread(filePaths: Array[String]): Boolean = {
+    !canUseCoalesceFilesReader || (canUseMultiThreadReader && arePathsInCloud(filePaths))
   }
 
   private def resolveURI(path: String): URI = {

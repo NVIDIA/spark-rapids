@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
+import com.nvidia.spark.rapids.TypeSig
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnVector
@@ -80,4 +81,48 @@ object GpuTypeShims {
 
   def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
     throw new RuntimeException(s"Not support type $dt.")
+
+  /**
+   * Whether the Shim supports day-time interval type
+   * Alias, Add, Subtract, Positive... operators do not support day-time interval type
+   */
+  def isSupportedDayTimeType(dt: DataType): Boolean = false
+
+  /**
+   * Whether the Shim supports year-month interval type
+   * Alias, Add, Subtract, Positive... operators do not support year-month interval type
+   */
+  def isSupportedYearMonthType(dt: DataType): Boolean = false
+
+  /**
+   * Get additional arithmetic supported types for this Shim
+   */
+  def additionalArithmeticSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional predicate supported types for this Shim
+   */
+  def additionalPredicateSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional Csv supported types for this Shim
+   */
+  def additionalCsvSupportedTypes: TypeSig = TypeSig.none
+
+  def typesDayTimeCanCastTo: TypeSig = TypeSig.none
+
+  def additionalTypesStringCanCastTo: TypeSig = TypeSig.none
+
+  /**
+   * Get additional Parquet supported types for this Shim
+   */
+  def additionalParquetSupportedTypes: TypeSig = TypeSig.none
+
+  /**
+   * Get additional common operators supported types for this Shim
+   * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
+   */
+  def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.none
+
+  def isDayTimeType(t: DataType): Boolean = false
 }

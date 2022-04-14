@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,6 @@ class Analysis(apps: Seq[ApplicationInfo]) {
             tasksInJob.map(_.executorDeserializeCPUTime).sum,
             tasksInJob.map(_.executorDeserializeTime).sum,
             tasksInJob.map(_.executorRunTime).sum,
-            tasksInJob.map(_.gettingResultTime).sum,
             tasksInJob.map(_.input_bytesRead).sum,
             tasksInJob.map(_.input_recordsRead).sum,
             tasksInJob.map(_.jvmGCTime).sum,
@@ -128,7 +127,6 @@ class Analysis(apps: Seq[ApplicationInfo]) {
               tasksInStage.map(_.executorDeserializeCPUTime).sum,
               tasksInStage.map(_.executorDeserializeTime).sum,
               tasksInStage.map(_.executorRunTime).sum,
-              tasksInStage.map(_.gettingResultTime).sum,
               tasksInStage.map(_.input_bytesRead).sum,
               tasksInStage.map(_.input_recordsRead).sum,
               tasksInStage.map(_.jvmGCTime).sum,
@@ -190,7 +188,6 @@ class Analysis(apps: Seq[ApplicationInfo]) {
                 tasksInStage.map(_.executorDeserializeCPUTime).sum,
                 tasksInStage.map(_.executorDeserializeTime).sum,
                 tasksInStage.map(_.executorRunTime).sum,
-                tasksInStage.map(_.gettingResultTime).sum,
                 tasksInStage.map(_.input_bytesRead).sum,
                 tasksInStage.map(_.input_recordsRead).sum,
                 tasksInStage.map(_.jvmGCTime).sum,
@@ -278,7 +275,6 @@ class Analysis(apps: Seq[ApplicationInfo]) {
               tasksInSQL.map(_.executorDeserializeCPUTime).sum,
               tasksInSQL.map(_.executorDeserializeTime).sum,
               execRunTime,
-              tasksInSQL.map(_.gettingResultTime).sum,
               tasksInSQL.map(_.input_bytesRead).sum,
               tasksInSQL.map(_.input_recordsRead).sum,
               tasksInSQL.map(_.jvmGCTime).sum,

@@ -85,7 +85,6 @@ trait SparkShims {
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-  def getFileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map()
 
   def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,

@@ -28,9 +28,10 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
@@ -65,7 +66,7 @@ object SparkShimImpl extends Spark321PlusShims {
   override def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
       newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan)
+    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
 
   override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileCatalog.allFiles().map(_.toFileStatus)
@@ -183,6 +184,15 @@ object SparkShimImpl extends Spark321PlusShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ shimExecs
+
+  /**
+   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
+   * affecting the unapply method signature
+   */
+  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
+  }
 }
 
 // Fallback to the default definition of `deterministic`

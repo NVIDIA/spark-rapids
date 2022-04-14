@@ -5066,17 +5066,17 @@ are limited.
 </tr>
 <tr>
 <td>index/key</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>Only ints are supported as array indexes</em></td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18;<br/>Literal value only</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Supported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.;<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6005,16 +6005,16 @@ are limited.
 </tr>
 <tr>
 <td>key</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP;<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18;<br/>Literal value only</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -14824,25 +14824,25 @@ are limited.
 <td rowSpan="6">`collect_list`</td>
 <td rowSpan="6">Collect a list of non-unique elements, not supported in reduction</td>
 <td rowSpan="6">None</td>
-<td rowSpan="2">reduction</td>
+<td rowSpan="2">aggregation</td>
 <td>input</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -14861,13 +14861,13 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">aggregation</td>
+<td rowSpan="2">reduction</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
@@ -14983,25 +14983,25 @@ are limited.
 <td rowSpan="6">`collect_set`</td>
 <td rowSpan="6">Collect a set of unique elements, not supported in reduction</td>
 <td rowSpan="6">None</td>
-<td rowSpan="2">reduction</td>
+<td rowSpan="2">aggregation</td>
 <td>input</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -15020,13 +15020,13 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">aggregation</td>
+<td rowSpan="2">reduction</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
