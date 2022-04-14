@@ -245,7 +245,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         // Exceptions in executor plugin can cause a single thread to die but the executor process
         // sticks around without any useful info until it hearbeat times out. Print what happened
         // and exit immediately.
-        logError("Exception in the executor plugin", e)
+        logError("Exception in the executor plugin, shutting down!", e)
         System.exit(1)
     }
   }
