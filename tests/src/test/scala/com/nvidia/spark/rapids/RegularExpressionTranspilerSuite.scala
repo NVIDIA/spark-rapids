@@ -215,10 +215,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
-  test("line anchor $ fall back to CPU") {
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("a$b", mode, "line anchor $ is not supported")
-    }
+  // test("line anchor $ fall back to CPU") {
+  //   for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
+  //     assertUnsupported("a$b", mode, "line anchor $ is not supported")
+  //   }
+  // }
+
+  test("line anchor $ - find") {
+    val patterns = Seq("\\00*[D$3]$")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("2+|+??wD\n"))
   }
 
   test("match literal $ - find") {

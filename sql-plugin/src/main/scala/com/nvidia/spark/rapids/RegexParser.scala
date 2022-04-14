@@ -467,7 +467,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex)
+    val cudfRegex = rewrite(regex, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     cudfRegex.toRegexString
@@ -536,16 +536,35 @@ class CudfRegexTranspiler(mode: RegexMode) {
   }
 
 
-  private def rewrite(regex: RegexAST): RegexAST = {
+  private def rewrite(regex: RegexAST, previous: Option[RegexAST]): RegexAST = {
     regex match {
 
       case RegexChar(ch) => ch match {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
-        case '$' =>
+        case '$' if mode == RegexSplitMode || mode == RegexReplaceMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4533
           throw new RegexUnsupportedException("line anchor $ is not supported")
+        case '$' =>
+          previous match {
+            case Some(RegexChar('$')) =>
+              RegexEmpty()
+            case _ =>
+              RegexSequence(
+                ListBuffer(
+                  RegexRepetition(
+                    RegexChar('\r'),
+                    SimpleQuantifier('?')
+                  ),
+                  RegexRepetition(
+                    RegexChar('\n'),
+                    SimpleQuantifier('?')
+                  ),
+                  RegexChar('$')
+                )
+              )
+          }
         case '^' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("line anchor ^ is not supported in split mode")
         case _ =>
@@ -632,7 +651,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
-          .map(x => rewrite(x).asInstanceOf[RegexCharacterClassComponent])
+          .map(x => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent])
 
         if (negated) {
           // There are differences between cuDF and Java handling of newlines
@@ -697,7 +716,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "sequences that only contain '^' or '$' are not supported")
         }
-        RegexSequence(parts.map(rewrite))
+        RegexSequence(parts.foldLeft(new ListBuffer[RegexAST]())((m, part) => {
+          if (m.isEmpty) {
+            m.append(rewrite(part, None))
+          } else {
+            m.append(rewrite(part, Some(m.last)))
+          }
+          m
+        }))
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
         case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
@@ -740,17 +766,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
-          RegexRepetition(rewrite(base), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case _ if isSupportedRepetitionBase(base) =>
-          RegexRepetition(rewrite(base), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case _ =>
           throw new RegexUnsupportedException(nothingToRepeat)
 
       }
 
       case RegexChoice(l, r) =>
-        val ll = rewrite(l)
-        val rr = rewrite(r)
+        val ll = rewrite(l, None)
+        val rr = rewrite(r, None)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
         if (isRepetition(ll) || isRepetition(rr)) {
@@ -774,7 +800,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
-        RegexGroup(capture, rewrite(term))
+        RegexGroup(capture, rewrite(term, None))
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
@@ -800,6 +826,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
 sealed trait RegexAST {
   def children(): Seq[RegexAST]
   def toRegexString: String
+}
+
+sealed case class RegexEmpty() extends RegexAST {
+  override def children(): Seq[RegexAST] = Seq.empty
+  override def toRegexString: String = ""
 }
 
 sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
