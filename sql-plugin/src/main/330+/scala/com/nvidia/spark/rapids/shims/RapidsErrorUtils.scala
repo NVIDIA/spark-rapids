@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
 
 object RapidsErrorUtils {
@@ -28,11 +29,12 @@ object RapidsErrorUtils {
     }
   }
 
-  // TODO: wait https://github.com/NVIDIA/spark-rapids/pull/5133 to fix
-  def mapKeyNotExistError(key: String, context: String,
-      isElementAtF: Boolean = false): NoSuchElementException = {
+  def mapKeyNotExistError(
+      key: String,
+      isElementAtFunction: Boolean,
+      origin: Origin): NoSuchElementException = {
     // For now, the default argument is false. The caller sets the correct value accordingly.
-    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF, context)
+    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtFunction, origin.context)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {

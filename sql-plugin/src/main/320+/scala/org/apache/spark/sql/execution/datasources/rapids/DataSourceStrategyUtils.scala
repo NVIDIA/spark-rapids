@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.execution.datasources.rapids
 
-import org.apache.spark.SparkContext
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReaderFactory}
-import org.apache.spark.sql.execution.datasources.v2.DataSourceRDD
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.datasources.DataSourceStrategy
+import org.apache.spark.sql.sources.Filter
 
-class ShimDataSourceRDD(
-    sc: SparkContext,
-    @transient private val inputPartitions: Seq[InputPartition],
-    partitionReaderFactory: PartitionReaderFactory,
-    columnarReads: Boolean
-) extends DataSourceRDD(sc, inputPartitions, partitionReaderFactory, columnarReads)
+object DataSourceStrategyUtils {
+  // Trampoline utility to access protected translateRuntimeFilter
+  def translateRuntimeFilter(expr: Expression): Option[Filter] =
+    DataSourceStrategy.translateRuntimeFilter(expr)
+}

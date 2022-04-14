@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -340,6 +340,19 @@ case class GpuColumnarToRowExec(
 }
 
 object GpuColumnarToRowExec {
+  /**
+   * Helper to check if GPU accelerated row-column transpose is supported.
+   * This is a workaround for [[https://github.com/rapidsai/cudf/issues/10569]],
+   * where CUDF JNI column->row transposition works incorrectly on certain
+   * GPU architectures.
+   */
+  private lazy val isAcceleratedTransposeSupported: Boolean = {
+    // Check if the current CUDA device architecture exceeds Pascal.
+    // i.e. CUDA compute capability > 6.x.
+    // Reference:  https://developer.nvidia.com/cuda-gpus
+    Cuda.getComputeCapabilityMajor > 6
+  }
+
   def makeIteratorFunc(
       output: Seq[Attribute],
       numOutputRows: GpuMetric,
@@ -357,8 +370,17 @@ object GpuColumnarToRowExec {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
-        new AcceleratedColumnarToRowIterator(output, batches, numInputBatches, numOutputRows,
-          opTime, streamTime).map(toUnsafe)
+        // Work around {@link https://github.com/rapidsai/cudf/issues/10569}, where CUDF JNI
+        // acceleration of column->row transposition produces incorrect results on certain
+        // GPU architectures.
+        // Check that the accelerated transpose works correctly on the current CUDA device.
+        if (isAcceleratedTransposeSupported) {
+          new AcceleratedColumnarToRowIterator(output, batches, numInputBatches, numOutputRows,
+            opTime, streamTime).map(toUnsafe)
+        } else {
+          new ColumnarToRowIterator(batches,
+            numInputBatches, numOutputRows, opTime, streamTime).map(toUnsafe)
+        }
       }
     } else {
       (batches: Iterator[ColumnarBatch]) => {

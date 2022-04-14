@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.ColumnarCopyHelper
+import com.nvidia.spark.rapids.{ColumnarCopyHelper, TypeSig}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
@@ -161,7 +161,6 @@ object GpuTypeShims {
     }
   }
 
-
   def supportCsvRead(dt: DataType) : Boolean = {
     dt match {
       case DayTimeIntervalType(_, _) => true
@@ -176,4 +175,41 @@ object GpuTypeShims {
     }
   }
 
+  /**
+   * Whether the Shim supports day-time interval type
+   * Alias, Add, Subtract, Positive... operators support day-time interval type
+   */
+  def isSupportedDayTimeType(dt: DataType): Boolean = dt.isInstanceOf[DayTimeIntervalType]
+
+  /**
+   * Whether the Shim supports year-month interval type
+   * Alias, Add, Subtract, Positive... operators support year-month interval type
+   */
+  def isSupportedYearMonthType(dt: DataType): Boolean = dt.isInstanceOf[YearMonthIntervalType]
+
+  /**
+   * Get additional arithmetic supported types for this Shim
+   */
+  def additionalArithmeticSupportedTypes: TypeSig = TypeSig.ansiIntervals
+
+  /**
+   * Get additional predicate supported types for this Shim
+   */
+  def additionalPredicateSupportedTypes: TypeSig = TypeSig.DAYTIME
+
+  /**
+   * Get additional Csv supported types for this Shim
+   */
+  def additionalCsvSupportedTypes: TypeSig = TypeSig.DAYTIME
+
+  /**
+   * Get additional Parquet supported types for this Shim
+   */
+  def additionalParquetSupportedTypes: TypeSig = TypeSig.ansiIntervals
+
+  /**
+   * Get additional common operators supported types for this Shim
+   * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
+   */
+  def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.ansiIntervals
 }

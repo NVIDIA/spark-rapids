@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -353,7 +353,6 @@ case class JobStageAggTaskMetricsProfileResult(
     executorDeserializeCpuTimeSum: Long,
     executorDeserializeTimeSum: Long,
     executorRunTimeSum: Long,
-    gettingResultTimeSum: Long,
     inputBytesReadSum: Long,
     inputRecordsReadSum: Long,
     jvmGCTimeSum: Long,
@@ -376,13 +375,13 @@ case class JobStageAggTaskMetricsProfileResult(
   override val outputHeaders = Seq("appIndex", "ID", "numTasks", "Duration", "diskBytesSpilled_sum",
     "duration_sum", "duration_max", "duration_min",
     "duration_avg", "executorCPUTime_sum", "executorDeserializeCPUTime_sum",
-    "executorDeserializeTime_sum", "executorRunTime_sum", "gettingResultTime_sum",
-    "input_bytesRead_sum", "input_recordsRead_sum", "jvmGCTime_sum",
-    "memoryBytesSpilled_sum", "output_bytesWritten_sum", "output_recordsWritten_sum",
-    "peakExecutionMemory_max", "resultSerializationTime_sum", "resultSize_max",
-    "sr_fetchWaitTime_sum", "sr_localBlocksFetched_sum", "sr_localBytesRead_sum",
-    "sr_remoteBlocksFetched_sum", "sr_remoteBytesRead_sum", "sr_remoteBytesReadToDisk_sum",
-    "sr_totalBytesRead_sum", "sw_bytesWritten_sum", "sw_recordsWritten_sum", "sw_writeTime_sum")
+    "executorDeserializeTime_sum", "executorRunTime_sum", "input_bytesRead_sum",
+    "input_recordsRead_sum", "jvmGCTime_sum", "memoryBytesSpilled_sum",
+    "output_bytesWritten_sum", "output_recordsWritten_sum", "peakExecutionMemory_max",
+    "resultSerializationTime_sum", "resultSize_max", "sr_fetchWaitTime_sum",
+    "sr_localBlocksFetched_sum", "sr_localBytesRead_sum", "sr_remoteBlocksFetched_sum",
+    "sr_remoteBytesRead_sum", "sr_remoteBytesReadToDisk_sum", "sr_totalBytesRead_sum",
+    "sw_bytesWritten_sum", "sw_recordsWritten_sum", "sw_writeTime_sum")
 
   val durStr = duration match {
     case Some(dur) => dur.toString
@@ -403,7 +402,6 @@ case class JobStageAggTaskMetricsProfileResult(
       executorDeserializeCpuTimeSum.toString,
       executorDeserializeTimeSum.toString,
       executorRunTimeSum.toString,
-      gettingResultTimeSum.toString,
       inputBytesReadSum.toString,
       inputRecordsReadSum.toString,
       jvmGCTimeSum.toString,
@@ -445,7 +443,6 @@ case class SQLTaskAggMetricsProfileResult(
     executorDeserializeCpuTimeSum: Long,
     executorDeserializeTimeSum: Long,
     executorRunTimeSum: Long,
-    gettingResultTimeSum: Long,
     inputBytesReadSum: Long,
     inputRecordsReadSum: Long,
     jvmGCTimeSum: Long,
@@ -470,13 +467,13 @@ case class SQLTaskAggMetricsProfileResult(
     "Duration", "executorCPUTime", "executorRunTime", "executorCPURatio",
     "diskBytesSpilled_sum", "duration_sum", "duration_max", "duration_min",
     "duration_avg", "executorCPUTime_sum", "executorDeserializeCPUTime_sum",
-    "executorDeserializeTime_sum", "executorRunTime_sum", "gettingResultTime_sum",
-    "input_bytesRead_sum", "input_recordsRead_sum", "jvmGCTime_sum",
-    "memoryBytesSpilled_sum", "output_bytesWritten_sum", "output_recordsWritten_sum",
-    "peakExecutionMemory_max", "resultSerializationTime_sum", "resultSize_max",
-    "sr_fetchWaitTime_sum", "sr_localBlocksFetched_sum", "sr_localBytesRead_sum",
-    "sr_remoteBlocksFetched_sum", "sr_remoteBytesRead_sum", "sr_remoteBytesReadToDisk_sum",
-    "sr_totalBytesRead_sum", "sw_bytesWritten_sum", "sw_recordsWritten_sum", "sw_writeTime_sum")
+    "executorDeserializeTime_sum", "executorRunTime_sum", "input_bytesRead_sum",
+    "input_recordsRead_sum", "jvmGCTime_sum", "memoryBytesSpilled_sum",
+    "output_bytesWritten_sum", "output_recordsWritten_sum", "peakExecutionMemory_max",
+    "resultSerializationTime_sum", "resultSize_max", "sr_fetchWaitTime_sum",
+    "sr_localBlocksFetched_sum", "sr_localBytesRead_sum", "sr_remoteBlocksFetched_sum",
+    "sr_remoteBytesRead_sum", "sr_remoteBytesReadToDisk_sum", "sr_totalBytesRead_sum",
+    "sw_bytesWritten_sum", "sw_recordsWritten_sum", "sw_writeTime_sum")
 
   val durStr = duration match {
     case Some(dur) => dur.toString
@@ -502,7 +499,6 @@ case class SQLTaskAggMetricsProfileResult(
       executorDeserializeCpuTimeSum.toString,
       executorDeserializeTimeSum.toString,
       executorRunTimeSum.toString,
-      gettingResultTimeSum.toString,
       inputBytesReadSum.toString,
       inputRecordsReadSum.toString,
       jvmGCTimeSum.toString,

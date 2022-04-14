@@ -22,7 +22,7 @@ However, if accelerated SQL processing is not enabled, the shuffle implementatio
 default `SortShuffleManager`. 
 
 To enable GPU processing acceleration you will need:
-- Apache Spark 3.0+
+- Apache Spark 3.1+
 - A spark cluster configured with GPUs that comply with the requirements for the version of 
   [cudf](https://github.com/rapidsai/cudf).
     - One GPU per executor.

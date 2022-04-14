@@ -24,8 +24,9 @@ import org.apache.spark.SparkException
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 
-// TODO Currently Pyspark does not support YearMonthIntervalType,
-// should move this to integration tests after Spark supports YearMonthIntervalType
+// Currently Pyspark does not support YearMonthIntervalType,
+// TODO move this to the integration test module, see issue
+//  https://github.com/NVIDIA/spark-rapids/issues/5212
 class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual(

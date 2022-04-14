@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
-import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -352,32 +352,39 @@ class CudfMin(override val dataType: DataType) extends CudfAggregate {
 }
 
 class CudfCollectList(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.collectList(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.collectList()
   override val name: String = "CudfCollectList"
 }
 
 class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.mergeLists(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeLists()
   override val name: String = "CudfMergeLists"
 }
 
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      val collectSet = ReductionAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      col.reduce(collectSet, DType.LIST)
+    }
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
   override val name: String = "CudfCollectSet"
 }
 
 class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      val mergeSets = ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      col.reduce(mergeSets, DType.LIST)
+    }
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
   override val name: String = "CudfMergeSets"
@@ -1578,8 +1585,9 @@ trait GpuCollectBase
   // WINDOW FUNCTION
   override val windowInputProjection: Seq[Expression] = Seq(child)
 
-  // Make them lazy to avoid being initialized when creating a GpuCollectOp.
-  override lazy val initialValues: Seq[Expression] = throw new UnsupportedOperationException
+  override val initialValues: Seq[Expression] = {
+    Seq(GpuLiteral.create(new GenericArrayData(Array.empty[Any]), dataType))
+  }
 
   override val inputProjection: Seq[Expression] = Seq(child)
 

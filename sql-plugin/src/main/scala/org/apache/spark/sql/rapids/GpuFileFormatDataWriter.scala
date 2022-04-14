@@ -57,14 +57,22 @@ abstract class GpuFileFormatDataWriter(
   protected val statsTrackers: Seq[ColumnarWriteTaskStatsTracker] =
     description.statsTrackers.map(_.newTaskInstance())
 
-  protected def releaseResources(): Unit = {
+  /** Release resources of `currentWriter`. */
+  protected def releaseCurrentWriter(): Unit = {
     if (currentWriter != null) {
       try {
         currentWriter.close()
+        statsTrackers.foreach(_.closeFile(currentWriter.path()))
       } finally {
         currentWriter = null
       }
     }
+  }
+
+  /** Release all resources. */
+  protected def releaseResources(): Unit = {
+    // Call `releaseCurrentWriter()` by default, as this is the only resource to be released.
+    releaseCurrentWriter()
   }
 
   /** Writes a columnar batch of records */

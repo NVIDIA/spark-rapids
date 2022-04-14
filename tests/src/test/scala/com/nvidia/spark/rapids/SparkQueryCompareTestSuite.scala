@@ -339,7 +339,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       fun: DataFrame => DataFrame,
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1,
-      skipCanonicalizationCheck: Boolean = false): (Array[Row], Array[Row]) = {
+      skipCanonicalizationCheck: Boolean = false,
+      existClasses: String = null,
+      nonExistClasses: String = null): (Array[Row], Array[Row]) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
     val (planCpu, canonicalizationMatchesCpu, fromCpu) = withCpuSparkSession( session => {
       var data = df(session)
@@ -358,7 +360,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
         // not folded into the table scan exec
         data = data.repartition(repart)
       }
-      collect(fun, data)
+      collect(fun, data, existClasses, nonExistClasses)
     }, conf)
 
     if (!skipCanonicalizationCheck && (canonicalizationMatchesCpu != canonicalizationMatchesGpu)) {
@@ -414,11 +416,25 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def collect(
       fun: DataFrame => DataFrame,
-      data: DataFrame): (SparkPlan, Boolean, Array[Row]) = {
+      data: DataFrame, existClasses: String = null,
+      nonExistClasses: String = null): (SparkPlan, Boolean, Array[Row]) = {
     val plan1 = fun(data)
     val plan2 = fun(data)
     val canonicalizationMatches = plan1.queryExecution.executedPlan.canonicalized ==
         plan2.queryExecution.executedPlan.canonicalized
+
+    if (existClasses != null) {
+      existClasses.split(",").foreach { cls =>
+        ExecutionPlanCaptureCallback.assertContains(plan1, cls)
+      }
+    }
+
+    if (nonExistClasses != null) {
+      nonExistClasses.split(",").foreach { cls =>
+        ExecutionPlanCaptureCallback.assertNotContain(plan1, cls)
+      }
+    }
+
     (plan1.queryExecution.executedPlan.canonicalized, canonicalizationMatches, plan1.collect())
   }
 
@@ -751,7 +767,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false,
       assumeCondition: SparkSession => (Boolean, String) = null,
-      skipCanonicalizationCheck: Boolean = false)
+      skipCanonicalizationCheck: Boolean = false,
+      existClasses: String = null,  // Gpu plan should contain the `existClasses`
+      nonExistClasses: String = null) // Gpu plan should not contain the `nonExistClasses`
       (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
@@ -766,7 +784,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
         repart = repart,
-        skipCanonicalizationCheck = skipCanonicalizationCheck)
+        skipCanonicalizationCheck = skipCanonicalizationCheck,
+        existClasses = existClasses,
+        nonExistClasses = nonExistClasses)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
   }
@@ -883,30 +903,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       }
   }
 
-  def testSparkResultsAreEqual2(
-      testName: String,
-      dfA: SparkSession => DataFrame,
-      dfB: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf(),
-      repart: Integer = 1,
-      sort: Boolean = false,
-      maxFloatDiff: Double = 0.0,
-      incompat: Boolean = false,
-      execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
-    (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
-
-    val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
-        maxFloatDiff, sortBeforeRepart)
-
-    testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
-    test(qualifiedTestName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
-      compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
-    }
-  }
-
   def testBothCpuGpuExpectedException[T <: Throwable](
       testName: String,
       expectedException: T => Boolean,
@@ -1003,6 +999,30 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
         case Failure(e) => throw e
         case _ => fail("Expected an exception, but got none")
       }
+    }
+  }
+
+  def testSparkResultsAreEqual2(
+      testName: String,
+      dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+    (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+
+    testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
+    test(qualifiedTestName) {
+      val (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
+      compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
   }
 

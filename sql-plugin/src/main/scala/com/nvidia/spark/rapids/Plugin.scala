@@ -28,7 +28,7 @@ import scala.util.matching.Regex
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
@@ -89,6 +89,13 @@ object RapidsPluginUtils extends Logging {
     } else {
       logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to true.")
+    }
+
+    if (conf.isUdfCompilerEnabled) {
+      logWarning("Experimental RAPIDS UDF compiler is enabled, in case of related failures " +
+      s"disable it by setting `${RapidsConf.UDF_COMPILER_ENABLED}` to false. " +
+      "More information is available at https://nvidia.github.io/spark-rapids/docs/FAQ.html#" +
+      "automatic-translation-of-scala-udfs-to-apache-spark-operations" )
     }
   }
 
@@ -274,6 +281,25 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+  }
+
+  override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
+    failureReason match {
+      case ef: ExceptionFailure =>
+        val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
+          "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
+          "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
+          "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
+          "cudaErrorECCUncorrectable")
+        if (unrecoverableErrors.exists(ef.description.contains(_)) ||
+          unrecoverableErrors.exists(ef.toErrorString.contains(_))) {
+          logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+            s"${ef.toErrorString}")
+          System.exit(20)
+        }
+      case other =>
+        logDebug(s"Executor onTaskFailed not a CUDA fatal error: ${other.toString}")
+    }
   }
 }
 
