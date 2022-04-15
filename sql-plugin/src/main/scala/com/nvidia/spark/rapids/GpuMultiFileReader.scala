@@ -114,8 +114,8 @@ object MultiFileThreadPoolUtil {
   }
 }
 
-/** A factory class to get a thread pool */
-class MultiFileThreadPoolFactory {
+/** A thread pool for multi-file reading */
+class MultiFileReaderThreadPool {
   private var threadPool: Option[ThreadPoolExecutor] = None
 
   private def initThreadPool(
@@ -127,7 +127,12 @@ class MultiFileThreadPoolFactory {
     threadPool.get
   }
 
-  def getThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
+  /**
+   * Get the existing internal thread pool or create one with the given tag and thread
+   * number if it does not exist.
+   * Note: The tag and thread number will be ignored if the thread pool is already created.
+   */
+  def getOrCreateThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
     threadPool.getOrElse(initThreadPool(threadTag, numThreads))
   }
 }

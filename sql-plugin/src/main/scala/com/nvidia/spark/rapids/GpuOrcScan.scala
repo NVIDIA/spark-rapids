@@ -721,7 +721,7 @@ class GpuOrcPartitionReader(
 
 // Singleton threadpool that is used across all the tasks.
 // Please note that the TaskContext is not set in these threads and should not be used.
-object OrcMultiFileThreadPoolFactory extends MultiFileThreadPoolFactory
+object OrcMultiFileThreadPool extends MultiFileReaderThreadPool
 
 private object OrcTools extends Arm {
 
@@ -1502,7 +1502,7 @@ class MultiFileCloudOrcPartitionReader(
    * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    OrcMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    OrcMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**
@@ -1928,7 +1928,7 @@ class MultiFileOrcPartitionReader(
    * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    OrcMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    OrcMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**

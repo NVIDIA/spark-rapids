@@ -579,12 +579,14 @@ case class GpuFileSourceScanExec(
           rapidsConf,
           allMetrics,
           queryUsesInputFile)
-      case f =>
-        ExternalSource.createMultiFileFactoryForGpuFileSourceScanExec(
-          f,
+      case ef if ExternalSource.isSupportedFormat(ef) =>
+        ExternalSource.createMultiFileReaderFactory(
+          ef,
           broadcastedHadoopConf,
           pushedDownFilters.toArray,
           this)
+      case other =>
+        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
     }
   }
 
@@ -618,7 +620,10 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
       case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      case _ => ExternalSource.tagSupportForGpuFileSourceScanExec(meta)
+      case ef if ExternalSource.isSupportedFormat(ef) =>
+        ExternalSource.tagSupportForGpuFileSourceScan(meta)
+      case other =>
+        meta.willNotWorkOnGpu(s"unsupported file format: ${other.getClass.getCanonicalName}")
     }
   }
 
@@ -628,7 +633,10 @@ object GpuFileSourceScanExec {
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
       case _: JsonFileFormat => new GpuReadJsonFileFormat
-      case _ => ExternalSource.convertFileFormatForGpuFileSourceScanExec(format)
+      case ef if ExternalSource.isSupportedFormat(ef) => ExternalSource.getReadFileFormat(ef)
+      case other =>
+        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
+
     }
   }
 }

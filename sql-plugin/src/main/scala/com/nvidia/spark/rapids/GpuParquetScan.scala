@@ -992,7 +992,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
 // Singleton threadpool that is used across all the tasks.
 // Please note that the TaskContext is not set in these threads and should not be used.
-object ParquetMultiFileThreadPoolFactory extends MultiFileThreadPoolFactory
+object ParquetMultiFileThreadPool extends MultiFileReaderThreadPool
 
 // Parquet schema wrapper
 private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase
@@ -1152,7 +1152,7 @@ class MultiFileParquetPartitionReader(
   }
 
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   override def getBatchRunner(
@@ -1399,7 +1399,7 @@ class MultiFileCloudParquetPartitionReader(
    * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**

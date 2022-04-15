@@ -141,7 +141,7 @@ case class GpuAvroPartitionReaderFactory(
     options: AvroOptions,
     metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Logging {
 
-  private val debugDumpPrefix = rapidsConf.avroDebugDumpPrefix
+  private val debugDumpPrefix = Option(rapidsConf.avroDebugDumpPrefix)
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
@@ -175,7 +175,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  private val debugDumpPrefix = rapidsConf.avroDebugDumpPrefix
+  private val debugDumpPrefix = Option(rapidsConf.avroDebugDumpPrefix)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
@@ -222,8 +222,9 @@ case class GpuAvroMultiFilePartitionReaderFactory(
 
 /** A trait collecting common methods across the 3 kinds of avro readers */
 trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase =>
+  private val avroFormat = Some("avro")
 
-  def debugDumpPrefix: String
+  def debugDumpPrefix: Option[String]
 
   def readDataSchema: StructType
 
@@ -241,7 +242,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
         None
       } else {
         // Dump buffer for debugging when required
-        dumpDataToFile(hostBuf, bufSize, splits, Option(debugDumpPrefix), Some("avro"))
+        dumpDataToFile(hostBuf, bufSize, splits, debugDumpPrefix, avroFormat)
 
         val readOpts = CudfAvroOptions.builder()
           .includeColumn(readDataSchema.fieldNames.toSeq: _*)
@@ -414,7 +415,7 @@ class GpuAvroPartitionReader(
     partFile: PartitionedFile,
     blockMeta: AvroBlockMeta,
     override val readDataSchema: StructType,
-    override val debugDumpPrefix: String,
+    override val debugDumpPrefix: Option[String],
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric])
@@ -473,6 +474,22 @@ class GpuAvroPartitionReader(
 /**
  * A PartitionReader that can read multiple AVRO files in parallel.
  * This is most efficient running in a cloud environment where the I/O of reading is slow.
+ *
+ * @param conf the Hadoop configuration
+ * @param files the partitioned files to read
+ * @param readDataSchema the Spark schema describing what will be read
+ * @param partitionSchema Schema of partitions.
+ * @param maxReadBatchSizeRows soft limit on the maximum number of rows to be read per batch
+ * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes to be read per batch
+ * @param numThreads the size of the threadpool
+ * @param maxNumFileProcessed threshold to control the maximum file number to be
+ *                            submitted to threadpool
+ * @param debugDumpPrefix a path prefix to use for dumping the fabricated AVRO data or null
+ * @param filters filters passed into the filterHandler
+ * @param filterHandler used to filter the AVRO blocks
+ * @param execMetrics the metrics
+ * @param ignoreMissingFiles Whether to ignore missing files
+ * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class GpuMultiFileCloudAvroPartitionReader(
     conf: Configuration,
@@ -483,7 +500,7 @@ class GpuMultiFileCloudAvroPartitionReader(
     maxReadBatchSizeBytes: Long,
     numThreads: Int,
     maxNumFileProcessed: Int,
-    override val debugDumpPrefix: String,
+    override val debugDumpPrefix: Option[String],
     filters: Array[Filter],
     filterHandler: AvroFileFilterHandler,
     execMetrics: Map[String, GpuMetric],
@@ -530,7 +547,7 @@ class GpuMultiFileCloudAvroPartitionReader(
   }
 
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
-    AvroMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    AvroMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
 
   override final def getFileFormatShortName: String = "AVRO"
 
@@ -624,7 +641,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 }
 
 /** Singleton threadpool that is used across all the tasks. */
-object AvroMultiFileThreadPoolFactory extends MultiFileThreadPoolFactory
+object AvroMultiFileThreadPool extends MultiFileReaderThreadPool
 
 /** A tool to filter Avro blocks */
 case class AvroFileFilterHandler(

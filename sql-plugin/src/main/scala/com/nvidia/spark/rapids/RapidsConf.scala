@@ -940,7 +940,7 @@ object RapidsConf {
     .doc("Sets the avro reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
-      "individually has high overhead, and using MULTITHREADED is recommended instead." +
+      "individually has high overhead, and using MULTITHREADED is recommended instead. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
@@ -949,7 +949,7 @@ object RapidsConf {
       "See spark.rapids.sql.format.avro.multiThreadedRead.numThreads and " +
       "spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
-      "By default this is set to AUTO so we select the reader we think is best.")
+      "By default this is set to AUTO and we select the MULTITHREADED reader.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues((RapidsReaderType.values - RapidsReaderType.COALESCING).map(_.toString))

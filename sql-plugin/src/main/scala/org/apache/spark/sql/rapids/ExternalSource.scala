@@ -42,20 +42,31 @@ object ExternalSource {
     }
   }
 
-  def tagSupportForGpuFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    val format = meta.wrapped.relation.fileFormat
+  /** If the file format is supported as an external source */
+  def isSupportedFormat(format: FileFormat): Boolean = {
     if (hasSparkAvroJar) {
-       format match {
+      format match {
+        case _: AvroFileFormat => true
+        case _ => false
+      }
+    } else false
+  }
+
+  def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    if (hasSparkAvroJar) {
+      meta.wrapped.relation.fileFormat match {
         case _: AvroFileFormat => GpuReadAvroFileFormat.tagSupport(meta)
         case f =>
           meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
       }
-    } else {
-      meta.willNotWorkOnGpu(s"unsupported file format: ${format.getClass.getCanonicalName}")
     }
   }
 
-  def convertFileFormatForGpuFileSourceScanExec(format: FileFormat): FileFormat = {
+  /**
+   * Get a read file format for the input format.
+   * Better to check if the format is supported first by calling 'isSupportedFormat'
+   */
+  def getReadFileFormat(format: FileFormat): FileFormat = {
     if (hasSparkAvroJar) {
       format match {
         case _: AvroFileFormat => new GpuReadAvroFileFormat
@@ -67,7 +78,11 @@ object ExternalSource {
     }
   }
 
-  def createMultiFileFactoryForGpuFileSourceScanExec(
+  /**
+   * Create a multi-file reader factory for the input format.
+   * Better to check if the format is supported first by calling 'isSupportedFormat'
+   */
+  def createMultiFileReaderFactory(
       format: FileFormat,
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
