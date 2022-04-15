@@ -554,10 +554,10 @@ object GpuCast extends Arm {
       case (from: MapType, _: StringType) =>
         castMapToString(input, from, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
 
-      case (dayTime: DataType, _: StringType) if GpuTypeShims.isDayTimeType(dayTime) =>
+      case (dayTime: DataType, _: StringType) if GpuTypeShims.isSupportedDayTimeType(dayTime) =>
         GpuIntervalUtils.toDayTimeIntervalString(input.asInstanceOf[ColumnVector], dayTime)
 
-      case (_: StringType, dayTime: DataType) if GpuTypeShims.isDayTimeType(dayTime) =>
+      case (_: StringType, dayTime: DataType) if GpuTypeShims.isSupportedDayTimeType(dayTime) =>
         GpuIntervalUtils.castStringToDayTimeIntervalWithThrow(
           input.asInstanceOf[ColumnVector], dayTime)
 

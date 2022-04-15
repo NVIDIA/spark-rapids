@@ -19,65 +19,145 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.shims.GpuIntervalUtils
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_SECOND}
+import org.apache.spark.sql.catalyst.util.{IntervalStringStyles, IntervalUtils}
+import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND}
 import org.apache.spark.sql.types.{DayTimeIntervalType => DT}
 
-class GpuIntervalUtilsTest extends FunSuite {
+/**
+ * Unit test cases for testing `GpuIntervalUtils.toDayTimeIntervalString`
+ *
+ */
+class GpuIntervalUtilsTest extends FunSuite with Arm {
 
-  test("testToDayTimeIntervalString 1") {
-    val testData = Array(
-      (0L, "INTERVAL '0 00:00:00' DAY TO SECOND"),
-      (1L, "INTERVAL '0 00:00:00.000001' DAY TO SECOND"),
-      (1000L, "INTERVAL '0 00:00:00.001' DAY TO SECOND"),
-      (Long.MinValue, "INTERVAL '-106751991 04:00:54.775808' DAY TO SECOND"),
-      (-1L, "INTERVAL '-0 00:00:00.000001' DAY TO SECOND"),
-      (-123 * MICROS_PER_DAY - 3 * MICROS_PER_SECOND, "INTERVAL '-123 00:00:03' DAY TO SECOND")
-    )
-
-    val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
-
-    // cast dt to string
-    val actual = GpuIntervalUtils.toDayTimeIntervalString(micros, DT.DAY, DT.SECOND)
-    val expected = ColumnVector.fromStrings(testData.map(e => e._2): _*)
-
-    // assert
-    CudfTestHelper.assertColumnsAreEqual(expected, actual)
+  def testDayTimeToString(fromField: Byte, endField: Byte,
+      testData: Array[(Long, String)]): Unit = {
+    val caseName = s"testToDayTimeIntervalString for " +
+        s"from ${DT.fieldToString(fromField)} to ${DT.fieldToString(endField)}"
+    test(caseName) {
+      val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
+      withResource(GpuIntervalUtils.toDayTimeIntervalString(micros, fromField, endField)) {
+        gpuRet =>
+          withResource(ColumnVector.fromStrings(testData.map(e => e._2): _*)) { expected =>
+            withResource(ColumnVector.fromStrings(testData.map(e =>
+              IntervalUtils.toDayTimeIntervalString(e._1, IntervalStringStyles.ANSI_STYLE,
+                fromField, endField)): _*)) { cpuRet =>
+              CudfTestHelper.assertColumnsAreEqual(expected, gpuRet)
+              CudfTestHelper.assertColumnsAreEqual(cpuRet, gpuRet)
+            }
+          }
+      }
+    }
   }
 
-  test("testToDayTimeIntervalString 2") {
-    val testData = Array(
-      (1790552632L * 3600L * 1000000L + 5, "INTERVAL '1790552632' HOUR"),
-      (-2350919938L * 3600L * 1000000L - 100 , "INTERVAL '-2350919938' HOUR"),
-      (0L, "INTERVAL '00' HOUR")
-    )
+  testDayTimeToString(DT.DAY, DT.DAY, Array(
+    (0L, "INTERVAL '0' DAY"),
+    (Long.MinValue, "INTERVAL '-106751991' DAY"),
+    (Long.MaxValue, "INTERVAL '106751991' DAY"),
+    (3 * MICROS_PER_DAY, "INTERVAL '3' DAY"),
+    (-3 * MICROS_PER_DAY, "INTERVAL '-3' DAY"),
+    (23 * MICROS_PER_DAY, "INTERVAL '23' DAY"),
+    (-23 * MICROS_PER_DAY, "INTERVAL '-23' DAY"),
+    (1 * MICROS_PER_DAY + 23 * MICROS_PER_HOUR, "INTERVAL '1' DAY"),
+    (-123 * MICROS_PER_DAY - 23 * MICROS_PER_HOUR, "INTERVAL '-123' DAY")
+  ))
 
-    val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
+  testDayTimeToString(DT.DAY, DT.HOUR, Array(
+    (0L, "INTERVAL '0 00' DAY TO HOUR"),
+    (Long.MinValue, "INTERVAL '-106751991 04' DAY TO HOUR"),
+    (Long.MaxValue, "INTERVAL '106751991 04' DAY TO HOUR"),
+    (3 * MICROS_PER_HOUR, "INTERVAL '0 03' DAY TO HOUR"),
+    (123 * MICROS_PER_DAY + 3 * MICROS_PER_HOUR, "INTERVAL '123 03' DAY TO HOUR"),
+    (-123 * MICROS_PER_DAY - 23 * MICROS_PER_HOUR, "INTERVAL '-123 23' DAY TO HOUR")
+  ))
 
-    // cast dt to string
-    val actual = GpuIntervalUtils.toDayTimeIntervalString(micros, DT.HOUR, DT.HOUR)
-    val expected = ColumnVector.fromStrings(testData.map(e => e._2): _*)
+  testDayTimeToString(DT.DAY, DT.MINUTE, Array(
+    (0L, "INTERVAL '0 00:00' DAY TO MINUTE"),
+    (Long.MinValue, "INTERVAL '-106751991 04:00' DAY TO MINUTE"),
+    (Long.MaxValue, "INTERVAL '106751991 04:00' DAY TO MINUTE"),
+    (3 * MICROS_PER_MINUTE, "INTERVAL '0 00:03' DAY TO MINUTE"),
+    (123 * MICROS_PER_DAY + 3 * MICROS_PER_HOUR + 4 * MICROS_PER_MINUTE,
+        "INTERVAL '123 03:04' DAY TO MINUTE"),
+    (-123 * MICROS_PER_DAY - 23 * MICROS_PER_HOUR - 59 * MICROS_PER_MINUTE,
+        "INTERVAL '-123 23:59' DAY TO MINUTE")
+  ))
 
-    // assert
-    CudfTestHelper.assertColumnsAreEqual(expected, actual)
-  }
+  testDayTimeToString(DT.DAY, DT.SECOND, Array(
+    (0L, "INTERVAL '0 00:00:00' DAY TO SECOND"),
+    (Long.MinValue, "INTERVAL '-106751991 04:00:54.775808' DAY TO SECOND"),
+    (Long.MaxValue, "INTERVAL '106751991 04:00:54.775807' DAY TO SECOND"),
+    (3 * MICROS_PER_SECOND, "INTERVAL '0 00:00:03' DAY TO SECOND"),
+    (3 * MICROS_PER_SECOND + 667L, "INTERVAL '0 00:00:03.000667' DAY TO SECOND"),
+    (123 * MICROS_PER_DAY + 23 * MICROS_PER_HOUR, "INTERVAL '123 23:00:00' DAY TO SECOND"),
+    (-123 * MICROS_PER_DAY - 23 * MICROS_PER_HOUR, "INTERVAL '-123 23:00:00' DAY TO SECOND"),
+    (MICROS_PER_DAY + MICROS_PER_HOUR + MICROS_PER_MINUTE + MICROS_PER_SECOND + 10L,
+        "INTERVAL '1 01:01:01.00001' DAY TO SECOND"),
+    (-(MICROS_PER_DAY + MICROS_PER_HOUR + MICROS_PER_MINUTE + MICROS_PER_SECOND + 10L),
+        "INTERVAL '-1 01:01:01.00001' DAY TO SECOND")
+  ))
 
-  test("testToDayTimeIntervalString 3") {
-    val testData = Array(
-      (5L * 1000000L, "INTERVAL '05' SECOND"),
-      (-2350919938L * 1000000L, "INTERVAL '-2350919938' SECOND"),
-      (19938L * 1000000L, "INTERVAL '19938' SECOND"),
-      (0L, "INTERVAL '00' SECOND"),
-      (Long.MinValue, "INTERVAL '-9223372036854.775808' SECOND"),
-      (Long.MaxValue, "INTERVAL '9223372036854.775807' SECOND")
-    )
+  testDayTimeToString(DT.HOUR, DT.HOUR, Array(
+    (0L, "INTERVAL '00' HOUR"),
+    (Long.MinValue, s"INTERVAL '${Long.MinValue / MICROS_PER_HOUR}' HOUR"),
+    (Long.MaxValue, s"INTERVAL '${Long.MaxValue / MICROS_PER_HOUR}' HOUR"),
+    (23 * MICROS_PER_HOUR, "INTERVAL '23' HOUR"),
+    (3 * MICROS_PER_HOUR, "INTERVAL '03' HOUR"),
+    (-3 * MICROS_PER_HOUR, "INTERVAL '-03' HOUR"),
+    (23 * MICROS_PER_HOUR + 59 * MICROS_PER_MINUTE, "INTERVAL '23' HOUR"),
+    (-100 * MICROS_PER_HOUR - 60 * MICROS_PER_MINUTE, "INTERVAL '-101' HOUR")
+  ))
 
-    val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
+  testDayTimeToString(DT.HOUR, DT.MINUTE, Array(
+    (0L, "INTERVAL '00:00' HOUR TO MINUTE"),
+    (Long.MinValue, "INTERVAL '-2562047788:00' HOUR TO MINUTE"),
+    (Long.MaxValue, "INTERVAL '2562047788:00' HOUR TO MINUTE"),
+    (3 * MICROS_PER_HOUR, "INTERVAL '03:00' HOUR TO MINUTE"),
+    (23 * MICROS_PER_HOUR, "INTERVAL '23:00' HOUR TO MINUTE"),
+    (123 * MICROS_PER_HOUR + 23 * MICROS_PER_MINUTE, "INTERVAL '123:23' HOUR TO MINUTE"),
+    (-123 * MICROS_PER_HOUR - 60 * MICROS_PER_MINUTE, "INTERVAL '-124:00' HOUR TO MINUTE")
+  ))
 
-    // cast dt to string
-    val actual = GpuIntervalUtils.toDayTimeIntervalString(micros, DT.SECOND, DT.SECOND)
-    val expected = ColumnVector.fromStrings(testData.map(e => e._2): _*)
+  testDayTimeToString(DT.HOUR, DT.SECOND, Array(
+    (0L, "INTERVAL '00:00:00' HOUR TO SECOND"),
+    (Long.MinValue, "INTERVAL '-2562047788:00:54.775808' HOUR TO SECOND"),
+    (Long.MaxValue, "INTERVAL '2562047788:00:54.775807' HOUR TO SECOND"),
+    (3 * MICROS_PER_HOUR, "INTERVAL '03:00:00' HOUR TO SECOND"),
+    (23 * MICROS_PER_HOUR, "INTERVAL '23:00:00' HOUR TO SECOND"),
+    (3 * MICROS_PER_HOUR + 4 * MICROS_PER_MINUTE + 5 * MICROS_PER_SECOND + 1000,
+        "INTERVAL '03:04:05.001' HOUR TO SECOND"),
+    (-(3 * MICROS_PER_HOUR + 4 * MICROS_PER_MINUTE + 5 * MICROS_PER_SECOND + 1000),
+        "INTERVAL '-03:04:05.001' HOUR TO SECOND"),
+    (123 * MICROS_PER_HOUR + 23 * MICROS_PER_MINUTE, "INTERVAL '123:23:00' HOUR TO SECOND"),
+    (-123 * MICROS_PER_HOUR - 60 * MICROS_PER_MINUTE, "INTERVAL '-124:00:00' HOUR TO SECOND")
+  ))
 
-    // assert
-    CudfTestHelper.assertColumnsAreEqual(expected, actual)
-  }
+  testDayTimeToString(DT.MINUTE, DT.MINUTE, Array(
+    (0L, "INTERVAL '00' MINUTE"),
+    (Long.MinValue, s"INTERVAL '${Long.MinValue / MICROS_PER_MINUTE}' MINUTE"),
+    (Long.MaxValue, s"INTERVAL '${Long.MaxValue / MICROS_PER_MINUTE}' MINUTE"),
+    (23 * MICROS_PER_MINUTE, "INTERVAL '23' MINUTE"),
+    (3 * MICROS_PER_MINUTE, "INTERVAL '03' MINUTE"),
+    (-3 * MICROS_PER_MINUTE, "INTERVAL '-03' MINUTE"),
+    (123 * MICROS_PER_MINUTE + 59 * MICROS_PER_SECOND, "INTERVAL '123' MINUTE"),
+    (-100 * MICROS_PER_MINUTE - 60 * MICROS_PER_SECOND, "INTERVAL '-101' MINUTE")
+  ))
+
+  testDayTimeToString(DT.MINUTE, DT.SECOND, Array(
+    (0L, "INTERVAL '00:00' MINUTE TO SECOND"),
+    (Long.MinValue, s"INTERVAL '-153722867280:54.775808' MINUTE TO SECOND"),
+    (Long.MaxValue, s"INTERVAL '153722867280:54.775807' MINUTE TO SECOND"),
+    (23 * MICROS_PER_MINUTE, "INTERVAL '23:00' MINUTE TO SECOND"),
+    (3 * MICROS_PER_MINUTE, "INTERVAL '03:00' MINUTE TO SECOND"),
+    (123 * MICROS_PER_MINUTE + 23 * MICROS_PER_SECOND, "INTERVAL '123:23' MINUTE TO SECOND"),
+    (-123 * MICROS_PER_MINUTE - 60 * MICROS_PER_SECOND, "INTERVAL '-124:00' MINUTE TO SECOND")
+  ))
+
+  testDayTimeToString(DT.SECOND, DT.SECOND, Array(
+    (0L, "INTERVAL '00' SECOND"),
+    (Long.MinValue, s"INTERVAL '-9223372036854.775808' SECOND"),
+    (Long.MaxValue, s"INTERVAL '9223372036854.775807' SECOND"),
+    (3 * MICROS_PER_SECOND, "INTERVAL '03' SECOND"),
+    (-3 * MICROS_PER_SECOND, "INTERVAL '-03' SECOND"),
+    (123 * MICROS_PER_SECOND + 999, "INTERVAL '123.000999' SECOND"),
+    (-100 * MICROS_PER_SECOND - MICROS_PER_SECOND, "INTERVAL '-101' SECOND")
+  ))
 }

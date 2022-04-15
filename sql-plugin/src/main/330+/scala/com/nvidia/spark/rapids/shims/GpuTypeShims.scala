@@ -176,7 +176,7 @@ object GpuTypeShims {
   }
 
   /**
-   * Whether the Shim supports day-time interval type
+   * Whether the Shim supports day-time interval type for specific operator
    * Alias, Add, Subtract, Positive... operators support day-time interval type
    */
   def isSupportedDayTimeType(dt: DataType): Boolean = dt.isInstanceOf[DayTimeIntervalType]
@@ -216,6 +216,4 @@ object GpuTypeShims {
    * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
    */
   def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.ansiIntervals
-
-  def isDayTimeType(t: DataType): Boolean = t.isInstanceOf[DayTimeIntervalType]
 }
