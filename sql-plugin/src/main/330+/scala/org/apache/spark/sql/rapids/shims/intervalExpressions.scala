@@ -195,7 +195,7 @@ object IntervalUtils extends Arm {
       case DType.INT64 => s.getLong.toDouble
       case DType.FLOAT32 => s.getFloat.toDouble
       case DType.FLOAT64 => s.getDouble
-      case _ => throw new IllegalArgumentException()
+      case t => throw new IllegalArgumentException(s"Unexpected type $t")
     }
   }
 
@@ -205,7 +205,7 @@ object IntervalUtils extends Arm {
       case DType.INT16 => s.getShort.toLong
       case DType.INT32 => s.getInt.toLong
       case DType.INT64 => s.getLong
-      case _ => throw new IllegalArgumentException()
+      case t => throw new IllegalArgumentException(s"Unexpected type $t")
     }
   }
 
@@ -250,7 +250,7 @@ object IntervalUtils extends Arm {
     val min = p.getType match {
       case DType.INT32 => Int.MinValue.toLong
       case DType.INT64 => Long.MinValue
-      case _ => throw new IllegalStateException()
+      case t => throw new IllegalArgumentException(s"Unexpected type $t")
     }
     withResource(Scalar.fromLong(min)) { minScalar =>
       withResource(Scalar.fromLong(-1L)) { negOneScalar =>
