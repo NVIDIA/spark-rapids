@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 object RapidsPluginImplicits {
 
-  implicit class ReallyAGpuExpression[A <: Expression](exp: Expression) {
+  implicit class ReallyAGpuExpression(exp: Expression) {
     def columnarEval(batch: ColumnarBatch): Any = {
       exp.asInstanceOf[GpuExpression].columnarEval(batch)
     }
   }
 
-  implicit class AutoCloseableColumn[A <: AutoCloseable](autoCloseable: AutoCloseable) {
+  implicit class AutoCloseableColumn(autoCloseable: AutoCloseable) {
 
     /**
      * safeClose: Is an implicit on AutoCloseable class that tries to close the resource, if an
