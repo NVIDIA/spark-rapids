@@ -59,7 +59,7 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class RapidsBufferColumn[A <: RapidsBuffer](rapidsBuffer: RapidsBuffer) {
+  implicit class RapidsBufferColumn(rapidsBuffer: RapidsBuffer) {
 
     /**
      * safeFree: Is an implicit on RapidsBuffer class that tries to free the resource, if an
