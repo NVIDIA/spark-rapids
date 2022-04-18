@@ -239,7 +239,7 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     pytest.param('simple_float_values.csv', _int_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _long_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}),
-    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/5211')),
+    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _decimal_10_2_schema, {'header': 'true'}),
     pytest.param('simple_float_values.csv', _decimal_10_3_schema, {'header': 'true'}),
     pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}),
@@ -256,6 +256,21 @@ def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_ena
     })
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
             conf=updated_conf)
+
+@pytest.mark.parametrize('name,schema,options', [
+    pytest.param('small_float_values.csv', _float_schema, {'header': 'true'}),
+    pytest.param('small_float_values.csv', _double_schema, {'header': 'true'}),
+], ids=idfn)
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_csv_read_small_floats(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
+    updated_conf=copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
+                                         conf=updated_conf)
 
 csv_supported_gens = [
         # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
