@@ -17,12 +17,16 @@
 package com.nvidia.spark.rapids
 
 import com.esotericsoftware.kryo.Kryo
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 
 import org.apache.spark.serializer.KryoRegistrator
+import org.apache.spark.sql.rapids.execution.{SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 
 class GpuKryoRegistrator extends KryoRegistrator {
   override def registerClasses(kryo: Kryo): Unit = {
-    SparkShimImpl.registerKryoClasses(kryo)
+    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
+      new KryoJavaSerializer())
+    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
+      new KryoJavaSerializer())
   }
 }

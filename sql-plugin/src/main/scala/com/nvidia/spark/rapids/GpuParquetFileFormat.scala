@@ -162,15 +162,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val outputTimestampType = sqlConf.parquetOutputTimestampType
     val dateTimeRebaseException = "EXCEPTION".equals(
       sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
-    // prior to spark 311 int96 don't check for rebase exception
-    // https://github.com/apache/spark/blob/068465d016447ef0dbf7974b1a3f992040f4d64d/sql/core/src/
-    // main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetWriteSupport.scala#L195
-    val hasSeparateInt96RebaseConf = SparkShimImpl.hasSeparateINT96RebaseConf
     val timestampRebaseException =
       outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
           "EXCEPTION".equals(sparkSession.sqlContext
-              .getConf(SparkShimImpl.int96ParquetRebaseWriteKey)) &&
-          hasSeparateInt96RebaseConf ||
+              .getConf(SparkShimImpl.int96ParquetRebaseWriteKey)) ||
           !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
 
     val committerClass =
@@ -264,13 +259,13 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 }
 
 class GpuParquetWriter(
-    path: String,
+    override val path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
     dateRebaseException: Boolean,
     timestampRebaseException: Boolean,
     context: TaskAttemptContext)
-  extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet") {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 

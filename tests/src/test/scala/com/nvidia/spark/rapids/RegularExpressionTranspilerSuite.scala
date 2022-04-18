@@ -226,6 +226,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, Seq("2+|+??wD\n"))
   }
 
+  test("whitespace boundaries - replace") {
+    assertCpuGpuMatchesRegexpReplace(
+      Seq("\\s", "\\S"),
+      Seq("\u001eTEST"))
+  }
+
   test("match literal $ - find") {
     assertCpuGpuMatchesRegexpFind(
       Seq("\\$", "\\$[0-9]"),
@@ -297,7 +303,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \t\r\nBsdwSDWzZ"
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 

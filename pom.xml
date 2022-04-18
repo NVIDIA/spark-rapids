@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>22.04.0-SNAPSHOT</version>
+    <version>22.06.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -114,7 +114,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -140,7 +139,6 @@
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -181,7 +179,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/312db/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -232,7 +229,6 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/312-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -258,7 +254,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -286,7 +281,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/313/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -312,7 +306,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -340,7 +333,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/314/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
@@ -376,7 +368,6 @@
                 <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -404,7 +395,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/320/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
@@ -440,7 +430,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -468,7 +457,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/321/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
@@ -476,6 +464,7 @@
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/321until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -504,7 +493,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -532,14 +520,14 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/322/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/321until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -568,7 +556,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -610,11 +597,11 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/321db/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/321until330-all/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -659,7 +646,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/330/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -693,7 +679,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -722,7 +707,6 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
-                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311cdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
@@ -753,7 +737,6 @@
                 <module>udf-compiler</module>
                 <module>tools</module>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -809,7 +792,7 @@
         <spark.test.version>${spark.version}</spark.test.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <cudf.version>22.04.0-SNAPSHOT</cudf.version>
+        <cudf.version>22.06.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.15</scala.version>
         <!--

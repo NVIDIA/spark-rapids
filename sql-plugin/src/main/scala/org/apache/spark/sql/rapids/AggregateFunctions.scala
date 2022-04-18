@@ -27,9 +27,8 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
-import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.aggregate.GpuSumDefaults
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -353,32 +352,39 @@ class CudfMin(override val dataType: DataType) extends CudfAggregate {
 }
 
 class CudfCollectList(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.collectList(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.collectList()
   override val name: String = "CudfCollectList"
 }
 
 class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.mergeLists(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeLists()
   override val name: String = "CudfMergeLists"
 }
 
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      val collectSet = ReductionAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      col.reduce(collectSet, DType.LIST)
+    }
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
   override val name: String = "CudfCollectSet"
 }
 
 class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      val mergeSets = ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      col.reduce(mergeSets, DType.LIST)
+    }
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
   override val name: String = "CudfMergeSets"
@@ -915,59 +921,35 @@ abstract class GpuDecimalSum(
   private lazy val zeroDec = GpuLiteral(Decimal(0, dt.precision, dt.scale), dt)
 
   override lazy val initialValues: Seq[GpuLiteral] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(zeroDec, GpuLiteral(true, BooleanType))
-    } else {
-      Seq(GpuLiteral(null, dt))
-    }
+    Seq(zeroDec, GpuLiteral(true, BooleanType))
   }
 
   // we need to cast to `resultType` here, since Spark is not widening types
   // as done before Spark 3.2.0. See CudfSum for more info.
   override lazy val inputProjection: Seq[Expression] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      // Spark tracks null columns through a second column isEmpty for decimal. So null values
-      // are replaced with 0, and a separate boolean column for isNull is added
-      Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, dt)), GpuIsNull(child))
-    } else {
-      Seq(GpuCast(child, dt))
-    }
+    // Spark tracks null columns through a second column isEmpty for decimal. So null values
+    // are replaced with 0, and a separate boolean column for isNull is added
+    Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, dt)), GpuIsNull(child))
   }
 
   protected lazy val updateIsEmpty: CudfAggregate = new CudfMin(BooleanType)
 
   override lazy val updateAggregates: Seq[CudfAggregate] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(updateSum, updateIsEmpty)
-    } else {
-      Seq(updateSum)
-    }
+    Seq(updateSum, updateIsEmpty)
   }
 
   override lazy val postUpdate: Seq[Expression] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
-    } else {
-      postUpdateAttr
-    }
+    Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
   }
 
   // Used for Decimal overflow detection
   protected lazy val isEmpty: AttributeReference = AttributeReference("isEmpty", BooleanType)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(sum, isEmpty)
-    } else {
-      Seq(sum)
-    }
+    Seq(sum, isEmpty)
   }
 
   override lazy val preMerge: Seq[Expression] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(sum, isEmpty, GpuIsNull(sum))
-    } else {
-      aggBufferAttributes
-    }
+    Seq(sum, isEmpty, GpuIsNull(sum))
   }
 
   protected lazy val mergeIsEmpty: CudfAggregate = new CudfMin(BooleanType)
@@ -977,32 +959,20 @@ abstract class GpuDecimalSum(
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
   // what happens with isEmpty
   override lazy val mergeAggregates: Seq[CudfAggregate] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(mergeSum, mergeIsEmpty, mergeIsOverflow)
-    } else {
-      Seq(mergeSum)
-    }
+    Seq(mergeSum, mergeIsEmpty, mergeIsOverflow)
   }
 
   override lazy val postMerge: Seq[Expression] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-        Seq(
-          GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
-            GpuLiteral.create(null, dt),
-            mergeSum.attr),
-            dt, !failOnErrorOverride),
-          mergeIsEmpty.attr)
-    } else {
-      postMergeAttr
-    }
+    Seq(
+      GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
+        GpuLiteral.create(null, dt),
+        mergeSum.attr),
+        dt, !failOnErrorOverride),
+      mergeIsEmpty.attr)
   }
 
   override lazy val evaluateExpression: Expression = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      GpuCheckOverflowAfterSum(sum, isEmpty, dt, !failOnErrorOverride)
-    } else {
-      GpuCheckOverflow(sum, dt, !failOnErrorOverride)
-    }
+    GpuCheckOverflowAfterSum(sum, isEmpty, dt, !failOnErrorOverride)
   }
 
   override def windowOutput(result: ColumnVector): ColumnVector = {
@@ -1077,47 +1047,29 @@ case class GpuDecimal128Sum(
 
   override lazy val inputProjection: Seq[Expression] = {
     val chunks = (0 until 4).map {
-      GpuExtractChunk32(GpuCast(child, dt), _, GpuSumDefaults.hasIsEmptyField)
+      GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
     }
-    if (GpuSumDefaults.hasIsEmptyField) {
-      // Spark tracks null columns through a second column isEmpty for decimal. So null values
-      // are replaced with 0, and a separate boolean column for isNull is added
-      chunks :+ GpuIsNull(child)
-    } else {
-      chunks
-    }
+    // Spark tracks null columns through a second column isEmpty for decimal. So null values
+    // are replaced with 0, and a separate boolean column for isNull is added
+    chunks :+ GpuIsNull(child)
   }
 
   private lazy val updateSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
 
-  override lazy val updateAggregates: Seq[CudfAggregate] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      updateSumChunks :+ updateIsEmpty
-    } else {
-      updateSumChunks
-    }
-  }
+  override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateIsEmpty
 
   override lazy val postUpdate: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride)
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(GpuCheckOverflow(assembleExpr, dt, !failOnErrorOverride), updateIsEmpty.attr)
-    } else {
-      Seq(assembleExpr)
-    }
+    Seq(GpuCheckOverflow(assembleExpr, dt, !failOnErrorOverride), updateIsEmpty.attr)
   }
 
   override lazy val preMerge: Seq[Expression] = {
     val chunks = (0 until 4).map {
       GpuExtractChunk32(sum, _, replaceNullsWithZero = false)
     }
-    if (GpuSumDefaults.hasIsEmptyField) {
-      // Spark tracks null columns through a second column isEmpty for decimal. So null values
-      // are replaced with 0, and a separate boolean column for isNull is added
-      chunks ++ Seq(isEmpty, GpuIsNull(sum))
-    } else {
-      chunks
-    }
+    // Spark tracks null columns through a second column isEmpty for decimal. So null values
+    // are replaced with 0, and a separate boolean column for isNull is added
+    chunks ++ Seq(isEmpty, GpuIsNull(sum))
   }
 
   private lazy val mergeSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
@@ -1126,25 +1078,17 @@ case class GpuDecimal128Sum(
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
   // what happens with isEmpty
   override lazy val mergeAggregates: Seq[CudfAggregate] = {
-    if (GpuSumDefaults.hasIsEmptyField) {
-      mergeSumChunks ++ Seq(mergeIsEmpty, mergeIsOverflow)
-    } else {
-      mergeSumChunks
-    }
+    mergeSumChunks ++ Seq(mergeIsEmpty, mergeIsOverflow)
   }
 
   override lazy val postMerge: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt, !failOnErrorOverride)
-    if (GpuSumDefaults.hasIsEmptyField) {
-      Seq(
-        GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
-          GpuLiteral.create(null, dt),
-          assembleExpr),
-          dt, !failOnErrorOverride),
-        mergeIsEmpty.attr)
-    } else {
-      Seq(assembleExpr)
-    }
+    Seq(
+      GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
+        GpuLiteral.create(null, dt),
+        assembleExpr),
+        dt, !failOnErrorOverride),
+      mergeIsEmpty.attr)
   }
 
   // Replacement Window Function
@@ -1641,8 +1585,9 @@ trait GpuCollectBase
   // WINDOW FUNCTION
   override val windowInputProjection: Seq[Expression] = Seq(child)
 
-  // Make them lazy to avoid being initialized when creating a GpuCollectOp.
-  override lazy val initialValues: Seq[Expression] = throw new UnsupportedOperationException
+  override val initialValues: Seq[Expression] = {
+    Seq(GpuLiteral.create(new GenericArrayData(Array.empty[Any]), dataType))
+  }
 
   override val inputProjection: Seq[Expression] = Seq(child)
 

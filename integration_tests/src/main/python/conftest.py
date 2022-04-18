@@ -334,3 +334,10 @@ def enable_cudf_udf(request):
     if not enable_udf_cudf:
         # cudf_udf tests are not required for any test runs
         pytest.skip("cudf_udf not configured to run")
+
+@pytest.fixture(scope="session")
+def enable_fuzz_test(request):
+    enable_fuzz_test = request.config.getoption("fuzz_test")
+    if not enable_fuzz_test:
+        # fuzz tests are not required for any test runs
+        pytest.skip("fuzz_test not configured to run")

@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetArrayStructFields, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayStructFields, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -72,20 +72,6 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
   }
 }
 
-class GpuGetArrayItemMeta(
-    expr: GetArrayItem,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
-
-  override def convertToGpu(
-      arr: Expression,
-      ordinal: Expression): GpuExpression =
-    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
-    GpuGetArrayItem(arr, ordinal, failOnError = false)
-}
-
 /**
  * Returns the field at `ordinal` in the Array `child`.
  *
@@ -107,7 +93,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
 
-  override def hasSideEffects: Boolean = failOnError
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val (array, indices) = (lhs.getBase, rhs.getBase)
@@ -200,19 +186,6 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   }
 }
 
-class GpuGetMapValueMeta(
-  expr: GetMapValue,
-  conf: RapidsConf,
-  parent: Option[RapidsMeta[_, _, _]],
-  rule: DataFromReplacementRule)
-  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
-
-  override def convertToGpu(child: Expression, key: Expression): GpuExpression = {
-    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
-    GpuGetMapValue(child, key, failOnError = false)
-  }
-}
-
 case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
@@ -232,14 +205,15 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
 
   override def prettyName: String = "getMapValue"
 
-  override def hasSideEffects: Boolean = failOnError
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (failOnError){
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.isValid && !exist.getBoolean) {
-            throw RapidsErrorUtils.mapKeyNotExistError(rhs.getValue.toString)
+            throw RapidsErrorUtils.mapKeyNotExistError(rhs.getValue.toString,
+              isElementAtFunction = false, origin)
           }
         }
       }
@@ -254,10 +228,10 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    throw new IllegalStateException("Map lookup keys must be scalar values")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    throw new IllegalStateException("Map lookup keys must be scalar values")
 
   override def left: Expression = child
 

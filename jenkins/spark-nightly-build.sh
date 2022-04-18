@@ -24,7 +24,7 @@ export M2DIR="$WORKSPACE/.m2"
 
 DIST_PL="dist"
 function mvnEval {
-    mvn help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease301 -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
+    mvn help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
 }
 
 ART_ID=$(mvnEval project.artifactId)

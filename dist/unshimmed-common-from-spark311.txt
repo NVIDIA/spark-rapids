@@ -3,6 +3,8 @@ META-INF/LICENSE
 META-INF/NOTICE
 META-INF/maven/**
 com/nvidia/spark/ExclusiveModeGpuDiscoveryPlugin*
+com/nvidia/spark/GpuCachedBatchSerializer*
+com/nvidia/spark/ParquetCachedBatchSerializer*
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*

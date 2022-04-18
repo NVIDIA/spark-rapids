@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -46,11 +46,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           .getOrElse(Seq.empty)
       GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal, preProcessing)
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-      getColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+      GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
     // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
     case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>
       val c2r = p.children.map(optimizeGpuPlanTransitions).head
-          .asInstanceOf[GpuColumnarToRowExecParent]
+          .asInstanceOf[GpuColumnarToRowExec]
       val postProjection = p.getTagValue(GpuOverrides.postColToRowProjection)
           .getOrElse(Seq.empty)
       val c2rCopy = c2r.makeCopy(Array(c2r.child.asInstanceOf[AnyRef],
@@ -59,10 +59,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(Array(c2rCopy))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
-  }
-
-  private def getColumnarToRowExec(plan: SparkPlan, exportColumnRdd: Boolean = false) = {
-    SparkShimImpl.getGpuColumnarToRowTransition(plan, exportColumnRdd)
   }
 
   /** Adds the appropriate coalesce after a shuffle depending on the type of shuffle configured */
@@ -132,7 +128,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           case _ => optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
             case e: GpuBroadcastExchangeExecBase => e
             case e: GpuShuffleExchangeExecBase => e
-            case other => getColumnarToRowExec(other)
+            case other => GpuColumnarToRowExec(other)
           }
         }
 
@@ -164,12 +160,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
     // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
     case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>
       val c2r = p.children.map(optimizeAdaptiveTransitions(_, Some(p))).head
-          .asInstanceOf[GpuColumnarToRowExecParent]
+          .asInstanceOf[GpuColumnarToRowExec]
       val postProjection = p.getTagValue(GpuOverrides.postColToRowProjection)
           .getOrElse(Seq.empty)
       val c2rCopy = c2r.makeCopy(Array(c2r.child.asInstanceOf[AnyRef],
@@ -215,7 +211,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    *       not unusual.
    */
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
-    case c2r @ GpuColumnarToRowExecParent(gpuCoalesce: GpuCoalesceBatches, _)
+    case c2r @ GpuColumnarToRowExec(gpuCoalesce: GpuCoalesceBatches, _, _)
       if !isGpuShuffleLike(gpuCoalesce.child) =>
         // Don't build a batch if we are just going to go back to ROWS
         // and there isn't a GPU shuffle involved
@@ -337,16 +333,23 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def updateScansForInput(plan: SparkPlan,
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>
-      if ((batchScan.scan.isInstanceOf[GpuParquetScanBase] ||
-        batchScan.scan.isInstanceOf[GpuOrcScanBase]) &&
+      if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
+        batchScan.scan.isInstanceOf[GpuOrcScan]) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
-        SparkShimImpl.copyBatchScanExec(batchScan, true)
+        val scanCopy = batchScan.scan match {
+          case parquetScan: GpuParquetScan =>
+            parquetScan.copy(queryUsesInputFile=true)
+          case orcScan: GpuOrcScan =>
+            orcScan.copy(queryUsesInputFile=true)
+          case _ => throw new RuntimeException("Wrong format") // never reach here
+        }
+        batchScan.copy(scan=scanCopy)
       } else {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
       if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        SparkShimImpl.copyFileSourceScanExec(fileSourceScan, true)
+        fileSourceScan.copy(queryUsesInputFile=true)(fileSourceScan.rapidsConf)
       } else {
         fileSourceScan
       }
@@ -455,10 +458,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val wrapped = GpuOverrides.wrapExpr(expr, rapidsConf, None)
       wrapped.tagForGpu()
       assert(wrapped.canThisBeReplaced)
-      SparkShimImpl.sortOrder(
-        wrapped.convertToGpu(),
-        Ascending,
-        Ascending.defaultNullOrdering)
+      SortOrder(wrapped.convertToGpu(), Ascending)
     }
   }
 
@@ -548,9 +548,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
-    case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExecParent] =>
-      val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExecParent]
-      plan.withNewChildren(Seq(getColumnarToRowExec(gpuColumnar.child, true)))
+    case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExec] =>
+      val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExec]
+      plan.withNewChildren(Seq(GpuColumnarToRowExec(gpuColumnar.child, exportColumnarRdd = true)))
     case _ => plan
   }
 
