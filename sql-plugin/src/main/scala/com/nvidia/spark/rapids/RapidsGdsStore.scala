@@ -40,7 +40,7 @@ class RapidsGdsStore(
       stream: Cuda.Stream): RapidsBufferBase = {
     withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
-        case d: DeviceMemoryBuffer => d
+        case d: BaseDeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
       }
       if (deviceBuffer.getLength < batchWriteBufferSize) {
@@ -84,7 +84,7 @@ class RapidsGdsStore(
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
         length: Long, stream: Cuda.Stream): Unit = {
       dst match {
-        case dmOriginal: DeviceMemoryBuffer =>
+        case dmOriginal: BaseDeviceMemoryBuffer =>
           val dm = dmOriginal.slice(dstOffset, length)
           // TODO: switch to async API when it's released, using the passed in CUDA stream.
           stream.sync()
@@ -106,7 +106,7 @@ class RapidsGdsStore(
     }
   }
 
-  private def singleShotSpill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer)
+  private def singleShotSpill(other: RapidsBuffer, deviceBuffer: BaseDeviceMemoryBuffer)
   : RapidsBufferBase = {
     val id = other.id
     val path = id.getDiskPath(diskBlockManager)
@@ -139,7 +139,7 @@ class RapidsGdsStore(
       batchWriteBuffer.close()
     }
 
-    def spill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
+    def spill(other: RapidsBuffer, deviceBuffer: BaseDeviceMemoryBuffer): RapidsBufferBase =
       this.synchronized {
         if (deviceBuffer.getLength > batchWriteBufferSize - currentOffset) {
           val path = currentFile.getAbsolutePath
@@ -229,7 +229,7 @@ class RapidsGdsStore(
       override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
           length: Long, stream: Cuda.Stream): Unit = this.synchronized {
         dst match {
-          case dmOriginal: DeviceMemoryBuffer =>
+          case dmOriginal: BaseDeviceMemoryBuffer =>
             val dm = dmOriginal.slice(dstOffset, length)
             if (isPending) {
               copyToBuffer(dm, fileOffset + srcOffset, length, stream)
