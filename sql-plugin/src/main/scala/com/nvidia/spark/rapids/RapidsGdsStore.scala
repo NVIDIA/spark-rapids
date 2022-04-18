@@ -85,11 +85,13 @@ class RapidsGdsStore(
         length: Long, stream: Cuda.Stream): Unit = {
       dst match {
         case dmOriginal: BaseDeviceMemoryBuffer =>
-          val dm = dmOriginal.slice(dstOffset, length)
-          // TODO: switch to async API when it's released, using the passed in CUDA stream.
-          stream.sync()
-          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-          logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+          val sliced = dmOriginal.slice(dstOffset, length).asInstanceOf[BaseDeviceMemoryBuffer]
+          withResource(sliced) { dm =>
+            // TODO: switch to async API when it's released, using the passed in CUDA stream.
+            stream.sync()
+            CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+            logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+          }
         case _ => throw new IllegalStateException(
           s"GDS can only copy to device buffer, not ${dst.getClass}")
       }
@@ -230,16 +232,19 @@ class RapidsGdsStore(
           length: Long, stream: Cuda.Stream): Unit = this.synchronized {
         dst match {
           case dmOriginal: BaseDeviceMemoryBuffer =>
-            val dm = dmOriginal.slice(dstOffset, length)
-            if (isPending) {
-              copyToBuffer(dm, fileOffset + srcOffset, length, stream)
-              stream.sync()
-              logDebug(s"Created device buffer $length from batch write buffer")
-            } else {
-              // TODO: switch to async API when it's released, using the passed in CUDA stream.
-              stream.sync()
-              CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-              logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+            val sliced = dmOriginal.slice(dstOffset, length).asInstanceOf[BaseDeviceMemoryBuffer]
+            withResource(sliced) { dm =>
+              if (isPending) {
+                copyToBuffer(dm, fileOffset + srcOffset, length, stream)
+                stream.sync()
+                logDebug(s"Created device buffer $length from batch write buffer")
+              } else {
+                // TODO: switch to async API when it's released, using the passed in CUDA stream.
+                stream.sync()
+                CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+                logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length " +
+                  s"via GDS")
+              }
             }
           case _ => throw new IllegalStateException(
             s"GDS can only copy to device buffer, not ${dst.getClass}")
