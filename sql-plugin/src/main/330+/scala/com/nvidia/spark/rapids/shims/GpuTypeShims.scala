@@ -176,7 +176,7 @@ object GpuTypeShims {
   }
 
   /**
-   * Whether the Shim supports day-time interval type
+   * Whether the Shim supports day-time interval type for specific operator
    * Alias, Add, Subtract, Positive... operators support day-time interval type
    */
   def isSupportedDayTimeType(dt: DataType): Boolean = dt.isInstanceOf[DayTimeIntervalType]
@@ -201,6 +201,10 @@ object GpuTypeShims {
    * Get additional Csv supported types for this Shim
    */
   def additionalCsvSupportedTypes: TypeSig = TypeSig.DAYTIME
+
+  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING
+
+  def additionalTypesStringCanCastTo: TypeSig = TypeSig.DAYTIME
 
   /**
    * Get additional Parquet supported types for this Shim
