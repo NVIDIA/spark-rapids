@@ -24,8 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
-#    - uses: gaurav-nelson/github-action-markdown-link-check@v1
-    - uses: nvliyuan/github-action-markdown-link-check@fix-markdown-check-fail
+    - uses: gaurav-nelson/github-action-markdown-link-check@v1
       with:
         max-depth: -1
         use-verbose-mode: 'yes'
