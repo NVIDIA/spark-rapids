@@ -25,6 +25,7 @@ import ai.rapids.cudf.NvtxColor;
 import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Table;
 import org.apache.spark.TaskContext;
+import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.apache.spark.sql.types.DataType;
@@ -43,7 +44,7 @@ import java.util.Optional;
  * be generated based off of the schema.
  */
 public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<ColumnarBatch> {
-  protected final Iterator<UnsafeRow> input;
+  protected final Iterator<InternalRow> input;
   protected UnsafeRow pending = null;
   protected final int numRowsEstimate;
   protected final long dataLength;
@@ -57,7 +58,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final GpuMetric numOutputBatches;
 
   protected UnsafeRowToColumnarBatchIterator(
-      Iterator<UnsafeRow> input,
+      Iterator<InternalRow> input,
       Attribute[] schema,
       CoalesceSizeGoal goal,
       GpuMetric semaphoreWaitTime,
