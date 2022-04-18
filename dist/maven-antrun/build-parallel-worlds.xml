@@ -150,6 +150,12 @@
             </condition>
         </fail>
 
+        <!-- Remove the explicily unshimmed files from the common directory -->
+        <delete>
+            <fileset dir="${project.build.directory}/parallel-world/spark3xx-common"
+                     includesfile="${project.basedir}/unshimmed-common-from-spark311.txt"/>
+        </delete>
+
         <echo level="info">Generating dependency-reduced-pom.xml</echo>
         <resources id="aggregatorDependencyRegexWithoutWhitespace">
             <string>&lt;dependency&gt;</string>

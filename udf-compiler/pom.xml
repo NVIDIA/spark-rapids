@@ -31,8 +31,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>ai.rapids</groupId>
-            <artifactId>cudf</artifactId>
+            <groupId>com.nvidia</groupId>
+            <artifactId>spark-rapids-jni</artifactId>
             <classifier>${cuda.version}</classifier>
         </dependency>
         <dependency>

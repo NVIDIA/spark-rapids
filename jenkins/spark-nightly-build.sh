@@ -19,7 +19,7 @@ set -ex
 
 . jenkins/version-def.sh
 
-## export 'M2DIR' so that shims can get the correct cudf/spark dependency info
+## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR="$WORKSPACE/.m2"
 
 DIST_PL="dist"
@@ -122,6 +122,5 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
         -Dcuda.version=$CUDA_CLASSIFIER
 fi
 
-# Parse cudf and spark files from local mvn repo
-jenkins/printJarVersion.sh "CUDFVersion" "$M2DIR/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+# Parse Spark files from local mvn repo
 jenkins/printJarVersion.sh "SPARKVersion" "$M2DIR/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar" $SERVER_ID
