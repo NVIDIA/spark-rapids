@@ -130,18 +130,22 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
     ) {
       df =>
         num match {
-          case Byte => df.selectExpr(s"c1 / cast('$num' as Byte)")
-          case Short => df.selectExpr(s"c1 / cast('$num' as Short)")
-          case Int => df.selectExpr(s"c1 / $num")
-          case Long => df.selectExpr(s"c1 / ${num}L")
-          case Float.NaN => df.selectExpr("c1 / cast('NaN' as float)")
-          case Float.PositiveInfinity => df.selectExpr("c1 / cast('Infinity' as float)")
-          case Float.NegativeInfinity => df.selectExpr("c1 / cast('-Infinity' as float)")
-          case Float => df.selectExpr(s"c1 / ${num}f")
-          case Double.NaN => df.selectExpr("c1 / cast('NaN' as double)")
-          case Double.PositiveInfinity => df.selectExpr("c1 / cast('Infinity' as double)")
-          case Double.NegativeInfinity => df.selectExpr("c1 / cast('-Infinity' as double)")
-          case Double => df.selectExpr(s"c1 / ${num}d")
+          case b: Byte => df.selectExpr(s"c1 / cast('$b' as Byte)")
+          case s: Short => df.selectExpr(s"c1 / cast('$s' as Short)")
+          case i: Int => df.selectExpr(s"c1 / $i")
+          case l: Long => df.selectExpr(s"c1 / ${l}L")
+          case f: Float if f.equals(Float.NaN) => df.selectExpr("c1 / cast('NaN' as float)")
+          case f: Float if f.equals(Float.PositiveInfinity) =>
+            df.selectExpr("c1 / cast('Infinity' as float)")
+          case f: Float if f.equals(Float.NegativeInfinity) =>
+            df.selectExpr("c1 / cast('-Infinity' as float)")
+          case f: Float => df.selectExpr(s"c1 / ${f}f")
+          case d: Double if d.equals(Double.NaN) => df.selectExpr("c1 / cast('NaN' as double)")
+          case d: Double if d.equals(Double.PositiveInfinity) =>
+            df.selectExpr("c1 / cast('Infinity' as double)")
+          case d: Double if d.equals(Double.NegativeInfinity) =>
+            df.selectExpr("c1 / cast('-Infinity' as double)")
+          case d: Double => df.selectExpr(s"c1 / ${d}d")
           case _ => fail(s"Unsupported num type ${num.getClass}")
         }
     }
@@ -151,28 +155,28 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
       spark => {
         // Period is the external type of year-month type
         val (data, schema) = num match {
-          case Byte => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+          case b: Byte => (Seq(Row(Period.ofMonths(months), b)), StructType(Seq(
             StructField("c1", YearMonthIntervalType()),
             StructField("c2", ByteType)
           )))
-          case Short => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+          case s: Short => (Seq(Row(Period.ofMonths(months), s)), StructType(Seq(
             StructField("c1", YearMonthIntervalType()),
             StructField("c2", ShortType)
           )))
-          case Int => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+          case i: Int => (Seq(Row(Period.ofMonths(months), i)), StructType(Seq(
             StructField("c1", YearMonthIntervalType()),
             StructField("c2", IntegerType)
           )))
-          case Long =>
-            (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+          case l: Long =>
+            (Seq(Row(Period.ofMonths(months), l)), StructType(Seq(
               StructField("c1", YearMonthIntervalType()),
               StructField("c2", LongType)
             )))
-          case Float => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+          case f: Float => (Seq(Row(Period.ofMonths(months), f)), StructType(Seq(
             StructField("c1", YearMonthIntervalType()),
             StructField("c2", FloatType)
           )))
-          case Double => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+          case d: Double => (Seq(Row(Period.ofMonths(months), d)), StructType(Seq(
             StructField("c1", YearMonthIntervalType()),
             StructField("c2", DoubleType)
           )))
@@ -190,12 +194,12 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
       e => e.getMessage.contains("ArithmeticException"),
       spark => {
         val (data, schema) = num match {
-          case Byte => (Seq(Row(num)), StructType(Seq(StructField("c1", ByteType))))
-          case Short => (Seq(Row(num)), StructType(Seq(StructField("c1", ShortType))))
-          case Int => (Seq(Row(num)), StructType(Seq(StructField("c1", IntegerType))))
-          case Long => (Seq(Row(num)), StructType(Seq(StructField("c1", LongType))))
-          case Float => (Seq(Row(num)), StructType(Seq(StructField("c1", FloatType))))
-          case Double => (Seq(Row(num)), StructType(Seq(StructField("c1", DoubleType))))
+          case b: Byte => (Seq(Row(b)), StructType(Seq(StructField("c1", ByteType))))
+          case s: Short => (Seq(Row(s)), StructType(Seq(StructField("c1", ShortType))))
+          case i: Int => (Seq(Row(i)), StructType(Seq(StructField("c1", IntegerType))))
+          case l: Long => (Seq(Row(l)), StructType(Seq(StructField("c1", LongType))))
+          case f: Float => (Seq(Row(f)), StructType(Seq(StructField("c1", FloatType))))
+          case d: Double => (Seq(Row(d)), StructType(Seq(StructField("c1", DoubleType))))
           case _ => fail(s"Unsupported num type ${num.getClass}")
         }
         spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
