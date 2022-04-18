@@ -118,7 +118,7 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
   }
 
   // both gpu and cpu will throw ArithmeticException
-  def testDivideYMOverflow(testCaseName: String, months: Int, num: Number): Unit = {
+  def testDivideYMOverflow(testCaseName: String, months: Int, num: Any): Unit = {
     testBothCpuGpuExpectedException[SparkException](testCaseName + ", cv / scalar",
       e => e.getMessage.contains("ArithmeticException"),
       spark => {
@@ -129,38 +129,20 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
       }
     ) {
       df =>
-        if (num.isInstanceOf[Byte]) {
-          df.selectExpr(s"c1 / cast('$num' as Byte)")
-        } else if (num.isInstanceOf[Short]) {
-          df.selectExpr(s"c1 / cast('$num' as Short)")
-        } else if (num.isInstanceOf[Int]) {
-          df.selectExpr(s"c1 / $num")
-        } else if (num.isInstanceOf[Long]) {
-          df.selectExpr(s"c1 / ${num}L")
-        } else if (num.isInstanceOf[Float]) {
-          if (num.equals(Float.NaN)) {
-            df.selectExpr("c1 / cast('NaN' as float)")
-          } else if (num.equals(Float.PositiveInfinity)) {
-            df.selectExpr("c1 / cast('Infinity' as float)")
-          }
-          else if (num.equals(Float.NegativeInfinity)) {
-            df.selectExpr("c1 / cast('-Infinity' as float)")
-          } else {
-            df.selectExpr(s"c1 / ${num}f")
-          }
-        } else if (num.isInstanceOf[Double]) {
-          if (num.equals(Double.NaN)) {
-            df.selectExpr("c1 / cast('NaN' as double)")
-          } else if (num.equals(Double.PositiveInfinity)) {
-            df.selectExpr("c1 / cast('Infinity' as double)")
-          }
-          else if (num.equals(Double.NegativeInfinity)) {
-            df.selectExpr("c1 / cast('-Infinity' as double)")
-          } else {
-            df.selectExpr(s"c1 / ${num}d")
-          }
-        } else {
-          throw new IllegalStateException("")
+        num match {
+          case Byte => df.selectExpr(s"c1 / cast('$num' as Byte)")
+          case Short => df.selectExpr(s"c1 / cast('$num' as Short)")
+          case Int => df.selectExpr(s"c1 / $num")
+          case Long => df.selectExpr(s"c1 / ${num}L")
+          case Float.NaN => df.selectExpr("c1 / cast('NaN' as float)")
+          case Float.PositiveInfinity => df.selectExpr("c1 / cast('Infinity' as float)")
+          case Float.NegativeInfinity => df.selectExpr("c1 / cast('-Infinity' as float)")
+          case Float => df.selectExpr(s"c1 / ${num}f")
+          case Double.NaN => df.selectExpr("c1 / cast('NaN' as double)")
+          case Double.PositiveInfinity => df.selectExpr("c1 / cast('Infinity' as double)")
+          case Double.NegativeInfinity => df.selectExpr("c1 / cast('-Infinity' as double)")
+          case Double => df.selectExpr(s"c1 / ${num}d")
+          case _ => fail(s"Unsupported num type ${num.getClass}")
         }
     }
 
@@ -168,46 +150,35 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
       e => e.getMessage.contains("ArithmeticException"),
       spark => {
         // Period is the external type of year-month type
-        val (data, schema) =
-          if (num.isInstanceOf[Byte]) {
-            (Seq(Row(Period.ofMonths(months), num.asInstanceOf[Byte])),
-                StructType(Seq(
-                  StructField("c1", YearMonthIntervalType()),
-                  StructField("c2", ByteType)
-                )))
-          } else if (num.isInstanceOf[Short]) {
-            (Seq(Row(Period.ofMonths(months), num.asInstanceOf[Short])),
-                StructType(Seq(
-                  StructField("c1", YearMonthIntervalType()),
-                  StructField("c2", ShortType)
-                )))
-          } else if (num.isInstanceOf[Int]) {
-            (Seq(Row(Period.ofMonths(months), num.asInstanceOf[Int])),
-                StructType(Seq(
-                  StructField("c1", YearMonthIntervalType()),
-                  StructField("c2", IntegerType)
-                )))
-          } else if (num.isInstanceOf[Long]) {
-            (Seq(Row(Period.ofMonths(months), num.asInstanceOf[Long])),
-                StructType(Seq(
-                  StructField("c1", YearMonthIntervalType()),
-                  StructField("c2", LongType)
-                )))
-          } else if (num.isInstanceOf[Float]) {
-            (Seq(Row(Period.ofMonths(months), num.asInstanceOf[Float])),
-                StructType(Seq(
-                  StructField("c1", YearMonthIntervalType()),
-                  StructField("c2", FloatType)
-                )))
-          } else if (num.isInstanceOf[Double]) {
-            (Seq(Row(Period.ofMonths(months), num.asInstanceOf[Double])),
-                StructType(Seq(
-                  StructField("c1", YearMonthIntervalType()),
-                  StructField("c2", DoubleType)
-                )))
-          } else {
-            throw new IllegalStateException("")
-          }
+        val (data, schema) = num match {
+          case Byte => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+            StructField("c1", YearMonthIntervalType()),
+            StructField("c2", ByteType)
+          )))
+          case Short => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+            StructField("c1", YearMonthIntervalType()),
+            StructField("c2", ShortType)
+          )))
+          case Int => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+            StructField("c1", YearMonthIntervalType()),
+            StructField("c2", IntegerType)
+          )))
+          case Long =>
+            (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+              StructField("c1", YearMonthIntervalType()),
+              StructField("c2", LongType)
+            )))
+          case Float => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+            StructField("c1", YearMonthIntervalType()),
+            StructField("c2", FloatType)
+          )))
+          case Double => (Seq(Row(Period.ofMonths(months), num)), StructType(Seq(
+            StructField("c1", YearMonthIntervalType()),
+            StructField("c2", DoubleType)
+          )))
+          case _ =>
+            fail(s"Unsupported num type ${num.getClass}")
+        }
 
         spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
       }
@@ -218,41 +189,15 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
     testBothCpuGpuExpectedException[SparkException](testCaseName + ", scalar / cv",
       e => e.getMessage.contains("ArithmeticException"),
       spark => {
-        val (data, schema) =
-          if (num.isInstanceOf[Byte]) {
-            (Seq(Row(num)),
-                StructType(Seq(
-                  StructField("c1", ByteType)
-                )))
-          } else if (num.isInstanceOf[Short]) {
-            (Seq(Row(num)),
-                StructType(Seq(
-                  StructField("c1", ShortType)
-                )))
-          } else if (num.isInstanceOf[Int]) {
-            (Seq(Row(num)),
-                StructType(Seq(
-                  StructField("c1", IntegerType)
-                )))
-          } else if (num.isInstanceOf[Long]) {
-            (Seq(Row(num)),
-                StructType(Seq(
-                  StructField("c1", LongType)
-                )))
-          } else if (num.isInstanceOf[Float]) {
-            (Seq(Row(num)),
-                StructType(Seq(
-                  StructField("c1", FloatType)
-                )))
-          } else if (num.isInstanceOf[Double]) {
-            (Seq(Row(num)),
-                StructType(Seq(
-                  StructField("c1", DoubleType)
-                )))
-          } else {
-            throw new IllegalStateException("")
-          }
-
+        val (data, schema) = num match {
+          case Byte => (Seq(Row(num)), StructType(Seq(StructField("c1", ByteType))))
+          case Short => (Seq(Row(num)), StructType(Seq(StructField("c1", ShortType))))
+          case Int => (Seq(Row(num)), StructType(Seq(StructField("c1", IntegerType))))
+          case Long => (Seq(Row(num)), StructType(Seq(StructField("c1", LongType))))
+          case Float => (Seq(Row(num)), StructType(Seq(StructField("c1", FloatType))))
+          case Double => (Seq(Row(num)), StructType(Seq(StructField("c1", DoubleType))))
+          case _ => fail(s"Unsupported num type ${num.getClass}")
+        }
         spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
       }
     ) {
