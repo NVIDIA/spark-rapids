@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.shims.{GpuMultiplyDTInterval, GpuMultiplyYMInterval, GpuTimeAdd}
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -181,7 +181,29 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
             // ANSI support for ABS was added in 3.2.0 SPARK-33275
             override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
-          })
+          }),
+      GpuOverrides.expr[MultiplyYMInterval](
+        "Year-month interval * number",
+        ExprChecks.binaryProject(
+          TypeSig.YEARMONTH,
+          TypeSig.YEARMONTH,
+          ("lhs", TypeSig.YEARMONTH, TypeSig.YEARMONTH),
+          ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[MultiplyYMInterval](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuMultiplyYMInterval(lhs, rhs)
+        }),
+      GpuOverrides.expr[MultiplyDTInterval](
+        "Day-time interval * number",
+        ExprChecks.binaryProject(
+          TypeSig.DAYTIME,
+          TypeSig.DAYTIME,
+          ("lhs", TypeSig.DAYTIME, TypeSig.DAYTIME),
+          ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[MultiplyDTInterval](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuMultiplyDTInterval(lhs, rhs)
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map
   }

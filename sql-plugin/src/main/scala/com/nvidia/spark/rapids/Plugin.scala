@@ -57,6 +57,7 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 
 object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
+  val JNI_PROPS_FILENAME = "spark-rapids-jni-version-info.properties"
   val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
@@ -71,6 +72,8 @@ object RapidsPluginUtils extends Logging {
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
+    val jniProps = loadProps(RapidsPluginUtils.JNI_PROPS_FILENAME)
+    logInfo(s"RAPIDS Accelerator JNI build: $jniProps")
     val cudfProps = loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
     logInfo(s"cudf build: $cudfProps")
     val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
@@ -89,6 +92,13 @@ object RapidsPluginUtils extends Logging {
     } else {
       logWarning("RAPIDS Accelerator is disabled, to enable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to true.")
+    }
+
+    if (conf.isUdfCompilerEnabled) {
+      logWarning("Experimental RAPIDS UDF compiler is enabled, in case of related failures " +
+      s"disable it by setting `${RapidsConf.UDF_COMPILER_ENABLED}` to false. " +
+      "More information is available at https://nvidia.github.io/spark-rapids/docs/FAQ.html#" +
+      "automatic-translation-of-scala-udfs-to-apache-spark-operations" )
     }
   }
 
@@ -238,7 +248,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         // Exceptions in executor plugin can cause a single thread to die but the executor process
         // sticks around without any useful info until it hearbeat times out. Print what happened
         // and exit immediately.
-        logError("Exception in the executor plugin", e)
+        logError("Exception in the executor plugin, shutting down!", e)
         System.exit(1)
     }
   }

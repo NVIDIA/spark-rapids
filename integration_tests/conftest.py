@@ -39,3 +39,6 @@ def pytest_addoption(parser):
         "--test_type", action='store', default="developer",
         help="the type of tests that are being run to help check all the correct tests are run - developer, pre-commit, or nightly"
     )
+    parser.addoption(
+        "--fuzz_test", action='store_true', default=False, help="if true enable fuzz tests"
+    )
