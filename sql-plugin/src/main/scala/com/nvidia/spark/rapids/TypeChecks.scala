@@ -272,13 +272,13 @@ final class TypeSig private(
 
   /**
    * Add a note about given types that marks them as partially supported.
-   * @param dataType the types this note is for.
+   * @param dataTypes the types this note is for.
    * @param note the note itself
    * @return the updated TypeSignature.
    */
   def withPsNote(dataTypes: List[TypeEnum.Value], note: String): TypeSig =
     new TypeSig(
-      dataTypes.foldLeft(initialTypes)(_+_), maxAllowedDecimalPrecision, childTypes, 
+      dataTypes.foldLeft(initialTypes)(_+_), maxAllowedDecimalPrecision, childTypes,
       litOnlyTypes,dataTypes.foldLeft(notes)((notes, dataType) => notes.+((dataType, note))))
 
   private def isSupportedType(dataType: TypeEnum.Value): Boolean =
