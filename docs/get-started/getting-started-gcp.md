@@ -99,13 +99,6 @@ If you'd like to further accelerate init time to 4-5 minutes, create a custom Da
 * 1 NVIDIA A100 for each worker node, split into 2 MIG instances using
 [instance profile 3g.20gb](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/#a100-profiles).
 
-To change the MIG instance profile you can specify either the profile id or profile name via the
-metadata parameter `MIG_CGI`. Below is an example of using a profile name and a profile id.
-
-```bash
-    --metadata=^:^MIG_CGI='3g.20gb,9'
-```
-
 ```bash
     export REGION=[Your Preferred GCP Region]
     export GCS_BUCKET=[Your GCS Bucket]
@@ -128,6 +121,13 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --bucket $GCS_BUCKET \
     --enable-component-gateway 
 ``` 
+
+To change the MIG instance profile you can specify either the profile id or profile name via the
+metadata parameter `MIG_CGI`. Below is an example of using a profile name and a profile id.
+
+```bash
+    --metadata=^:^MIG_CGI='3g.20gb,9'
+```
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
 Google Cloud Console to see the progress.
