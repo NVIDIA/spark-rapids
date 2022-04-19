@@ -1805,7 +1805,7 @@ object GpuOverrides extends Logging {
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
               .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.Float), nanAggPsNote),
+              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -1813,7 +1813,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable,
             Seq(ParamCheck("input",
               (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.Float), nanAggPsNote),
+                .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -1832,7 +1832,7 @@ object GpuOverrides extends Logging {
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
               .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.Float), nanAggPsNote),
+              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -1840,7 +1840,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable,
             Seq(ParamCheck("input",
               (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.Float), nanAggPsNote),
+                .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -2154,7 +2154,7 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.Float), GpuOverrides.nanAggPsNote),
+            .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), GpuOverrides.nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2167,7 +2167,7 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.Float), GpuOverrides.nanAggPsNote),
+            .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), GpuOverrides.nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2189,7 +2189,7 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes
             .withPsNote(
-              List(TypeEnum.DOUBLE, TypeEnum.Float), 
+              List(TypeEnum.DOUBLE, TypeEnum.FLOAT), 
               "NaN literals are not supported. Columnar input" +
               s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false."),
             TypeSig.all)),
