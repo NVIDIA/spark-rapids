@@ -276,20 +276,31 @@ def test_mod_pmod_long_min_value():
         ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
-def test_mod_pmod_by_zero(data_gen):
+@pytest.mark.parametrize('overflow_exp', [
+    'pmod(a, cast(0 as {}))',
+    'pmod(cast(-12 as {}), cast(0 as {}))',
+    'a % (cast(0 as {}))',
+    'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
+def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_error(
         lambda spark : binary_op_df(spark, data_gen).selectExpr(
-            'pmod(a, cast(0 as {}) * b)'.format(string_type),
-            'pmod(a, cast(0 as {}))'.format(string_type),
-            'pmod(cast(-12 as {}), cast(0 as {}))'.format(string_type, string_type),
-            'a % (cast(0 as {}) * b)'.format(string_type),
-            'a % (cast(0 as {}))'.format(string_type),
-            'cast(-12 as {}) % cast(0 as {})'.format(string_type, string_type)).collect(),
+            overflow_exp.format(string_type, string_type)).collect(),
         ansi_enabled_conf,
         # 311 throws "java.lang.ArithmeticException"
         # 320+ throws "org.apache.spark.SparkArithmeticException"
         "ArithmeticException")
+
+@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+def test_mod_pmod_by_zero_not_ansi(data_gen):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, data_gen).selectExpr(
+            'pmod(a, cast(0 as {}))'.format(string_type),
+            'pmod(cast(-12 as {}), cast(0 as {}))'.format(string_type, string_type),
+            'a % (cast(0 as {}))'.format(string_type),
+            'cast(-12 as {}) % cast(0 as {})'.format(string_type, string_type)),
+        {'spark.sql.ansi.enabled': 'false'})
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_signum(data_gen):
