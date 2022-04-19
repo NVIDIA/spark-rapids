@@ -19,7 +19,7 @@ set -ex
 
 . jenkins/version-def.sh
 
-## export 'M2DIR' so that shims can get the correct cudf/spark dependency info
+## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR="$WORKSPACE/.m2"
 
 DIST_PL="dist"
@@ -31,7 +31,7 @@ ART_ID=$(mvnEval project.artifactId)
 ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
 
-DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
+DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$CUDA_CLASSIFIER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
 DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
@@ -71,6 +71,7 @@ function distWithReducedPom {
         -DgroupId="${ART_GROUP_ID}" \
         -DartifactId="${ART_ID}" \
         -Dversion="${ART_VER}" \
+        -Dclassifiers=$CUDA_CLASSIFIER \
         $mvnExtaFlags
 }
 
@@ -122,6 +123,5 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
         -Dcuda.version=$CUDA_CLASSIFIER
 fi
 
-# Parse cudf and spark files from local mvn repo
-jenkins/printJarVersion.sh "CUDFVersion" "$M2DIR/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+# Parse Spark files from local mvn repo
 jenkins/printJarVersion.sh "SPARKVersion" "$M2DIR/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar" $SERVER_ID

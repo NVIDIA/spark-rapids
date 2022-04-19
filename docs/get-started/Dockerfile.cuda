@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,7 +51,6 @@ COPY spark/examples /opt/spark/examples
 COPY spark/kubernetes/tests /opt/spark/tests
 COPY spark/data /opt/spark/data
 
-COPY cudf-*-cuda11.jar /opt/sparkRapidsPlugin
 COPY rapids-4-spark_2.12-*.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 

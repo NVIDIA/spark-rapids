@@ -43,29 +43,23 @@ To install Apache Spark please follow the official
 Spark are listed on the [download](../download.md) page.  Please note that only
 scala version 2.12 is currently supported by the accelerator. 
 
-## Download the RAPIDS jars
-The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
-[cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
-[download](../download.md) section.
+## Download the RAPIDS Accelerator jar
+The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) jar is
+available in the [download](../download.md) section.
 
-Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
-jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
-CUDA and will not run on other versions. The jars use a maven classifier to keep them separate.
+Download the RAPIDS Accelerator for Apache Spark plugin jar. Each jar is for a specific version of
+CUDA and will not run on other versions. The jars use a classifier to keep them separate.
 
 - CUDA 11.x => classifier cuda11
 
-For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
-- cudf-22.06.0-SNAPSHOT-cuda11.jar
-- rapids-4-spark_2.12-22.06.0-SNAPSHOT.jar
-jar that your version of the accelerator depends on.
+For example, here is a sample version of the jar with CUDA 11.x support:
+- rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar
 
-
-For simplicity export the location to these jars. This example assumes the sample jars above have
+For simplicity export the location to this jar. This example assumes the sample jar above has
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-22.06.0-SNAPSHOT-cuda11.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-22.06.0-SNAPSHOT.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -75,17 +69,17 @@ example will assume as such.
 Download the
 [getGpusResource.sh](https://github.com/apache/spark/blob/master/examples/src/main/scripts/getGpusResources.sh)
 script and install it on all the nodes. Put it into a local folder.  You may put it in the same
-directory as the plugin jars (`/opt/sparkRapidsPlugin` in the example).
+directory as the plugin jar (`/opt/sparkRapidsPlugin` in the example).
 
 ## Local Mode
 This is for testing/dev setup only.  It is not to be used in production.  In this mode Spark runs
 everything in a single process on a single node.
 - [Install Spark](#install-spark)
-- [Install the RAPIDS jars](#download-the-rapids-jars)
+- [Install the RAPIDS Accelerator_jar](#download-the-rapids-accelerator-jar)
 - Launch your Spark shell session. 
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
-`spark.plugins` to `com.nvidia.spark.SQLPlugin` and including the jars as a dependency. All of the
+`spark.plugins` to `com.nvidia.spark.SQLPlugin` and including the jar as a dependency. All of the
 other config settings and command line parameters are to try and better configure spark for GPU
 execution.
  
@@ -100,7 +94,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 You can run one of the examples below such as the [Example Join Operation](#example-join-operation)
 
@@ -112,7 +106,7 @@ Spark Standalone mode requires starting the Spark master and worker(s). You can 
 machine or multiple machines for distributed setup.
 
 The first step is to [Install Spark](#install-spark), the 
-[RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the 
+[RAPIDS Accelerator for Spark jar](#download-the-rapids-accelerator-jar), and the
 [GPU discovery script](#install-the-gpu-discovery-script) on all the nodes you want to use.
 See the note at the end of this section if using Spark 3.1.1 or above.
 After that choose one of the nodes to be your master node and start the master.  Note that the
@@ -151,7 +145,7 @@ started.
 
 Submitting a Spark application to a standalone mode cluster requires a few configs to be set. These
 configs can be placed in the Spark default confs if you want all jobs to use the GPU. The plugin
-requires its jars to be in the executor classpath.  GPU scheduling also requires the Spark job to 
+requires its jar to be in the executor classpath.  GPU scheduling also requires the Spark job to
 ask for GPUs.  The plugin cannot utilize more than one GPU per executor. 
 
 In this case we are asking for 1 GPU per executor (the plugin cannot utilize more than one), and 4 
@@ -161,8 +155,8 @@ overlapping I/O and computation.
 ```shell 
 $SPARK_HOME/bin/spark-shell \
        --master spark://${MASTER_HOST}:7077 \
-       --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
-       --conf spark.driver.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+       --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
+       --conf spark.driver.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
        --driver-memory 2G \
        --conf spark.executor.memory=4G \
@@ -176,16 +170,15 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
 
-Please note that if you are using Spark 3.1.1 or higher, the RAPIDS Accelerator for Apache Spark plugin jar
-and CUDF jar do not need to be installed on all the nodes and the configs
-`spark.executor.extraClassPath` and `spark.driver.extraClassPath` can be replaced in the above
-command with `--jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}`.
-This will automatically distribute the jars to the nodes for you.
+Please note that the RAPIDS Accelerator for Apache Spark plugin jar does not need to be installed
+on all the nodes and the configs `spark.executor.extraClassPath` and `spark.driver.extraClassPath`
+can be replaced in the above command with `--jars ${SPARK_RAPIDS_PLUGIN_JAR}`.
+This will automatically distribute the jar to the nodes for you.
 
 ## Running on YARN
 
 YARN requires you to [Install Spark](#install-spark), the
-[RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
+[RAPIDS Accelerator for Spark jar](#download-the-rapids-accelerator-jar), and the
 [GPU discovery script](#install-the-gpu-discovery-script) on a launcher node. YARN handles
 shipping them to the cluster nodes as needed. If you want to use the GPU scheduling feature in
 Spark it requires YARN version >= 2.10 or >= 3.1.1 and ideally you would use >= 3.1.3 in order to
@@ -210,7 +203,7 @@ enabled GPUs by default, see section [MIG GPU on YARN](#mig-gpu-on-yarn) on how 
 - Configure YARN to support
   [GPU scheduling and isolation](https://hadoop.apache.org/docs/r3.1.3/hadoop-yarn/hadoop-yarn-site/UsingGpus.html).
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jar](#download-the-rapids-accelerator-jar), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configuration settings when running Spark on YARN, changing the values as
@@ -231,14 +224,14 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_RAPIDS_PLUGIN_JAR}
 ```  
 
 ### YARN 2.10 with Isolation and GPU Scheduling Enabled
 - Configure YARN to support
  [GPU scheduling and isolation](https://hadoop.apache.org/docs/r2.10.0/hadoop-yarn/hadoop-yarn-site/ResourceProfiles.html)
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jar](#download-the-rapids-accelerator-jar), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN, changing the values as necessary:
@@ -258,7 +251,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_RAPIDS_PLUGIN_JAR}
 ``` 
 
 ### YARN without Isolation
@@ -271,7 +264,7 @@ accessing a GPU at once. Note it does not matter if GPU scheduling support is en
   - Foreach GPU index set it to `EXCLUSIVE_PROCESS` mode:
     - `nvidia-smi -c EXCLUSIVE_PROCESS -i $index`
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jar](#download-the-rapids-accelerator-jar), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN. Note that we are configuring a resource
@@ -296,7 +289,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_RAPIDS_PLUGIN_JAR}
 ```  
 
 ### MIG GPU on YARN
@@ -369,7 +362,7 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --conf spark.task.resource.gpu.amount=0.166 \
   --conf spark.executor.resource.gpu.amount=1 \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
-  --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+  --jars ${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
 ## Example Join Operation

@@ -2,6 +2,8 @@ META-INF/DEPENDENCIES
 META-INF/LICENSE
 META-INF/NOTICE
 META-INF/maven/**
+ai/rapids/**
+amd64/Linux/**
 com/nvidia/spark/ExclusiveModeGpuDiscoveryPlugin*
 com/nvidia/spark/GpuCachedBatchSerializer*
 com/nvidia/spark/ParquetCachedBatchSerializer*
@@ -25,9 +27,11 @@ com/nvidia/spark/rapids/SparkShimServiceProvider*
 com/nvidia/spark/rapids/SparkShimVersion*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/udf/Plugin*
+cudf-java-version-info.properties
 libjucx.so
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/VisibleShuffleManager*
 org/openucx/**
 rapids/*.py
 rapids4spark-version-info.properties
+spark-rapids-jni-version-info.properties
