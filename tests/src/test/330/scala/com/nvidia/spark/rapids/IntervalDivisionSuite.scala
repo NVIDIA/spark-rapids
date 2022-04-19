@@ -134,13 +134,13 @@ class IntervalDivisionSuite extends SparkQueryCompareTestSuite {
           case s: Short => df.selectExpr(s"c1 / cast('$s' as Short)")
           case i: Int => df.selectExpr(s"c1 / $i")
           case l: Long => df.selectExpr(s"c1 / ${l}L")
-          case f: Float if f.equals(Float.NaN) => df.selectExpr("c1 / cast('NaN' as float)")
+          case f: Float if f.isNaN => df.selectExpr("c1 / cast('NaN' as float)")
           case f: Float if f.equals(Float.PositiveInfinity) =>
             df.selectExpr("c1 / cast('Infinity' as float)")
           case f: Float if f.equals(Float.NegativeInfinity) =>
             df.selectExpr("c1 / cast('-Infinity' as float)")
           case f: Float => df.selectExpr(s"c1 / ${f}f")
-          case d: Double if d.equals(Double.NaN) => df.selectExpr("c1 / cast('NaN' as double)")
+          case d: Double if d.isNaN => df.selectExpr("c1 / cast('NaN' as double)")
           case d: Double if d.equals(Double.PositiveInfinity) =>
             df.selectExpr("c1 / cast('Infinity' as double)")
           case d: Double if d.equals(Double.NegativeInfinity) =>
