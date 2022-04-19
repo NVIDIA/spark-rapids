@@ -810,8 +810,12 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |        pending = null;
          |      } else {
          |        InternalRow $internalRow = (InternalRow) input.next();
-         |        ${generateUnsafeProj.code}
-         |        row = ${generateUnsafeProj.value};
+         |        if ($internalRow instanceof UnsafeRow) {
+         |          row = (UnsafeRow) $internalRow;
+         |        } else {
+         |          ${generateUnsafeProj.code}
+         |          row = ${generateUnsafeProj.value};
+         |        }
          |      }
          |      int numBytesUsedByRow = copyInto(row, dataBaseAddress + dataOffset, endDataAddress);
          |      offsetsBuffer.setInt(offsetIndex, dataOffset);
