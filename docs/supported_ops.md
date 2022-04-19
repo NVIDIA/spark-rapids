@@ -5069,7 +5069,7 @@ are limited.
 <td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
 <td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
 <td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Supported as array index. Only Literals supported as map keys.</em></td>
 <td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
 <td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
 <td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
