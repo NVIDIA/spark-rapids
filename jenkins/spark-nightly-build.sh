@@ -71,6 +71,7 @@ function distWithReducedPom {
         -DgroupId="${ART_GROUP_ID}" \
         -DartifactId="${ART_ID}" \
         -Dversion="${ART_VER}" \
+        -Dclassifiers=$CUDA_CLASSIFIER \
         $mvnExtaFlags
 }
 

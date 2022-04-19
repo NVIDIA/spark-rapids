@@ -88,7 +88,7 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
             -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER \
-            -DpomFile="$POM_FPATH"
+            -DpomFile="$POM_FPATH" -Dclassifiers=$CUDA_CLASSIFIER
 
 ###### Deploy profiling tool jar(s) ######
 TOOL_PL=${TOOL_PL:-"tools"}
