@@ -125,7 +125,7 @@ class RegularExpressionParserSuite extends FunSuite {
             )
           ))
         ),
-        RegexEscaped(']'),
+        RegexEscaped(']')
       ))
     )
   }
