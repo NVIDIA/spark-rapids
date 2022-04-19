@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -76,6 +76,14 @@ TEST_MODE=${TEST_MODE:-'IT_ONLY'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
+ICEBERG_VERSION=0.13.1
+ICEBERG_SPARK_VER=$(echo $BASE_SPARK_VER | cut -d. -f1,2)
+ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+ --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+ --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
+ --conf spark.sql.catalog.spark_catalog.type=hadoop \
+ --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$"
+
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
@@ -100,6 +108,12 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
             bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
+
+    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+        ## Run Iceberg tests
+        LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
+            bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m iceberg --iceberg --test_type=$TEST_TYPE
+    fi
 else
     if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
         ## Run tests with jars building from the spark-rapids source code
@@ -117,5 +131,11 @@ else
         CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
+    fi
+
+    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+        ## Run Iceberg tests
+        SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
+            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m iceberg --iceberg --test_type=$TEST_TYPE
     fi
 fi
