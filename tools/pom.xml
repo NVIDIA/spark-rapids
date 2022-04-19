@@ -102,6 +102,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <minimizeJar>true</minimizeJar>
                             <artifactSet>
                                 <includes>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
@@ -109,12 +110,6 @@
                                 </includes>
                             </artifactSet>
                             <filters>
-                                <filter>
-                                    <artifact>com.nvidia:rapids-4-spark-common_${scala.binary.version}</artifact>
-                                    <includes>
-                                        <include>com/nvidia/spark/rapids/ThreadFactoryBuilder*</include>
-                                    </includes>
-                                </filter>>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
