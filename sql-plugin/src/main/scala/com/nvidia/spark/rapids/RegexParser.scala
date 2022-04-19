@@ -535,6 +535,26 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  private val lineTerminatorChars = Seq('\n', '\r', '\u0085', '\u2028', '\u2029')
+
+  private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean):RegexAST = {
+    val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
+    terminatorChars ++= lineTerminatorChars.filter(!exclude.contains(_)).map(RegexChar)
+
+    if (terminatorChars.size == 0 && excludeCRLF) {
+      RegexEmpty()
+    } else if (terminatorChars.size == 0) {
+      RegexGroup(capture = false, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))))
+    } else if (excludeCRLF) {
+      RegexCharacterClass(negated = false, characters = terminatorChars)
+    } else {
+      RegexGroup(capture = false,
+        RegexChoice(
+          RegexCharacterClass(negated = false, characters = terminatorChars),
+          RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))))
+    }
+  }
+
   private def rewrite(regex: RegexAST, previous: Option[RegexAST]): RegexAST = {
     regex match {
 
@@ -549,30 +569,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
           previous match {
             case Some(RegexChar('$')) =>
               RegexEmpty()
+            case Some(RegexChar(ch)) if ch == '\n' =>
+              RegexSequence(ListBuffer(
+                RegexRepetition(lineTerminatorMatcher(Set('\n'), true), SimpleQuantifier('?')),
+                RegexChar('$')))
+            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
+              RegexChar('$')
             case _ =>
-              RegexSequence(
-                ListBuffer(
-                  RegexRepetition(
-                    RegexGroup(capture = false,
-                      RegexChoice(
-                        RegexCharacterClass(negated=false, ListBuffer(
-                          RegexChar('\n'),
-                          RegexChar('\r'),
-                          RegexChar('\u0085'),
-                          RegexChar('\u2028'),
-                          RegexChar('\u2029')
-                        )),
-                        RegexSequence(
-                          ListBuffer(
-                            RegexChar('\r'),
-                            RegexChar('\n')
-                          )
-                        )
-                      )
-                    ),
-                    SimpleQuantifier('?')
-                  ),
-                  RegexChar('$')))
+              RegexSequence(ListBuffer(
+                RegexRepetition(lineTerminatorMatcher(Set.empty, false), SimpleQuantifier('?')),
+                RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("line anchor ^ is not supported in split mode")
@@ -750,18 +756,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
                     r(j) = RegexSequence(
-                      ListBuffer(
-                        rewrite(part, None),
-                        last.get
-                      )
-                    )
+                      ListBuffer(lineTerminatorMatcher(Set.empty, true), RegexChar('$')))
                   case RegexChar(ch) if "\n\r\u0085\u2028\u2029".contains(ch) =>
                     r(j) = RegexSequence(
                       ListBuffer(
                         rewrite(part, None),
-                        last.get
-                      )
-                    )
+                        RegexSequence(ListBuffer(
+                          RegexRepetition(lineTerminatorMatcher(Set(ch), true),
+                            SimpleQuantifier('?')), RegexChar('$')))))
                   case _ =>
                     r.append(rewrite(part, last))
                 }

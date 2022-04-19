@@ -215,7 +215,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
-  test("line anchor $ fall back to CPU") {
+  test("line anchor $ fall back to CPU - split and replace") {
     for (mode <- Seq(RegexSplitMode, RegexReplaceMode)) {
       assertUnsupported("a$b", mode, "line anchor $ is not supported")
     }
@@ -288,8 +288,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile $") {
     doTranspileTest("a$", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("$$\n", "\n$")
-    doTranspileTest("^$[^*A-ZA-Z]", "^(?:[\r\n]|[^*A-ZA-Z])$")
+    doTranspileTest("$$\n", "\n[\r\u0085\u2028\u2029]?$")
+    doTranspileTest("^$[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
