@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,21 +55,21 @@ export SPARK3XX_COMMON_DIR="$PWD/spark3xx-common"
 echo "Retrieving class files hashing to a single value ..."
 
 
-echo "$((++STEP))/ SHA1 of all classes > tmp-sha1-class.txt"
-find ./parallel-world/spark3* -type f -name '*.class' | \
-  xargs $SHASUM > tmp-sha1-class.txt
+echo "$((++STEP))/ SHA1 of all non-META files > tmp-sha1-files.txt"
+find ./parallel-world/spark3* -name META-INF -prune -o \( -type f -print \) | \
+  xargs $SHASUM > tmp-sha1-files.txt
 
-echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-class.txt"
-< tmp-sha1-class.txt awk -F/ '$1=$1' | \
+echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-files.txt"
+< tmp-sha1-files.txt awk -F/ '$1=$1' | \
   awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
-  tr -s  ' ' > tmp-shim-sha-package-class.txt
+  tr -s  ' ' > tmp-shim-sha-package-files.txt
 
-echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-shim-sha-package-class.txt"
-sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
-  uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
+echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-shim-sha-package-files.txt"
+sort -k3 -k2,2 -u tmp-shim-sha-package-files.txt | \
+  uniq -f 2 -c > tmp-count-shim-sha-package-files.txt
 
-echo "$((++STEP))/ class files with unique sha1 > $SPARK3XX_COMMON_TXT"
-grep '^\s\+1 .*' tmp-count-shim-sha-package-class.txt | \
+echo "$((++STEP))/ files with unique sha1 > $SPARK3XX_COMMON_TXT"
+grep '^\s\+1 .*' tmp-count-shim-sha-package-files.txt | \
   awk '{$1=""; $3=""; print $0 }' | \
   tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 

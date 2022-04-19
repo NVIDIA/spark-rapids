@@ -20,7 +20,7 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.TypeSigUtil
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
@@ -1307,8 +1307,9 @@ class CastChecks extends ExprChecks {
   val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
-    BINARY
-  val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
+      BINARY + GpuTypeShims.additionalTypesStringCanCastTo
+  val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING +
+      BINARY + GpuTypeShims.additionalTypesStringCanCastTo
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
@@ -1344,7 +1345,7 @@ class CastChecks extends ExprChecks {
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
 
-  val daytimeChecks: TypeSig = none
+  val daytimeChecks: TypeSig = GpuTypeShims.typesDayTimeCanCastTo
   val sparkDaytimeChecks: TypeSig = DAYTIME + STRING
 
   val yearmonthChecks: TypeSig = none

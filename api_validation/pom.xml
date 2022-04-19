@@ -109,8 +109,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>ai.rapids</groupId>
-            <artifactId>cudf</artifactId>
+            <groupId>com.nvidia</groupId>
+            <artifactId>spark-rapids-jni</artifactId>
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
@@ -126,6 +126,7 @@
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
+            <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
     </dependencies>
