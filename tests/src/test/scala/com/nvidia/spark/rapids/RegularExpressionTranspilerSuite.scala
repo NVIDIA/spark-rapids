@@ -409,7 +409,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("compare CPU and GPU: handle escaped brackets") {
     val inputs = Seq("[", "]", "[]", "[asdf]", "[deadbeef]", "[a123b456c]")
-    val patterns = Seq("\\[", "\\]", "\\[\\]", "\\[([a-z]+)\\]", "\\[([a-z0-9]+)\\]")
+    val patterns = Seq("\\[", "\\]", "\\[]", "\\[\\]", "\\[([a-z]+)\\]", "\\[([a-z0-9]+)\\]")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
