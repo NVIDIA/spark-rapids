@@ -407,6 +407,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
+  test("compare CPU and GPU: handle escaped brackets") {
+    val inputs = Seq("[", "]", "[]", "[asdf]", "[deadbeef]", "[a123b456c]")
+    val patterns = Seq("\\[", "\\]", "\\[\\]", "\\[([a-z]+)\\]", "\\[([a-z0-9]+)\\]")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
   test("compare CPU and GPU: regexp replace fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set

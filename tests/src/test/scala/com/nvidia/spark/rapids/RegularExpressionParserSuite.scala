@@ -112,6 +112,24 @@ class RegularExpressionParserSuite extends FunSuite {
           ListBuffer(RegexChar('a'))), RegexChar(']'))))
   }
 
+  test("escaped brackets") {
+    assert(parse("\\[([A-Z]+)\\]") ===
+      RegexSequence(ListBuffer(
+        RegexEscaped('['),
+        RegexGroup(capture = true,
+          RegexSequence(ListBuffer(
+            RegexRepetition(
+              RegexCharacterClass(negated = false, ListBuffer(
+                RegexCharacterRange('A', 'Z'))),
+              SimpleQuantifier('+')
+            )
+          ))
+        ),
+        RegexEscaped(']'),
+      ))
+    )
+  }
+
   test("unclosed character class") {
     val e = intercept[RegexUnsupportedException] {
       parse("[ab")
