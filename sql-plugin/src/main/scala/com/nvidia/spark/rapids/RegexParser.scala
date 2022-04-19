@@ -467,7 +467,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, None, None)
+    val cudfRegex = rewrite(regex, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     cudfRegex.toRegexString
@@ -535,7 +535,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def rewrite(regex: RegexAST, previous: Option[RegexAST], next: Option[RegexAST]): RegexAST = {
+  private def rewrite(regex: RegexAST, previous: Option[RegexAST]): RegexAST = {
     regex match {
 
       case RegexChar(ch) => ch match {
@@ -550,41 +550,29 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case Some(RegexChar('$')) =>
               RegexEmpty()
             case _ =>
-              // next match {
-              //   case Some(RegexChar(ch)) if "\n\r\u0085\u2028\u2029".contains(ch) =>
-              //     RegexSequence(
-              //       ListBuffer(
-              //         RegexChar(ch),
-              //         RegexChar('$')
-              //       )
-              //     )
-              //   case _ =>
-                  RegexSequence(
-                    ListBuffer(
-                      RegexRepetition(
-                        RegexGroup(capture = false,
-                          RegexChoice(
-                            RegexCharacterClass(negated=false, ListBuffer(
-                              RegexChar('\n'),
-                              RegexChar('\r'),
-                              RegexChar('\u0085'),
-                              RegexChar('\u2028'),
-                              RegexChar('\u2029')
-                            )),
-                            RegexSequence(
-                              ListBuffer(
-                                RegexChar('\r'),
-                                RegexChar('\n')
-                              )
-                            )
+              RegexSequence(
+                ListBuffer(
+                  RegexRepetition(
+                    RegexGroup(capture = false,
+                      RegexChoice(
+                        RegexCharacterClass(negated=false, ListBuffer(
+                          RegexChar('\n'),
+                          RegexChar('\r'),
+                          RegexChar('\u0085'),
+                          RegexChar('\u2028'),
+                          RegexChar('\u2029')
+                        )),
+                        RegexSequence(
+                          ListBuffer(
+                            RegexChar('\r'),
+                            RegexChar('\n')
                           )
-                        ),
-                        SimpleQuantifier('?')
-                      ),
-                      RegexChar('$')
-                    )
-                  )
-              // }
+                        )
+                      )
+                    ),
+                    SimpleQuantifier('?')
+                  ),
+                  RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("line anchor ^ is not supported in split mode")
@@ -683,7 +671,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val components: Seq[RegexCharacterClassComponent] = characters
           .map(x => x match {
             case RegexChar(ch) if "^$".contains(ch) => x
-            case _ => rewrite(x, None, None).asInstanceOf[RegexCharacterClassComponent]
+            case _ => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent]
           })
 
         if (negated) {
@@ -759,25 +747,26 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case _ => true
                 }
                 part match {
-                  case RegexCharacterClass(true, parts) if parts.forall(!isBeginOrEndLineAnchor(_)) =>
+                  case RegexCharacterClass(true, parts)
+                      if parts.forall(!isBeginOrEndLineAnchor(_)) =>
                     r(j) = RegexSequence(
                       ListBuffer(
-                        rewrite(part, None, None),
+                        rewrite(part, None),
                         last.get
                       )
                     )
                   case RegexChar(ch) if "\n\r\u0085\u2028\u2029".contains(ch) =>
                     r(j) = RegexSequence(
                       ListBuffer(
-                        rewrite(part, None, None),
+                        rewrite(part, None),
                         last.get
                       )
                     )
                   case _ =>
-                    r.append(rewrite(part, last, None))
+                    r.append(rewrite(part, last))
                 }
               case _ =>
-                r.append(rewrite(part, last, None))
+                r.append(rewrite(part, last))
             }
             r.last match {
               case RegexEmpty() =>
@@ -828,17 +817,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
-          RegexRepetition(rewrite(base, None, None), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case _ if isSupportedRepetitionBase(base) =>
-          RegexRepetition(rewrite(base, None, None), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case _ =>
           throw new RegexUnsupportedException(nothingToRepeat)
 
       }
 
       case RegexChoice(l, r) =>
-        val ll = rewrite(l, None, None)
-        val rr = rewrite(r, None, None)
+        val ll = rewrite(l, None)
+        val rr = rewrite(r, None)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
         if (isRepetition(ll) || isRepetition(rr)) {
@@ -862,7 +851,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
-        RegexGroup(capture, rewrite(term, None, None))
+        RegexGroup(capture, rewrite(term, None))
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
