@@ -564,17 +564,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
         case '$' if mode == RegexSplitMode || mode == RegexReplaceMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4533
-          throw new RegexUnsupportedException("line anchor $ is not supported")
+          throw new RegexUnsupportedException("line anchor $ is not supported in split or replace")
         case '$' =>
           previous match {
             case Some(RegexChar('$')) =>
               RegexEmpty()
-            case Some(RegexChar(ch)) if ch == '\n' =>
-              RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set('\n'), true), SimpleQuantifier('?')),
-                RegexChar('$')))
-            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
+            case Some(RegexChar(ch)) if ch == '\r' =>
               RegexChar('$')
+            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
+              RegexSequence(ListBuffer(
+                RegexRepetition(lineTerminatorMatcher(Set(ch), true), SimpleQuantifier('?')),
+                RegexChar('$')))
             case _ =>
               RegexSequence(ListBuffer(
                 RegexRepetition(lineTerminatorMatcher(Set.empty, false), SimpleQuantifier('?')),

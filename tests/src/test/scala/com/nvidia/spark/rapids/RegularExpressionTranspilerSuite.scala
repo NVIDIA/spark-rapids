@@ -217,13 +217,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("line anchor $ fall back to CPU - split and replace") {
     for (mode <- Seq(RegexSplitMode, RegexReplaceMode)) {
-      assertUnsupported("a$b", mode, "line anchor $ is not supported")
+      assertUnsupported("a$b", mode, "line anchor $ is not supported in split or replace")
     }
   }
 
   test("line anchor $ - find") {
-    val patterns = Seq("$\r", "a$", "\r$", "\n$", "\r\n$", "[\r\n]?$", "\\00*[D$3]$", "a$b")
-    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "\r", "\n", "\r\n", "\n\r", "2+|+??wD\n", "a\r\nb")
+    val patterns = Seq("$\r", "a$", "\r$", "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$",
+      "[\r\n]?$", "\\00*[D$3]$", "a$b")
+    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "\r", "\u0085", "\u2028", "\u2029", "\n",
+      "\r\n", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r", "\n\u0085", "\n\u2028", "\n\u2029",
+      "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
