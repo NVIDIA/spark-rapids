@@ -284,7 +284,7 @@ def test_mod_pmod_long_min_value():
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_error(
-        lambda spark : binary_op_df(spark, data_gen).selectExpr(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
             overflow_exp.format(string_type, string_type)).collect(),
         ansi_enabled_conf,
         # 311 throws "java.lang.ArithmeticException"
@@ -295,7 +295,7 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_mod_pmod_by_zero_not_ansi(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : binary_op_df(spark, data_gen).selectExpr(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'pmod(a, cast(0 as {}))'.format(string_type),
             'pmod(cast(-12 as {}), cast(0 as {}))'.format(string_type, string_type),
             'a % (cast(0 as {}))'.format(string_type),
