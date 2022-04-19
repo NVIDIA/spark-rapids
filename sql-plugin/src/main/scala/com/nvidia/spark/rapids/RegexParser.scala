@@ -277,7 +277,7 @@ class RegexParser(pattern: String) {
             // word boundaries
             consumeExpected(ch)
             RegexEscaped(ch)
-          case '[' | '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
+          case '[' | ']' | '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
             // escaped metacharacter
             consumeExpected(ch)
             RegexEscaped(ch)
