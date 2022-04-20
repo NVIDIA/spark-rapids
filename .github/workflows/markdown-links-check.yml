@@ -27,7 +27,6 @@ jobs:
       run: git config --global --add safe.directory /github/workspace
     - uses: actions/checkout@master
     - uses: gaurav-nelson/github-action-markdown-link-check@v1
-#    - uses: nvliyuan/github-action-markdown-link-check@fix-markdown-check-fail
       with:
         max-depth: -1
         use-verbose-mode: 'yes'
