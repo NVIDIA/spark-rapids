@@ -87,9 +87,9 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 # Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -Dtypes=jar -Dfiles=$FPATH.jar \
-            -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER \
-            -DpomFile="$POM_FPATH" -Dclassifiers=$CUDA_CLASSIFIER
+            -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER \
+            -Dfiles=$FPATH.jar -Dtypes=jar -Dclassifiers=$CUDA_CLASSIFIER \
+            -DpomFile="$POM_FPATH"
 
 ###### Deploy profiling tool jar(s) ######
 TOOL_PL=${TOOL_PL:-"tools"}
