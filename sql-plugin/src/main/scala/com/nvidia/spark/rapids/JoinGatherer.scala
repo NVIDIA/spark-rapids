@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -137,8 +137,13 @@ trait JoinGatherer extends LazySpillable with Arm {
 object JoinGatherer extends Arm {
   def apply(gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
-      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
-    new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+      outOfBoundsPolicy: OutOfBoundsPolicy, isExistenceJoin: Boolean = false): JoinGatherer = {
+    if (!isExistenceJoin) {
+      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+    } else {
+      new JoinGathererForExistenceJoin(gatherMap, inputData, outOfBoundsPolicy)
+    }
+  }
 
   def apply(leftMap: LazySpillableGatherMap,
       leftData: LazySpillableColumnarBatch,
@@ -670,4 +675,133 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   }
 
   override def toString: String = s"MULTI-GATHER $left and $right"
+}
+
+/**
+ * JoinGatherer for existence join
+ * Existence join generates an `exists` boolean column with `true` or `false` in it,
+ * then appends it to the `output` columns. It does not shrink or expand left table.
+ * Just provides the `exists` column for the next following operator(usually filter).
+ *
+ * e.g.:
+ * <code>
+ * select * from left_table where
+ *   left_table.column_0 >= 3
+ *   or
+ *   exists (select * from right_table where left_table.column_1 < right_table.column_1)
+ *
+ * Explanation of this sql is:
+ *
+ * Filter(left_table.column_0 >= 3 or `exists`)
+ *   Existence_join // generate `exists` column, do not shrink or expand the rows of left table
+ *     left_table
+ *     right_table
+ * </code>
+ */
+class JoinGathererForExistenceJoin(
+    private val gatherMap: LazySpillableGatherMap,
+    private val data: LazySpillableColumnarBatch,
+    boundsCheckPolicy: OutOfBoundsPolicy)
+    extends JoinGathererImpl(gatherMap, data, boundsCheckPolicy) {
+
+  // How much of the gather map we have output so far
+  private var gatheredUpTo: Long = 0
+
+  // Note: equals to the rows of the left table
+  private val totalRows: Long = data.numRows
+
+  override def isDone: Boolean =
+    gatheredUpTo >= totalRows
+
+  override def numRowsLeft: Long = totalRows - gatheredUpTo
+
+  override def toString: String = {
+    s"GATHERER FOR EXISTENCE JOIN $gatheredUpTo/$totalRows $gatherMap $data"
+  }
+
+  /**
+   * Existence join does not shrink or expand,
+   * it only adds an `exists` boolean column to left table according to the gather map
+   */
+  override def gatherNext(n: Int): ColumnarBatch = {
+    val start = gatheredUpTo
+    assert((start + n) <= totalRows)
+    val types = GpuColumnVector.extractTypes(data.getBatch)
+    val batch = data.getBatch
+
+    val subTableCbTmp = withResource(GpuColumnVector.from(batch)) { table =>
+      if(start == 0 && n == totalRows) {
+        // no need to split
+        GpuColumnVector.from(table, types)
+      } else {
+        withResource(table.contiguousSplit(start.toInt, (start + n).toInt)) { tableSplits =>
+          assert(tableSplits.length >= 2)
+          GpuColumnVector.from(tableSplits(1).getTable, types)
+        }
+      }
+    }
+
+    val ret = withResource(subTableCbTmp) { subTableCb =>
+      val subExistsCvTmp = withResource(gatherMap.toColumnView(0, gatherMap.getRowCount.toInt)) {
+        gatherView =>
+          // `exists.numRows` == `batch.numRows`,
+          //  with true or false in it indicating if the row is gathered
+          withResource(genExistsColumn(gatherView, batch.numRows())) { exists =>
+            if(start == 0 && n == totalRows) {
+              // no need to split
+              exists.incRefCount()
+            } else {
+              withResource(exists.split(start.toInt, (start + n).toInt)) { splits =>
+                assert(splits.size >= 2)
+                splits(1).incRefCount()
+              }
+            }
+          }
+      }
+
+      withResource(subExistsCvTmp) { subExistsCv =>
+        // add `exists` column
+        addExistsCv(types :+ BooleanType, subTableCb, subExistsCv)
+      }
+    }
+
+    gatheredUpTo += n
+    ret
+  }
+
+  /**
+   * leftTable + existsCv
+   */
+  private def addExistsCv(types: Array[DataType], leftTable: ColumnarBatch,
+      existsCv: ColumnVector): ColumnarBatch = {
+    val cols = GpuColumnVector.extractBases(leftTable)
+    val resCols = cols :+ existsCv
+    withResource(new Table(resCols: _*)) {
+      resTab => GpuColumnVector.from(resTab, types)
+    }
+  }
+
+  private def falseColumnTable(rows: Int): Table = {
+    withResource(ai.rapids.cudf.Scalar.fromBool(false)) { falseScalar =>
+      withResource(ai.rapids.cudf.ColumnVector.fromScalar(falseScalar, rows)) {
+        new Table(_)
+      }
+    }
+  }
+
+  /**
+   * generate `exists` column with the values as `true` for the gathered rows
+   */
+  private def genExistsColumn(existsGatherView: ColumnView,
+      numRowsOfLeftTable: Int): ai.rapids.cudf.ColumnVector = {
+    withResource(falseColumnTable(numRowsOfLeftTable)) { allFalseTable =>
+      withResource(ai.rapids.cudf.Scalar.fromBool(true)) { trueScalar =>
+        withResource(Table.scatter(Array(trueScalar), existsGatherView, allFalseTable, false)) {
+          newT => {
+            newT.getColumn(0).incRefCount()
+          }
+        }
+      }
+    }
+  }
 }

@@ -54,7 +54,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     JoinTypeChecks.tagForGpu(join.joinType, this)
     join.joinType match {
       case _: InnerLike =>
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
+      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         conditionMeta.foreach(requireAstForGpuOn)
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }
@@ -99,7 +99,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
       case RightOuter if gpuBuildSide == GpuBuildRight =>
         throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
+      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         // Cannot post-filter these types of joins
         assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
       case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
@@ -230,7 +230,7 @@ class ConditionalNestedLoopJoinIterator(
           case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition)
           case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
           case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
-          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
+          case LeftSemi | ExistenceJoin(_) => left.conditionalLeftSemiJoinRowCount(right, condition)
           case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
           case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
         }
@@ -286,7 +286,7 @@ class ConditionalNestedLoopJoinIterator(
         // Reverse the output of the join, because we expect the right gather map to
         // always be on the right
         maps.reverse
-      case LeftSemi =>
+      case LeftSemi | ExistenceJoin(_) =>
         numJoinRows.map { rowCount =>
           Array(left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount))
         }.getOrElse {
