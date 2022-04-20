@@ -119,7 +119,8 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
     mvn -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
 fi
 
 # Parse Spark files from local mvn repo
