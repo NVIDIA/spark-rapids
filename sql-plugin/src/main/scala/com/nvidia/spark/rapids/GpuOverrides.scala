@@ -2235,7 +2235,7 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck(
           "pivotColumn",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128)
-              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
           TypeSig.all),
           ParamCheck("valueColumn",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
@@ -2283,7 +2283,7 @@ object GpuOverrides extends Logging {
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
               .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2291,7 +2291,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable,
             Seq(ParamCheck("input",
               (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+                .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -2316,7 +2316,7 @@ object GpuOverrides extends Logging {
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
               .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2324,7 +2324,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable,
             Seq(ParamCheck("input",
               (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+                .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -2629,7 +2629,7 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.INT, "Supported as array index. " +
             "Only Literals supported as map keys.")
           .withPsNote(
-            List(TypeEnum.BOOLEAN, TypeEnum.BYTE, TypeEnum.SHORT, TypeEnum.LONG,
+            Seq(TypeEnum.BOOLEAN, TypeEnum.BYTE, TypeEnum.SHORT, TypeEnum.LONG,
               TypeEnum.FLOAT, TypeEnum.DOUBLE, TypeEnum.DATE, TypeEnum.TIMESTAMP,
               TypeEnum.STRING, TypeEnum.DECIMAL),
             "Unsupported as array index. Only Literals supported as map keys."),
@@ -2720,7 +2720,7 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+            .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2736,7 +2736,7 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(List(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+            .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2762,7 +2762,7 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes
             .withPsNote(
-              List(TypeEnum.DOUBLE, TypeEnum.FLOAT), 
+              Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), 
               "NaN literals are not supported. Columnar input" +
               s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false."),
             TypeSig.all)),
@@ -3744,7 +3744,7 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(
-            List(TypeEnum.ARRAY, TypeEnum.MAP), 
+            Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
             "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
@@ -3808,7 +3808,7 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
-            .withPsNote(List(TypeEnum.ARRAY, TypeEnum.MAP), 
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
@@ -3824,7 +3824,7 @@ object GpuOverrides extends Logging {
             .nested()
             .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
               "converted between CPU and GPU")
-            .withPsNote(List(TypeEnum.ARRAY, TypeEnum.MAP), 
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
@@ -3842,7 +3842,7 @@ object GpuOverrides extends Logging {
             .nested()
             .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
               "converted between CPU and GPU")
-            .withPsNote(List(TypeEnum.ARRAY, TypeEnum.MAP), 
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),

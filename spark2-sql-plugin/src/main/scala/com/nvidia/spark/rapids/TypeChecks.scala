@@ -262,7 +262,7 @@ final class TypeSig private(
    * @param note the note itself
    * @return the updated TypeSignature.
    */
-  def withPsNote(dataTypes: List[TypeEnum.Value], note: String): TypeSig =
+  def withPsNote(dataTypes: Seq[TypeEnum.Value], note: String): TypeSig =
     new TypeSig(
       dataTypes.foldLeft(initialTypes)(_+_), maxAllowedDecimalPrecision, childTypes,
       litOnlyTypes,dataTypes.foldLeft(notes)((notes, dataType) => notes.+((dataType, note))))
