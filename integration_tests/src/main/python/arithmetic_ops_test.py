@@ -267,6 +267,41 @@ def test_pmod(data_gen):
                 'pmod(b, cast(null as {}))'.format(string_type),
                 'pmod(a, b)'))
 
+# test pmod(Long.MinValue, -1) = 0 and Long.MinValue % -1 = 0, should not throw
+def test_mod_pmod_long_min_value():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame([(-9223372036854775808,)], ["a"]).selectExpr(
+            'pmod(a, -1L)',
+            'a % -1L'),
+        ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('overflow_exp', [
+    'pmod(a, cast(0 as {}))',
+    'pmod(cast(-12 as {}), cast(0 as {}))',
+    'a % (cast(0 as {}))',
+    'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
+def test_mod_pmod_by_zero(data_gen, overflow_exp):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            overflow_exp.format(string_type, string_type)).collect(),
+        ansi_enabled_conf,
+        # 311 throws "java.lang.ArithmeticException"
+        # 320+ throws "org.apache.spark.SparkArithmeticException"
+        "ArithmeticException")
+
+@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+def test_mod_pmod_by_zero_not_ansi(data_gen):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'pmod(a, cast(0 as {}))'.format(string_type),
+            'pmod(cast(-12 as {}), cast(0 as {}))'.format(string_type, string_type),
+            'a % (cast(0 as {}))'.format(string_type),
+            'cast(-12 as {}) % cast(0 as {})'.format(string_type, string_type)),
+        {'spark.sql.ansi.enabled': 'false'})
+
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -954,3 +989,59 @@ def test_day_time_interval_multiply_number(data_gen):
                 ('_c2', data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("_c1 * _c2"))
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=0, max_exp=5, special_cases=[])], ids=idfn)
+def test_day_time_interval_division_number_no_overflow1(data_gen):
+    gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-5000 * 365 * 86400), max_value=timedelta(seconds=5000 * 365 * 86400))),
+                ('_c2', data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        # avoid dividing by 0
+        lambda spark: gen_df(spark, gen_list).selectExpr("_c1 / case when _c2 = 0 then cast(1 as {}) else _c2 end".format(to_cast_string(data_gen.data_type))))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=-5, max_exp=0, special_cases=[])], ids=idfn)
+def test_day_time_interval_division_number_no_overflow2(data_gen):
+    gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
+                ('_c2', data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        # avoid dividing by 0
+        lambda spark: gen_df(spark, gen_list).selectExpr("_c1 / case when _c2 = 0 then cast(1 as {}) else _c2 end".format(to_cast_string(data_gen.data_type))))
+
+def _get_overflow_df_2cols(spark, data_types, values, expr):
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize([values]),
+        StructType([
+            StructField('a', data_types[0]),
+            StructField('b', data_types[1])
+        ])
+    ).selectExpr(expr)
+
+# test interval division overflow, such as interval / 0, Long.MinValue / -1 ...
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_type,value_pair', [
+    (ByteType(), [timedelta(seconds=1), 0]),
+    (ShortType(), [timedelta(seconds=1), 0]),
+    (IntegerType(), [timedelta(seconds=1), 0]),
+    (LongType(), [timedelta(seconds=1), 0]),
+    (FloatType(), [timedelta(seconds=1), 0.0]),
+    (FloatType(), [timedelta(seconds=1), -0.0]),
+    (DoubleType(), [timedelta(seconds=1), 0.0]),
+    (DoubleType(), [timedelta(seconds=1), -0.0]),
+    (FloatType(), [timedelta(seconds=1), float('NaN')]),
+    (DoubleType(), [timedelta(seconds=1), float('NaN')]),
+    (FloatType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
+    (DoubleType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
+    (FloatType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
+    (DoubleType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
+    (LongType(), [MIN_DAY_TIME_INTERVAL, -1]),
+    (FloatType(), [timedelta(seconds=0), 0.0]),   # 0 / 0 = NaN
+    (DoubleType(), [timedelta(seconds=0), 0.0]),  # 0 / 0 = NaN
+    (IntegerType(), [timedelta(microseconds=LONG_MIN), -1])
+], ids=idfn)
+def test_day_time_interval_division_overflow(data_type, value_pair):
+    assert_gpu_and_cpu_error(
+        df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
+        conf={},
+        error_message='ArithmeticException')

@@ -27,17 +27,18 @@ MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
-# maven download SNAPSHOT jars: rapids-4-spark, Spark
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -Dtransitive=false \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
 if [ "$CUDA_CLASSIFIER"x == x ];then
+    $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
     export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 else
+    $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CUDA_CLASSIFIER
     export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CUDA_CLASSIFIER}.jar"
 fi
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
@@ -81,7 +82,7 @@ set -x
 cat "$tmp_info" || true
 
 SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
-if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
+if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$p_ver"|| \
       "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver") ]]; then
   echo "Artifacts revisions are inconsistent!"
   exit 1

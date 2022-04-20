@@ -55,7 +55,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
-            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots"
+            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots -Dtypes=jar -Dfiles=${DIST_FPATH}.jar -Dclassifiers=$CUDA_CLASSIFIER"
             ;;
 
         *)
@@ -113,6 +113,7 @@ mvn -B clean install -pl '!tools' \
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
+    DIST_FPATH="$DIST_FPATH-$CUDA_CLASSIFIER"
     distWithReducedPom "deploy"
 
 TOOL_PL=${TOOL_PL:-"tools"}
