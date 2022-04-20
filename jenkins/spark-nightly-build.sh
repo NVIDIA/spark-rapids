@@ -115,6 +115,7 @@ distWithReducedPom "install"
 if [[ $SKIP_DEPLOY != 'true' ]]; then
     distWithReducedPom "deploy"
 
+TOOL_PL=${TOOL_PL:-"tools"}
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     mvn -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
