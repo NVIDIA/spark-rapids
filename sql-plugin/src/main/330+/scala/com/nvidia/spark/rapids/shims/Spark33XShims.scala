@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.shims.{GpuMultiplyDTInterval, GpuMultiplyYMInterval, GpuTimeAdd}
+import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterval, GpuMultiplyDTInterval, GpuMultiplyYMInterval, GpuTimeAdd}
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -203,6 +203,28 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         (a, conf, p, r) => new BinaryExprMeta[MultiplyDTInterval](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuMultiplyDTInterval(lhs, rhs)
+        }),
+      GpuOverrides.expr[DivideYMInterval](
+        "Year-month interval * operator",
+        ExprChecks.binaryProject(
+          TypeSig.YEARMONTH,
+          TypeSig.YEARMONTH,
+          ("lhs", TypeSig.YEARMONTH, TypeSig.YEARMONTH),
+          ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[DivideYMInterval](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuDivideYMInterval(lhs, rhs)
+        }),
+      GpuOverrides.expr[DivideDTInterval](
+        "Day-time interval * operator",
+        ExprChecks.binaryProject(
+          TypeSig.DAYTIME,
+          TypeSig.DAYTIME,
+          ("lhs", TypeSig.DAYTIME, TypeSig.DAYTIME),
+          ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[DivideDTInterval](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuDivideDTInterval(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map
