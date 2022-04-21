@@ -1414,10 +1414,20 @@ class GpuStringSplitMeta(
     extends StringSplitRegExpMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private var delimInfo: Option[(String, Boolean)] = None
+  private var pattern = ""
+  private var isRegExp = false
 
   override def tagExprForGpu(): Unit = {
-    delimInfo = checkRegExp(expr.regex)
+    checkRegExp(expr.regex) match {
+      case Some((p, isRe)) => pattern = p; isRegExp = isRe
+      case _ => throwUncheckedDelimiterException()
+    }
+    
+    // if this is a valid regular expression, then we should check the configuration
+    // whether to run this on the GPU
+    if (isRegExp) {
+      GpuRegExpUtils.tagForRegExpEnabled(this)
+    }
 
     extractLit(expr.limit) match {
       case Some(Literal(n: Int, _)) =>
@@ -1434,8 +1444,7 @@ class GpuStringSplitMeta(
       str: Expression,
       regexp: Expression,
       limit: Expression): GpuExpression = {
-    val delim: (String, Boolean) = delimInfo.getOrElse(throwUncheckedDelimiterException())
-    GpuStringSplit(str, regexp, limit, delim._1, delim._2)
+    GpuStringSplit(str, regexp, limit, pattern, isRegExp)
   }
 }
 
