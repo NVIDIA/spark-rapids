@@ -221,12 +221,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("line anchor sequence $\\n fall back to CPU") {
+    assertUnsupported("a$\n", RegexFindMode, "regex sequence $\\n is not supported")
+  }
+
   test("line anchor $ - find") {
     val patterns = Seq("$\r", "a$", "\r$", "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$",
       "[\r\n]?$", "\\00*[D$3]$", "a$b")
-    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "\r", "\u0085", "\u2028", "\u2029", "\n",
-      "\r\n", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r", "\n\u0085", "\n\u2028", "\n\u2029",
-      "2+|+??wD\n", "a\r\nb")
+    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "\r", "\u0085", "\u2028", "\u2029",
+      "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r", "\n\u0085",
+      "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
@@ -291,7 +295,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile $") {
     doTranspileTest("a$", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("$$\n", "\n[\r\u0085\u2028\u2029]?$")
+    doTranspileTest("$$\r", "\r[\n\u0085\u2028\u2029]?$")
+    doTranspileTest("]$\r", "]\r[\n\u0085\u2028\u2029]?$")
     doTranspileTest("^$[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
   }
 

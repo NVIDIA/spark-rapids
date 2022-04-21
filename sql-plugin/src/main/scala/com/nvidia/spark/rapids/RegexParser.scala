@@ -537,6 +537,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private val lineTerminatorChars = Seq('\n', '\r', '\u0085', '\u2028', '\u2029')
 
+  // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
+  // the end of a line of an input character sequence. 
+  // this method produces a RegexAST which outputs a regular expression to match any possible
+  // combination of line terminators
   private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean):RegexAST = {
     val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
     terminatorChars ++= lineTerminatorChars.filter(!exclude.contains(_)).map(RegexChar)
@@ -566,16 +570,29 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // see https://github.com/NVIDIA/spark-rapids/issues/4533
           throw new RegexUnsupportedException("line anchor $ is not supported in split or replace")
         case '$' =>
+          // in the case of the line anchor $, the JVM has special conditions when handling line 
+          // terminators in and around the anchor
+          // this handles cases where the line terminator characters are *before* the anchor ($)
+          // NOTE: this applies to when using *standard* mode. In multiline mode, all these 
+          // conditions will change. Currently Spark does not use multiline mode.
           previous match {
             case Some(RegexChar('$')) =>
+              // repeating the line anchor in cuDF (for example b$$) causes matches to fail, but in 
+              // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
+              // an empty RegexAST that outputs to empty string
               RegexEmpty()
             case Some(RegexChar(ch)) if ch == '\r' =>
+              // when using the the CR (\r), it prevents the line anchor from handling any other 
+              // line terminator sequences, so we just output the anchor and we are finished
               RegexChar('$')
             case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
+              // when using any other line terminator character, you can match any of the other
+              // line terminator characters individually as part of the line anchor match.
               RegexSequence(ListBuffer(
                 RegexRepetition(lineTerminatorMatcher(Set(ch), true), SimpleQuantifier('?')),
                 RegexChar('$')))
             case _ =>
+              // otherwise by default we can match any or none the full set of line terminators
               RegexSequence(ListBuffer(
                 RegexRepetition(lineTerminatorMatcher(Set.empty, false), SimpleQuantifier('?')),
                 RegexChar('$')))
@@ -743,10 +760,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "sequences that only contain '^' or '$' are not supported")
         }
+
+        // Special handling for line anchor ($)
+        // This code is implemented here because to make it work in cuDF, we have to reorder 
+        // the items in the regex.
+        // In the JVM, regexes like "\n$" and "$\n" have similar treatment
         RegexSequence(parts.foldLeft((new ListBuffer[RegexAST](),
           Option.empty[RegexAST]))((m, part) => {
             val (r, last) = m
             last match {
+              // when the previous character is a line anchor ($), the JVM has special handling
+              // when matching against line terminator characters
               case Some(RegexChar('$')) => 
                 val j = r.lastIndexWhere {
                   case RegexEmpty() => false
@@ -757,7 +781,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
                     r(j) = RegexSequence(
                       ListBuffer(lineTerminatorMatcher(Set.empty, true), RegexChar('$')))
-                  case RegexChar(ch) if "\n\r\u0085\u2028\u2029".contains(ch) =>
+                  case RegexChar(ch) if ch == '\n' =>
+                    // what's really needed here is negative lookahead, but that is not 
+                    // supported by cuDF
+                    // in this case: $\n would transpile to (?!\r)\n$
+                    throw new RegexUnsupportedException("regex sequence $\\n is not supported")
+                  case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
                     r(j) = RegexSequence(
                       ListBuffer(
                         rewrite(part, None),
