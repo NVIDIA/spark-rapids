@@ -17,15 +17,18 @@
 package org.apache.spark.sql.rapids
 
 import java.util.Optional
+
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, NullPolicy, Scalar, ScanAggregation, ScanType, SegmentedReductionAggregation, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimExpression}
+
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -510,31 +513,43 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
   override def dataType: DataType = ArrayType(left.dataType, left.nullable)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    val countNotNull = withResource(GpuScalar.from(1, DataTypes.IntegerType)) { one =>
-      rhs.getBase.replaceNulls(one)
-    }
+    // The primary issue of array_repeat is to workaround the null and negative count.
+    // Spark returns a null (list) when encountering a null count, while cudf::repeat simply
+    // throws an exception.
+    // Spark returns a empty list when encountering a negative count, while cudf::repeat simply
+    // throws an exception.
 
-    val elemTable = closeOnExcept(countNotNull) { _ =>
-      withResource(GpuScalar.from(null, lhs.dataType())) { nullElem =>
-        withResource(rhs.getBase.isNull) { isCntNull =>
-          withResource(isCntNull.ifElse(nullElem, lhs.getBase)) { elemWithNull =>
-            new Table(elemWithNull)
+    // Step 1. replace invalid counts
+    //  null -> 1
+    //  negative values -> 0
+    val refinedCount = withResource(GpuScalar.from(1, DataTypes.IntegerType)) { one =>
+      withResource(rhs.getBase.replaceNulls(one)) { notNull =>
+        withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+          withResource(notNull.lessThan(zero)) { lessThanZero =>
+            lessThanZero.ifElse(zero, notNull)
           }
         }
       }
     }
-
-    val repeated = withResource(countNotNull) { cnt =>
-      withResource(elemTable) { table =>
+    // Step 2. perform cuDF repeat
+    val repeated = closeOnExcept(refinedCount) { cnt =>
+      withResource(new Table(lhs.getBase)) { table =>
         table.repeat(cnt, true).getColumn(0)
       }
     }
-
-    withResource(repeated) { repeated =>
-      withResource(rhs.getBase.scan(
-        ScanAggregation.sum(), ScanType.INCLUSIVE, NullPolicy.EXCLUDE)) { offsets =>
+    // Step 3. generate list offsets from refined counts
+    val offsets = withResource(refinedCount) { cnt =>
+      cnt.generateListOffsets()
+    }
+    // Step 4. make the result list column with offsets and child column
+    val list = withResource(offsets) { offsets =>
+      withResource(repeated) { repeated =>
         repeated.makeListFromOffsets(lhs.getRowCount, offsets)
       }
+    }
+    // Step 5. merge the validity of count column to the result
+    withResource(list) { list =>
+      list.mergeAndSetValidity(BinaryOp.BITWISE_AND, rhs.getBase)
     }
   }
 
@@ -547,15 +562,19 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val numRows = lhs.getRowCount.toInt
     if (!rhs.isValid) {
-      GpuColumnVector.fromNull(numRows, lhs.dataType()).getBase
+      GpuColumnVector.fromNull(numRows, dataType).getBase
     } else {
-      val offsets = withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { cnt =>
-        cnt.getBase.scan(
-          ScanAggregation.sum(), ScanType.INCLUSIVE, NullPolicy.EXCLUDE)
+      val count = rhs.getValue.asInstanceOf[Int] max 0
+
+      val offsets = withResource(GpuScalar.from(count, IntegerType)) { cntScalar =>
+        withResource(GpuColumnVector.from(cntScalar, numRows, rhs.dataType)) { cnt =>
+          cnt.getBase.generateListOffsets()
+        }
       }
+
       withResource(offsets) { offsets =>
         withResource(new Table(lhs.getBase)) { table =>
-          withResource(table.repeat(rhs.getValue.asInstanceOf[Int]).getColumn(0)) { repeated =>
+          withResource(table.repeat(count).getColumn(0)) { repeated =>
             repeated.makeListFromOffsets(lhs.getRowCount, offsets)
           }
         }
@@ -565,7 +584,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     if (!rhs.isValid) {
-      GpuColumnVector.fromNull(numRows, lhs.dataType).getBase
+      GpuColumnVector.fromNull(numRows, dataType).getBase
     } else {
       withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
         doColumnar(left, rhs)

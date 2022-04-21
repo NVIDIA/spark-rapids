@@ -2772,10 +2772,10 @@ object GpuOverrides extends Logging {
       "Returns the array containing the given input value (left) count (right) times",
       ExprChecks.binaryProject(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
-          + TypeSig.ARRAY + TypeSig.STRUCT),
+          + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         ("left", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
-          + TypeSig.ARRAY + TypeSig.STRUCT).nested(), TypeSig.all),
+          + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
         ("right", TypeSig.integral, TypeSig.integral)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayRepeat](in, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
