@@ -43,7 +43,7 @@ between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes di
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
 issue as you can see e.g., comparing TreeNode:
-1. [ShimExpression For 3.0.x and 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/post320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
+1. [ShimExpression For 3.0.x and 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
 2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
 
 This resolves compile-time problems, however, now we face the problem at run time.
