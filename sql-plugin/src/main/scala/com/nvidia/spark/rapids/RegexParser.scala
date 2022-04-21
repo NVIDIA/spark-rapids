@@ -584,10 +584,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case Some(RegexChar(ch)) if ch == '\r' =>
               // when using the the CR (\r), it prevents the line anchor from handling any other 
               // line terminator sequences, so we just output the anchor and we are finished
+              // for example: \r$ -> \r$ (no transpilation)
               RegexChar('$')
             case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
               // when using any other line terminator character, you can match any of the other
               // line terminator characters individually as part of the line anchor match.
+              // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
               RegexSequence(ListBuffer(
                 RegexRepetition(lineTerminatorMatcher(Set(ch), true), SimpleQuantifier('?')),
                 RegexChar('$')))
