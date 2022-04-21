@@ -279,7 +279,7 @@ final class TypeSig private(
   def withPsNote(dataTypes: Seq[TypeEnum.Value], note: String): TypeSig =
     new TypeSig(
       dataTypes.foldLeft(initialTypes)(_+_), maxAllowedDecimalPrecision, childTypes,
-      litOnlyTypes,dataTypes.foldLeft(notes)((notes, dataType) => notes.+((dataType, note))))
+      litOnlyTypes, dataTypes.foldLeft(notes)((notes, dataType) => notes.+((dataType, note))))
 
   private def isSupportedType(dataType: TypeEnum.Value): Boolean =
       initialTypes.contains(dataType)
