@@ -17,18 +17,15 @@
 package org.apache.spark.sql.rapids
 
 import java.util.Optional
-
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, SegmentedReductionAggregation, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, NullPolicy, Scalar, ScanAggregation, ScanType, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimExpression}
-
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -506,6 +503,75 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
       case _ =>
         input.getBase.listReduce(SegmentedReductionAggregation.max())
     }
+}
+
+case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = ArrayType(left.dataType, left.nullable)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val countNotNull = withResource(GpuScalar.from(1, DataTypes.IntegerType)) { one =>
+      rhs.getBase.replaceNulls(one)
+    }
+
+    val elemTable = closeOnExcept(countNotNull) { _ =>
+      withResource(GpuScalar.from(null, lhs.dataType())) { nullElem =>
+        withResource(rhs.getBase.isNull) { isCntNull =>
+          withResource(isCntNull.ifElse(nullElem, lhs.getBase)) { elemWithNull =>
+            new Table(elemWithNull)
+          }
+        }
+      }
+    }
+
+    val repeated = withResource(countNotNull) { cnt =>
+      withResource(elemTable) { table =>
+        table.repeat(cnt, true).getColumn(0)
+      }
+    }
+
+    withResource(repeated) { repeated =>
+      withResource(rhs.getBase.scan(
+        ScanAggregation.sum(), ScanType.INCLUSIVE, NullPolicy.EXCLUDE)) { offsets =>
+        repeated.makeListFromOffsets(lhs.getRowCount, offsets)
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val numRows = lhs.getRowCount.toInt
+    if (!rhs.isValid) {
+      GpuColumnVector.fromNull(numRows, lhs.dataType()).getBase
+    } else {
+      val offsets = withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { cnt =>
+        cnt.getBase.scan(
+          ScanAggregation.sum(), ScanType.INCLUSIVE, NullPolicy.EXCLUDE)
+      }
+      withResource(offsets) { offsets =>
+        withResource(new Table(lhs.getBase)) { table =>
+          withResource(table.repeat(rhs.getValue.asInstanceOf[Int]).getColumn(0)) { repeated =>
+            repeated.makeListFromOffsets(lhs.getRowCount, offsets)
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    if (!rhs.isValid) {
+      GpuColumnVector.fromNull(numRows, lhs.dataType).getBase
+    } else {
+      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+        doColumnar(left, rhs)
+      }
+    }
+  }
 }
 
 class GpuSequenceMeta(
