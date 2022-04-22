@@ -137,11 +137,13 @@ trait JoinGatherer extends LazySpillable with Arm {
 object JoinGatherer extends Arm {
   def apply(gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
-      outOfBoundsPolicy: OutOfBoundsPolicy, isExistenceJoin: Boolean = false): JoinGatherer = {
-    if (!isExistenceJoin) {
-      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+      outOfBoundsPolicy: OutOfBoundsPolicy,
+      isExistenceJoin: Boolean = false,
+      spillCallback: Option[SpillCallback] = Option.empty): JoinGatherer = {
+    if (isExistenceJoin) {
+      new ExistenceJoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy, spillCallback)
     } else {
-      new JoinGathererForExistenceJoin(gatherMap, inputData, outOfBoundsPolicy)
+      new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
     }
   }
 
@@ -698,10 +700,11 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
  *     right_table
  * </code>
  */
-class JoinGathererForExistenceJoin(
+class ExistenceJoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
     private val data: LazySpillableColumnarBatch,
-    boundsCheckPolicy: OutOfBoundsPolicy)
+    boundsCheckPolicy: OutOfBoundsPolicy,
+    spillCallback: Option[SpillCallback])
     extends JoinGathererImpl(gatherMap, data, boundsCheckPolicy) {
 
   // How much of the gather map we have output so far
@@ -720,48 +723,53 @@ class JoinGathererForExistenceJoin(
   }
 
   /**
+   * Gen a lazy Cb:  `left table + exists`,
+   * then close `gatherMap`` and `data`, they are useless.
+   */
+  private val lazyLeftTableWithExists: LazySpillableColumnarBatch = {
+    withResource(data) { d =>
+      val gViewTmp = withResource(gatherMap) { gMap =>
+        gMap.toColumnView(0, gMap.getRowCount.toInt)
+      }
+      val existsCvTmp = withResource(gViewTmp) { gView =>
+        genExistsColumn(gView, data.getBatch.numRows())
+      }
+      val lazyCb = withResource(existsCvTmp) { existsCv =>
+        withResource(GpuColumnVector.from(d.getBatch)) { leftTable =>
+          // add a boolean type
+          val types = GpuColumnVector.extractTypes(d.getBatch) :+ BooleanType
+          withResource(addExistsCv(leftTable, existsCv)) { tableWithExistsCv =>
+            withResource(GpuColumnVector.from(tableWithExistsCv, types)) { cb =>
+              LazySpillableColumnarBatch(cb, spillCallback.get, "existence_join_batch")
+            }
+          }
+        }
+      }
+
+      lazyCb.allowSpilling()
+      lazyCb
+    }
+  }
+
+  /**
    * Existence join does not shrink or expand,
    * it only adds an `exists` boolean column to left table according to the gather map
    */
   override def gatherNext(n: Int): ColumnarBatch = {
     val start = gatheredUpTo
     assert((start + n) <= totalRows)
-    val types = GpuColumnVector.extractTypes(data.getBatch)
-    val batch = data.getBatch
 
-    val subTableCbTmp = withResource(GpuColumnVector.from(batch)) { table =>
-      if(start == 0 && n == totalRows) {
-        // no need to split
-        GpuColumnVector.from(table, types)
-      } else {
-        withResource(table.contiguousSplit(start.toInt, (start + n).toInt)) { tableSplits =>
+    val ret = if (start == 0 && n == totalRows) {
+      // no need to split
+      GpuColumnVector.incRefCounts(lazyLeftTableWithExists.getBatch)
+    } else {
+      val batch = lazyLeftTableWithExists.getBatch
+      withResource(GpuColumnVector.from(batch)) { tab =>
+        withResource(tab.contiguousSplit(start.toInt, (start + n).toInt)) { tableSplits =>
           assert(tableSplits.length >= 2)
+          val types = GpuColumnVector.extractTypes(batch)
           GpuColumnVector.from(tableSplits(1).getTable, types)
         }
-      }
-    }
-
-    val ret = withResource(subTableCbTmp) { subTableCb =>
-      val subExistsCvTmp = withResource(gatherMap.toColumnView(0, gatherMap.getRowCount.toInt)) {
-        gatherView =>
-          // `exists.numRows` == `batch.numRows`,
-          //  with true or false in it indicating if the row is gathered
-          withResource(genExistsColumn(gatherView, batch.numRows())) { exists =>
-            if(start == 0 && n == totalRows) {
-              // no need to split
-              exists.incRefCount()
-            } else {
-              withResource(exists.split(start.toInt, (start + n).toInt)) { splits =>
-                assert(splits.size >= 2)
-                splits(1).incRefCount()
-              }
-            }
-          }
-      }
-
-      withResource(subExistsCvTmp) { subExistsCv =>
-        // add `exists` column
-        addExistsCv(types :+ BooleanType, subTableCb, subExistsCv)
       }
     }
 
@@ -772,13 +780,9 @@ class JoinGathererForExistenceJoin(
   /**
    * leftTable + existsCv
    */
-  private def addExistsCv(types: Array[DataType], leftTable: ColumnarBatch,
-      existsCv: ColumnVector): ColumnarBatch = {
-    val cols = GpuColumnVector.extractBases(leftTable)
-    val resCols = cols :+ existsCv
-    withResource(new Table(resCols: _*)) {
-      resTab => GpuColumnVector.from(resTab, types)
-    }
+  private def addExistsCv(leftTable: Table, existsCv: ColumnVector): Table = {
+    val cols = (0 until leftTable.getNumberOfColumns).map(leftTable.getColumn) :+ existsCv
+    new Table(cols: _*)
   }
 
   private def falseColumnTable(rows: Int): Table = {
@@ -797,11 +801,13 @@ class JoinGathererForExistenceJoin(
     withResource(falseColumnTable(numRowsOfLeftTable)) { allFalseTable =>
       withResource(ai.rapids.cudf.Scalar.fromBool(true)) { trueScalar =>
         withResource(Table.scatter(Array(trueScalar), existsGatherView, allFalseTable, false)) {
-          newT => {
-            newT.getColumn(0).incRefCount()
-          }
+          newT => newT.getColumn(0).incRefCount()
         }
       }
     }
+  }
+
+  override def close(): Unit = {
+    lazyLeftTableWithExists.close()
   }
 }

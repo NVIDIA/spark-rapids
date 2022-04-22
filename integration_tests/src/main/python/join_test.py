@@ -844,7 +844,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
 
 
 @ignore_order
-@pytest.mark.parametrize('aqeEnabled', [pytest.param(True, id='aqe:on'), pytest.param(False, id='aqe:off')])
+@pytest.mark.parametrize('aqeEnabled', [True, False], ids=['AQE_ON', 'AQE_OFF'])
 def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, aqeEnabled):
     left_table_name = spark_tmp_table_factory.get()
     right_table_name = spark_tmp_table_factory.get()

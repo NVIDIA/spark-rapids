@@ -322,7 +322,7 @@ abstract class SplittableJoinIterator(
           // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
           JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK,
-            joinType.isInstanceOf[ExistenceJoin])
+            joinType.isInstanceOf[ExistenceJoin], Option(spillCallback))
         case Some(right) =>
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
