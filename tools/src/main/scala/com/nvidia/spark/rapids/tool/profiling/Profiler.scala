@@ -22,8 +22,8 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
 
+import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
-import com.nvidia.spark.rapids.tool.ThreadFactoryBuilder
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging

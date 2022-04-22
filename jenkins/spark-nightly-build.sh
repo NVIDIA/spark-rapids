@@ -22,6 +22,7 @@ set -ex
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR="$WORKSPACE/.m2"
 
+TOOL_PL=${TOOL_PL:-"tools"}
 DIST_PL="dist"
 function mvnEval {
     mvn help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
@@ -120,7 +121,8 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
     mvn -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
 fi
 
 # Parse Spark files from local mvn repo
