@@ -276,6 +276,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         .replaceAll("\\\\z", "\\$"))
   }
 
+  test("transpile \\A repetitions") {
+    doTranspileTest("\\A+", "\\A")
+    doTranspileTest("\\A*", "\\A?")
+    doTranspileTest("(\\A)+", "(\\A)")
+    // doTranspileTest("(\\A)*", "(\\A)?")
+  }
+
   test("transpile \\z") {
     doTranspileTest("abc\\z", "abc$")
   }

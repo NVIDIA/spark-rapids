@@ -734,15 +734,26 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regex_replace and regex_split on GPU do not support repetition with {0}")
 
-        case (RegexGroup(_, term), SimpleQuantifier(ch))
+        case (RegexGroup(capture, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
-          throw new RegexUnsupportedException(nothingToRepeat)
+              (term, ch) match {
+                case (RegexEscaped('A'), '+') =>
+                  RegexGroup(capture, RegexEscaped('A'))
+                case (RegexEscaped('A'), '*') =>
+                  RegexRepetition(RegexGroup(capture, RegexEscaped('A')), SimpleQuantifier('?'))
+                case _ =>
+                  throw new RegexUnsupportedException(nothingToRepeat)
+              }
         case (RegexGroup(_, term), QuantifierVariableLength(_, None))
             if !isSupportedRepetitionBase(term) =>
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base), quantifier)
+        case (RegexEscaped('A'), SimpleQuantifier('+')) =>
+          RegexEscaped('A')
+        case (RegexEscaped('A'), SimpleQuantifier('*')) =>
+          RegexRepetition(RegexEscaped('A'), SimpleQuantifier('?'))
         case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base), quantifier)
         case _ =>
