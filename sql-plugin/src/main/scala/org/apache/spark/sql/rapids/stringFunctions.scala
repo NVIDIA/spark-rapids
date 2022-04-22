@@ -1419,7 +1419,9 @@ class GpuStringSplitMeta(
 
   override def tagExprForGpu(): Unit = {
     checkRegExp(expr.regex) match {
-      case Some((p, isRe)) => pattern = p; isRegExp = isRe
+      case Some((p, isRe)) =>
+        pattern = p
+        isRegExp = isRe
       case _ => throwUncheckedDelimiterException()
     }
     
