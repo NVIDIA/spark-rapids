@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,5 +96,35 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
     assert(score == 1.0)
     assert(nsTypes.isEmpty)
+  }
+
+  test("supported operator score") {
+    val checker = new PluginTypeChecker
+    TrampolineUtil.withTempDir { outpath =>
+      val header = "CPUOperator,Score\n"
+      val supText = (header + "FilterExec,3\n").getBytes(StandardCharsets.UTF_8)
+      val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testScore.txt")
+      Files.write(csvSupportedFile, supText)
+      checker.setOperatorScore(csvSupportedFile.toString)
+      val operScore = checker.getOperatorScore
+      assert(operScore.contains("FilterExec"))
+      assert(!operScore.contains("ProjectExec"))
+      assert(operScore("FilterExec") == 3)
+    }
+  }
+
+  test("supported Execs") {
+    val checker = new PluginTypeChecker
+    val result = checker.getSupportedExecs
+    assert(result.contains("ShuffledHashJoinExec"))
+    assert(result("ShuffledHashJoinExec") == "S")
+  }
+
+  test("supported Expressions") {
+    val checker = new PluginTypeChecker
+    val result = checker.getSupportedExprs
+    assert(result.contains("Add"))
+    assert(result("Add") == "S")
+    assert(result.contains("IsNull"))
   }
 }

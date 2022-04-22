@@ -22,6 +22,7 @@ import java.time.ZoneId
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
@@ -2147,10 +2148,27 @@ object SupportedOpsDocs {
   }
 }
 
-object SupportedOpsForTools {
+object SupportedOpsForTools extends Logging {
 
   private lazy val allSupportedTypes =
     TypeSigUtil.getAllSupportedTypes()
+
+  // if a string contains what we are going to use for a delimiter, replace
+  // it with something else
+  def replaceDelimiter(str: String, delimiter: String): String = {
+    if (str != null && str.contains(delimiter)) {
+      val replaceWith = if (delimiter.equals(",")) {
+        ";"
+      } else if (delimiter.equals(";")) {
+        ":"
+      } else {
+        ";"
+      }
+      str.replace(delimiter, replaceWith)
+    } else {
+      str
+    }
+  }
 
   private def outputSupportIO() {
     // Look at what we have for defaults for some configs because if the configs are off
@@ -2193,15 +2211,119 @@ object SupportedOpsForTools {
     }
   }
 
-  def help(): Unit = {
-    outputSupportIO()
+  private def operatorMappingWithScore(): Unit = {
+    val header = Seq("CPUOperator", "Score")
+    println(header.mkString(","))
+    GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val checks = rule.getChecks
+      if (rule.isVisible && checks.forall(_.shown)) {
+        val cpuName = rule.tag.runtimeClass.getSimpleName
+        val allCols = Seq(cpuName, "2")
+        println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
+      }
+    }
+
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.runtimeClass.getSimpleName).foreach { rule =>
+      val checks = rule.getChecks
+      if (rule.isVisible && checks.forall(_.shown)) {
+        val cpuName = rule.tag.runtimeClass.getSimpleName
+        val allCols = Seq(cpuName, "3")
+        println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
+      }
+    }
+  }
+
+  private def outputSupportedExecs(): Unit = {
+    // TODO Look at what we have for defaults for some configs because if the configs are off
+    // it likely means something isn't completely compatible.
+    val conf = new RapidsConf(Map.empty[String, String])
+    val types = allSupportedTypes.toSeq
+    val header = Seq("Exec", "Supported", "Notes", "Params") ++ types
+    println(header.mkString(","))
+    GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val checks = rule.getChecks
+      if (rule.isVisible && checks.forall(_.shown)) {
+        val execChecks = checks.get.asInstanceOf[ExecChecks]
+        val allData = allSupportedTypes.map { t =>
+          (t, execChecks.support(t))
+        }.toMap
+
+        val notes = execChecks.supportNotes
+        val inputs = allData.values.head.keys
+
+        val firstCol = Seq(rule.tag.runtimeClass.getSimpleName)
+        val thirdCol = Seq(rule.notes().getOrElse("None"))
+        inputs.foreach { input =>
+          val named = notes.get(input)
+              .map(l => input + "(" + l.mkString(";") + ")")
+              .getOrElse(input)
+          val supportLevelOps = allSupportedTypes.toSeq.map { t =>
+            allData(t)(input).text
+          }
+          val isSupportedExec = Seq(if (supportLevelOps.forall(_.equals("NS"))) "NS" else "S")
+          val allCols = (firstCol ++ isSupportedExec ++ thirdCol ++ Seq(named) ++ supportLevelOps)
+          println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
+        }
+      }
+    }
+  }
+
+  private def outputSupportedExpressions(): Unit = {
+    // TODO Look at what we have for defaults for some configs because if the configs are off
+    // it likely means something isn't completely compatible.
+    val conf = new RapidsConf(Map.empty[String, String])
+    val types = allSupportedTypes.toSeq
+    val header = Seq("Expression", "Supported", "SQL Func", "Notes", "Context", "Params") ++ types
+    println(header.mkString(","))
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val checks = rule.getChecks
+      if (rule.isVisible && checks.isDefined && checks.forall(_.shown)) {
+        val sqlFunctions =
+          ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
+        val exprChecks = checks.get.asInstanceOf[ExprChecks]
+        // Params can change between contexts, but should not
+        val allData = allSupportedTypes.map { t =>
+          (t, exprChecks.support(t))
+        }.toMap
+        val representative = allData.values.head
+        val firstCol = Seq(rule.tag.runtimeClass.getSimpleName)
+        val staticCols = Seq(sqlFunctions.getOrElse(" "), rule.notes().getOrElse("None"))
+
+        representative.foreach {
+          case (context, data) =>
+            data.keys.foreach { param =>
+              val supportLevelOps = allSupportedTypes.toSeq.map { t =>
+                allData(t)(context)(param).text
+              }
+              val isSupportedExec = Seq(if (supportLevelOps.forall(_.equals("NS"))) "NS" else "S")
+              val allCols = (firstCol ++ isSupportedExec ++ staticCols ++ Seq(context.toString)
+                  ++ Seq(param) ++ supportLevelOps)
+              println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
+            }
+        }
+      }
+    }
+  }
+
+  def help(printType: String): Unit = {
+    printType match {
+      case a if a.equals("execs") => outputSupportedExecs()
+      case expr if (expr.equals("exprs")) => outputSupportedExpressions()
+      case score if (score.equals("operatorScore")) => operatorMappingWithScore()
+      case _ => outputSupportIO()
+    }
   }
 
   def main(args: Array[String]): Unit = {
     val out = new FileOutputStream(new File(args(0)))
+    val printType = if (args.size > 1) {
+      args(1)
+    } else {
+      "ioOnly"
+    }
     Console.withOut(out) {
       Console.withErr(out) {
-        SupportedOpsForTools.help()
+        SupportedOpsForTools.help(printType)
       }
     }
   }
