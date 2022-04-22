@@ -67,12 +67,8 @@ class DataMockProvider extends QualificationReportProvider {
 }
 
 object DataMockProvider extends Logging {
-  private var inputDir: String =
-    "/home/ahussein/workspace/repos/rapids-profiling-ui/rapids-5176-impl/" +
-      "tools/src/main/resources/ui/static/temp-data/input";
-  private var outputDir: String =
-    "/home/ahussein/workspace/repos/rapids-profiling-ui/rapids-5176-impl/" +
-      "tools/src/main/resources/ui/static/temp-data/output";
+  private var inputDir: String = null
+  private var outputDir: String = null
 
   def convertFileContentToObjs[T](rawJson: String)(
       implicit fmt: Formats = DefaultFormats, mf: Manifest[T]): Option[List[T]] = {

@@ -1,4 +1,0 @@
-[
-  {"appName":"app1","appId":"appid1","startTime":1,"sparkUser":"user1","endTime":1,"duration":1,"endDurationEstimated":false},
-  {"appName":"app2","appId":"appid2","startTime":1,"sparkUser":"user1","duration":1,"endDurationEstimated":false}
-]
