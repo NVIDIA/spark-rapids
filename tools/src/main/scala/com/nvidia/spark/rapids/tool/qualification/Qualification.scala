@@ -26,6 +26,7 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification._
+import org.apache.spark.sql.rapids.tool.ui.{QualificationReportGenerator, QualificationReportProvider}
 
 /**
  * Scores the applications for GPU acceleration and outputs the
@@ -34,7 +35,8 @@ import org.apache.spark.sql.rapids.tool.qualification._
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
     pluginTypeChecker: Option[PluginTypeChecker], readScorePercent: Int,
-    reportReadSchema: Boolean, printStdout: Boolean) extends Logging {
+    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean = false)
+  extends QualificationReportProvider with Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
   // default is 24 hours
@@ -66,14 +68,13 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         " stopping processing any more event logs")
       threadPool.shutdownNow()
     }
-
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
     val allAppsSum = allApps.asScala.toSeq
     val sortedDesc = allAppsSum.sortBy(sum => {
         (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
     })
-    val qWriter = new QualOutputWriter(outputDir, reportReadSchema, printStdout)
+    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     qWriter.writeCSV(sortedDesc)
 
     val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
@@ -84,6 +85,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       sortedDesc
     }
     qWriter.writeReport(sortedForReport, numRows)
+    launchUIReportGenerator()
     sortedDesc
   }
 
@@ -101,6 +103,9 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         val qualSumInfo = app.get.aggregateStats()
         if (qualSumInfo.isDefined) {
           allApps.add(qualSumInfo.get)
+          if (app.get.appInfo.isDefined) {
+            allAppsInfo.add(app.get.appInfo.get)
+          }
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         } else {
@@ -117,6 +122,44 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         System.exit(1)
       case e: Exception =>
         logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
+    }
+  }
+
+  private val allAppsInfo = new ConcurrentLinkedQueue[QualApplicationInfo]()
+  /**
+   * Returns a list of applications available for the report to show.
+   * This is basically the summary of
+   *
+   * @return List of all known applications.
+   */
+  override def getListing(): Iterator[QualApplicationInfo] = {
+    allAppsInfo.iterator().asScala
+  }
+
+  /**
+   * @return the [[QualificationSummaryInfo]] for the appId if it exists.
+   */
+  override def getApplicationInfo(appId: String): Option[QualificationSummaryInfo] = {
+    allApps.asScala.find(_.appId == appId)
+  }
+
+  /**
+   * @return all the [[QualificationSummaryInfo]] available
+   */
+  override def getAllApplicationsInfo(): Seq[QualificationSummaryInfo] = {
+    allApps.asScala.toSeq
+  }
+
+  /**
+   * The outputPath of the current instance of the provider
+   */
+  override def getReportOutputPath: String = {
+    s"$outputDir/rapids_4_spark_qualification_output"
+  }
+
+  def launchUIReportGenerator() : Unit = {
+    if (uiEnabled) {
+      QualificationReportGenerator.createQualReportGenerator(this)
     }
   }
 }

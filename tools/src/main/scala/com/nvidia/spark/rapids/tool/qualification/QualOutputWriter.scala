@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  */
 class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
 
-  private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
+  private val finalOutputDir = outputDir
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 

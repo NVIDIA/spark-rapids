@@ -133,7 +133,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val uiEnabled: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Whether to read render the report into HTML pages.",
-      default = Some(false))
+      default = Some(true))
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
     case _ => Left("Error, the order must either be desc or asc")
