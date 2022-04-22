@@ -1,0 +1,275 @@
+<!--
+ Copyright (c) 2022, NVIDIA CORPORATION.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.4.1/css/all.css"
+        integrity="sha384-5sAR7xN1Nv6T6+dT2mhtzEpVJvfS3NScPQTrOxhwjIuvcA67KV2R5Jz6kr4abQsz" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css?family=Nunito:400,600|Open+Sans:400,600,700" rel="stylesheet">
+
+  <!-- datatables CSS -->
+  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="https://cdn.datatables.net/buttons/2.2.2/css/buttons.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="https://cdn.datatables.net/rowgroup/1.1.4/css/rowGroup.bootstrap4.min.css"/>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="../css/spur.css">
+
+  <!-- datatables JS -->
+  <script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
+          integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
+          crossorigin="anonymous"></script>
+  <script type="text/javascript"
+          src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.0/js/bootstrap.min.js"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/2.5.0/jszip.min.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.bootstrap4.min.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.html5.min.js"></script>
+  <script type="text/javascript"
+          src="https://cdn.datatables.net/responsive/2.2.9/js/dataTables.responsive.min.js"></script>
+  <script type="text/javascript"
+          src="https://cdn.datatables.net/rowgroup/1.1.4/js/dataTables.rowGroup.min.js"></script>
+
+  <title>Spark Qualification tool - Is RAPIDS good fit for GPU Acceleration?</title>
+</head>
+
+<body>
+  <div class="dash">
+    <div class="dash-nav dash-nav-dark">
+      <header>
+        <a href="#!" class="menu-toggle">
+          <i class="fas fa-bars"></i>
+        </a>
+        <a href="index.html" class="spur-logo"><i class="fas fa-bolt"></i> <span>RAPIDS</span></a>
+      </header>
+      <nav class="dash-nav-list">
+        <a href="index.html" class="dash-nav-item">
+          <i class="fas fa-home"></i> Dashboard </a>
+        <div class="dash-nav-dropdown show">
+          <a href="#!" class="dash-nav-item dash-nav-dropdown-toggle">
+            <i class="fas fa-chart-bar"></i> Reports </a>
+          <div class="dash-nav-dropdown-menu">
+            <a href="raw.html" class="dash-nav-dropdown-item">Raw Data</a>
+          </div>
+        </div>
+        <div class="dash-nav-dropdown show">
+          <a href="#!" class="dash-nav-item dash-nav-dropdown-toggle">
+            <i class="fas fa-info"></i> About </a>
+          <div class="dash-nav-dropdown-menu">
+            <a href="https://github.com/NVIDIA/spark-rapids" target="_blank" class="dash-nav-dropdown-item">GitHub</a>
+            <a href="https://nvidia.github.io/spark-rapids/" target="_blank" class="dash-nav-dropdown-item">Qualification
+              Docs</a>
+          </div>
+        </div>
+      </nav>
+    </div>
+    <div class="dash-app">
+      <header class="dash-toolbar">
+        <a href="#!" class="menu-toggle">
+          <i class="fas fa-bars"></i>
+        </a>
+        <div class="tools">
+          <a href="https://github.com/NVIDIA/spark-rapids" target="_blank" class="tools-item">
+            <i class="fab fa-github"></i>
+          </a>
+          <div class="dropdown tools-item">
+            <a href="#" class="" id="dropdownMenu1" data-toggle="dropdown" aria-haspopup="true"
+               aria-expanded="false">
+              <i class="fas fa-user"></i>
+            </a>
+            <div class="dropdown-menu dropdown-menu-right" aria-labelledby="dropdownMenu1">
+              <a class="dropdown-item" href="#!">Profile</a>
+              <a class="dropdown-item" href="login.html">Logout</a>
+            </div>
+          </div>
+        </div>
+      </header>
+      <main class="dash-content">
+        <div id="qual-report-runtime-information"></div>
+        <div class="container-fluid">
+          <div id="qual-report-summary"></div>
+          <div class="row">
+            <div class="col-lg-8">
+              <div class="card spur-card">
+                <div class="card-header">
+                  <div class="spur-card-icon">
+                    <i class="fas fa-table"></i>
+                  </div>
+                  <div class="spur-card-title">GPU Recommendations Table</div>
+                  <div class="spur-card-menu">
+                    <div class="dropdown show">
+                      <a class="spur-card-menu-link" href="#" role="button" data-toggle="dropdown"
+                         aria-haspopup="true" aria-expanded="false">
+                      </a>
+                      <div class="dropdown-menu dropdown-menu-right"
+                           aria-labelledby="dropdownMenuLink" id="gpuRecommendationActions">
+                        <a class="dropdown-item" href="#"
+                           onclick="javascript: expandAllGpuRowEntries();">Expand All</a>
+                        <a class="dropdown-item" href="#"
+                           onclick="javascript: collapseAllGpuRowEntries();">Collapse All</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="card-body ">
+                  <div id="gpu-recommendation-card">
+                    <table id="gpu-recommendation-table" class="table display" style="width:100%">
+                      <thead>
+                      <tr>
+                        <th></th>
+                        <th>
+                          App Name
+                        </th>
+                        <th>
+                          App ID
+                        </th>
+                        <th>
+                          App Duration
+                        </th>
+                        <th>
+                          Acceleration Opportunity
+                        </th>
+                      </tr>
+                      </thead>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <!-- Dynamic code replacement using Mustache -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"></script>
+
+  <script id="qual-report-summary-template" type="text/template">
+    <div class="row dash-row">
+      <div class="col-xl-3">
+        <div class="stats stats-primary">
+          <h3 class="stats-title"> {{totalApps.header}} </h3>
+          <div class="stats-content">
+            <div class="stats-icon">
+              <i class="fas fa-chart-bar"></i>
+            </div>
+            <div class="stats-data">
+              <div class="stats-number"> {{totalApps.numeric}}</div>
+              <div class="stats-change">
+                <span class="stats-percentage"> {{totalApps.totalAppsDurations}} </span>
+                <span class="stats-timeframe"> {{totalApps.totalAppsDurationLabel}} </span>
+              </div>
+              <div class="stats-change">
+                <span class="stats-percentage"> {{totalApps.statsPercentage}} </span>
+                <span class="stats-timeframe"> {{totalApps.statsTimeFrame}} </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-3">
+        <div class="stats stats-success ">
+          <h3 class="stats-title"> {{candidates.header}} </h3>
+          <div class="stats-content">
+            <div class="stats-icon">
+              <i class="fas fa-magic"></i>
+            </div>
+            <div class="stats-data">
+              <div class="stats-number"> {{candidates.numeric}}</div>
+              <div class="stats-change">
+                <span class="stats-percentage"> {{candidates.statsPercentage}} </span>
+                <span class="stats-timeframe"> {{candidates.statsTimeFrame}} </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-3">
+        <div class="stats stats-info">
+          <h3 class="stats-title"> {{speedups.header}} </h3>
+          <div class="stats-content">
+            <div class="stats-icon">
+              <i class="fas fa-rocket"></i>
+            </div>
+            <div class="stats-data">
+              <div class="stats-number"> {{speedups.numeric}}</div>
+              <div class="stats-change">
+                <span class="stats-percentage"> {{speedups.totalSqlDFDurations}} </span>
+                <span class="stats-timeframe"> {{speedups.totalSqlDFDurationsLabel}} </span>
+              </div>
+              <div class="stats-change">
+                <span class="stats-percentage"> N/A </span>
+                <span class="stats-timeframe"> {{speedups.statsPercentage}} </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-3">
+        <div class="stats stats-danger">
+          <h3 class="stats-title"> {{tlc.header}} </h3>
+          <div class="stats-content">
+            <div class="stats-icon">
+              <i class="fas fa-hand-holding-heart"></i>
+            </div>
+            <div class="stats-data">
+              <div class="stats-number"> {{tlc.numeric}}</div>
+              <span class="stats-percentage"> {{tlc.statsPercentage}} </span>
+              <span class="stats-timeframe"> {{tlc.statsTimeFrame}} </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script id="qual-report-runtime-information-template" type="text/template">
+    <table class="table compact dataTable style=padding-left:50px;">
+      <tr>
+        <td>Property1:</td>
+        <td>Value1</td>
+      </tr>
+      <tr>
+        <td>Property2:</td>
+        <td>Value2</td>
+      </tr>
+    </table>
+    <div class="row dash-row">
+      <div class="col-xl-3">
+        <div class="alert alert-primary" role="alert"> A simple primary alert—check it out!</div>
+      </div>
+    </div>
+  </script>
+
+  <script src="../js/spur.js"></script>
+  <script src="../js/mock-data.js"></script>
+  <script src="../js/ui-data.js"></script>
+  <script src="../js/uiutils.js"></script>
+  <script src="../js/qual-report.js"></script>
+</body>
+
+</html>

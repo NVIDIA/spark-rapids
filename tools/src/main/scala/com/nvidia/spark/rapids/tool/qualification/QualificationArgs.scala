@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -130,7 +130,10 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val userName: ScallopOption[String] =
     opt[String](required = false,
       descr = "Applications which a particular user has submitted." )
-
+  val uiEnabled: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Whether to read render the report into HTML pages.",
+      default = Some(false))
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
     case _ => Left("Error, the order must either be desc or asc")
