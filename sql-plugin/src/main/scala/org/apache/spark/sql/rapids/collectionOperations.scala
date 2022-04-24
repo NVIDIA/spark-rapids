@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.Optional
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
@@ -30,7 +31,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering, Sequence, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
@@ -505,6 +506,115 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
       case _ =>
         input.getBase.listReduce(SegmentedReductionAggregation.max())
     }
+}
+
+case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq.fill(children.length)(ArrayType)
+
+  @transient override lazy val dataType: DataType = {
+    val fields = children.zip(arrayElementTypes).zipWithIndex.map {
+      case ((expr: NamedExpression, elementType), _) =>
+        StructField(expr.name, elementType, nullable = true)
+      case ((_, elementType), idx) =>
+        StructField(idx.toString, elementType, nullable = true)
+    }
+    ArrayType(StructType(fields), containsNull = false)
+  }
+
+  override def nullable: Boolean = children.exists(_.nullable)
+
+  @transient private lazy val arrayElementTypes =
+    children.map(_.dataType.asInstanceOf[ArrayType].elementType)
+
+  override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression =
+    legacyWithNewChildren(newChildren)
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val numRows = batch.numRows()
+    val numCols = batch.numCols()
+    val workBuffers = mutable.ArrayBuffer[ColumnVector]()
+
+    if (numCols == 0) {
+      return GpuScalar.from(Array(), dataType)
+    }
+
+    withResource(GpuColumnVector.from(batch)) { table =>
+      closeOnExcept(workBuffers) { _ =>
+        (0 until numCols).foreach { i =>
+          workBuffers += table.getColumn(i).countElements()
+        }
+      }
+
+      val maxSize = closeOnExcept(workBuffers) { _ =>
+        withResource(ColumnVector.makeList(workBuffers: _*)) { sizes =>
+          workBuffers.foreach(_.close())
+          workBuffers.clear()
+          sizes.listReduce(SegmentedReductionAggregation.max())
+        }
+      }
+      // compute joint validity of input columns, and put it into work buffer
+      // [[array, null, array, array],
+      //  [null, array, array, array],   =>   [null, null, null, array]
+      //  [array, null, null, array]]
+      workBuffers += closeOnExcept(workBuffers) { _ =>
+        closeOnExcept(table.getColumn(0).isNull) { init =>
+          (1 until numCols).foldLeft(init) { case (agg, i) =>
+            withResource(agg) { _ =>
+              withResource(table.getColumn(i).isNull) { current =>
+                agg.and(current)
+              }
+            }
+          }
+        }
+      }
+      // generate offsets according to max sizes, and put it into work buffer
+      // maxSize [4, 3, 5, 2] -> offsets [0, 4, 7, 12, 14]
+      workBuffers += closeOnExcept(workBuffers) { _ =>
+        maxSize.generateListOffsets()
+      }
+      // generate indices for gathering children of input arrays
+      // maxSize [4, 3, 5, 2] -> indices [0, 1, 2, 3, 0, 1, 2, 0, 1, 2, 3, 4, 0, 1]
+      val indices = closeOnExcept(workBuffers) { _ =>
+        withResource(maxSize) { _ =>
+          withResource(GpuScalar.from(0, IntegerType)) { s =>
+            withResource(GpuColumnVector.from(s, numRows, IntegerType).getBase) { zero =>
+              withResource(ColumnVector.sequence(zero, maxSize)) { seq =>
+                seq.getChildColumnView(0).copyToColumnVector()
+              }
+            }
+          }
+        }
+      }
+
+      closeOnExcept(workBuffers) { _ =>
+        withResource(indices) { _ =>
+          (0 until numCols).foreach { i =>
+            val child = table.getColumn(i).getChildColumnView(0)
+            workBuffers += child.segmentedGather(indices)
+          }
+        }
+      }
+    }
+
+    closeOnExcept(workBuffers) { _ =>
+      val gatherResults = (0 until numCols).map(i => workBuffers(i + 2))
+      val zipped = withResource(ColumnVector.makeList(gatherResults: _*)) { struct =>
+        (0 until numCols).foreach(_ => workBuffers.remove(2).close())
+        withResource(workBuffers.remove(1)) { offsets =>
+          struct.makeListFromOffsets(numRows, offsets)
+        }
+      }
+      withResource(zipped) { zipped =>
+        withResource(workBuffers.remove(0)) { isNull =>
+          withResource(GpuScalar.from(null, dataType)) { nullScalar =>
+            isNull.ifElse(nullScalar, zipped)
+          }
+        }
+      }
+    }
+  }
+
 }
 
 class GpuSequenceMeta(

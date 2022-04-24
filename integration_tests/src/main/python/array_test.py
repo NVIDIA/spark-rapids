@@ -332,3 +332,11 @@ def test_array_exists(data_gen, threeVL):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
         'spark.sql.legacy.followThreeValuedLogicInArrayExists' : threeVL,
     })
+
+
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+def test_arrays_zip(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen).selectExpr(
+            'arrays_zip(a, b, c)')
+    )
