@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait TaskAutoCloseableResource extends AutoCloseable {
@@ -321,8 +321,7 @@ abstract class SplittableJoinIterator(
           // In these cases, the map and the table are both the left side, and everything in the map
           // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
-          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK,
-            joinType.isInstanceOf[ExistenceJoin], Option(spillCallback))
+          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
         case Some(right) =>
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
