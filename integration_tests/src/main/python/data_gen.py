@@ -1030,3 +1030,10 @@ def append_unique_int_col_to_df(spark, dataframe):
     new_rows = append_unique_to_rows(collected)
     new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
     return spark.createDataFrame(new_rows, new_schema)
+
+# add multiple confs
+def add_conf(*confs):
+    all_items = []
+    for conf in confs:
+        all_items += list(conf.items())
+    return dict(all_items)
