@@ -113,11 +113,19 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     }
   }
 
+  test("supported operator score from default file") {
+    val checker = new PluginTypeChecker
+    val result = checker.getOperatorScore
+    assert(result("FilterExec") == 2)
+    assert(result("Ceil") == 3)
+  }
+
   test("supported Execs") {
     val checker = new PluginTypeChecker
     val result = checker.getSupportedExecs
     assert(result.contains("ShuffledHashJoinExec"))
     assert(result("ShuffledHashJoinExec") == "S")
+    assert(result("CollectLimitExec") == "NS")
   }
 
   test("supported Expressions") {

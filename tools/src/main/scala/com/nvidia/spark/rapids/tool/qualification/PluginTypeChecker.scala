@@ -63,17 +63,17 @@ class PluginTypeChecker {
 
   def setOperatorScore(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    supportedOperatorsScore = readOperatorsScore(source)
+    supportedOperatorsScore = readSupportedOperators(source).map(x => (x._1, x._2.toInt))
   }
 
   def setSupportedExecs(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    supportedExecs = readSupportedExecs(source)
+    supportedExecs = readSupportedOperators(source)
   }
 
   def setSupportedExprs(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    supportedExprs = readSupportedExprs(source)
+    supportedExprs = readSupportedOperators(source)
   }
 
   def getOperatorScore: Map[String, Int] = supportedOperatorsScore
@@ -84,17 +84,17 @@ class PluginTypeChecker {
 
   private def readOperatorsScore: Map[String, Int] = {
     val source = Source.fromResource(OPERATORS_SCORE_FILE)
-    readOperatorsScore(source)
+    readSupportedOperators(source).map(x => (x._1, x._2.toInt))
   }
 
   private def readSupportedExecs: Map[String, String] = {
     val source = Source.fromResource(SUPPORTED_EXECS_FILE)
-    readSupportedExecs(source)
+    readSupportedOperators(source)
   }
 
   private def readSupportedExprs: Map[String, String] = {
     val source = Source.fromResource(SUPPORTED_EXPRS_FILE)
-    readSupportedExprs(source)
+    readSupportedOperators(source)
   }
 
   private def readSupportedTypesForPlugin: (
@@ -103,87 +103,30 @@ class PluginTypeChecker {
     readSupportedTypesForPlugin(source)
   }
 
-  private def readOperatorsScore(source: BufferedSource): Map[String, Int] = {
-    val supportedOperatorsScore = HashMap.empty[String, Int]
+  private def readSupportedOperators(source: BufferedSource): Map[String, String] = {
+    val supportedOperators = HashMap.empty[String, String]
     try {
       val fileContents = source.getLines().toSeq
       if (fileContents.size < 2) {
-        throw new IllegalStateException("operatorsScore file appears corrupt," +
+        throw new IllegalStateException(s"${source.toString} file appears corrupt," +
             " must have at least the header and one line")
       }
       // first line is header
       val header = fileContents.head.split(",").map(_.toLowerCase)
-      // the rest of the rows are file with type supported info
+      // the rest of the rows are operators with additional info
       fileContents.tail.foreach { line =>
         val cols = line.split(",")
         if (header.size != cols.size) {
-          throw new IllegalStateException("operatorsScore file appears corrupt," +
-              " header length doesn't match rows length")
+          throw new IllegalStateException(s"${source.toString} file appears corrupt," +
+              s" header length doesn't match rows length. Row that doesn't match is " +
+              s"${cols.mkString(",")}")
         }
-        val operator = cols(0)
-        val score = cols(1).toInt
-        supportedOperatorsScore.put(operator, score)
+        supportedOperators.put(cols(0), cols(1))
       }
     } finally {
       source.close()
     }
-    supportedOperatorsScore.toMap
-  }
-
-  private def readSupportedExecs(source:BufferedSource): (Map[String, String]) = {
-    val supportedExecs = HashMap.empty[String, String]
-    try {
-      val fileContents = source.getLines().toSeq
-      if (fileContents.size < 2) {
-        throw new IllegalStateException("supportedExecs file appears corrupt," +
-            " must have at least the header and one line")
-      }
-      // first line is header
-      val header = fileContents.head.split(",").map(_.toLowerCase)
-      // the rest of the rows are execs with type supported info
-      fileContents.tail.foreach { line =>
-        val cols = line.split(",")
-        if (header.size != cols.size) {
-          throw new IllegalStateException("supportedExecs file appears corrupt," +
-              " header length doesn't match rows length")
-        }
-
-        val operator = cols(0)
-        val isSupported = cols(1)
-        supportedExecs.put(operator, isSupported)
-      }
-    } finally {
-      source.close()
-    }
-    supportedExecs.toMap
-  }
-
-  private def readSupportedExprs(source:BufferedSource): (Map[String, String]) = {
-    val supportedExprs = HashMap.empty[String, String]
-    try {
-      val fileContents = source.getLines().toSeq
-      if (fileContents.size < 2) {
-        throw new IllegalStateException("supportedExprs file appears corrupt," +
-            " must have at least the header and one line")
-      }
-      // first line is header
-      val header = fileContents.head.split(",").map(_.toLowerCase)
-      // the rest of the rows are exprs with type supported info
-      fileContents.tail.foreach { line =>
-        val cols = line.split(",")
-        if (header.size != cols.size) {
-          throw new IllegalStateException("supportedExprs file appears corrupt," +
-              " header length doesn't match rows length")
-        }
-
-        val operator = cols(0)
-        val isSupported = cols(1)
-        supportedExprs.put(operator, isSupported)
-      }
-    } finally {
-      source.close()
-    }
-    supportedExprs.toMap
+    supportedOperators.toMap
   }
 
   // file format should be like this:

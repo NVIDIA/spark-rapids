@@ -22,7 +22,6 @@ import java.time.ZoneId
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
@@ -2148,14 +2147,14 @@ object SupportedOpsDocs {
   }
 }
 
-object SupportedOpsForTools extends Logging {
+object SupportedOpsForTools {
 
   private lazy val allSupportedTypes =
     TypeSigUtil.getAllSupportedTypes()
 
   // if a string contains what we are going to use for a delimiter, replace
   // it with something else
-  def replaceDelimiter(str: String, delimiter: String): String = {
+  private def replaceDelimiter(str: String, delimiter: String): String = {
     if (str != null && str.contains(delimiter)) {
       val replaceWith = if (delimiter.equals(",")) {
         ";"
@@ -2218,8 +2217,10 @@ object SupportedOpsForTools extends Logging {
       val checks = rule.getChecks
       if (rule.isVisible && checks.forall(_.shown)) {
         val cpuName = rule.tag.runtimeClass.getSimpleName
+        // We are assigning speed up of 2 to all the Execs supported by the plugin. This can be
+        // adjusted later.
         val allCols = Seq(cpuName, "2")
-        println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
+        println(s"${allCols.mkString(",")}")
       }
     }
 
@@ -2227,8 +2228,10 @@ object SupportedOpsForTools extends Logging {
       val checks = rule.getChecks
       if (rule.isVisible && checks.forall(_.shown)) {
         val cpuName = rule.tag.runtimeClass.getSimpleName
+        // We are assigning speed up of 3 to all the Exprs supported by the plugin. This can be
+        // adjusted later.
         val allCols = Seq(cpuName, "3")
-        println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
+        println(s"${allCols.mkString(",")}")
       }
     }
   }
@@ -2242,6 +2245,7 @@ object SupportedOpsForTools extends Logging {
     println(header.mkString(","))
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
+      val isConfigDisabled = rule.disabledMsg.isDefined
       if (rule.isVisible && checks.forall(_.shown)) {
         val execChecks = checks.get.asInstanceOf[ExecChecks]
         val allData = allSupportedTypes.map { t =>
@@ -2260,7 +2264,8 @@ object SupportedOpsForTools extends Logging {
           val supportLevelOps = allSupportedTypes.toSeq.map { t =>
             allData(t)(input).text
           }
-          val isSupportedExec = Seq(if (supportLevelOps.forall(_.equals("NS"))) "NS" else "S")
+          val isSupportedExec = Seq(
+            if (supportLevelOps.forall(_.equals("NS")) || isConfigDisabled) "NS" else "S")
           val allCols = (firstCol ++ isSupportedExec ++ thirdCol ++ Seq(named) ++ supportLevelOps)
           println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
         }
@@ -2277,6 +2282,7 @@ object SupportedOpsForTools extends Logging {
     println(header.mkString(","))
     GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
+      val isConfigDisabled = rule.disabledMsg.isDefined
       if (rule.isVisible && checks.isDefined && checks.forall(_.shown)) {
         val sqlFunctions =
           ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
@@ -2295,8 +2301,9 @@ object SupportedOpsForTools extends Logging {
               val supportLevelOps = allSupportedTypes.toSeq.map { t =>
                 allData(t)(context)(param).text
               }
-              val isSupportedExec = Seq(if (supportLevelOps.forall(_.equals("NS"))) "NS" else "S")
-              val allCols = (firstCol ++ isSupportedExec ++ staticCols ++ Seq(context.toString)
+              val isSupportedExpr = Seq(
+                if (supportLevelOps.forall(_.equals("NS")) || isConfigDisabled) "NS" else "S")
+              val allCols = (firstCol ++ isSupportedExpr ++ staticCols ++ Seq(context.toString)
                   ++ Seq(param) ++ supportLevelOps)
               println(s"${allCols.map(replaceDelimiter(_, ",")).mkString(",")}")
             }
@@ -2308,9 +2315,11 @@ object SupportedOpsForTools extends Logging {
   def help(printType: String): Unit = {
     printType match {
       case a if a.equals("execs") => outputSupportedExecs()
-      case expr if (expr.equals("exprs")) => outputSupportedExpressions()
-      case score if (score.equals("operatorScore")) => operatorMappingWithScore()
-      case _ => outputSupportIO()
+      case expr if expr.equals("exprs") => outputSupportedExpressions()
+      case score if score.equals("operatorScore") => operatorMappingWithScore()
+      case io if io.equals("ioOnly") => outputSupportIO()
+      case _ => throw new IllegalArgumentException("SupportedOpsForTools: Invalid option. Valid" +
+          "options are `execs`, `exprs`, `operatorScore` and `ioOnly`")
     }
   }
 
