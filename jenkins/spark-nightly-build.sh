@@ -22,6 +22,7 @@ set -ex
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR="$WORKSPACE/.m2"
 
+TOOL_PL=${TOOL_PL:-"tools"}
 DIST_PL="dist"
 function mvnEval {
     mvn help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
@@ -31,7 +32,7 @@ ART_ID=$(mvnEval project.artifactId)
 ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
 
-DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$CUDA_CLASSIFIER"
+DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
 DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
@@ -55,7 +56,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
-            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots"
+            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots -Dtypes=jar -Dfiles=${DIST_FPATH}.jar -Dclassifiers=$CUDA_CLASSIFIER"
             ;;
 
         *)
@@ -71,7 +72,6 @@ function distWithReducedPom {
         -DgroupId="${ART_GROUP_ID}" \
         -DartifactId="${ART_ID}" \
         -Dversion="${ART_VER}" \
-        -Dclassifiers=$CUDA_CLASSIFIER \
         $mvnExtaFlags
 }
 
@@ -114,13 +114,15 @@ mvn -B clean install -pl '!tools' \
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
+    DIST_FPATH="$DIST_FPATH-$CUDA_CLASSIFIER"
     distWithReducedPom "deploy"
 
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     mvn -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
 fi
 
 # Parse Spark files from local mvn repo

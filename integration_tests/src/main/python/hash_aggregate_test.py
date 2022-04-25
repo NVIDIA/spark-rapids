@@ -344,6 +344,7 @@ def test_hash_reduction_sum_count_action(data_gen):
 
 # Make sure that we can do computation in the group by columns
 @ignore_order
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/5286")
 def test_computation_in_grpby_columns():
     conf = {'spark.rapids.sql.batchSizeBytes' : '250'}
     data_gen = [
