@@ -911,9 +911,6 @@ distribution. Because the results are not bit-for-bit identical with the Apache 
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
 `spark.rapids.sql.incompatibleOps.enabled=true`.
 
-There is also a known issue ([issue #4060](https://github.com/NVIDIA/spark-rapids/issues/4060)) where
-incorrect results are produced intermittently.
-
 ## Conditionals and operations with side effects (ANSI mode)
 
 In Apache Spark condition operations like `if`, `coalesce`, and `case/when` lazily evaluate
