@@ -565,15 +565,8 @@ class GpuMultiFileAvroPartitionReader(
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
     val nextHeader = mapPathHeader.get(nextBlockInfo.filePath).get
     val curHeader = mapPathHeader.get(currentBlockInfo.filePath).get
-    // Split into another block when
-    //   1) the sync markers are different, or
-    //   2) a key exists in both of the two headers' metadata, and maps to different values.
-    //if (!Header.hasSameSync(nextHeader, curHeader)) {
-    //  logInfo(s"Avro sync marker in the next file ${nextBlockInfo.filePath}" +
-    //    s" differs from the current one in file ${currentBlockInfo.filePath}," +
-    //    s" splitting it into a new batch!")
-    //  return true
-    //}
+    // Split into another block when a key exists in both of the two headers' metadata,
+    // and maps to different values.
     if (Header.hasConflictInMetadata(nextHeader, curHeader)) {
       logInfo(s"Avro metadata in the next file ${nextBlockInfo.filePath}" +
         s" conflicts with the current one in file ${currentBlockInfo.filePath}," +
