@@ -387,9 +387,9 @@ The tests can be enabled by appending the option `--fuzz_test` to the command.
 
 To reproduce an error appearing in the fuzz tests, you also need to add the flag `--debug_tmp_path` to save the test data.
 
-### Enabling Iceberg tests
+### Enabling Apache Iceberg tests
 
-Some tests require that Iceberg has been configured in the Spark environment and cannot run
+Some tests require that Apache Iceberg has been configured in the Spark environment and cannot run
 properly without it. These tests assume Iceberg is not configured and are disabled by default.
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.

@@ -173,6 +173,8 @@ run_iceberg_tests() {
       --conf spark.sql.catalog.spark_catalog.type=hadoop \
       --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
+  else
+    echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
   fi
 }
 

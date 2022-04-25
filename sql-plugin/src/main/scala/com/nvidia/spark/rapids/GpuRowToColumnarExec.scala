@@ -679,7 +679,7 @@ class RowToColumnarIterator(
   }
 }
 
-object GeneratedUnsafeRowToCudfRowIterator extends Logging {
+object GeneratedInternalRowToCudfRowIterator extends Logging {
   def apply(input: Iterator[InternalRow],
       schema: Array[Attribute],
       goal: CoalesceSizeGoal,
@@ -688,7 +688,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
       opTime: GpuMetric,
       numInputRows: GpuMetric,
       numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric): UnsafeRowToColumnarBatchIterator = {
+      numOutputBatches: GpuMetric): InternalRowToColumnarBatchIterator = {
     val ctx = new CodegenContext
     // setup code generation context to use our custom row variable
     val internalRow = ctx.freshName("internalRow")
@@ -766,15 +766,15 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
     val codeBody =
       s"""
          |public java.lang.Object generate(Object[] references) {
-         |  return new SpecificUnsafeRowToColumnarBatchIterator(references);
+         |  return new SpecificInternalRowToColumnarBatchIterator(references);
          |}
          |
-         |final class SpecificUnsafeRowToColumnarBatchIterator extends ${classOf[UnsafeRowToColumnarBatchIterator].getName} {
+         |final class SpecificInternalRowToColumnarBatchIterator extends ${classOf[InternalRowToColumnarBatchIterator].getName} {
          |  private final org.apache.spark.sql.catalyst.expressions.UnsafeProjection unsafeProj;
          |
          |  ${ctx.declareMutableStates()}
          |
-         |  public SpecificUnsafeRowToColumnarBatchIterator(Object[] references) {
+         |  public SpecificInternalRowToColumnarBatchIterator(Object[] references) {
          |    super(
          |      $iterRef,
          |      $schemaRef,
@@ -856,7 +856,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
     logDebug(s"code for ${schema.mkString(",")}:\n${CodeFormatter.format(code)}")
 
     val (clazz, _) = CodeGenerator.compile(code)
-    clazz.generate(ctx.references.toArray).asInstanceOf[UnsafeRowToColumnarBatchIterator]
+    clazz.generate(ctx.references.toArray).asInstanceOf[InternalRowToColumnarBatchIterator]
   }
 }
 
@@ -927,7 +927,7 @@ case class GpuRowToColumnarExec(child: SparkPlan,
     if ((1 until 100000000).contains(output.length) &&
         CudfRowTransitions.areAllSupported(output)) {
       val localOutput = output
-      rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
+      rowBased.mapPartitions(rowIter => GeneratedInternalRowToCudfRowIterator(
         rowIter, localOutput.toArray, localGoal, semaphoreWaitTime, streamTime, opTime,
         numInputRows, numOutputRows, numOutputBatches))
     } else {

@@ -39,11 +39,13 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 
 /**
- * This class converts UnsafeRow instances to ColumnarBatches on the GPU through the magic of
+ * This class converts InternalRow instances to ColumnarBatches on the GPU through the magic of
  * code generation. This just provides most of the framework a concrete implementation will
  * be generated based off of the schema.
+ * The InternalRow instances are first converted to UnsafeRow, cheaply if the instance is already
+ * UnsafeRow, and then the UnsafeRow data is collected into a ColumnarBatch.
  */
-public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<ColumnarBatch> {
+public abstract class InternalRowToColumnarBatchIterator implements Iterator<ColumnarBatch> {
   protected final Iterator<InternalRow> input;
   protected UnsafeRow pending = null;
   protected final int numRowsEstimate;
@@ -57,7 +59,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final GpuMetric numOutputRows;
   protected final GpuMetric numOutputBatches;
 
-  protected UnsafeRowToColumnarBatchIterator(
+  protected InternalRowToColumnarBatchIterator(
       Iterator<InternalRow> input,
       Attribute[] schema,
       CoalesceSizeGoal goal,
