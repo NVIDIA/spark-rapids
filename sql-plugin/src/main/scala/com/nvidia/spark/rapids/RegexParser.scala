@@ -737,10 +737,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case (RegexGroup(capture, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
               (term, ch) match {
-                case (RegexEscaped('A'), '+') =>
-                  RegexGroup(capture, RegexEscaped('A'))
-                case (RegexEscaped('A'), '*') =>
-                  RegexRepetition(RegexGroup(capture, RegexEscaped('A')), SimpleQuantifier('?'))
+                case (RegexEscaped('A'), '+') |
+                    (RegexSequence(ListBuffer(RegexEscaped('A'))), '+') =>
+                  // (\A)+ can be transpiled to (\A) (dropping the repetition)
+                  // we use rewrite(...) here to handle logic regarding modes
+                  // (\A is not supported in RegexSplitMode)
+                  RegexGroup(capture, rewrite(term))
+                // NOTE: (\A)* can be transpiled to (\A)?
+                // however, (\A)? is not supported in libcudf yet
+                // case (RegexEscaped('A'), '*') |
+                //     (RegexSequence(ListBuffer(RegexEscaped('A'))), '*') =>
+                //   RegexRepetition(RegexGroup(capture, rewrite(term)), SimpleQuantifier('?'))
                 case _ =>
                   throw new RegexUnsupportedException(nothingToRepeat)
               }
@@ -751,9 +758,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base), quantifier)
         case (RegexEscaped('A'), SimpleQuantifier('+')) =>
-          RegexEscaped('A')
-        case (RegexEscaped('A'), SimpleQuantifier('*')) =>
-          RegexRepetition(RegexEscaped('A'), SimpleQuantifier('?'))
+          // \A+ can be transpiled to \A (dropping the repetition)
+          // we use rewrite(...) here to handle logic regarding modes
+          // (\A is not supported in RegexSplitMode)
+          rewrite(base)
+        // NOTE: \A* can be transpiled to \A?
+        // however, \A? is not supported in libcudf yet
+        // case (RegexEscaped('A'), SimpleQuantifier('*')) =>
+        //   RegexRepetition(rewrite(base), SimpleQuantifier('?'))
         case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base), quantifier)
         case _ =>

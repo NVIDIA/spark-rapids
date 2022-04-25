@@ -191,13 +191,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
   
   test("string anchors - find") {
-    val patterns = Seq("\\Atest", "test\\z")
+    val patterns = Seq("\\Atest", "\\A+test", "(\\A)+test", "test\\z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
   }
 
   test("string anchor \\A will fall back to CPU in some repetitions") {
-    val patterns = Seq(raw"(\A)+", raw"(\A)*", raw"(\A){2,}")
+    val patterns = Seq(raw"(\A)*", raw"(\A){2,}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
     )
@@ -278,7 +278,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile \\A repetitions") {
     doTranspileTest("\\A+", "\\A")
-    doTranspileTest("\\A*", "\\A?")
+    // doTranspileTest("\\A*", "\\A?")
     doTranspileTest("(\\A)+", "(\\A)")
     // doTranspileTest("(\\A)*", "(\\A)?")
   }
