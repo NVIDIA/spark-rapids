@@ -68,11 +68,13 @@ class PluginTypeChecker {
 
   def setSupportedExecs(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
+    // We are reading only first 2 columns for now and other columns are ignored intentionally.
     supportedExecs = readSupportedOperators(source)
   }
 
   def setSupportedExprs(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
+    // We are reading only first 2 columns for now and other columns are ignored intentionally.
     supportedExprs = readSupportedOperators(source)
   }
 
