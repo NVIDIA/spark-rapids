@@ -30,7 +30,7 @@ _enable_all_types_conf = {
     'spark.rapids.sql.format.avro.enabled': 'true',
     'spark.rapids.sql.format.avro.read.enabled': 'true'}
 
-rapids_reader_types = ['PERFILE', 'COALESCING']
+rapids_reader_types = ['PERFILE', 'COALESCING', 'MULTITHREADED']
 
 # 50 files for the coalescing reading case
 coalescingPartitionNum = 50
