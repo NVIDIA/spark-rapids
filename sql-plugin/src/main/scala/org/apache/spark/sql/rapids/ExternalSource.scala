@@ -16,9 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
+import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
@@ -31,7 +33,16 @@ import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 object ExternalSource {
 
-  lazy val hasSparkAvroJar = {
+  private lazy val icebergBatchQueryScanClass: Option[Class[_ <: Scan]] = {
+    val className = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+    val loader = Utils.getContextOrSparkClassLoader
+    Try(loader.loadClass(className)) match {
+      case Failure(_) => None
+      case Success(clz) => Some(clz.asSubclass(classOf[Scan]))
+    }
+  }
+
+  lazy val hasSparkAvroJar: Boolean = {
     val loader = Utils.getContextOrSparkClassLoader
 
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
@@ -137,27 +148,43 @@ object ExternalSource {
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
-    if (hasSparkAvroJar) {
-      Seq(
-        GpuOverrides.scan[AvroScan](
-          "Avro parsing",
-          (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
-            override def tagSelfForGpu(): Unit = GpuAvroScan.tagSupport(this)
+    var scans: Seq[ScanRule[_ <: Scan]] = icebergBatchQueryScanClass.map { clz =>
+      Seq(new ScanRule[Scan](
+        (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
+          override def tagSelfForGpu(): Unit = {
+            // table could be a mix of Parquet and ORC, so check for ability to load for both
+            val readSchema = a.readSchema()
+            FileFormatChecks.tag(this, readSchema, ParquetFormatType, ReadFileOp)
+            FileFormatChecks.tag(this, readSchema, OrcFormatType, ReadFileOp)
+          }
 
-            override def convertToGpu(): Scan =
-              GpuAvroScan(a.sparkSession,
-                a.fileIndex,
-                a.dataSchema,
-                a.readDataSchema,
-                a.readPartitionSchema,
-                a.options,
-                a.pushedFilters,
-                conf,
-                a.partitionFilters,
-                a.dataFilters)
-          })
-      ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-    } else Map.empty
+          override def convertToGpu(): Scan = GpuSparkBatchQueryScan.fromCpu(a, conf)
+        },
+        "Iceberg scan",
+        ClassTag(clz)))
+    }.getOrElse(Seq.empty)
+
+    if (hasSparkAvroJar) {
+      scans = scans :+ GpuOverrides.scan[AvroScan](
+        "Avro parsing",
+        (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
+          override def tagSelfForGpu(): Unit = GpuAvroScan.tagSupport(this)
+
+          override def convertToGpu(): Scan =
+            GpuAvroScan(a.sparkSession,
+              a.fileIndex,
+              a.dataSchema,
+              a.readDataSchema,
+              a.readPartitionSchema,
+              a.options,
+              a.pushedFilters,
+              conf,
+              a.partitionFilters,
+              a.dataFilters)
+        })
+    }
+
+    scans.map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
   }
 
   /** If the scan is supported as an external source */
@@ -177,7 +204,7 @@ object ExternalSource {
   def copyScanWithInputFileTrue(scan: Scan): Scan = {
     if (hasSparkAvroJar) {
       scan match {
-        case avroScan: GpuAvroScan => avroScan.copy(queryUsesInputFile=true)
+        case avroScan: GpuAvroScan => avroScan.copy(queryUsesInputFile = true)
         case _ =>
           throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
       }

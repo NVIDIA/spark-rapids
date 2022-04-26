@@ -224,7 +224,7 @@ class TypedConfBuilder[T](
     }
   }
 
-  def createWithDefault(value: T): ConfEntry[T] = {
+  def createWithDefault(value: T): ConfEntryWithDefault[T] = {
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
       parent.doc, parent.isInternal, value)
     parent.register(ret)

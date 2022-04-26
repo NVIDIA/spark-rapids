@@ -57,6 +57,18 @@
             <artifactId>flatbuffers-java</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-bundled-guava</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-core</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
