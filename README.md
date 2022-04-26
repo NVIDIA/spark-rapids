@@ -22,10 +22,11 @@ To get started tuning your job and get the most performance out of it please sta
 The plugin has a set of Spark configs that control its behavior and are documented
 [here](docs/configs.md).
 
-## Issues
+## Issues & Questions
 
-We use github issues to track bugs, feature requests, and to try and answer questions. You
-may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
+We use github to track bugs, feature requests, and answer questions. File an
+[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
+or answer a question on the [discussion board](https://github.com/NVIDIA/spark-rapids/discussions).
 
 ## Download
 
