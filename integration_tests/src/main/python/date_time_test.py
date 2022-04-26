@@ -279,7 +279,7 @@ def test_string_unix_timestamp_ansi_exception():
 
 @pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-def test_gettimestamp_ansi(data_gen, ansi_enabled):
+def test_gettimestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
