@@ -23,8 +23,6 @@ from pyspark.sql.functions import array_contains, col, isnan, element_at
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
-from src.main.python.marks import ignore_order
-
 array_index_gen = IntegerGen(min_val=-25, max_val=25, special_cases=[None])
 array_neg_index_gen = IntegerGen(min_val=-25, max_val=-1, special_cases=[None])
 array_out_index_gen = IntegerGen(min_val=25, max_val=100, special_cases=[None])
@@ -360,3 +358,4 @@ def test_arrays_zip_corner_cases():
             'arrays_zip(null, null)',
             'arrays_zip(null, a)')
     )
+
