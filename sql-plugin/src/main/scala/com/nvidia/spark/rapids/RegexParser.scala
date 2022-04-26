@@ -737,6 +737,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case (RegexGroup(capture, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
               (term, ch) match {
+                // \Z is not supported in groups
                 case (RegexEscaped('A'), '+') |
                     (RegexSequence(ListBuffer(RegexEscaped('A'))), '+') =>
                   // (\A)+ can be transpiled to (\A) (dropping the repetition)
@@ -757,10 +758,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base), quantifier)
-        case (RegexEscaped('A'), SimpleQuantifier('+')) =>
+        case (RegexEscaped('A'), SimpleQuantifier('+')) |
+            (RegexEscaped('Z'), SimpleQuantifier('+')) =>
           // \A+ can be transpiled to \A (dropping the repetition)
+          // \Z+ can be transpiled to \Z (dropping the repetition)
           // we use rewrite(...) here to handle logic regarding modes
-          // (\A is not supported in RegexSplitMode)
+          // (\A and \Z are not supported in RegexSplitMode)
           rewrite(base)
         // NOTE: \A* can be transpiled to \A?
         // however, \A? is not supported in libcudf yet
