@@ -26,7 +26,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphCluster}
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualificationAppInfo(
@@ -51,11 +51,20 @@ class QualificationAppInfo(
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
 
+  val stageIdToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
+    HashMap.empty[Long, StageTaskQualificationSummary]
+
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
+  var wholeStage: ArrayBuffer[WholeStageCodeGenResults] = ArrayBuffer[WholeStageCodeGenResults]()
+  // accum id to task stage accum info
+  var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
+    HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
+
+  var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   private lazy val eventProcessor =  new QualificationEventProcessor(this)
 
@@ -197,10 +206,12 @@ class QualificationAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframeDuration
+      // wall clock time
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
       val readScoreRatio = calculateReadScoreRatio
+
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
       val readScoreHumanPercent = 100 * readScoreRatio
       val readScoreHumanPercentRounded = f"${readScoreHumanPercent}%1.2f".toDouble
@@ -217,6 +228,16 @@ class QualificationAppInfo(
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
+      val opInfos = processSQLPlanForNodeTiming
+      val perSQLId = opInfos.groupBy(_.sqlID)
+      perSQLId.foreach { x => logWarning(s"sqlid: ${x._1}, ops : ${x._2.mkString("\n")}")}
+      // val sqlIdSum = perSQLId.map { case (id, opInfos) =>
+      //   val durWithSpeedup = op.speedupFactor * op.duration
+       //  (id, opInfos.map(op => op.speedupFactor * (op.durWithSpeedup.getOrElse(1L))).sum)
+     //  }
+      // TODO - construct the final outputs - multiple things required now. Also need to
+      // calculate durations, if ops don't have them use stage durations or job durations
+
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
@@ -225,11 +246,68 @@ class QualificationAppInfo(
     }
   }
 
+  private def average(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 0 else arr.sum/arr.size
+
+  private def getDuration(accumId: Option[Long]): Option[Long] = {
+    val taskForAccum = accumId.flatMap(id => taskStageAccumMap.get(id))
+      .getOrElse(ArrayBuffer.empty)
+    val accumValues = taskForAccum.map(_.value.getOrElse(0L))
+    val maxDuration = if (accumValues.isEmpty) {
+      None
+    } else {
+      Some(accumValues.max)
+    }
+    maxDuration
+  }
+
+  def processSQLPlanForNodeTiming: Seq[OpInfo] = {
+    pluginTypeChecker.map { checker =>
+      sqlPlans.flatMap { case (sqlID, planInfo) =>
+        val planGraph = SparkPlanGraph(planInfo)
+        // we want the sub-graph nodes to be inside of the wholeStageCodeGen so use nodes
+        // vs allNodes
+        planGraph.nodes.flatMap { node =>
+          node match {
+            case w if (w.name.contains("WholeStageCodegen")) =>
+              // TODO - does metrics for time have previous ops?  per op thing, likely does
+              //  but verify
+              val accumId = w.metrics.find(_.name == "duration").map(_.accumulatorId)
+              val maxDuration = getDuration(accumId)
+              val children = node.asInstanceOf[SparkPlanGraphCluster].nodes
+
+              // TODO - most of the time children those don't have timings but check all
+              // TODO - add in expression checking
+              val childrenSpeedupFactors = children.map { c =>
+                if (checker.isExecSupported(c.name)) {
+                  val factor = checker.getExecSpeedupFactor(c.name)
+                  OpInfo(sqlID, w.name, c.name, factor, None, c.id, Some(w.id), true)
+                } else {
+                  OpInfo(sqlID, w.name, c.name, 1, None, c.id, Some(w.id), false)
+                }
+              }
+              // TODO - what do we want to do with this to apply to duration, average for now?
+              val avSpeedupFactor = average(childrenSpeedupFactors.map(_.speedupFactor))
+              // if any of the execs in WholeStagecodeGen supported mark this row as supported
+              val anySupported = childrenSpeedupFactors.exists(_.isSupported == true)
+              val wholeStageSpeedup = OpInfo(sqlID, w.name, w.name, avSpeedupFactor,
+                maxDuration, w.id, None, anySupported)
+              childrenSpeedupFactors += wholeStageSpeedup
+            case o =>
+              logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
+              val supported = false
+              ArrayBuffer(OpInfo(sqlID, o.name, "", 1, Some(0), o.id, None, supported))
+          }
+        }
+      }.toSeq
+    }.getOrElse(Seq.empty)
+  }
+
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
+      // TODO - likely can combine some code below with some of the above matching
       checkGraphNodeForReads(sqlID, node)
       if (isDataSetOrRDDPlan(node.desc)) {
         sqlIDToDataSetOrRDDCase += sqlID
@@ -302,6 +380,16 @@ case class QualificationSummaryInfo(
     writeDataFormat: String,
     complexTypes: String,
     nestedComplexTypes: String)
+
+case class OpInfo(
+    sqlID: Long,
+    exec: String,
+    expr: String,
+    speedupFactor: Int,
+    duration: Option[Long],
+    nodeId: Long,
+    wholeStageId: Option[Long],
+    isSupported: Boolean)
 
 object QualificationAppInfo extends Logging {
   def createApp(

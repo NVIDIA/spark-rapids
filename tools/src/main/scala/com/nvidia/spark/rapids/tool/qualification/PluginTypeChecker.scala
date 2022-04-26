@@ -19,13 +19,15 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer,HashMap}
 import scala.io.{BufferedSource, Source}
 
+import org.apache.spark.internal.Logging
+
 /**
  * This class is used to check what the RAPIDS Accelerator for Apache Spark
  * supports for data formats and data types.
  * By default it relies on a csv file included in the jar which is generated
  * by the plugin which lists the formats and types supported.
  */
-class PluginTypeChecker {
+class PluginTypeChecker extends Logging {
 
   private val NS = "NS"
   private val PS = "PS"
@@ -226,5 +228,31 @@ class PluginTypeChecker {
   def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
       writeFormats.map(x => x.trim).contains(_))
+  }
+
+  def getExecSpeedupFactor(exec: String): Int = {
+    supportedOperatorsScore.get(exec).getOrElse(-1)
+  }
+
+  def isExecSupported(exec: String): Boolean = {
+    // special case ColumnarToRow and assume it will be removed or will we replace
+    // with GPUColumnarToRow. TODO - we can add more logic here to look at operator
+    //  before and after
+    if (exec == "ColumnarToRow") {
+      return true
+    }
+    val fullExecName = exec + "Exec"
+    if (supportedExecs.contains(fullExecName)) {
+      val execSupported = supportedExecs.getOrElse(fullExecName, "NS")
+      if (execSupported == "S") {
+        true
+      } else {
+        logWarning(s"Support exec not supported, value: $execSupported")
+        false
+      }
+    } else {
+      logWarning(s"Exec $fullExecName does not exist in supported execs file")
+      false
+    }
   }
 }

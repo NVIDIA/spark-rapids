@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.profiling._
 
@@ -62,6 +63,15 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
+    // keep all stage task times to see for nonsql duration
+    val taskSum = app.stageIdToTaskEndSum.getOrElseUpdate(event.stageId, {
+      new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0, 0)
+    })
+    taskSum.executorRunTime += event.taskMetrics.executorRunTime
+    taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
+    taskSum.totalTaskDuration += event.taskInfo.duration
+
+    // TODO - change below to use stageIdToTaskEndSum
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
@@ -70,6 +80,28 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       taskSum.executorRunTime += event.taskMetrics.executorRunTime
       taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
       taskSum.totalTaskDuration += event.taskInfo.duration
+    }
+    // Parse task accumulables
+    for (res <- event.taskInfo.accumulables) {
+      try {
+        val value = res.value.map(_.toString.toLong)
+        val update = res.update.map(_.toString.toLong)
+        val thisMetric = TaskStageAccumCase(
+          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
+          res.id, res.name, value, update, res.internal)
+        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
+          ArrayBuffer[TaskStageAccumCase]())
+        // app.accumIdToStageId.put(res.id, event.stageId)
+        arrBuf += thisMetric
+      } catch {
+        case NonFatal(e) =>
+          logWarning("Exception when parsing accumulables for task "
+            + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
+            + ": ")
+          logWarning(e.toString)
+          logWarning("The problematic accumulable is: name="
+            + res.name + ",value=" + res.value + ",update=" + res.update)
+      }
     }
   }
 
@@ -89,6 +121,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     )
     app.sqlStart += (event.executionId -> sqlExecution)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
     // -1 to indicate that it started but not complete
     app.sqlDurationTime += (event.executionId -> -1)
   }
@@ -129,7 +162,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       }
       app.jobIdToSqlID(event.jobId) = sqlID
     }
-
   }
 
   override def doSparkListenerJobEnd(
