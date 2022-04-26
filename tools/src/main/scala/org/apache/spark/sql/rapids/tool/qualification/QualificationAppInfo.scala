@@ -203,7 +203,6 @@ class QualificationAppInfo(
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
       val readScoreRatio = calculateReadScoreRatio
-
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
       val readScoreHumanPercent = 100 * readScoreRatio
       val readScoreHumanPercentRounded = f"${readScoreHumanPercent}%1.2f".toDouble
@@ -220,13 +219,13 @@ class QualificationAppInfo(
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
-      val opInfos = processSQLPlanForNodeTiming
-      val perSQLId = opInfos.groupBy(_.sqlID)
-      perSQLId.foreach { x => logWarning(s"sqlid: ${x._1}, ops : ${x._2.mkString("\n")}")}
+      val execInfos = processSQLPlanForNodeTiming
+      val perSQLId = execInfos.groupBy(_.sqlID)
+      perSQLId.foreach { x => logWarning(s"sqlID: ${x._1}, exec: ${x._2.mkString("\n")}")}
       // val sqlIdSum = perSQLId.map { case (id, opInfos) =>
       //   val durWithSpeedup = op.speedupFactor * op.duration
-       //  (id, opInfos.map(op => op.speedupFactor * (op.durWithSpeedup.getOrElse(1L))).sum)
-     //  }
+      //   (id, opInfos.map(op => op.speedupFactor * (op.durWithSpeedup.getOrElse(1L))).sum)
+      //}
       // TODO - construct the final outputs - multiple things required now. Also need to
       // calculate durations, if ops don't have them use stage durations or job durations
 
@@ -240,10 +239,15 @@ class QualificationAppInfo(
 
   private def average(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 0 else arr.sum/arr.size
 
-  private def getDuration(accumId: Option[Long]): Option[Long] = {
+  // We get the total duration by finding the accumulator with the largest value.
+  // This is because each accumulator has a value and an update. As tasks end
+  // they just update the value = value + update, so the largest value will be
+  // the duration.
+  private def getTotalDuration(accumId: Option[Long]): Option[Long] = {
     val taskForAccum = accumId.flatMap(id => taskStageAccumMap.get(id))
       .getOrElse(ArrayBuffer.empty)
     val accumValues = taskForAccum.map(_.value.getOrElse(0L))
+    taskForAccum.map(_.value.getOrElse(0L))
     val maxDuration = if (accumValues.isEmpty) {
       None
     } else {
@@ -252,7 +256,40 @@ class QualificationAppInfo(
     maxDuration
   }
 
-  def processSQLPlanForNodeTiming: Seq[OpInfo] = {
+  private def processWholestageCodegen(
+      node: SparkPlanGraphCluster,
+      checker: PluginTypeChecker,
+      sqlID: Long): Seq[ExecInfo] = {
+    // TODO - does metrics for time have previous ops?  per op thing, likely does
+    //  but verify
+    val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
+    val maxDuration = getTotalDuration(accumId)
+
+    // TODO - most of the time children those don't have timings but check all
+    // TODO - add in expression checking
+    val childrenSpeedupFactors = node.nodes.map { c =>
+      val fullExecName = c.name + "Exec"
+      if (checker.isExecSupported(fullExecName)) {
+        val speedupFactor = checker.getExecSpeedupFactor(fullExecName)
+        ExecInfo(sqlID, node.name, c.name, speedupFactor, duration=None,
+          c.id, Some(node.id), isSupported=true)
+      } else {
+        // if not supported speedupFactor = 1 which means no speedup
+        ExecInfo(sqlID, node.name, c.name, 1, duration=None, c.id, Some(w.id),
+          isSupported=false)
+      }
+    }
+    // TODO - average speedup across the execs in the WholeStageCodegen for now
+    val avSpeedupFactor = average(childrenSpeedupFactors.map(_.speedupFactor))
+    // if any of the execs in WholeStageCodegen supported mark this entire thing
+    // as supported
+    val anySupported = childrenSpeedupFactors.exists(_.isSupported == true)
+    val wholeStageSpeedup = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
+      maxDuration, node.id, wholeStageId=None, anySupported)
+    childrenSpeedupFactors += wholeStageSpeedup
+  }
+
+  def processSQLPlanForNodeTiming: Seq[ExecInfo] = {
     pluginTypeChecker.map { checker =>
       sqlPlans.flatMap { case (sqlID, planInfo) =>
         val planGraph = SparkPlanGraph(planInfo)
@@ -261,34 +298,11 @@ class QualificationAppInfo(
         planGraph.nodes.flatMap { node =>
           node match {
             case w if (w.name.contains("WholeStageCodegen")) =>
-              // TODO - does metrics for time have previous ops?  per op thing, likely does
-              //  but verify
-              val accumId = w.metrics.find(_.name == "duration").map(_.accumulatorId)
-              val maxDuration = getDuration(accumId)
-              val children = node.asInstanceOf[SparkPlanGraphCluster].nodes
-
-              // TODO - most of the time children those don't have timings but check all
-              // TODO - add in expression checking
-              val childrenSpeedupFactors = children.map { c =>
-                val fullExecName = c.name + "Exec"
-                if (checker.isExecSupported(fullExecName)) {
-                  val factor = checker.getExecSpeedupFactor(fullExecName)
-                  OpInfo(sqlID, w.name, c.name, factor, None, c.id, Some(w.id), true)
-                } else {
-                  OpInfo(sqlID, w.name, c.name, 1, None, c.id, Some(w.id), false)
-                }
-              }
-              // TODO - what do we want to do with this to apply to duration, average for now?
-              val avSpeedupFactor = average(childrenSpeedupFactors.map(_.speedupFactor))
-              // if any of the execs in WholeStagecodeGen supported mark this row as supported
-              val anySupported = childrenSpeedupFactors.exists(_.isSupported == true)
-              val wholeStageSpeedup = OpInfo(sqlID, w.name, w.name, avSpeedupFactor,
-                maxDuration, w.id, None, anySupported)
-              childrenSpeedupFactors += wholeStageSpeedup
+              processWholestageCodegen(w.asInstanceOf[SparkPlanGraphCluster], checker, sqlID)
             case o =>
-              logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
-              val supported = false
-              ArrayBuffer(OpInfo(sqlID, o.name, "", 1, Some(0), o.id, None, supported))
+              logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
+              ArrayBuffer(ExecInfo(sqlID, o.name, expr="", 1, duration=Some(0), o.id,
+                wholeStageId=None, isSupported=false))
           }
         }
       }.toSeq
@@ -374,7 +388,7 @@ case class QualificationSummaryInfo(
     complexTypes: String,
     nestedComplexTypes: String)
 
-case class OpInfo(
+case class ExecInfo(
     sqlID: Long,
     exec: String,
     expr: String,
