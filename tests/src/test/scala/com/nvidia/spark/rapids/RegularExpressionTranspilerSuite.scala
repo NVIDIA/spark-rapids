@@ -215,10 +215,23 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
-  test("line anchor $ fall back to CPU") {
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("a$b", mode, "line anchor $ is not supported")
+  test("line anchor $ fall back to CPU - split and replace") {
+    for (mode <- Seq(RegexSplitMode, RegexReplaceMode)) {
+      assertUnsupported("a$b", mode, "line anchor $ is not supported in split or replace")
     }
+  }
+
+  test("line anchor sequence $\\n fall back to CPU") {
+    assertUnsupported("a$\n", RegexFindMode, "regex sequence $\\n is not supported")
+  }
+
+  test("line anchor $ - find") {
+    val patterns = Seq("$\r", "a$", "\r$", "\f$", "$\f", "\u0085$", "\u2028$", "\u2029$", "\n$",
+      "\r\n$", "[\r\n]?$", "\\00*[D$3]$", "a$b")
+    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
+      "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
+      "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
   test("whitespace boundaries - replace") {
@@ -278,6 +291,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile \\z") {
     doTranspileTest("abc\\z", "abc$")
+  }
+
+  test("transpile $") {
+    doTranspileTest("a$", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("$$\r", "\r[\n\u0085\u2028\u2029]?$")
+    doTranspileTest("]$\r", "]\r[\n\u0085\u2028\u2029]?$")
+    doTranspileTest("^$[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
