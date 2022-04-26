@@ -851,12 +851,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   // (\A)+ can be transpiled to (\A) (dropping the repetition)
                   // we use rewrite(...) here to handle logic regarding modes
                   // (\A is not supported in RegexSplitMode)
-                  RegexGroup(capture, rewrite(term))
+                  RegexGroup(capture, rewrite(term, previous))
                 // NOTE: (\A)* can be transpiled to (\A)?
                 // however, (\A)? is not supported in libcudf yet
                 // case (RegexEscaped('A'), '*') |
                 //     (RegexSequence(ListBuffer(RegexEscaped('A'))), '*') =>
-                //   RegexRepetition(RegexGroup(capture, rewrite(term)), SimpleQuantifier('?'))
+                //   RegexRepetition(RegexGroup(capture, rewrite(term, previous)),
+                // SimpleQuantifier('?'))
                 case _ =>
                   throw new RegexUnsupportedException(nothingToRepeat)
               }
@@ -865,7 +866,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
-          RegexRepetition(rewrite(base), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case (RegexEscaped('A'), SimpleQuantifier('+')) |
             (RegexEscaped('Z'), SimpleQuantifier('+')) =>
           // \A+ can be transpiled to \A (dropping the repetition)
