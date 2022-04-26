@@ -336,9 +336,10 @@ def test_array_exists(data_gen, threeVL):
     })
 
 
-@pytest.mark.parametrize('data_gen',
-                         array_gens_sample + [ArrayGen(map_string_string_gen)],
-                         ids=idfn)
+array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5)]
+
+
+@pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
 def test_arrays_zip(data_gen):
     gen = StructGen(
         [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
