@@ -510,7 +510,7 @@ class ConditionalHashJoinIterator(
   }
 }
 
-class MixedExistenceJoinIterator(
+class HashedExistenceJoinIterator(
   spillableBuiltBatch: LazySpillableColumnarBatch,
   boundBuildKeys: Seq[GpuExpression],
   lazyStream: Iterator[LazySpillableColumnarBatch],
@@ -742,7 +742,7 @@ trait GpuHashJoin extends GpuExec {
     // them when it is done
     val joinIterator = joinType match {
       case ExistenceJoin(_) =>
-        new MixedExistenceJoinIterator(
+        new HashedExistenceJoinIterator(
           spillableBuiltBatch,
           boundBuildKeys,
           lazyStream,

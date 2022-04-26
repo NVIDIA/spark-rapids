@@ -329,7 +329,8 @@ object GpuBroadcastNestedLoopJoinExec extends Arm {
       val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
       if (joinType.isInstanceOf[ExistenceJoin]) {
         // existence join
-        new ConditionalExistenceJoinIterator(builtBatch, stream, compiledAst, opTime, joinTime)
+        new ConditionalNestedLoopExistenceJoinIterator(
+          builtBatch, stream, compiledAst, opTime, joinTime)
       } else {
         new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
           stream, streamAttributes, targetSize, compiledAst, spillCallback,
@@ -647,7 +648,7 @@ case class GpuBroadcastNestedLoopJoinExec(
   }
 }
 
-class ConditionalExistenceJoinIterator(
+class ConditionalNestedLoopExistenceJoinIterator(
     spillableBuiltBatch: LazySpillableColumnarBatch,
     lazyStream: Iterator[LazySpillableColumnarBatch],
     condition: CompiledExpression,
