@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerTaskEnd(app, event)
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
@@ -71,27 +72,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       taskSum.executorRunTime += event.taskMetrics.executorRunTime
       taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
       taskSum.totalTaskDuration += event.taskInfo.duration
-    }
-    // Parse task accumulables
-    for (res <- event.taskInfo.accumulables) {
-      try {
-        val value = res.value.map(_.toString.toLong)
-        val update = res.update.map(_.toString.toLong)
-        val thisMetric = TaskStageAccumCase(
-          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
-          res.id, res.name, value, update, res.internal)
-        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
-          ArrayBuffer[TaskStageAccumCase]())
-        arrBuf += thisMetric
-      } catch {
-        case NonFatal(e) =>
-          logWarning("Exception when parsing accumulables for task "
-            + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
-            + ": ")
-          logWarning(e.toString)
-          logWarning("The problematic accumulable is: name="
-            + res.name + ",value=" + res.value + ",update=" + res.update)
-      }
     }
   }
 

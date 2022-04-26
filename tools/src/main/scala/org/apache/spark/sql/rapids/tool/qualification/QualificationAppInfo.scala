@@ -56,10 +56,6 @@ class QualificationAppInfo(
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
-  // accum id to task stage accum info
-  var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
-    HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
-
   var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   private lazy val eventProcessor =  new QualificationEventProcessor(this)
