@@ -51,15 +51,11 @@ class QualificationAppInfo(
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
 
-  val stageIdToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
-    HashMap.empty[Long, StageTaskQualificationSummary]
-
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
-  var wholeStage: ArrayBuffer[WholeStageCodeGenResults] = ArrayBuffer[WholeStageCodeGenResults]()
   // accum id to task stage accum info
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
@@ -278,8 +274,9 @@ class QualificationAppInfo(
               // TODO - most of the time children those don't have timings but check all
               // TODO - add in expression checking
               val childrenSpeedupFactors = children.map { c =>
-                if (checker.isExecSupported(c.name)) {
-                  val factor = checker.getExecSpeedupFactor(c.name)
+                val fullExecName = c.name + "Exec"
+                if (checker.isExecSupported(fullExecName)) {
+                  val factor = checker.getExecSpeedupFactor(fullExecName)
                   OpInfo(sqlID, w.name, c.name, factor, None, c.id, Some(w.id), true)
                 } else {
                   OpInfo(sqlID, w.name, c.name, 1, None, c.id, Some(w.id), false)

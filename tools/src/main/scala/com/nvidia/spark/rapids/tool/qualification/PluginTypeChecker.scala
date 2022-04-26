@@ -241,9 +241,8 @@ class PluginTypeChecker extends Logging {
     if (exec == "ColumnarToRow") {
       return true
     }
-    val fullExecName = exec + "Exec"
-    if (supportedExecs.contains(fullExecName)) {
-      val execSupported = supportedExecs.getOrElse(fullExecName, "NS")
+    if (supportedExecs.contains(exec)) {
+      val execSupported = supportedExecs.getOrElse(exec, "NS")
       if (execSupported == "S") {
         true
       } else {
@@ -251,7 +250,7 @@ class PluginTypeChecker extends Logging {
         false
       }
     } else {
-      logWarning(s"Exec $fullExecName does not exist in supported execs file")
+      logWarning(s"Exec $exec does not exist in supported execs file")
       false
     }
   }
