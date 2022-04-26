@@ -246,11 +246,11 @@ class PluginTypeChecker extends Logging {
       if (execSupported == "S") {
         true
       } else {
-        logWarning(s"Support exec not supported, value: $execSupported")
+        logDebug(s"Exec explicitly not supported, value: $execSupported")
         false
       }
     } else {
-      logWarning(s"Exec $exec does not exist in supported execs file")
+      logDebug(s"Exec $exec does not exist in supported execs file")
       false
     }
   }

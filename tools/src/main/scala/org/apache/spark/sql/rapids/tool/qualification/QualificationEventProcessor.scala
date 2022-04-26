@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids.tool.qualification
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.ArrayBuffer
-import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.profiling._
 
