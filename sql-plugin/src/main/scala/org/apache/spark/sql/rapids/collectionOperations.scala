@@ -32,6 +32,7 @@ import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
@@ -532,83 +533,104 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Ex
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val numRows = batch.numRows()
-    val numCols = batch.numCols()
+    val numCols = children.size
+    // A container collects all column vectors in use, to ease the release on exceptions.
     val workBuffers = mutable.ArrayBuffer[ColumnVector]()
 
     if (numCols == 0) {
-      return GpuScalar.from(Array(), dataType)
+      return GpuScalar(new GenericArrayData(Array.empty[Any]), dataType)
     }
 
-    withResource(GpuColumnVector.from(batch)) { table =>
+    // Prepare input columns
+    closeOnExcept(workBuffers) { _ =>
+      children.foreach { expr =>
+        workBuffers += GpuExpressionsUtils.columnarEvalToColumn(expr, batch).getBase
+      }
+    }
+    val inputs = workBuffers.toArray
+    workBuffers.clear()
+
+    withResource(inputs) { inputs =>
+      // Compute array sizes of input arrays
       closeOnExcept(workBuffers) { _ =>
         (0 until numCols).foreach { i =>
-          workBuffers += table.getColumn(i).countElements()
+          workBuffers += inputs(i).countElements()
         }
       }
 
+      // Pick max array size of each row.
+      // Replace with zero if there exists null among input values.
+      // [1, 3, 5, null, 4]
+      // [2, 4, 3,    8, 0]   => [4, 4, 5, 0, 7]
+      // [4, 2, 3,   10, 7]
       val maxSize = closeOnExcept(workBuffers) { _ =>
-        withResource(ColumnVector.makeList(workBuffers: _*)) { sizes =>
+        val max = withResource(ColumnVector.makeList(workBuffers: _*)) { sizes =>
           workBuffers.foreach(_.close())
           workBuffers.clear()
           sizes.listReduce(SegmentedReductionAggregation.max())
         }
-      }
-      // compute joint validity of input columns, and put it into work buffer
-      // [[array, null, array, array],
-      //  [null, array, array, array],   =>   [null, null, null, array]
-      //  [array, null, null, array]]
-      workBuffers += closeOnExcept(workBuffers) { _ =>
-        closeOnExcept(table.getColumn(0).isNull) { init =>
-          (1 until numCols).foldLeft(init) { case (agg, i) =>
-            withResource(agg) { _ =>
-              withResource(table.getColumn(i).isNull) { current =>
-                agg.and(current)
-              }
-            }
+        withResource(max) { _ =>
+          withResource(GpuScalar.from(0, IntegerType)) { zero =>
+            max.replaceNulls(zero)
           }
         }
       }
-      // generate offsets according to max sizes, and put it into work buffer
-      // maxSize [4, 3, 5, 2] -> offsets [0, 4, 7, 12, 14]
+
+      // Generate offsets from max sizes
+      // [4, 3, 5, 2] => [0, 4, 7, 12, 14]
       workBuffers += closeOnExcept(workBuffers) { _ =>
         maxSize.generateListOffsets()
       }
-      // generate indices for gathering children of input arrays
-      // maxSize [4, 3, 5, 2] -> indices [0, 1, 2, 3, 0, 1, 2, 0, 1, 2, 3, 4, 0, 1]
+
+      // Generate indices for gathering children of input arrays
+      // [4, 3, 5, 2] => [[0, 1, 2, 3],
+      //                  [0, 1, 2],
+      //                  [0, 1, 2, 3, 4],
+      //                  [0, 1]]
       val indices = closeOnExcept(workBuffers) { _ =>
         withResource(maxSize) { _ =>
           withResource(GpuScalar.from(0, IntegerType)) { s =>
             withResource(GpuColumnVector.from(s, numRows, IntegerType).getBase) { zero =>
-              withResource(ColumnVector.sequence(zero, maxSize)) { seq =>
-                seq.getChildColumnView(0).copyToColumnVector()
-              }
+              ColumnVector.sequence(zero, maxSize)
             }
           }
         }
       }
 
+      // Perform segment gather on input columns with indices covering each element
+      //
+      // input1: [[A, B, C], [D, E], [F], [G]]
+      // input2: [[a, b], [c, d, e], [], [f, g]]
+      // indices: [[0, 1, 2], [0, 1, 2], [0], [0, 1]]
+      // output1: [[A, B, C], [D, E, null], [F], [G, null]]
+      // output2: [[a, b, null], [c, d, e], [null], [f, g]]
       closeOnExcept(workBuffers) { _ =>
         withResource(indices) { _ =>
           (0 until numCols).foreach { i =>
-            val child = table.getColumn(i).getChildColumnView(0)
-            workBuffers += child.segmentedGather(indices)
+            withResource(inputs(i).segmentedGather(indices)) { gathered =>
+              workBuffers += gathered.getChildColumnView(0).copyToColumnVector()
+            }
           }
         }
       }
-    }
 
-    closeOnExcept(workBuffers) { _ =>
-      val gatherResults = (0 until numCols).map(i => workBuffers(i + 2))
-      val zipped = withResource(ColumnVector.makeList(gatherResults: _*)) { struct =>
-        (0 until numCols).foreach(_ => workBuffers.remove(2).close())
-        withResource(workBuffers.remove(1)) { offsets =>
-          struct.makeListFromOffsets(numRows, offsets)
+      // Wrap up buffers
+      closeOnExcept(workBuffers) { _ =>
+        // Construct List of Struct with list offsets and struct fields
+        val zipped = withResource(workBuffers.remove(0)) { offsets =>
+          val gatherResults = (0 until numCols).map(workBuffers)
+          withResource(ColumnVector.makeStruct(gatherResults: _*)) { struct =>
+            (0 until numCols).foreach(i => workBuffers(i).close())
+            workBuffers.clear()
+            struct.makeListFromOffsets(numRows, offsets)
+          }
         }
-      }
-      withResource(zipped) { zipped =>
-        withResource(workBuffers.remove(0)) { isNull =>
-          withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-            isNull.ifElse(nullScalar, zipped)
+        // Set the validity of result with the joint validity of input columns, which means
+        // the output record will be null if any of input records is null.
+        withResource(zipped) { zipped =>
+          val ret = zipped.mergeAndSetValidity(BinaryOp.BITWISE_AND, inputs: _*)
+          closeOnExcept(ret) { ret =>
+            GpuColumnVector.from(ret, dataType)
           }
         }
       }

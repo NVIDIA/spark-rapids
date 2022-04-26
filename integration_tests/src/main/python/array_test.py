@@ -23,6 +23,8 @@ from pyspark.sql.functions import array_contains, col, isnan, element_at
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
+from src.main.python.marks import ignore_order
+
 array_index_gen = IntegerGen(min_val=-25, max_val=25, special_cases=[None])
 array_neg_index_gen = IntegerGen(min_val=-25, max_val=-1, special_cases=[None])
 array_out_index_gen = IntegerGen(min_val=25, max_val=100, special_cases=[None])
@@ -334,9 +336,26 @@ def test_array_exists(data_gen, threeVL):
     })
 
 
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         array_gens_sample + [ArrayGen(map_string_string_gen)],
+                         ids=idfn)
 def test_arrays_zip(data_gen):
+    gen = StructGen(
+        [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen).selectExpr(
-            'arrays_zip(a, b, c)')
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'arrays_zip(a, b, c, d)',
+            'arrays_zip(a, b, c)',
+            'arrays_zip(a, a)',
+            'arrays_zip(a)')
+    )
+
+
+def test_arrays_zip_corner_cases():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(int_gen), length=100).selectExpr(
+            'arrays_zip()',
+            'arrays_zip(null)',
+            'arrays_zip(null, null)',
+            'arrays_zip(null, a)')
     )
