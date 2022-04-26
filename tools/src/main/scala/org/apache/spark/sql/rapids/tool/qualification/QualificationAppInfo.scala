@@ -275,7 +275,7 @@ class QualificationAppInfo(
           c.id, Some(node.id), isSupported=true)
       } else {
         // if not supported speedupFactor = 1 which means no speedup
-        ExecInfo(sqlID, node.name, c.name, 1, duration=None, c.id, Some(w.id),
+        ExecInfo(sqlID, node.name, c.name, 1, duration=None, c.id, Some(node.id),
           isSupported=false)
       }
     }
