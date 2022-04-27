@@ -92,8 +92,8 @@ If you'd like to further accelerate init time to 4-5 minutes, create a custom Da
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab
 and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the JupyterLab or
-Jupyter link to start to use sample 
-[Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL-GPU.ipynb).
+Jupyter link. Download the sample 
+[Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL-GPU.ipynb) and upload it in Jupyter.
 
 To get the input data of the sample notebook, we need to download the full 17 years' [Mortgage 
 data](https://docs.rapids.ai/datasets/mortgage-data) as `mortgage_2000-2016.tgz`, uncompress and 
