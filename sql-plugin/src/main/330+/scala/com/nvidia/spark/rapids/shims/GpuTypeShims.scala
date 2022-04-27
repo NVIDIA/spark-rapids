@@ -202,7 +202,16 @@ object GpuTypeShims {
    */
   def additionalCsvSupportedTypes: TypeSig = TypeSig.DAYTIME
 
-  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING
+  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
+
+  def typesYearMonthCanCastTo: TypeSig = TypeSig.integral
+
+  def typesDayTimeCanCastToOnSpark: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
+
+  def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING +
+      TypeSig.integral
+
+  def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.YEARMONTH + TypeSig.DAYTIME
 
   def additionalTypesStringCanCastTo: TypeSig = TypeSig.DAYTIME
 

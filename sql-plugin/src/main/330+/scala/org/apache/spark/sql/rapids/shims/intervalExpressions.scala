@@ -66,8 +66,8 @@ object IntervalUtils extends Arm {
    * Multiple with overflow check, then cast to long
    * Equivalent to Math.multiplyExact
    *
-   * @param left   cv or scalar
-   * @param right  cv or scalar, will not be scalar if left is scalar
+   * @param left   cv(byte, short, int, long) or scalar
+   * @param right  cv(byte, short, int, long) or scalar, will not be scalar if left is scalar
    * @return the long result of left * right
    */
   def multipleToLongWithOverflowCheck(left: BinaryOperable, right: BinaryOperable): ColumnVector = {
@@ -82,8 +82,8 @@ object IntervalUtils extends Arm {
    * Multiple with overflow check, then cast to int
    * Equivalent to Math.multiplyExact
    *
-   * @param left   cv or scalar
-   * @param right  cv or scalar, will not be scalar if left is scalar
+   * @param left   cv(byte, short, int, long) or scalar
+   * @param right  cv(byte, short, int, long) or scalar, will not be scalar if left is scalar
    * @return the int result of left * right
    */
   def multipleToIntWithOverflowCheck(left: BinaryOperable, right: BinaryOperable): ColumnVector = {

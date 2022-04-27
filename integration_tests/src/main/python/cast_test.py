@@ -20,6 +20,7 @@ from spark_session import is_before_spark_320, is_before_spark_330, with_gpu_ses
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
+import math
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
@@ -343,3 +344,69 @@ def test_cast_string_to_day_time_interval_exception(invalid_string):
         df = spark.createDataFrame(data, StringType())
         return df.select(f.col('value').cast(dtType)).collect()
     assert_gpu_and_cpu_error(fun, {}, "java.lang.IllegalArgumentException")
+
+integral_types = [ByteType(), ShortType(), IntegerType(), LongType()]
+@pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('integral_type', integral_types)
+def test_cast_day_time_interval_to_integral_no_overflow(integral_type):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DayTimeIntervalGen(start_field='day', end_field='day', min_value=timedelta(seconds=-128 * 86400), max_value=timedelta(seconds=127 * 86400)))
+            .select(f.col('a').cast(integral_type)))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DayTimeIntervalGen(start_field='hour', end_field='hour', min_value=timedelta(seconds=-128 * 3600), max_value=timedelta(seconds=127 * 3600)))
+            .select(f.col('a').cast(integral_type)))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DayTimeIntervalGen(start_field='minute', end_field='minute', min_value=timedelta(seconds=-128 * 60), max_value=timedelta(seconds=127 * 60)))
+            .select(f.col('a').cast(integral_type)))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DayTimeIntervalGen(start_field='second', end_field='second', min_value=timedelta(seconds=-128), max_value=timedelta(seconds=127)))
+            .select(f.col('a').cast(integral_type)))
+
+integral_gens_no_overflow = [
+    LongGen(min_val=math.ceil(LONG_MIN / 86400 / 1000000), max_val=math.floor(LONG_MAX / 86400 / 1000000), special_cases=[0, 1, -1]),
+    IntegerGen(min_val=math.ceil(INT_MIN / 86400 / 1000000), max_val=math.floor(INT_MAX / 86400 / 1000000), special_cases=[0, 1, -1]),
+    ShortGen(),
+    ByteGen()
+]
+day_time_fields = [0, 1, 2, 3] # 0 is day, 1 is hour, 2 is minute, 3 is second
+@pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('integral_gen_no_overflow', integral_gens_no_overflow)
+@pytest.mark.parametrize('day_time_field', day_time_fields)
+def test_cast_integral_to_day_time_interval_no_overflow(integral_gen_no_overflow, day_time_field):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, integral_gen_no_overflow).select(f.col('a').cast(DayTimeIntervalType(day_time_field, day_time_field))))
+
+cast_day_time_to_inregral_overflow_pairs = [
+    (INT_MIN - 1, IntegerType()),
+    (INT_MAX + 1, IntegerType()),
+    (SHORT_MIN - 1, ShortType()),
+    (SHORT_MAX + 1, ShortType()),
+    (BYTE_MIN - 1, ByteType()),
+    (BYTE_MAX + 1, ByteType())
+]
+@pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('large_second, integral_type', cast_day_time_to_inregral_overflow_pairs)
+def test_cast_day_time_interval_to_integral_overflow(large_second, integral_type):
+    def getDf(spark):
+        return spark.createDataFrame([timedelta(seconds=large_second)], DayTimeIntervalType(DayTimeIntervalType.SECOND, DayTimeIntervalType.SECOND))
+    assert_gpu_and_cpu_error(
+        lambda spark: getDf(spark).select(f.col('value').cast(integral_type)).collect(),
+        conf={},
+        error_message="overflow")
+
+day_time_interval_max_day = math.floor(LONG_MAX / (86400 * 1000000))
+large_days_overflow_pairs = [
+    (-day_time_interval_max_day - 1, LongType()),
+    (+day_time_interval_max_day + 1, LongType()),
+    (-day_time_interval_max_day - 1, IntegerType()),
+    (+day_time_interval_max_day + 1, IntegerType())
+]
+@pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('large_day,integral_type', large_days_overflow_pairs)
+def test_cast_integral_to_day_time_interval_overflow(large_day, integral_type):
+    def getDf(spark):
+        return spark.createDataFrame([large_day], integral_type)
+    assert_gpu_and_cpu_error(
+        lambda spark: getDf(spark).select(f.col('value').cast(DayTimeIntervalType(DayTimeIntervalType.DAY, DayTimeIntervalType.DAY))).collect(),
+        conf={},
+        error_message="overflow")

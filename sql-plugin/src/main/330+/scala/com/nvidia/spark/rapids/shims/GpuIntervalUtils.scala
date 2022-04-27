@@ -21,11 +21,11 @@ import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.Arm
-import com.nvidia.spark.rapids.CloseableHolder
+import com.nvidia.spark.rapids.{Arm, BoolUtils, CloseableHolder}
 
-import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND}
-import org.apache.spark.sql.types.{DataType, DayTimeIntervalType => DT}
+import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, MONTHS_PER_YEAR}
+import org.apache.spark.sql.rapids.shims.IntervalUtils
+import org.apache.spark.sql.types.{DataType, DayTimeIntervalType => DT, YearMonthIntervalType => YM}
 
 /**
  * Parse DayTimeIntervalType string column to long column of micro seconds
@@ -739,6 +739,152 @@ object GpuIntervalUtils extends Arm {
       withResource(Scalar.fromString(".")) { dot =>
         striped.rstrip(dot)
       }
+    }
+  }
+
+  def dayTimeIntervalToLong(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+    dt.asInstanceOf[DT].endField match {
+      case DT.DAY => withResource(Scalar.fromLong(MICROS_PER_DAY)) { micros =>
+        dtCv.div(micros)
+      }
+      case DT.HOUR => withResource(Scalar.fromLong(MICROS_PER_HOUR)) { micros =>
+        dtCv.div(micros)
+      }
+      case DT.MINUTE => withResource(Scalar.fromLong(MICROS_PER_MINUTE)) { micros =>
+        dtCv.div(micros)
+      }
+      case DT.SECOND => withResource(Scalar.fromLong(MICROS_PER_SECOND)) { micros =>
+        dtCv.div(micros)
+      }
+    }
+  }
+
+  def dayTimeIntervalToInt(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+    withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
+      castToTargetWithOverflowCheck(longCv, DType.INT32)
+    }
+  }
+
+  def dayTimeIntervalToShort(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+    withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
+      castToTargetWithOverflowCheck(longCv, DType.INT16)
+    }
+  }
+
+  def dayTimeIntervalToByte(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+    withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
+      castToTargetWithOverflowCheck(longCv, DType.INT8)
+    }
+  }
+
+  def yearMonthIntervalToLong(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+    ym.asInstanceOf[YM].endField match {
+      case YM.YEAR => withResource(Scalar.fromLong(MONTHS_PER_YEAR)) { monthsPerYear =>
+        ymCv.div(monthsPerYear)
+      }
+      case YM.MONTH => ymCv.castTo(DType.INT64)
+    }
+  }
+
+  def yearMonthIntervalToInt(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+    ym.asInstanceOf[YM].endField match {
+      case YM.YEAR => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) { monthsPerYear =>
+        ymCv.div(monthsPerYear)
+      }
+      case YM.MONTH => ymCv.incRefCount()
+    }
+  }
+
+  def yearMonthIntervalToShort(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+    withResource(yearMonthIntervalToInt(ymCv, ym)) { i =>
+      castToTargetWithOverflowCheck(i, DType.INT16)
+    }
+  }
+
+  def yearMonthIntervalToByte(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+    withResource(yearMonthIntervalToInt(ymCv, ym)) { i =>
+      castToTargetWithOverflowCheck(i, DType.INT8)
+    }
+  }
+
+  private def castToTargetWithOverflowCheck(cv: ColumnVector, dType: DType): ColumnVector = {
+    withResource(cv.castTo(dType)) { retTarget =>
+      withResource(cv.notEqualTo(retTarget)) { notEqual =>
+        if (BoolUtils.isAnyValidTrue(notEqual)) {
+          throw new ArithmeticException(s"overflow occurs when casting to $dType")
+        } else {
+          retTarget.incRefCount()
+        }
+      }
+    }
+  }
+
+  /**
+   * Convert long cv to `day time interval`
+   */
+  def longToDayTimeInterval(longCv: ColumnVector, dt: DataType): ColumnVector = {
+    val microsScalar = dt.asInstanceOf[DT].endField match {
+      case DT.DAY => Scalar.fromLong(MICROS_PER_DAY)
+      case DT.HOUR => Scalar.fromLong(MICROS_PER_HOUR)
+      case DT.MINUTE => Scalar.fromLong(MICROS_PER_MINUTE)
+      case DT.SECOND => Scalar.fromLong(MICROS_PER_SECOND)
+    }
+    withResource(microsScalar) { micros =>
+      // leverage `Decimal 128` to check the overflow
+      IntervalUtils.multipleToLongWithOverflowCheck(longCv, micros)
+    }
+  }
+
+  /**
+   * Convert (byte | short | int) cv to `day time interval`
+   */
+  def intToDayTimeInterval(intCv: ColumnVector, dt: DataType): ColumnVector = {
+    dt.asInstanceOf[DT].endField match {
+      case DT.DAY => withResource(Scalar.fromLong(MICROS_PER_DAY)) { micros =>
+        // leverage `Decimal 128` to check the overflow
+        IntervalUtils.multipleToLongWithOverflowCheck(intCv, micros)
+      }
+      case DT.HOUR => withResource(Scalar.fromLong(MICROS_PER_HOUR)) { micros =>
+        // no need to check overflow
+        intCv.mul(micros)
+      }
+      case DT.MINUTE => withResource(Scalar.fromLong(MICROS_PER_MINUTE)) { micros =>
+        // no need to check overflow
+        intCv.mul(micros)
+      }
+      case DT.SECOND => withResource(Scalar.fromLong(MICROS_PER_SECOND)) { micros =>
+        // no need to check overflow
+        intCv.mul(micros)
+      }
+    }
+  }
+
+  /**
+   * Convert long cv to `year month interval`
+   */
+  def longToYearMonthInterval(longCv: ColumnVector, ym: DataType): ColumnVector = {
+    ym.asInstanceOf[YM].endField match {
+      case YM.YEAR => withResource(Scalar.fromLong(MONTHS_PER_YEAR)) { num12 =>
+        // leverage `Decimal 128` to check the overflow
+        IntervalUtils.multipleToIntWithOverflowCheck(longCv, num12)
+      }
+      case YM.MONTH => IntervalUtils.castLongToIntWithOverflowCheck(longCv)
+    }
+  }
+
+  /**
+   * Convert (byte | short | int) cv to `year month interval`
+   */
+  def intToYearMonthInterval(intCv: ColumnVector, ym: DataType): ColumnVector = {
+    (ym.asInstanceOf[YM].endField, intCv.getType) match {
+      case (YM.YEAR, DType.INT32) => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) { num12 =>
+        // leverage `Decimal 128` to check the overflow
+        IntervalUtils.multipleToIntWithOverflowCheck(intCv, num12)
+      }
+      case (YM.YEAR, DType.INT16 | DType.INT8) => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) {
+        num12 => intCv.mul(num12)
+      }
+      case (YM.MONTH, _) => intCv.castTo(DType.INT32)
     }
   }
 }
