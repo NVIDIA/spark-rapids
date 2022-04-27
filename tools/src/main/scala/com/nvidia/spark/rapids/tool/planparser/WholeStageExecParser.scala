@@ -39,14 +39,12 @@ case class WholeStageExecParser(
     val childNodeRes = node.nodes.flatMap { c =>
       SQLPlanParser.parsePlanNode(c, sqlID, checker, app)
     }
-    val wholeStageChildren = childNodeRes.map(_.copy(wholeStageId = Some(node.id)))
     // if any of the execs in WholeStageCodegen supported mark this entire thing
     // as supported
-    val anySupported = wholeStageChildren.exists(_.isSupported == true)
+    val anySupported = childNodeRes.exists(_.isSupported == true)
     // average speedup across the execs in the WholeStageCodegen for now
-    val avSpeedupFactor = SQLPlanParser.average(wholeStageChildren.map(_.speedupFactor))
-    val wholeStageSpeedup = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
-      maxDuration, node.id, wholeStageId=None, anySupported)
-    wholeStageChildren += wholeStageSpeedup
+    val avSpeedupFactor = SQLPlanParser.average(childNodeRes.map(_.speedupFactor))
+    Seq(ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
+      maxDuration, node.id, anySupported, Some(childNodeRes)))
   }
 }

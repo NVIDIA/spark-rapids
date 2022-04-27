@@ -32,12 +32,13 @@ case class ExecInfo(
     speedupFactor: Int,
     duration: Option[Long],
     nodeId: Long,
-    wholeStageId: Option[Long],
-    isSupported: Boolean) {
+    isSupported: Boolean,
+    children: Option[Seq[ExecInfo]]) {
   override def toString: String = {
-    s"sqlID: $sqlID, exec: $exec, expr: $expr, speedupFactor: $speedupFactor " +
-      s"duration: $duration, nodeId: $nodeId, wholeStageId: $wholeStageId, " +
-      s"isSupported: $isSupported"
+    s"sqlID: $sqlID, exec: $exec, expr: $expr, speedupFactor: $speedupFactor, " +
+      s"duration: $duration, nodeId: $nodeId, " +
+      s"isSupported: $isSupported, children: " +
+      s"${children.map("    " + _.toString).mkString("\n")}"
   }
 }
 
@@ -78,12 +79,12 @@ object SQLPlanParser extends Logging {
       case o =>
         logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         ArrayBuffer(ExecInfo(sqlID, o.name, expr = "", 1, duration = None, o.id,
-          wholeStageId = None, isSupported = false))
+          isSupported = false, None))
     }
   }
 
   // integer division if we want to roundup need to change
-  def average(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 0 else arr.sum/arr.size
+  def average(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 1 else arr.sum/arr.size
 
   // We get the total duration by finding the accumulator with the largest value.
   // This is because each accumulator has a value and an update. As tasks end

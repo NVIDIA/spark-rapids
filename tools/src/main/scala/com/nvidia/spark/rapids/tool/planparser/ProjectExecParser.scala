@@ -40,6 +40,6 @@ case class ProjectExecParser(
     }
     // TODO - add in parsing expressions - average speedup across?
     Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      duration, node.id, wholeStageId = None, isSupported))
+      duration, node.id, isSupported, None))
   }
 }
