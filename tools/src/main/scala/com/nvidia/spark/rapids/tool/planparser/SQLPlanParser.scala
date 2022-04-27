@@ -33,7 +33,13 @@ case class ExecInfo(
     duration: Option[Long],
     nodeId: Long,
     wholeStageId: Option[Long],
-    isSupported: Boolean)
+    isSupported: Boolean) {
+  override def toString: String = {
+    s"sqlID: $sqlID, exec: $exec, expr: $expr, speedupFactor: $speedupFactor" +
+      s"duration: $duration, nodeId: $nodeId, wholeStageId: $wholeStageId," +
+      s" isSupported: $isSupported"
+  }
+}
 
 case class PlanInfo(
     sqlID: Long,
@@ -76,6 +82,7 @@ object SQLPlanParser extends Logging {
     }
   }
 
+  // integer division if we want to roundup need to change
   def average(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 0 else arr.sum/arr.size
 
   // We get the total duration by finding the accumulator with the largest value.
