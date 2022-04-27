@@ -227,7 +227,14 @@ class QualificationAppInfo(
       }.getOrElse(Seq.empty)
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
-        perSQLId.foreach { x => logWarning(s"sqlID: ${x._1}, exec: ${x._2.mkString("\n")}")}
+        perSQLId.foreach { case (id, execInfos) =>
+          logWarning(s"sqlID: ${id}, exec: ${execInfos.mkString("\n")}")
+          execInfos.foreach { c =>
+            if (c.children.nonEmpty) {
+              logWarning("children: " + c.childrenString)
+            }
+          }
+        }
       }
       // val sqlIdSum = perSQLId.map { case (id, opInfos) =>
       //   val durWithSpeedup = op.speedupFactor * op.duration
