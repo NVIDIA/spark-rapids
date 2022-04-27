@@ -180,6 +180,10 @@ def pytest_runtest_setup(item):
     else:
         _limit = -1
 
+    if item.get_closest_marker('iceberg'):
+        if not item.config.getoption('iceberg'):
+            pytest.skip('Iceberg tests not configured to run')
+
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
