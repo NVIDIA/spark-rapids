@@ -646,8 +646,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException("word boundaries are not supported")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
-        case 'Z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("string anchor \\Z is not supported in split mode")
+        case 'Z' if mode == RegexSplitMode || mode == RegexReplaceMode =>
+          throw new RegexUnsupportedException(
+              "string anchor \\Z is not supported in split or replace mode")
         case 'z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\z is not supported in split mode")
         case 'z' =>
@@ -659,8 +660,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4532
-          throw new RegexUnsupportedException("string anchor \\Z is not supported")
+          // \Z is really a synonymn for $. It's used in Java to preserve that behavior when
+          // using modes that change the meaning of $ (such as MULTILINE or UNIX_LINES)
+          previous match {
+            case Some(RegexEscaped('Z')) =>
+              RegexEmpty()
+            case _ =>
+              rewrite(RegexChar('$'), previous)
+          }
         case 's' | 'S' =>
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar(' '), RegexChar('\u000b'))
@@ -773,12 +780,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
             last match {
               // when the previous character is a line anchor ($), the JVM has special handling
               // when matching against line terminator characters
-              case Some(RegexChar('$')) => 
+              case Some(RegexChar('$')) | Some(RegexEscaped('Z')) => 
                 val j = r.lastIndexWhere {
                   case RegexEmpty() => false
                   case _ => true
                 }
                 part match {
+                  case RegexGroup(capture, RegexSequence(
+                      ListBuffer(RegexCharacterClass(true, parts))))
+                      if parts.forall(!isBeginOrEndLineAnchor(_)) =>
+                    r(j) = RegexSequence(ListBuffer(RegexGroup(capture, RegexSequence(
+                        ListBuffer(lineTerminatorMatcher(Set.empty, true)))), RegexChar('$')))
+                  case RegexGroup(capture, RegexCharacterClass(true, parts))
+                      if parts.forall(!isBeginOrEndLineAnchor(_)) =>
+                    r(j) = RegexSequence(ListBuffer(RegexGroup(capture, RegexSequence(
+                        ListBuffer(lineTerminatorMatcher(Set.empty, true)))), RegexChar('$')))
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
                     r(j) = RegexSequence(
