@@ -51,6 +51,15 @@ abstract class ExistenceJoinIterator(
 
   use(spillableBuiltBatch)
 
+  /**
+   * This method uses a left semijoin to construct a map of all indices
+   * into the left table batch pointing to rows that have a join partner on the
+   * right-hand side.
+   *
+   * Given Boolean column FC totaling as many rows as leftColumnarBatch, all having
+   * the value "false", scattering "true" into column FC will produce the "exists"
+   * column of ExistenceJoin
+   */
   def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap
 
   override def hasNext: Boolean = {
