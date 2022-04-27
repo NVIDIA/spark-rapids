@@ -47,6 +47,7 @@ ArrayExists,3
 ArrayMax,3
 ArrayMin,3
 ArrayTransform,3
+ArraysZip,3
 Asin,3
 Asinh,3
 AtLeastNNonNulls,3
