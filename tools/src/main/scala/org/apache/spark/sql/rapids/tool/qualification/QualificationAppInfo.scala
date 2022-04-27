@@ -228,12 +228,7 @@ class QualificationAppInfo(
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (id, execInfos) =>
-          logWarning(s"sqlID: ${id}, exec: ${execInfos.mkString("\n")}")
-          execInfos.foreach { c =>
-            if (c.children.nonEmpty) {
-              logWarning("children: " + c.childrenString)
-            }
-          }
+          logWarning(s"sqlID: ${id}, exec: ${execInfos.map(_.toString).mkString("\n")}")
         }
       }
       // val sqlIdSum = perSQLId.map { case (id, opInfos) =>

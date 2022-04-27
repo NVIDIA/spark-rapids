@@ -34,12 +34,21 @@ case class ExecInfo(
     nodeId: Long,
     isSupported: Boolean,
     children: Option[Seq[ExecInfo]]) {
-  val childrenString = children.map("    " + _.toString + "\n").getOrElse("")
+  val childrenString = {
+    val str = children.map { c =>
+      c.map("       " + _.toString).mkString("\n")
+    }.getOrElse("")
+    if (str.nonEmpty) {
+      "\n" + str
+    } else {
+      str
+    }
+  }
   override def toString: String = {
-    s"sqlID: $sqlID, exec: $exec, expr: $expr, speedupFactor: $speedupFactor, " +
+    s"exec: $exec, expr: $expr, sqlID: $sqlID , speedupFactor: $speedupFactor, " +
       s"duration: $duration, nodeId: $nodeId, " +
       s"isSupported: $isSupported, children: " +
-      s"${children.map("    " + _.toString + "\n").getOrElse("")}"
+      s"${childrenString}"
   }
 }
 
