@@ -2905,6 +2905,7 @@ object GpuOverrides extends Logging {
           )
         }
       }),
+    // TODO: fix the signature https://github.com/NVIDIA/spark-rapids/issues/5327
     expr[ArraysZip](
       "Returns a merged array of structs in which the N-th struct contains" +
         " all N-th values of input arrays.",

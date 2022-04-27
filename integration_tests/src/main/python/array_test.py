@@ -345,7 +345,7 @@ def test_arrays_zip(data_gen):
         lambda spark: gen_df(spark, gen).selectExpr(
             'arrays_zip(a, b, c, d)',
             'arrays_zip(a, b, c)',
-            'arrays_zip(a, a)',
+            'arrays_zip(a, b, array())',
             'arrays_zip(a)')
     )
 
@@ -356,6 +356,9 @@ def test_arrays_zip_corner_cases():
             'arrays_zip()',
             'arrays_zip(null)',
             'arrays_zip(null, null)',
-            'arrays_zip(null, a)')
+            'arrays_zip(null, a)',
+            'arrays_zip(a, array())',
+            'arrays_zip(a, array(), array(1, 2))',
+            'arrays_zip(a, array(1, 2, 4, 3), array(5))')
     )
 
