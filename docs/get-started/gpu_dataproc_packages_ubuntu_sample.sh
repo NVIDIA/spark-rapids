@@ -20,7 +20,7 @@ OS_NAME=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
 readonly OS_NAME
 OS_DIST=$(lsb_release -cs)
 readonly OS_DIST
-CUDA_VERSION='11.0'
+CUDA_VERSION='11.2'
 readonly CUDA_VERSION
 
 readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'
@@ -76,7 +76,7 @@ function install_nvidia_gpu_driver() {
   # Without --no-install-recommends this takes a very long time.
   execute_with_retries "apt-get install -y -q --no-install-recommends cuda-drivers-460"
   execute_with_retries "apt-get install -y -q --no-install-recommends ${cuda_package}"
-
+  ldconfig
   echo "NVIDIA GPU driver provided by NVIDIA was installed successfully"
 }
 
@@ -107,6 +107,7 @@ function configure_yarn_nodemanager() {
     'yarn.nodemanager.container-executor.class' \
     'org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExecutor'
   set_hadoop_property 'yarn-site.xml' 'yarn.nodemanager.linux-container-executor.group' 'yarn'
+
 }
 
 function configure_gpu_isolation() {
@@ -122,15 +123,25 @@ function configure_gpu_isolation() {
   sed -i "s/yarn.nodemanager\.linux\-container\-executor\.group\=/yarn\.nodemanager\.linux\-container\-executor\.group\=yarn/g" "${HADOOP_CONF_DIR}/container-executor.cfg"
   printf '\n[gpu]\nmodule.enabled=true\n[cgroups]\nroot=/sys/fs/cgroup\nyarn-hierarchy=yarn\n' >>"${HADOOP_CONF_DIR}/container-executor.cfg"
 
-  chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
-  chmod a+rwx -R /sys/fs/cgroup/devices
+  # Configure a systemd unit to ensure that permissions are set on restart
+  cat >/etc/systemd/system/dataproc-cgroup-device-permissions.service<<EOF
+[Unit]
+Description=Set permissions to allow YARN to access device directories
+[Service]
+ExecStart=/bin/bash -c "chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct; chmod a+rwx -R /sys/fs/cgroup/devices"
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl enable dataproc-cgroup-device-permissions
+  systemctl start dataproc-cgroup-device-permissions
 }
 
-readonly DEFAULT_SPARK_RAPIDS_VERSION="22.02.0"
+readonly DEFAULT_SPARK_RAPIDS_VERSION="22.04.0"
 readonly DEFAULT_CUDA_VERSION="11.0"
-readonly DEFAULT_CUDF_VERSION="22.02.0"
+readonly DEFAULT_CUDF_VERSION="22.04.0"
 readonly DEFAULT_XGBOOST_VERSION="1.4.2"
-readonly DEFAULT_XGBOOST_GPU_SUB_VERSION="0.2.0"
+readonly DEFAULT_XGBOOST_GPU_SUB_VERSION="0.3.0"
 readonly SPARK_VERSION="3.0"
 
 readonly CUDF_VERSION=${DEFAULT_CUDF_VERSION}
@@ -142,9 +153,15 @@ readonly XGBOOST_GPU_SUB_VERSION=${DEFAULT_XGBOOST_GPU_SUB_VERSION}
 function install_spark_rapids() {
   local -r rapids_repo_url='https://repo1.maven.org/maven2/ai/rapids'
   local -r nvidia_repo_url='https://repo1.maven.org/maven2/com/nvidia'
+
+  # Convert . to - for URL formatting
   local cudf_cuda_version="${CUDA_VERSION//\./-}"
-  # Convert "11-0" to "11"
-  cudf_cuda_version="${cudf_cuda_version%-0}"
+
+  # There's only one release for all CUDA 11 versions
+  # The version formatting does not have a '.'
+  if [[ ${cudf_cuda_version} == 11* ]]; then
+    cudf_cuda_version="11"
+  fi
     
   wget -nv --timeout=30 --tries=5 --retry-connrefused \
     "${nvidia_repo_url}/xgboost4j-spark_${SPARK_VERSION}/${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}/xgboost4j-spark_${SPARK_VERSION}-${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}.jar" \
@@ -186,7 +203,7 @@ function main() {
 
   install_spark_rapids
   configure_spark
-
+  echo "RAPIDS initialized with Spark runtime"
 }
 
 main
