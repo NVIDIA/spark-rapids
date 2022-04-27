@@ -828,13 +828,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
         })._1)
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
-        case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
-          // example: pattern " ?", input "] b[", replace with "X":
-          // java: X]XXbX[X
-          // cuDF: XXXX] b[
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
-          throw new RegexUnsupportedException(
-            "regexp_replace on GPU does not support repetition with ? or *")
+        // case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
+        //   // example: pattern " ?", input "] b[", replace with "X":
+        //   // java: X]XXbX[X
+        //   // cuDF: XXXX] b[
+        //   // see https://github.com/NVIDIA/spark-rapids/issues/4468
+        //   throw new RegexUnsupportedException(
+        //     "regexp_replace on GPU does not support repetition with ? or *")
 
         case (_, SimpleQuantifier(ch)) if mode == RegexSplitMode && "?*".contains(ch) =>
           // example: pattern " ?", input "] b[", replace with "X":

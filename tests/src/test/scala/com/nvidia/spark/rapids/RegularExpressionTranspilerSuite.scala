@@ -288,6 +288,19 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val pattern = Seq("a.")
     val inputs = Seq("abc", "a\n\rb", "a\n\u0085b", "a\u2029\u0085b", "a\u2082\rb")
     assertCpuGpuMatchesRegexpFind(pattern, inputs)
+
+  }
+
+  test("? and * repetitions - replace") {
+    assertCpuGpuMatchesRegexpReplace(
+      Seq("D?", "D*"),
+      Seq("SDSDSDS"))
+  }
+
+  test("dot matches CR on GPU but not on CPU") {
+    // see https://github.com/rapidsai/cudf/issues/9619
+    val pattern = "1."
+    assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
   }
 
   test("character class with ranges") {
@@ -528,6 +541,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
 
     if (mode == RegexReplaceMode) {
+      System.out.println("patterns: " + patterns.toSeq.takeWhile(!_.equals("D*")).map(toReadableString))
       assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
     } else {
       assertCpuGpuMatchesRegexpFind(patterns.toSeq, data)
@@ -754,6 +768,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       case '\r' => "\\r"
       case '\n' => "\\n"
       case '\t' => "\\t"
+      case '\f' => "\\f"
+      case '\u000b' => "\\u000b"
+      case '\u0085' => "\\u0085"
+      case '\u2028' => "\\u2028"
+      case '\u2029' => "\\u2029"
       case other => other
     }.mkString
   }
