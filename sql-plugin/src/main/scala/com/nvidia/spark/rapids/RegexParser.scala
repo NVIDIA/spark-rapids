@@ -870,10 +870,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   RegexGroup(capture, rewrite(term, previous))
                 // NOTE: (\A)* can be transpiled to (\A)?
                 // however, (\A)? is not supported in libcudf yet
-                // case (RegexEscaped('A'), '*') |
-                //     (RegexSequence(ListBuffer(RegexEscaped('A'))), '*') =>
-                //   RegexRepetition(RegexGroup(capture, rewrite(term, previous)),
-                // SimpleQuantifier('?'))
                 case _ =>
                   throw new RegexUnsupportedException(nothingToRepeat)
               }
@@ -892,8 +888,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
           rewrite(base, previous)
         // NOTE: \A* can be transpiled to \A?
         // however, \A? is not supported in libcudf yet
-        // case (RegexEscaped('A'), SimpleQuantifier('*')) =>
-        //   RegexRepetition(rewrite(base), SimpleQuantifier('?'))
         case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base, None), quantifier)
         case _ =>
@@ -940,7 +934,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
     case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
     case RegexChar(ch) => ch == '^' || ch == '$'
-    case RegexEscaped('z') => true // \z gets translated to $
+    case RegexEscaped(ch) if "zZ".contains(ch) => true // \z gets translated to $
     case _ => false
   }
 
