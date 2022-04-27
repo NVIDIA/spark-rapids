@@ -508,7 +508,8 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
     }
 }
 
-case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with ExpectsInputTypes {
+case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with ShimExpression
+  with ExpectsInputTypes {
 
   override def inputTypes: Seq[AbstractDataType] = Seq.fill(children.length)(ArrayType)
 
@@ -526,9 +527,6 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Ex
 
   @transient private lazy val arrayElementTypes =
     children.map(_.dataType.asInstanceOf[ArrayType].elementType)
-
-  override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression =
-    legacyWithNewChildren(newChildren)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
 
