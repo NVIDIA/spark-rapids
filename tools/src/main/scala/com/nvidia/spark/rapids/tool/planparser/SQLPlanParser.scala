@@ -35,9 +35,9 @@ case class ExecInfo(
     wholeStageId: Option[Long],
     isSupported: Boolean) {
   override def toString: String = {
-    s"sqlID: $sqlID, exec: $exec, expr: $expr, speedupFactor: $speedupFactor" +
-      s"duration: $duration, nodeId: $nodeId, wholeStageId: $wholeStageId," +
-      s" isSupported: $isSupported"
+    s"sqlID: $sqlID, exec: $exec, expr: $expr, speedupFactor: $speedupFactor " +
+      s"duration: $duration, nodeId: $nodeId, wholeStageId: $wholeStageId, " +
+      s"isSupported: $isSupported"
   }
 }
 
