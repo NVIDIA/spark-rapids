@@ -584,8 +584,8 @@ that a pattern is either unsupported or would produce incorrect results on the G
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
-- Line anchor `$`
-- String anchor `\Z`
+- Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
+- String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported by `regexp_replace`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Non-digit character class `\D`
