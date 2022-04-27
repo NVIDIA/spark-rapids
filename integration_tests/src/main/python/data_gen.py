@@ -975,6 +975,7 @@ nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + ma
 
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
+legacy_interval_enabled_conf = {'spark.sql.legacy.interval.enabled': 'true'}
 
 def copy_and_update(conf, *more_confs):
     local_conf = conf.copy()
@@ -1030,10 +1031,3 @@ def append_unique_int_col_to_df(spark, dataframe):
     new_rows = append_unique_to_rows(collected)
     new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
     return spark.createDataFrame(new_rows, new_schema)
-
-# add multiple confs
-def add_conf(*confs):
-    all_items = []
-    for conf in confs:
-        all_items += list(conf.items())
-    return dict(all_items)
