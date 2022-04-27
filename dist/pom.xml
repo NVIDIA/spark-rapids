@@ -36,17 +36,6 @@
             <classifier>${spark.version.classifier}</classifier>
             <scope>compile</scope>
         </dependency>
-
-        <!--
-            manually promoting provided cudf as a direct dependency
-        -->
-        <dependency>
-            <groupId>ai.rapids</groupId>
-            <artifactId>cudf</artifactId>
-            <version>${cudf.version}</version>
-            <classifier>${cuda.version}</classifier>
-            <scope>compile</scope>
-        </dependency>
     </dependencies>
 
     <properties>
@@ -228,6 +217,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <classifier>${cuda.version}</classifier>
+                </configuration>
                 <executions>
                     <execution>
                         <id>default-jar</id>
@@ -241,6 +233,7 @@
                         </goals>
                         <configuration>
                             <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
+                            <classifier>${cuda.version}</classifier>
                             <excludes>
                                 <!-- get rid of all maven poms from shim builds -->
                                 <exclude>META-INF/maven/**</exclude>
@@ -329,6 +322,18 @@
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
                                             <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/operatorsScore.csv"/>
+                                            <arg value="operatorScore"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExecs.csv"/>
+                                            <arg value="execs"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExprs.csv"/>
+                                            <arg value="exprs"/>
                                         </java>
                                     </ac:then>
                                 </ac:if>

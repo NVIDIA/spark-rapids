@@ -23,6 +23,8 @@ jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
     steps:
+    - name: work around permission issue
+      run: git config --global --add safe.directory /github/workspace
     - uses: actions/checkout@master
     - uses: gaurav-nelson/github-action-markdown-link-check@v1
       with:

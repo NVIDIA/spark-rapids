@@ -31,7 +31,6 @@ object RapidsErrorUtils {
 
   def mapKeyNotExistError(
       key: String,
-      isElementAtFunction: Boolean,
       origin: Origin): NoSuchElementException = {
     // For now, the default argument is false. The caller sets the correct value accordingly.
     QueryExecutionErrors.mapKeyNotExistError(key)

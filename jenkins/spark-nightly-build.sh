@@ -19,9 +19,10 @@ set -ex
 
 . jenkins/version-def.sh
 
-## export 'M2DIR' so that shims can get the correct cudf/spark dependency info
+## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR="$WORKSPACE/.m2"
 
+TOOL_PL=${TOOL_PL:-"tools"}
 DIST_PL="dist"
 function mvnEval {
     mvn help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
@@ -55,7 +56,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
-            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots"
+            mvnExtaFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots -Dtypes=jar -Dfiles=${DIST_FPATH}.jar -Dclassifiers=$CUDA_CLASSIFIER"
             ;;
 
         *)
@@ -113,15 +114,16 @@ mvn -B clean install -pl '!tools' \
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
+    DIST_FPATH="$DIST_FPATH-$CUDA_CLASSIFIER"
     distWithReducedPom "deploy"
 
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     mvn -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
 fi
 
-# Parse cudf and spark files from local mvn repo
-jenkins/printJarVersion.sh "CUDFVersion" "$M2DIR/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+# Parse Spark files from local mvn repo
 jenkins/printJarVersion.sh "SPARKVersion" "$M2DIR/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar" $SERVER_ID

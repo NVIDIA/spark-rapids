@@ -54,16 +54,14 @@ fi
 export WORKSPACE=`pwd`
 
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
-CUDF_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cudf.version -DforceStdout`
 SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
 CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
 
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
-# export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
+# export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=/home/ubuntu/.m2/repository
-CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 JARDIR=/databricks/jars

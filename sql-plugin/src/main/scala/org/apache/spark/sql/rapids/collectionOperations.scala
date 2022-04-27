@@ -231,8 +231,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 if (!exist.isValid || exist.getBoolean) {
                   map.getMapValue(key)
                 } else {
-                  throw RapidsErrorUtils.mapKeyNotExistError(keyS.getValue.toString,
-                    isElementAtFunction = true, origin)
+                  throw RapidsErrorUtils.mapKeyNotExistError(keyS.getValue.toString, origin)
                 }
               }
             }

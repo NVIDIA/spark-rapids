@@ -81,18 +81,18 @@ the driver logs with `spark.rapids.sql.explain=all`.
 #### Requirements
 
 - A Spark 3.x CPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- The `rapids-4-spark` [jar](../download.md)
 
 #### Usage
 
-1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
+1. In `spark-shell`, add the `rapids-4-spark` jar into --jars option or put it in the
    Spark classpath and enable the configs `spark.rapids.sql.mode=explainOnly` and
    `spark.plugins=com.nvidia.spark.SQLPlugin`.
 
    For example:
 
    ```bash
-   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.mode=explainOnly --conf spark.plugins=com.nvidia.spark.SQLPlugin
+   spark-shell --jars /PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.mode=explainOnly --conf spark.plugins=com.nvidia.spark.SQLPlugin
    ```
 2.  Enable optional RAPIDS Accelerator related parameters based on your setup.
 
@@ -139,7 +139,7 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 #### Requirements with Spark 3.X
 
 - A Spark 3.X CPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- The `rapids-4-spark` [jar](../download.md)
 - Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 21.12 or newer
 
@@ -165,7 +165,7 @@ in the plan due to that.
 This is very similar output you would get by running the query with the
 RAPIDS Accelerator enabled and with the config `spark.rapids.sql.enabled` enabled.
 
-Requires the RAPIDS Accelerator for Apache Spark jar and RAPIDS cudf jar be included
+Requires the RAPIDS Accelerator for Apache Spark jar be included
 in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
 
 Calling from Scala:
@@ -193,13 +193,13 @@ Throws:
 
 #### Usage
 
-1. In `spark-shell`, add the necessary jars into --jars option or put them in the
+1. In `spark-shell`, add the necessary jar into --jars option or put it in the
    Spark classpath.
 
    For example, on Spark 3.X:
 
    ```bash
-   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar
+   spark-shell --jars /PathTo/rapids-4-spark_<version>.jar
    ```
 
    For example, on Spark 2.4.X:
@@ -269,7 +269,7 @@ pretty accurate.
 ### Requirements
 
 - A Spark 3.x GPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- The `rapids-4-spark` [jar](../download.md)
 
 ### How to use
 
