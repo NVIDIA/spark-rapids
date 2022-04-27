@@ -71,7 +71,7 @@ object SQLPlanParser extends Logging {
         ProjectExecParser(p, checker, sqlID, app).parse
       case o =>
         logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
-        ArrayBuffer(ExecInfo(sqlID, o.name, expr = "", 1, duration = Some(0), o.id,
+        ArrayBuffer(ExecInfo(sqlID, o.name, expr = "", 1, duration = None, o.id,
           wholeStageId = None, isSupported = false))
     }
   }

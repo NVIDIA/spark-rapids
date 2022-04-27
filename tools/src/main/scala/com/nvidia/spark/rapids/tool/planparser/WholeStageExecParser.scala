@@ -36,28 +36,17 @@ case class WholeStageExecParser(
     val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
 
-    // TODO - most of the time children those don't have timings but check all
-    // TODO - add in expression checking
-    val childrenSpeedupFactors = node.nodes.map { c =>
-      val fullExecName = c.name + "Exec"
-      if (checker.isExecSupported(fullExecName)) {
-        val nodeRes = SQLPlanParser.parsePlanNode(c, sqlID, checker, app)
-        val speedupFactor = checker.getExecSpeedupFactor(fullExecName)
-        ExecInfo(sqlID, node.name, c.name, speedupFactor, duration=None,
-          c.id, Some(node.id), isSupported=true)
-      } else {
-        // if not supported speedupFactor = 1 which means no speedup
-        ExecInfo(sqlID, node.name, c.name, 1, duration=None, c.id, Some(node.id),
-          isSupported=false)
-      }
+    val childNodeRes = node.nodes.flatMap { c =>
+      SQLPlanParser.parsePlanNode(c, sqlID, checker, app)
     }
-    // TODO - average speedup across the execs in the WholeStageCodegen for now
-    val avSpeedupFactor = SQLPlanParser.average(childrenSpeedupFactors.map(_.speedupFactor))
+    val wholeStageChildren = childNodeRes.map(_.copy(wholeStageId = Some(node.id)))
     // if any of the execs in WholeStageCodegen supported mark this entire thing
     // as supported
-    val anySupported = childrenSpeedupFactors.exists(_.isSupported == true)
+    val anySupported = wholeStageChildren.exists(_.isSupported == true)
+    // average speedup across the execs in the WholeStageCodegen for now
+    val avSpeedupFactor = SQLPlanParser.average(wholeStageChildren.map(_.speedupFactor))
     val wholeStageSpeedup = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
       maxDuration, node.id, wholeStageId=None, anySupported)
-    childrenSpeedupFactors += wholeStageSpeedup
+    wholeStageChildren += wholeStageSpeedup
   }
 }
