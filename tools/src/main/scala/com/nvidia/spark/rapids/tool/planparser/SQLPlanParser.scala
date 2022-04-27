@@ -36,6 +36,7 @@ case class ExecInfo(
     isSupported: Boolean)
 
 case class PlanInfo(
+    sqlID: Long,
     execInfo: Seq[ExecInfo]
 )
 
@@ -52,7 +53,7 @@ object SQLPlanParser extends Logging {
     val execInfos = planGraph.nodes.flatMap { node =>
       parsePlanNode(node, sqlID, checker, app)
     }
-    PlanInfo(execInfos)
+    PlanInfo(sqlID, execInfos)
   }
 
   def parsePlanNode(
