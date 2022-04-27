@@ -519,14 +519,12 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
     // throws an exception.
 
     // Step 1. replace invalid counts
-    //  null -> 1
+    //  null -> 0
     //  negative values -> 0
-    val refinedCount = withResource(GpuScalar.from(1, DataTypes.IntegerType)) { one =>
-      withResource(rhs.getBase.replaceNulls(one)) { notNull =>
-        withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
-          withResource(notNull.lessThan(zero)) { lessThanZero =>
-            lessThanZero.ifElse(zero, notNull)
-          }
+    val refinedCount = withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+      withResource(rhs.getBase.replaceNulls(zero)) { notNull =>
+        withResource(notNull.lessThan(zero)) { lessThanZero =>
+          lessThanZero.ifElse(zero, notNull)
         }
       }
     }
@@ -537,8 +535,10 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
       }
     }
     // Step 3. generate list offsets from refined counts
-    val offsets = withResource(refinedCount) { cnt =>
-      cnt.generateListOffsets()
+    val offsets = closeOnExcept(repeated) { _ =>
+      withResource(refinedCount) { cnt =>
+        cnt.generateListOffsets()
+      }
     }
     // Step 4. make the result list column with offsets and child column
     val list = withResource(offsets) { offsets =>
