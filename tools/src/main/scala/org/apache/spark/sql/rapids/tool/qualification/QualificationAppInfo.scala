@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.planparser.{PlanInfo, SQLPlanParser}
 import com.nvidia.spark.rapids.tool.profiling._
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
@@ -26,7 +27,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphCluster}
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualificationAppInfo(
@@ -219,9 +220,13 @@ class QualificationAppInfo(
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
-      val execInfos = processSQLPlanForNodeTiming
-      val perSQLId = execInfos.groupBy(_.sqlID)
-      perSQLId.foreach { x => logWarning(s"sqlID: ${x._1}, exec: ${x._2.mkString("\n")}")}
+      val planInfos = pluginTypeChecker.map { checker =>
+        sqlPlans.map { case (id, plan) =>
+          SQLPlanParser.parseSQLPlan(plan, id, checker, this)
+        }.toSeq
+      }.getOrElse(Seq.empty)
+      // val perSQLId = execInfos.groupBy(_.sqlID)
+      // perSQLId.foreach { x => logWarning(s"sqlID: ${x._1}, exec: ${x._2.mkString("\n")}")}
       // val sqlIdSum = perSQLId.map { case (id, opInfos) =>
       //   val durWithSpeedup = op.speedupFactor * op.duration
       //   (id, opInfos.map(op => op.speedupFactor * (op.durWithSpeedup.getOrElse(1L))).sum)
@@ -235,78 +240,6 @@ class QualificationAppInfo(
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes)
     }
-  }
-
-  private def average(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 0 else arr.sum/arr.size
-
-  // We get the total duration by finding the accumulator with the largest value.
-  // This is because each accumulator has a value and an update. As tasks end
-  // they just update the value = value + update, so the largest value will be
-  // the duration.
-  private def getTotalDuration(accumId: Option[Long]): Option[Long] = {
-    val taskForAccum = accumId.flatMap(id => taskStageAccumMap.get(id))
-      .getOrElse(ArrayBuffer.empty)
-    val accumValues = taskForAccum.map(_.value.getOrElse(0L))
-    taskForAccum.map(_.value.getOrElse(0L))
-    val maxDuration = if (accumValues.isEmpty) {
-      None
-    } else {
-      Some(accumValues.max)
-    }
-    maxDuration
-  }
-
-  private def processWholestageCodegen(
-      node: SparkPlanGraphCluster,
-      checker: PluginTypeChecker,
-      sqlID: Long): Seq[ExecInfo] = {
-    // TODO - does metrics for time have previous ops?  per op thing, likely does
-    //  but verify
-    val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
-    val maxDuration = getTotalDuration(accumId)
-
-    // TODO - most of the time children those don't have timings but check all
-    // TODO - add in expression checking
-    val childrenSpeedupFactors = node.nodes.map { c =>
-      val fullExecName = c.name + "Exec"
-      if (checker.isExecSupported(fullExecName)) {
-        val speedupFactor = checker.getExecSpeedupFactor(fullExecName)
-        ExecInfo(sqlID, node.name, c.name, speedupFactor, duration=None,
-          c.id, Some(node.id), isSupported=true)
-      } else {
-        // if not supported speedupFactor = 1 which means no speedup
-        ExecInfo(sqlID, node.name, c.name, 1, duration=None, c.id, Some(node.id),
-          isSupported=false)
-      }
-    }
-    // TODO - average speedup across the execs in the WholeStageCodegen for now
-    val avSpeedupFactor = average(childrenSpeedupFactors.map(_.speedupFactor))
-    // if any of the execs in WholeStageCodegen supported mark this entire thing
-    // as supported
-    val anySupported = childrenSpeedupFactors.exists(_.isSupported == true)
-    val wholeStageSpeedup = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
-      maxDuration, node.id, wholeStageId=None, anySupported)
-    childrenSpeedupFactors += wholeStageSpeedup
-  }
-
-  def processSQLPlanForNodeTiming: Seq[ExecInfo] = {
-    pluginTypeChecker.map { checker =>
-      sqlPlans.flatMap { case (sqlID, planInfo) =>
-        val planGraph = SparkPlanGraph(planInfo)
-        // we want the sub-graph nodes to be inside of the wholeStageCodeGen so use nodes
-        // vs allNodes
-        planGraph.nodes.flatMap { node =>
-          node match {
-            case w if (w.name.contains("WholeStageCodegen")) =>
-              processWholestageCodegen(w.asInstanceOf[SparkPlanGraphCluster], checker, sqlID)
-            case o =>
-              logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
-              ArrayBuffer(ExecInfo(sqlID, o.name, expr="", 1, duration=Some(0), o.id,
-                wholeStageId=None, isSupported=false))
-          }
-        }
-      }.toSeq
-    }.getOrElse(Seq.empty)
   }
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
@@ -387,16 +320,6 @@ case class QualificationSummaryInfo(
     writeDataFormat: String,
     complexTypes: String,
     nestedComplexTypes: String)
-
-case class ExecInfo(
-    sqlID: Long,
-    exec: String,
-    expr: String,
-    speedupFactor: Int,
-    duration: Option[Long],
-    nodeId: Long,
-    wholeStageId: Option[Long],
-    isSupported: Boolean)
 
 object QualificationAppInfo extends Logging {
   def createApp(
