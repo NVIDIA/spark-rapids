@@ -2897,6 +2897,24 @@ object GpuOverrides extends Logging {
           )
         }
       }),
+    // TODO: fix the signature https://github.com/NVIDIA/spark-rapids/issues/5327
+    expr[ArraysZip](
+      "Returns a merged array of structs in which the N-th struct contains" +
+        " all N-th values of input arrays.",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("children",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.all)))),
+      (in, conf, p, r) => new ExprMeta[ArraysZip](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuArraysZip(childExprs.map(_.convertToGpu()))
+        }
+      }
+    ),
 
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
