@@ -841,3 +841,27 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
             "spark.sql.adaptive.enabled": aqeEnabled,
             "spark.sql.autoBroadcastJoinThreshold": bhjThreshold
         })
+
+@ignore_order
+@pytest.mark.parametrize('aqeEnabled', [True, False], ids=['aqe:on', 'aqe:off'])
+def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, aqeEnabled):
+    left_table_name = spark_tmp_table_factory.get()
+    right_table_name = spark_tmp_table_factory.get()
+
+    def do_join(spark):
+        gen = LongGen(min_val=0, max_val=5)
+
+        left_df = binary_op_df(spark, gen)
+        left_df.createOrReplaceTempView(left_table_name)
+        right_df = binary_op_df(spark, gen)
+        right_df.createOrReplaceTempView(right_table_name)
+
+        return spark.sql(("select * "
+                          "from {} as l "
+                          "where l.a >= 3 "
+                          "   or exists (select * from {} as r where l.b < r.b)"
+                          ).format(left_table_name, right_table_name))
+
+    capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
+                                                      conf={"spark.sql.adaptive.enabled": aqeEnabled})

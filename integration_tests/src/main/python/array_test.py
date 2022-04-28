@@ -359,3 +359,33 @@ def test_array_exists(data_gen, threeVL):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
         'spark.sql.legacy.followThreeValuedLogicInArrayExists' : threeVL,
     })
+
+
+array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5)]
+
+
+@pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
+def test_arrays_zip(data_gen):
+    gen = StructGen(
+        [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'arrays_zip(a, b, c, d)',
+            'arrays_zip(a, b, c)',
+            'arrays_zip(a, b, array())',
+            'arrays_zip(a)')
+    )
+
+
+def test_arrays_zip_corner_cases():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(int_gen), length=100).selectExpr(
+            'arrays_zip()',
+            'arrays_zip(null)',
+            'arrays_zip(null, null)',
+            'arrays_zip(null, a)',
+            'arrays_zip(a, array())',
+            'arrays_zip(a, array(), array(1, 2))',
+            'arrays_zip(a, array(1, 2, 4, 3), array(5))')
+    )
+

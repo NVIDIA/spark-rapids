@@ -975,6 +975,7 @@ nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + ma
 
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
+legacy_interval_enabled_conf = {'spark.sql.legacy.interval.enabled': 'true'}
 
 def copy_and_update(conf, *more_confs):
     local_conf = conf.copy()
