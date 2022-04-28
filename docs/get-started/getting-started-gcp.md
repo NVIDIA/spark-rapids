@@ -144,9 +144,9 @@ After [building the jar
 files](https://github.com/NVIDIA/spark-rapids-examples/tree/main/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
 .
 
-Place the jar file `sample_xgboost_apps-0.2.2-jar-with-dependencies.jar` under the
+Place the jar file `sample_xgboost_apps-<version>-jar-with-dependencies.jar` under the
 `gs://$GCS_BUCKET/scala/` folder by running 
-`gsutil cp aggregator/target/sample_xgboost_apps-0.2.2-jar-with-dependencies.jar gs://$GCS_BUCKET/scala/`.  
+`gsutil cp aggregator/target/sample_xgboost_apps-<version>-jar-with-dependencies.jar gs://$GCS_BUCKET/scala/`.  
 To do this you can either drag and drop files from your local machine into the GCP storage browser, 
 or use the gsutil cp as shown before to do this from a command line. We can thereby submit the jar by:
 
@@ -164,7 +164,7 @@ gcloud dataproc jobs submit spark \
     --cluster=$CLUSTER_NAME \
     --region=$REGION \
     --class=com.nvidia.spark.examples.mortgage.GPUMain \
-    --jars=gs://${GCS_BUCKET}/scala/sample_xgboost_apps-0.2.2-jar-with-dependencies.jar \
+    --jars=gs://${GCS_BUCKET}/scala/sample_xgboost_apps-<version>-jar-with-dependencies.jar \
     --properties=spark.executor.cores=${SPARK_NUM_CORES_PER_EXECUTOR},spark.task.cpus=${SPARK_NUM_CORES_PER_EXECUTOR},spark.executor.memory=${SPARK_EXECUTOR_MEMORY},spark.executor.memoryOverhead=${SPARK_EXECUTOR_MEMORYOVERHEAD},spark.executor.resource.gpu.amount=1,spark.task.resource.gpu.amount=1,spark.rapids.sql.hasNans=false,spark.rapids.sql.batchSizeBytes=512M,spark.rapids.sql.reader.batchSizeBytes=768M,spark.rapids.sql.variableFloatAgg.enabled=true,spark.rapids.memory.gpu.pooling.enabled=false \
     -- \
     -dataPath=train::${DATA_PATH}/train \
