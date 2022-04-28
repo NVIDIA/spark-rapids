@@ -233,7 +233,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("test skip Gpu event logs") {
+  test("test skip gpu event logs") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val logFiles = Array(s"$qualLogDir/dataset_eventlog")
     var appSum: Seq[QualificationSummaryInfo] = Seq()
