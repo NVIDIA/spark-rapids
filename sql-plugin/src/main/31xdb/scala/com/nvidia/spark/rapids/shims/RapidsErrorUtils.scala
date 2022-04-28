@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
+import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -27,6 +28,7 @@ object RapidsErrorUtils {
 
   def mapKeyNotExistError(
       key: String,
+      keyType: DataType,
       origin: Origin): NoSuchElementException = {
     // Follow the Spark string format before 3.3.0
     new NoSuchElementException(s"Key $key does not exist.")

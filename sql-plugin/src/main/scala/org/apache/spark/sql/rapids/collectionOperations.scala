@@ -223,7 +223,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
             array.extractListElement(idx)
           }
         }
-      case _: MapType =>
+      case MapType(keyType, _, _) =>
         (map, keyS) => {
           val key = keyS.getBase
           if (failOnError) {
@@ -232,7 +232,8 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 if (!exist.isValid || exist.getBoolean) {
                   map.getMapValue(key)
                 } else {
-                  throw RapidsErrorUtils.mapKeyNotExistError(keyS.getValue.toString, origin)
+                  throw RapidsErrorUtils.mapKeyNotExistError(keyS.getValue.toString, keyType,
+                    origin)
                 }
               }
             }
