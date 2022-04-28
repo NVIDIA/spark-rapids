@@ -741,7 +741,6 @@ def test_sortmerge_join_struct_as_key_fallback(data_gen, join_type):
 
 # Regression test for https://github.com/NVIDIA/spark-rapids/issues/3775
 @ignore_order(local=True)
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/5286")
 def test_struct_self_join(spark_tmp_table_factory):
     def do_join(spark):
         data = [
