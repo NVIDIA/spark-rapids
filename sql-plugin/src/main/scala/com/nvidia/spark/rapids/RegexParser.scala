@@ -860,27 +860,50 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
         case (RegexGroup(capture, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
-              (term, ch) match {
-                // \Z is not supported in groups
-                case (RegexEscaped('A'), '+') |
-                    (RegexSequence(ListBuffer(RegexEscaped('A'))), '+') =>
-                  // (\A)+ can be transpiled to (\A) (dropping the repetition)
-                  // we use rewrite(...) here to handle logic regarding modes
-                  // (\A is not supported in RegexSplitMode)
-                  RegexGroup(capture, rewrite(term, previous))
-                // NOTE: (\A)* can be transpiled to (\A)?
-                // however, (\A)? is not supported in libcudf yet
-                case _ =>
-                  throw new RegexUnsupportedException(nothingToRepeat)
-              }
-        case (RegexGroup(_, term), QuantifierVariableLength(_, None))
+          (term, ch) match {
+            // \Z is not supported in groups
+            case (RegexEscaped('A'), '+') |
+                (RegexSequence(ListBuffer(RegexEscaped('A'))), '+') =>
+              // (\A)+ can be transpiled to (\A) (dropping the repetition)
+              // we use rewrite(...) here to handle logic regarding modes
+              // (\A is not supported in RegexSplitMode)
+              RegexGroup(capture, rewrite(term, previous))
+            // NOTE: (\A)* can be transpiled to (\A)?
+            // however, (\A)? is not supported in libcudf yet
+            case _ =>
+              throw new RegexUnsupportedException(nothingToRepeat)
+          }
+        case (RegexGroup(capture, term), QuantifierVariableLength(n, _))
             if !isSupportedRepetitionBase(term) =>
-          // specifically this variable length repetition: \A{2,}
-          throw new RegexUnsupportedException(nothingToRepeat)
+          term match {
+            // \Z is not supported in groups
+            case RegexEscaped('A') | RegexSequence(ListBuffer(RegexEscaped('A'))) if n > 0 =>
+              // (\A){1,} can be transpiled to (\A) (dropping the repetition)
+              // we use rewrite(...) here to handle logic regarding modes
+              // (\A is not supported in RegexSplitMode)
+              RegexGroup(capture, rewrite(term, previous))
+            // NOTE: (\A)* can be transpiled to (\A)?
+            // however, (\A)? is not supported in libcudf yet
+            case _ =>
+              throw new RegexUnsupportedException(nothingToRepeat)
+          }
+        case (RegexGroup(capture, term), QuantifierFixedLength(n))
+            if !isSupportedRepetitionBase(term) =>
+          term match {
+            // \Z is not supported in groups
+            case RegexEscaped('A') | RegexSequence(ListBuffer(RegexEscaped('A'))) if n > 0 =>
+              // (\A){1,} can be transpiled to (\A) (dropping the repetition)
+              // we use rewrite(...) here to handle logic regarding modes
+              // (\A is not supported in RegexSplitMode)
+              RegexGroup(capture, rewrite(term, previous))
+            // NOTE: (\A)* can be transpiled to (\A)?
+            // however, (\A)? is not supported in libcudf yet
+            case _ =>
+              throw new RegexUnsupportedException(nothingToRepeat)
+          }
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base, None), quantifier)
-        case (RegexEscaped('A'), SimpleQuantifier('+')) |
-            (RegexEscaped('Z'), SimpleQuantifier('+')) =>
+        case (RegexEscaped(ch), SimpleQuantifier('+')) if "AZ".contains(ch) =>
           // \A+ can be transpiled to \A (dropping the repetition)
           // \Z+ can be transpiled to \Z (dropping the repetition)
           // we use rewrite(...) here to handle logic regarding modes
@@ -888,6 +911,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
           rewrite(base, previous)
         // NOTE: \A* can be transpiled to \A?
         // however, \A? is not supported in libcudf yet
+        case (RegexEscaped(ch), QuantifierFixedLength(n)) if n > 0 && "AZ".contains(ch) =>
+          // \A{2} can be transpiled to \A (dropping the repetition)
+          // \Z{2} can be transpiled to \Z (dropping the repetition)
+          rewrite(base, previous)
+        case (RegexEscaped(ch), QuantifierVariableLength(n,_)) if n > 0 && "AZ".contains(ch) =>
+          // \A{1,5} can be transpiled to \A (dropping the repetition)
+          // \Z{1,} can be transpiled to \Z (dropping the repetition)
+          rewrite(base, previous)
         case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base, None), quantifier)
         case _ =>

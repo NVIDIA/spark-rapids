@@ -191,13 +191,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
   
   test("string anchors - find") {
-    val patterns = Seq("\\Atest", "\\A+test", "(\\A)+test", "test\\z")
+    val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
+        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test", "test\\z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
   }
 
   test("string anchor \\A will fall back to CPU in some repetitions") {
-    val patterns = Seq(raw"(\A)*a", raw"(\A){2,}a")
+    val patterns = Seq(raw"(\A)*a", raw"(\A){0,}a", raw"(\A){0}a")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
     )
@@ -315,6 +316,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile \\A repetitions") {
     doTranspileTest("a\\A+", "a\\A")
+    doTranspileTest("a\\A{1,}", "a\\A")
+    doTranspileTest("a\\A{2}", "a\\A")
     doTranspileTest("a(\\A)+", "a(\\A)")
   }
 
@@ -337,6 +340,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("^\\Z[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
     doTranspileTest("^\\Z([^*A-ZA-Z])", "^([\n\r\u0085\u2028\u2029])$")
     doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
