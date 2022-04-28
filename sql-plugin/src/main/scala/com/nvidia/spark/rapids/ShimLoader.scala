@@ -29,7 +29,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
-import org.apache.spark.util.MutableURLClassLoader
+import org.apache.spark.util.{MutableURLClassLoader, ParentClassLoader}
 
 /*
     Plugin jar uses non-standard class file layout. It consists of three types of areas,
@@ -209,24 +209,18 @@ object ShimLoader extends Logging {
   private def updateSparkClassLoader(): Unit = {
     // TODO propose a proper addClassPathURL API to Spark similar to addJar but
     //  accepting non-file-based URI
-    serializerClassloader().foreach { urlAddable =>
-      logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
-        urlsForSparkClassLoader.mkString(", "))
-      urlsForSparkClassLoader.foreach { url =>
-        MethodUtils.invokeMethod(urlAddable, true, "addURL", url)
-      }
-      logInfo(s"Spark classLoader $urlAddable updated successfully")
-      urlAddable match {
-        case urlCl: java.net.URLClassLoader =>
-          if (!urlCl.getURLs.contains(shimCommonURL)) {
-            // infeasible, defensive diagnostics
-            logWarning(s"Didn't find expected URL $shimCommonURL in the spark " +
-              s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
-              s"parent classloader ${urlCl.getParent}")
-          }
-        case _ => ()
-      }
-      pluginClassLoader = urlAddable
+    val contextClassLoader = Thread.currentThread().getContextClassLoader
+    Option(contextClassLoader).collect {
+      case mutable: MutableURLClassLoader => mutable
+      case replCL if replCL.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" =>
+        val parentLoaderField = replCL.getClass.getDeclaredMethod("parentLoader")
+        val parentLoader = parentLoaderField.invoke(replCL).asInstanceOf[ParentClassLoader]
+        parentLoader.getParent.asInstanceOf[MutableURLClassLoader]
+    }.foreach { mutable =>
+      // MutableURLClassloader dedupes for us
+      pluginClassLoader = contextClassLoader
+      mutable.addURL(shimURL)
+      mutable.addURL(shimCommonURL)
     }
   }
 
