@@ -69,13 +69,15 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(app.sqlPlans.size == 1)
         app.sqlPlans.foreach { case(sqlID, plan) =>
           val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-          assert(planInfo.execInfo == 10)
-          val wholeStages = planInfo.execInfo.filter(_.exec == "WholeStageCodegen")
-          assert(wholeStages == 5)
-          assert(wholeStages.forall(_.isSupported == true))
+          assert(planInfo.execInfo.size == 9)
+          val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+          assert(wholeStages.size == 5)
+          // only 2 in the above example have projects and filters
+          val numSupported = wholeStages.filter(_.isSupported).size
+          assert(numSupported == 2)
           assert(wholeStages.forall(_.duration.nonEmpty))
           val allChildren = wholeStages.flatMap(_.children).flatten
-          assert(allChildren == 10)
+          assert(allChildren.size == 9)
 
           val filters = allChildren.filter(_.exec == "FilterExec")
           assert(filters.forall(_.speedupFactor == 2))
