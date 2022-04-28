@@ -35,4 +35,12 @@ object RapidsErrorUtils {
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
+
+  def divByZeroError(origin: Origin): ArithmeticException = {
+    new ArithmeticException("divide by zero")
+  }
+
+  def divOverflowError(origin: Origin): ArithmeticException = {
+    new ArithmeticException("Overflow in integral divide.")
+  }
 }

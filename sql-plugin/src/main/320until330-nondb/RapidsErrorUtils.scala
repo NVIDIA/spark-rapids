@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
+import org.apache.spark.sql.errors.QueryExecutionErrors
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -37,10 +38,11 @@ object RapidsErrorUtils {
   }
 
   def divByZeroError(origin: Origin): ArithmeticException = {
-    new ArithmeticException("divide by zero")
+    QueryExecutionErrors.divideByZeroError()
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {
-    new ArithmeticException("Overflow in integral divide.")
+    QueryExecutionErrors.overflowInIntegralDivideError()
   }
 }
+
