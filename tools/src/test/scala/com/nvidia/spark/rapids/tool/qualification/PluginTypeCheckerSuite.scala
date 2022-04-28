@@ -106,16 +106,15 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testScore.txt")
       Files.write(csvSupportedFile, supText)
       checker.setOperatorScore(csvSupportedFile.toString)
-      assert(checker.getSpeedupFactor("FilterExec"))
-      assert(checker.getSpeedupFactor("ProjectExec") == -1)
       assert(checker.getSpeedupFactor("FilterExec") == 3)
+      assert(checker.getSpeedupFactor("ProjectExec") == -1)
     }
   }
 
   test("supported operator score from default file") {
     val checker = new PluginTypeChecker
     assert(checker.getSpeedupFactor("FilterExec") == 2)
-    assert(checker.getSpeedupFactor("Ceil") == 2)
+    assert(checker.getSpeedupFactor("Ceil") == 3)
   }
 
   test("supported Execs") {
