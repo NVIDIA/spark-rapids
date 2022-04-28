@@ -20,7 +20,7 @@ OS_NAME=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
 readonly OS_NAME
 OS_DIST=$(lsb_release -cs)
 readonly OS_DIST
-CUDA_VERSION='11.2'
+CUDA_VERSION='11.0'
 readonly CUDA_VERSION
 
 readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'

@@ -78,7 +78,8 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
-    --enable-component-gateway 
+    --enable-component-gateway \
+    --subnet default
 ``` 
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
@@ -138,9 +139,9 @@ val (xgbClassificationModel, _) = benchmark("train") {
 ## Submit Spark jobs to a Dataproc Cluster Accelerated by GPUs
 Similar to spark-submit for on-prem clusters, Dataproc supports a Spark application job to be
 submitted as a Dataproc job.  The mortgage examples we use above are also available as a [spark
-application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.06/examples/Spark-ETL%2BXGBoost).
+application](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/Spark-ETL+XGBoost).
 After [building the jar
-files](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.06/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
+files](https://github.com/NVIDIA/spark-rapids-examples/tree/main/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
 .
 
 Place the jar file `sample_xgboost_apps-0.2.2-jar-with-dependencies.jar` under the
