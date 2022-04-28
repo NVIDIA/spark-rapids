@@ -591,6 +591,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
       }
     }
   }
+}
 
 case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with ShimExpression
   with ExpectsInputTypes {
