@@ -291,10 +291,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   }
 
-  test("? and * repetitions - replace") {
-    assertCpuGpuMatchesRegexpReplace(
-      Seq("D?", "D*"),
-      Seq("SDSDSDS"))
+  test("replace_replace - ?, *, and {0, n} repetitions") {
+    val patterns = Seq("D?", "D*", "D{0,}", "D{0,1}", "D{0,5}", "[1a-zA-Z]{0,}", "[1a-zA-Z]{0,2}")
+    val inputs = Seq("SS", "DD", "SDSDSDS", "DDDD", "DDDDDD", "ABCDEFG")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
   test("dot matches CR on GPU but not on CPU") {
@@ -416,26 +416,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
-  test("regexp_replace - character class repetition - ? and * - fall back to CPU") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4468
-    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexReplaceMode,
-        "regexp_replace on GPU does not support repetition with ? or *"
-      )
-    )
-  }
-
-  test("regexp_replace - character class repetition - {0,} or {0,n} - fall back to CPU") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4468
-    val patterns = Seq(raw"[1a-zA-Z]{0,}", raw"[1a-zA-Z]{0,2}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexReplaceMode,
-        "regexp_replace on GPU does not support repetition with {0,} or {0,n}"
-      )
-    )
-  }
-
   test("regexp_split - character class repetition - ? and * - fall back to CPU") {
     // see https://github.com/NVIDIA/spark-rapids/issues/4884
     val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
@@ -541,7 +521,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
 
     if (mode == RegexReplaceMode) {
-      System.out.println("patterns: " + patterns.toSeq.takeWhile(!_.equals("D*")).map(toReadableString))
       assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
     } else {
       assertCpuGpuMatchesRegexpFind(patterns.toSeq, data)
@@ -764,7 +743,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   private def toReadableString(x: String): String = {
-    x.map {
+    s""""${x.map {
       case '\r' => "\\r"
       case '\n' => "\\n"
       case '\t' => "\\t"
@@ -773,8 +752,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       case '\u0085' => "\\u0085"
       case '\u2028' => "\\u2028"
       case '\u2029' => "\\u2029"
+      case '\\' => "\\\\"
       case other => other
-    }.mkString
+    }.mkString}""""
   }
 
   private def cpuContains(pattern: String, input: Seq[String]): Array[Boolean] = {
