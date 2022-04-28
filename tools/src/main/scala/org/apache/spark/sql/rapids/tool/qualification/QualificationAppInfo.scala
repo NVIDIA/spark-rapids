@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
     hadoopConf: Option[Configuration] = None,
-    pluginTypeChecker: Option[PluginTypeChecker],
+    pluginTypeChecker: PluginTypeChecker,
     readScorePercent: Int)
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
@@ -173,21 +173,19 @@ class QualificationAppInfo(
   // are supported, the score would be 0.0 and if all formats and datatypes are
   // supported the score would be 1.0.
   private def calculateReadScoreRatio(): Double = {
-    pluginTypeChecker.map { checker =>
-      if (dataSourceInfo.size == 0) {
-        1.0
-      } else {
-        val readFormatSum = dataSourceInfo.map { ds =>
-          val (readScore, nsTypes) = checker.scoreReadDataTypes(ds.format, ds.schema)
-          if (nsTypes.nonEmpty) {
-            val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
-            notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
-          }
-          readScore
-        }.sum
-        readFormatSum / dataSourceInfo.size
-      }
-    }.getOrElse(1.0)
+    if (dataSourceInfo.size == 0) {
+      1.0
+    } else {
+      val readFormatSum = dataSourceInfo.map { ds =>
+        val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
+        if (nsTypes.nonEmpty) {
+          val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
+          notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
+        }
+        readScore
+      }.sum
+      readFormatSum / dataSourceInfo.size
+    }
   }
 
   /**
@@ -220,21 +218,27 @@ class QualificationAppInfo(
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
-      val planInfos = pluginTypeChecker.map { checker =>
-        sqlPlans.map { case (id, plan) =>
-          SQLPlanParser.parseSQLPlan(plan, id, checker, this)
-        }.toSeq
-      }.getOrElse(Seq.empty)
+      val planInfos = sqlPlans.map { case (id, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, id, pluginTypeChecker, this)
+      }.toSeq
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (id, execInfos) =>
+          val totalDur = execInfos.map(_.duration.getOrElse(0L)).sum
           logWarning(s"sqlID: ${id}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          logWarning(s"sql id: ${pInfo.sqlID} total duration is: " +
+            s"${totalDur}")
         }
       }
-      // val sqlIdSum = perSQLId.map { case (id, opInfos) =>
-      //   val durWithSpeedup = op.speedupFactor * op.duration
-      //   (id, opInfos.map(op => op.speedupFactor * (op.durWithSpeedup.getOrElse(1L))).sum)
-      //}
+
+      // TODO - So likely the above plan parser doesn't have close to the right duration.
+      // so we can try to estimate based on the SQL task times, which is really estimated
+      // with the stages task times added up. Also here we should probably look for overhead
+      // between the jobs and add that in.
+      // line up the SQLID to stage and then which operators were in each Stage based on the accums
+      // Then if the stage task duration > the duration from parse plan then
+      // difference * (speedup factor averaged for execs without duration)
+
       // TODO - construct the final outputs - multiple things required now. Also need to
       // calculate durations, if ops don't have them use stage durations or job durations
 
@@ -271,9 +275,7 @@ class QualificationAppInfo(
 
   private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
-    val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
-      checker.isWriteFormatsupported(writeFormat)
-    }.getOrElse(ArrayBuffer[String]())
+    val unSupportedWriteFormat = pluginTypeChecker.isWriteFormatsupported(writeFormat)
 
     unSupportedWriteFormat.distinct.mkString(";").toUpperCase
   }
@@ -329,7 +331,7 @@ object QualificationAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
       hadoopConf: Configuration,
-      pluginTypeChecker: Option[PluginTypeChecker],
+      pluginTypeChecker: PluginTypeChecker,
       readScorePercent: Int): Option[QualificationAppInfo] = {
     val app = try {
         val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,

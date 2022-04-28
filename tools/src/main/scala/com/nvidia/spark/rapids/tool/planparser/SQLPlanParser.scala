@@ -34,7 +34,7 @@ case class ExecInfo(
     nodeId: Long,
     isSupported: Boolean,
     children: Option[Seq[ExecInfo]]) {
-  val childrenString = {
+  private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
     }.getOrElse("")
@@ -48,7 +48,7 @@ case class ExecInfo(
     s"exec: $exec, expr: $expr, sqlID: $sqlID , speedupFactor: $speedupFactor, " +
       s"duration: $duration, nodeId: $nodeId, " +
       s"isSupported: $isSupported, children: " +
-      s"${childrenString}"
+      s"${childrenToString}"
   }
 }
 

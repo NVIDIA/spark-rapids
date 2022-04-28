@@ -40,13 +40,10 @@ object QualificationMain extends Logging {
    * Entry point for tests
    */
   def mainInternal(appArgs: QualificationArgs,
-      writeOutput: Boolean = true,
-      dropTempViews: Boolean = false,
       printStdout:Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
-    val userName = appArgs.userName
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
@@ -61,11 +58,7 @@ object QualificationMain extends Logging {
     val hadoopConf = new Configuration()
 
     val pluginTypeChecker = try {
-      if (readScorePercent > 0 || reportReadSchema) {
-        Some(new PluginTypeChecker())
-      } else {
-        None
-      }
+      new PluginTypeChecker()
     } catch {
       case ie: IllegalStateException =>
         logError("Error creating the plugin type checker!", ie)
