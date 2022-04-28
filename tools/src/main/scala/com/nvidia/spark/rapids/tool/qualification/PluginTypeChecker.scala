@@ -80,10 +80,6 @@ class PluginTypeChecker extends Logging {
     supportedExprs = readSupportedOperators(source)
   }
 
-  def getOperatorScore: Map[String, Int] = supportedOperatorsScore
-
-  def getSupportedExecs: Map[String, String] = supportedExecs
-
   def getSupportedExprs: Map[String, String] = supportedExprs
 
   private def readOperatorsScore: Map[String, Int] = {
@@ -230,8 +226,8 @@ class PluginTypeChecker extends Logging {
       writeFormats.map(x => x.trim).contains(_))
   }
 
-  def getExecSpeedupFactor(exec: String): Int = {
-    supportedOperatorsScore.get(exec).getOrElse(-1)
+  def getSpeedupFactor(execOrExpr: String): Int = {
+    supportedOperatorsScore.get(execOrExpr).getOrElse(-1)
   }
 
   def isExecSupported(exec: String): Boolean = {

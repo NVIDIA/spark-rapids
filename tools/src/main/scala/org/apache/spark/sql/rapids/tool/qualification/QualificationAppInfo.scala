@@ -225,8 +225,8 @@ class QualificationAppInfo(
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (id, execInfos) =>
           val totalDur = execInfos.map(_.duration.getOrElse(0L)).sum
-          logWarning(s"sqlID: ${id}, exec: ${execInfos.map(_.toString).mkString("\n")}")
-          logWarning(s"sql id: ${pInfo.sqlID} total duration is: " +
+          logDebug(s"sqlID: ${id}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          logDebug(s"sql id: ${pInfo.sqlID} total duration is: " +
             s"${totalDur}")
         }
       }

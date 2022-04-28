@@ -45,9 +45,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("WholeStage with Filter and Project") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val listener = new ToolTestListener
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
-        spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val df = spark.sparkContext.makeRDD(1 to 100000, 6).toDF
         val df2 = spark.sparkContext.makeRDD(1 to 100000, 6).toDF
@@ -93,18 +91,5 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         }
       }
     }
-  }
-}
-
-class ToolTestListener extends SparkListener {
-  val completedStages = new ListBuffer[SparkListenerStageCompleted]()
-  var executorCpuTime = 0L
-
-  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-    executorCpuTime += NANOSECONDS.toMillis(taskEnd.taskMetrics.executorCpuTime)
-  }
-
-  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
-    completedStages.append(stageCompleted)
   }
 }

@@ -34,7 +34,7 @@ case class FilterExecParser(
     // filter doesn't have duration
     val duration = None
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
-      (checker.getExecSpeedupFactor(fullExecName), true)
+      (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1, false)
     }
