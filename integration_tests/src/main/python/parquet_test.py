@@ -66,8 +66,16 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
 multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
+native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
-                    coalesce_parquet_file_reader_conf]
+                    coalesce_parquet_file_reader_conf, native_parquet_file_reader_conf,
+                    native_multithreaded_parquet_file_reader_conf, native_coalesce_parquet_file_reader_conf]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
