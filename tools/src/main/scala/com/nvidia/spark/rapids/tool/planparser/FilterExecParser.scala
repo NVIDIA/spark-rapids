@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.sql.rapids.tool.AppBase
 
@@ -26,7 +25,7 @@ case class FilterExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) extends ExecParser with Logging {
+    app: AppBase) extends ExecParser {
 
   val fullExecName = node.name + "Exec"
 
