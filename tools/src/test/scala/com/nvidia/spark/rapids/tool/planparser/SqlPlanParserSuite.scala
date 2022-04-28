@@ -16,17 +16,12 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
-
-import scala.collection.mutable.ListBuffer
-
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
