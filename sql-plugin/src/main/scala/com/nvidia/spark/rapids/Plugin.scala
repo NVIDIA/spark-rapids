@@ -27,7 +27,6 @@ import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.SparkShimImpl
-
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
@@ -288,20 +287,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
     failureReason match {
-      case ef: ExceptionFailure =>
-        val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
-          "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
-          "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
-          "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
-          "cudaErrorECCUncorrectable")
-        if (unrecoverableErrors.exists(ef.description.contains(_)) ||
-          unrecoverableErrors.exists(ef.toErrorString.contains(_))) {
-          logError("Stopping the Executor based on exception being a fatal CUDA error: " +
-            s"${ef.toErrorString}")
-          System.exit(20)
-        }
+      case ef: ExceptionFailure if RapidsExecutorPlugin.isCudaFatalException(ef) =>
+        logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+          s"${ef.toErrorString}")
+        System.exit(20)
+      case ef: ExceptionFailure if RapidsExecutorPlugin.isCudaException(ef) =>
+        logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: ${ef.toErrorString}")
+      case ef: ExceptionFailure if RapidsExecutorPlugin.isCudfException(ef) =>
+        logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
       case other =>
-        logDebug(s"Executor onTaskFailed not a CUDA fatal error: ${other.toString}")
+        logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
   }
 }
@@ -327,6 +322,23 @@ object RapidsExecutorPlugin {
       val zipped = expPatchInts.zipAll(actPatchInts, 0, 0)
       zipped.forall { case (e, a) => e <= a }
     }
+  }
+
+  private val CUDA_EXCEPTION: String = classOf[ai.rapids.cudf.CudaException].getName
+  private val CUDA_FATAL_EXCEPTION: String = classOf[ai.rapids.cudf.CudaFatalException].getName
+  private val CUDF_EXCEPTION: String = classOf[ai.rapids.cudf.CudfException].getName
+
+  def isCudaException(ef: ExceptionFailure): Boolean = {
+    ef.description.contains(CUDA_EXCEPTION) || ef.toErrorString.contains(CUDA_EXCEPTION)
+  }
+
+  def isCudaFatalException(ef: ExceptionFailure): Boolean = {
+    ef.description.contains(CUDA_FATAL_EXCEPTION) ||
+      ef.toErrorString.contains(CUDA_FATAL_EXCEPTION)
+  }
+
+  def isCudfException(ef: ExceptionFailure): Boolean = {
+    ef.description.contains(CUDF_EXCEPTION) || ef.toErrorString.contains(CUDF_EXCEPTION)
   }
 }
 
