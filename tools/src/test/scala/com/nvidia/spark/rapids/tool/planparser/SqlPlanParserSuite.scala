@@ -26,10 +26,8 @@ import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.functions._
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
-import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
-import org.apache.spark.sql.rapids.tool.ToolUtils
+import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
