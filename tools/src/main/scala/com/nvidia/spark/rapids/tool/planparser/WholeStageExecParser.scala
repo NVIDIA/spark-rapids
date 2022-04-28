@@ -32,7 +32,7 @@ case class WholeStageExecParser(
 
   override def parse: Seq[ExecInfo] = {
     // TODO - does metrics for time have previous ops?  per op thing, likely does
-    //  but verify
+    // but verify
     val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
 
@@ -43,7 +43,7 @@ case class WholeStageExecParser(
     // as supported
     val anySupported = childNodeRes.exists(_.isSupported == true)
     // average speedup across the execs in the WholeStageCodegen for now
-    val avSpeedupFactor = SQLPlanParser.average(childNodeRes.map(_.speedupFactor))
+    val avSpeedupFactor = SQLPlanParser.averageSpeedup(childNodeRes.map(_.speedupFactor))
     Seq(ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
       maxDuration, node.id, anySupported, Some(childNodeRes)))
   }
