@@ -1,5 +1,3 @@
 App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,ReadFileFormat Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types
 Rapids Spark Profiling Tool Unit Tests,local-1623281204390,3732.80,UDF,2032,4666,6240,46.27,false,577,"",20,0.00,"JSON[string:bigint:int]",JSON,"",""
 Rapids Spark Profiling Tool Unit Tests,local-1622043423018,0.0,"",0,0,16319,0.0,false,0,"",20,100.00,"",JSON,"",""
-Rapids Spark Profiling Tool Unit Tests,local-1621966649543,0.00,"",0,0,10650,0.0,false,0,"",20,100.00,"",JSON,"",""
-Rapids Spark Profiling Tool Unit Tests,local-1621955976602,0.00,"",0,0,10419,0.0,false,0,"",20,100.00,"",JSON,"",""

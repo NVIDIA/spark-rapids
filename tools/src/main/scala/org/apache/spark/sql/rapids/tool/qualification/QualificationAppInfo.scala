@@ -17,17 +17,15 @@
 package org.apache.spark.sql.rapids.tool.qualification
 
 import scala.collection.mutable.{ArrayBuffer, HashMap}
-
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{AppBase, GpuEventLogException, ToolUtils}
 
 class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
@@ -315,6 +313,9 @@ object QualificationAppInfo extends Logging {
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
+        case gpuLog: GpuEventLogException =>
+          logWarning(gpuLog.message)
+          None
         case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON: ${path.eventLog.toString}")
           None
