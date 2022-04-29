@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,21 +26,20 @@ import org.apache.arrow.vector.ValueVector
 object ArrowShims {
 
   def getBufferAndAddReference(buf: ArrowBuf,
-                               referenceManagers: mutable.ListBuffer[ReferenceManager]):
-  ByteBuffer = {
+    referenceManagers: mutable.ListBuffer[ReferenceManager]): ByteBuffer = {
     referenceManagers += buf.getReferenceManager
     buf.nioBuffer()
   }
 
-  def getArrowDataBuf(vec: ValueVector): org.apache.arrow.memory.ArrowBuf = {
+  def getArrowDataBuf(vec: ValueVector): ArrowBuf = {
     vec.getDataBuffer
   }
 
-  def getArrowValidityBuf(vec: ValueVector): org.apache.arrow.memory.ArrowBuf = {
+  def getArrowValidityBuf(vec: ValueVector): ArrowBuf = {
     vec.getValidityBuffer
   }
 
-  def getArrowOffsetsBuf(vec: ValueVector): org.apache.arrow.memory.ArrowBuf = {
+  def getArrowOffsetsBuf(vec: ValueVector): ArrowBuf = {
     vec.getOffsetBuffer
   }
 

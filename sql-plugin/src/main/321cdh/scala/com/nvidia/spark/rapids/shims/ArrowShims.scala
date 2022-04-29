@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,7 @@ import org.apache.arrow.vector.ValueVector
 object ArrowShims {
 
   def getBufferAndAddReference(getter: => (ByteBuffer, ReferenceManager),
-                               referenceManagers: mutable.ListBuffer[ReferenceManager]):
-  ByteBuffer = {
+    referenceManagers: mutable.ListBuffer[ReferenceManager]): ByteBuffer = {
     val (buf, ref) = getter
     referenceManagers += ref
     buf

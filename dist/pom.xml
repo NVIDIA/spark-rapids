@@ -122,6 +122,54 @@
             </properties>
         </profile>
         <profile>
+            <id>release321cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>321cdh</value>
+                </property>
+            </activation>
+            <properties>
+                <included_buildvers>${buildver}</included_buildvers>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark321cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark321cdh.version}</version>
+                    <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>2.0.0</version>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>individual</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
