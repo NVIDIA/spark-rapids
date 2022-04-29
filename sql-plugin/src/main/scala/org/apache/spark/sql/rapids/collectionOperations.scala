@@ -509,6 +509,91 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
     }
 }
 
+case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = ArrayType(left.dataType, left.nullable)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // The primary issue of array_repeat is to workaround the null and negative count.
+    // Spark returns a null (list) when encountering a null count, while cudf::repeat simply
+    // throws an exception.
+    // Spark returns a empty list when encountering a negative count, while cudf::repeat simply
+    // throws an exception.
+
+    // Step 1. replace invalid counts
+    //  null -> 0
+    //  negative values -> 0
+    val refinedCount = withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+      withResource(rhs.getBase.replaceNulls(zero)) { notNull =>
+        withResource(notNull.lessThan(zero)) { lessThanZero =>
+          lessThanZero.ifElse(zero, notNull)
+        }
+      }
+    }
+    // Step 2. perform cuDF repeat
+    val repeated = closeOnExcept(refinedCount) { cnt =>
+      withResource(new Table(lhs.getBase)) { table =>
+        table.repeat(cnt, true).getColumn(0)
+      }
+    }
+    // Step 3. generate list offsets from refined counts
+    val offsets = closeOnExcept(repeated) { _ =>
+      withResource(refinedCount) { cnt =>
+        cnt.generateListOffsets()
+      }
+    }
+    // Step 4. make the result list column with offsets and child column
+    val list = withResource(offsets) { offsets =>
+      withResource(repeated) { repeated =>
+        repeated.makeListFromOffsets(lhs.getRowCount, offsets)
+      }
+    }
+    // Step 5. merge the validity of count column to the result
+    withResource(list) { list =>
+      list.mergeAndSetValidity(BinaryOp.BITWISE_AND, rhs.getBase)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val numRows = lhs.getRowCount.toInt
+    if (!rhs.isValid) {
+      GpuColumnVector.fromNull(numRows, dataType).getBase
+    } else {
+      val count = rhs.getValue.asInstanceOf[Int] max 0
+
+      val offsets = withResource(GpuScalar.from(count, IntegerType)) { cntScalar =>
+        withResource(GpuColumnVector.from(cntScalar, numRows, rhs.dataType)) { cnt =>
+          cnt.getBase.generateListOffsets()
+        }
+      }
+
+      withResource(offsets) { offsets =>
+        withResource(new Table(lhs.getBase)) { table =>
+          withResource(table.repeat(count).getColumn(0)) { repeated =>
+            repeated.makeListFromOffsets(lhs.getRowCount, offsets)
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    if (!rhs.isValid) {
+      GpuColumnVector.fromNull(numRows, dataType).getBase
+    } else {
+      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+        doColumnar(left, rhs)
+      }
+    }
+  }
+}
+
 case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with ShimExpression
   with ExpectsInputTypes {
 
