@@ -114,7 +114,7 @@ object Header {
    * and maps to different values.
    */
   def hasConflictInMetadata(h1: Header, h2: Header): Boolean = h1.meta.exists {
-    case (k, v) => h2.meta.get(k).exists(_.sameElements(v))
+    case (k, v) => h2.meta.get(k).exists(!_.sameElements(v))
   }
 }
 
