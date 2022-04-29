@@ -745,7 +745,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (isScalarZero(rhs.getBase)) {
       if (failOnError) {
-          throw RapidsErrorUtils.divByZeroError(origin)
+        throw RapidsErrorUtils.divByZeroError(origin)
       } else {
         withResource(Scalar.fromNull(outputType(lhs.getBase, rhs.getBase))) { nullScalar =>
           ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
