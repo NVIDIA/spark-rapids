@@ -15,17 +15,16 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import scala.collection.mutable.ArrayBuffer
-
 import com.nvidia.spark.rapids.OrcOutputStripe
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
-import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
-
+import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
+import org.apache.orc._
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.types.DataType
+
+import scala.collection.mutable.ArrayBuffer
 
 trait OrcShims311until320Base {
 
