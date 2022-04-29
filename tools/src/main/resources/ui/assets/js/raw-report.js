@@ -19,7 +19,7 @@
 $(document).ready(function() {
   let attemptArray = processRawData(qualificationRecords, appInfoRecords);
   let rawDataTableConf = {
-    // TODO: To use horizontal scrol for wide table
+    // TODO: To use horizontal scroll for wide table
     //"scrollX": true,
     responsive: true,
     paging: (attemptArray.length > defaultPageLength),
@@ -140,16 +140,5 @@ $(document).ready(function() {
     }]
   };
   var rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
-  $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip({
-    // see answer in stackoverflow https://stackoverflow.com/questions/9958825/how-do-i-bind-twitter-bootstrap-tooltips-to-dynamically-created-elements
-    //https://stackoverflow.com/questions/39189856/datatables-with-eonasdan-datepicker-doesnt-work/39191075#39191075
-    selector: '[rel=tooltip]'
-  });
-
-  // TODO: check the displaybuttons page
-  // https://datatables.net/forums/discussion/35936/how-to-let-buttons-float-at-right-top
-  // rawAppsTable.buttons().container()
-  //   .appendTo( $('.col-sm-12:eq(0)', rawAppsTable.table().container() ) );
-  // table.buttons().container()
-  //           .appendTo('#example_wrapper .col-md-6:eq(0)');
+  $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip();
 });

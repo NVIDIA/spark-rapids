@@ -67,6 +67,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("Unsupported Write Data Format", StringType, true)
     .add("Complex Types", StringType, true)
     .add("Unsupported Nested Complex Types", StringType, true)
+    // TODO - Add new fields (created for the UI Milestone) to the schema
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -651,8 +652,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(valuesDetailed(12).toDouble == 50.0)
         assert(headersDetailed(13).contains("Read File Formats"))
         assert(valuesDetailed(13).contains("JSON"))
-        assert(headersDetailed(17).contains("Read Schema"))
-        assert(valuesDetailed(17).contains("json") && valuesDetailed(17).contains("parquet"))
+        val readSchemaInd = headersDetailed.length - 1
+        assert(headersDetailed(readSchemaInd).contains("Read Schema"))
+        assert(
+          valuesDetailed(readSchemaInd).contains("json") &&
+            valuesDetailed(readSchemaInd).contains("parquet"))
       }
     }
   }

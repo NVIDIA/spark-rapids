@@ -334,13 +334,13 @@ class QualificationAppInfo(
       }
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
-        sqlDataframeDur, sqlDataframeTaskDuration, nonSQLDuration,
+        sqlDataframeDur, sqlDataframeTaskDuration,
         appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes,
-        estimatedDuration, unsupportedDuration, speedupDuration, speedupFactor,
-        totalSpeedup, speedupBucket, getLongestSQLDuration())
+        getLongestSQLDuration(), nonSQLDuration, estimatedDuration, unsupportedDuration,
+        speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
     }
   }
 
@@ -408,7 +408,6 @@ case class QualificationSummaryInfo(
     potentialProblems: String,
     sqlDataFrameDuration: Long,
     sqlDataframeTaskDuration: Long,
-    nonSqlTaskDurationAndOverhead: Long,
     appDuration: Long,
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
@@ -421,13 +420,14 @@ case class QualificationSummaryInfo(
     writeDataFormat: String,
     complexTypes: String,
     nestedComplexTypes: String,
+    longestSqlDuration: Long,
+    nonSqlTaskDurationAndOverhead: Long,
     estimatedDuration: Double,
     unsupportedDuration: Long,
     speedupDuration: Long,
     speedupFactor: Double,
     totalSpeedup: Double,
-    speedupBucket: String,
-    longestSqlDuration: Long)
+    speedupBucket: String)
 
 /**
  * A class that holds datasource information.

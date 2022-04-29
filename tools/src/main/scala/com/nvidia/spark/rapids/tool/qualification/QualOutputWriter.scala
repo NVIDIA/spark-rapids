@@ -101,7 +101,6 @@ object QualOutputWriter {
   val APP_DUR_STR = "App Duration"
   val SQL_DUR_STR = "SQL DF Duration"
   val TASK_DUR_STR = "SQL Dataframe Task Duration"
-  val NONSQL_DUR_STR = "c"
   val SCORE_STR = "Score"
   val POT_PROBLEM_STR = "Potential Problems"
   val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
@@ -115,6 +114,7 @@ object QualOutputWriter {
   val COMPLEX_TYPES_STR = "Complex Types"
   val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
+  val NONSQL_DUR_STR = "NONSQL Task Duration Plug Overhead"
   val ESTIMATED_DURATION_STR = "Estimated Duration"
   val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
   val SPEEDUP_DURATION_STR = "Speedup Duration"
@@ -202,7 +202,6 @@ object QualOutputWriter {
       POT_PROBLEM_STR ->
         getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       SQL_DUR_STR -> SQL_DUR_STR.size,
-      NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       APP_DUR_STR -> APP_DUR_STR.size,
       EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
@@ -220,13 +219,14 @@ object QualOutputWriter {
         getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
         NESTED_TYPES_STR),
+      LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE,
+      NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
       ESTIMATED_DURATION_STR -> ESTIMATED_DURATION_STR.size,
       UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size,
       SPEEDUP_DURATION_STR -> SPEEDUP_DURATION_STR.size,
       SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
       TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR.size,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size,
-      LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -281,7 +281,6 @@ object QualOutputWriter {
       appInfo.score.toString -> headersAndSizes(SCORE_STR),
       potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
-      appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
@@ -296,15 +295,15 @@ object QualOutputWriter {
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
       nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
+      appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
+      appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
       appInfo.estimatedDuration.toString -> headersAndSizes(ESTIMATED_DURATION_STR),
       appInfo.unsupportedDuration.toString ->
         headersAndSizes(UNSUPPORTED_DURATION_STR),
       appInfo.speedupDuration.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
       appInfo.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
       appInfo.totalSpeedup.toString -> headersAndSizes(TOTAL_SPEEDUP_STR),
-      stringIfempty(appInfo.speedupBucket) -> headersAndSizes(SPEEDUP_BUCKET_STR),
-      stringIfempty(appInfo.longestSqlDuration.toString) ->
-        headersAndSizes(LONGEST_SQL_DURATION_STR)
+      stringIfempty(appInfo.speedupBucket) -> headersAndSizes(SPEEDUP_BUCKET_STR)
     )
 
     if (reportReadSchema) {

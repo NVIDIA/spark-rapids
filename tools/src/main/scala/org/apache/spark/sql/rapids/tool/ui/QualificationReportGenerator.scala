@@ -21,7 +21,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 import com.nvidia.spark.rapids.tool.qualification.Qualification
-
 import org.json4s.DefaultFormats
 import org.json4s.jackson.Serialization
 
@@ -35,16 +34,15 @@ class QualificationReportGenerator(
 
   import QualificationReportGenerator._
 
-  def getAssetsPath(): String = s"${UI_HOME}${File.separator}${RAPIDS_UI_ASSETS_DIR}"
-
   // TODO: use HDFS API to create the logoutput if necessary
   val assetsFolder = new File(getAssetsPath)
   val outputWorkDir = new File(provider.getReportOutputPath, "ui-report")
-
   val destinationFolder = {
     val timestamp = new SimpleDateFormat("yyyyMMddHHmm").format(new Date())
     new File(s"${outputWorkDir}-${timestamp}")
   }
+
+  def getAssetsPath(): String = s"${UI_HOME}${File.separator}${RAPIDS_UI_ASSETS_DIR}"
 
   def copyAssetFolder(src: File, dest: File): Unit = {
     if (src.isDirectory) {
@@ -56,7 +54,7 @@ class QualificationReportGenerator(
       }
     } else {
       new FileOutputStream(dest) getChannel() transferFrom(
-        new FileInputStream(src) getChannel(), 0, Long.MaxValue )
+        new FileInputStream(src) getChannel(), 0, Long.MaxValue)
     }
   }
 
@@ -65,7 +63,7 @@ class QualificationReportGenerator(
     generateJSFiles
   }
 
-  def generateJSFiles() : Unit = {
+  def generateJSFiles(): Unit = {
     implicit val formats = DefaultFormats
     val appInfoRecs = Serialization.write(provider.getListing())
     val infoSummary = Serialization.write(provider.getAllApplicationsInfo())
@@ -96,8 +94,12 @@ object QualificationReportGenerator extends Logging {
 
   private val conf = new SparkConf
 
-  def getDefaultUIProperties() : String = {
-    s"${UI_HOME}${File.separator}${RAPIDS_UI_CONF_DIR}${File.separator}${RAPIDS_UI_CONF_FILE}"
+  def createQualReportGenerator(
+      provider: Qualification,
+      propFilePath: String = null): Unit = {
+    loadDefaultSparkProperties(conf, propFilePath)
+    val generator = new QualificationReportGenerator(conf, provider)
+    generator.launch()
   }
 
   def loadDefaultSparkProperties(conf: SparkConf, filePath: String = null): String = {
@@ -111,11 +113,7 @@ object QualificationReportGenerator extends Logging {
     propPath
   }
 
-  def createQualReportGenerator(
-      provider: Qualification,
-      propFilePath: String = null): Unit = {
-    loadDefaultSparkProperties(conf, propFilePath)
-    val generator = new QualificationReportGenerator(conf, provider)
-    generator.launch()
+  def getDefaultUIProperties(): String = {
+    s"${UI_HOME}${File.separator}${RAPIDS_UI_CONF_DIR}${File.separator}${RAPIDS_UI_CONF_FILE}"
   }
 }
