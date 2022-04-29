@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.orc.Reader
+
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.types.DataType
 
