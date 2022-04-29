@@ -584,8 +584,8 @@ that a pattern is either unsupported or would produce incorrect results on the G
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
-- Line anchor `$`
-- String anchor `\Z`
+- Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
+- String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported by `regexp_replace`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Non-digit character class `\D`
@@ -910,9 +910,6 @@ The GPU implementation of `approximate_percentile` uses
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
 `spark.rapids.sql.incompatibleOps.enabled=true`.
-
-There is also a known issue ([issue #4060](https://github.com/NVIDIA/spark-rapids/issues/4060)) where
-incorrect results are produced intermittently.
 
 ## Conditionals and operations with side effects (ANSI mode)
 

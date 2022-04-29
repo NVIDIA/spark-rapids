@@ -106,26 +106,24 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testScore.txt")
       Files.write(csvSupportedFile, supText)
       checker.setOperatorScore(csvSupportedFile.toString)
-      val operScore = checker.getOperatorScore
-      assert(operScore.contains("FilterExec"))
-      assert(!operScore.contains("ProjectExec"))
-      assert(operScore("FilterExec") == 3)
+      assert(checker.getSpeedupFactor("FilterExec") == 3)
+      assert(checker.getSpeedupFactor("ProjectExec") == -1)
     }
   }
 
   test("supported operator score from default file") {
     val checker = new PluginTypeChecker
-    val result = checker.getOperatorScore
-    assert(result("FilterExec") == 2)
-    assert(result("Ceil") == 3)
+    assert(checker.getSpeedupFactor("FilterExec") == 2)
+    assert(checker.getSpeedupFactor("Ceil") == 3)
   }
 
   test("supported Execs") {
     val checker = new PluginTypeChecker
-    val result = checker.getSupportedExecs
-    assert(result.contains("ShuffledHashJoinExec"))
-    assert(result("ShuffledHashJoinExec") == "S")
-    assert(result("CollectLimitExec") == "NS")
+    assert(checker.isExecSupported("ShuffledHashJoinExec"))
+    assert(checker.isExecSupported("ShuffledHashJoinExec"))
+    assert(checker.isExecSupported("CollectLimitExec") == false)
+    assert(checker.isExecSupported("ColumnarToRow"))
+
   }
 
   test("supported Expressions") {

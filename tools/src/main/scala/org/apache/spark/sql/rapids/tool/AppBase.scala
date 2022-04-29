@@ -23,7 +23,7 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
 import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
-import com.nvidia.spark.rapids.tool.profiling.DataSourceCase
+import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, TaskStageAccumCase}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
@@ -47,6 +47,10 @@ abstract class AppBase(
   // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
   val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
+
+  // accum id to task stage accum info
+  var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
+    HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
   def processEvent(event: SparkListenerEvent): Boolean
 
