@@ -753,7 +753,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       }
     } else {
       if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-          throw RapidsErrorUtils.divOverflowError(origin)
+        throw RapidsErrorUtils.divOverflowError(origin)
       }
       super.doColumnar(lhs, rhs)
     }
