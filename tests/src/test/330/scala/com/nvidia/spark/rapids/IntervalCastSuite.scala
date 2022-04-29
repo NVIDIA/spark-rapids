@@ -18,8 +18,9 @@ package com.nvidia.spark.rapids
 import java.time.Period
 
 import org.apache.spark.SparkException
+import org.apache.spark.sql.{functions => f}
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, IntegerType, LongType, MapType, ShortType, StructField, StructType, YearMonthIntervalType => YM}
 
 /**
  * Can not put this suite to Pyspark test cases
@@ -33,7 +34,7 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
     "test cast year-month to integral",
     spark => {
       val data = (-128 to 127).map(i => Row(Period.ofMonths(i)))
-      val schema = StructType(Seq(StructField("c_ym", YearMonthIntervalType())))
+      val schema = StructType(Seq(StructField("c_ym", YM())))
       spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
     }) {
     df =>
@@ -68,7 +69,7 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
       e => e.getMessage.contains("overflow"),
       spark => {
         val data = Seq(Row(Period.ofMonths(months)))
-        val schema = StructType(Seq(StructField("c_ym", YearMonthIntervalType())))
+        val schema = StructType(Seq(StructField("c_ym", YM())))
         spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
       }) {
       df =>
@@ -98,5 +99,188 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
         df.selectExpr(s"cast(c_integral as interval $toField)")
     }
     testLoop += 1
+  }
+
+  testSparkResultsAreEqual(
+    "test cast struct(integral, integral) to struct(year-month, year-month)",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        Row(
+          Row(i.toLong, i.toLong),
+          Row(i, i),
+          Row(i.toShort, i.toShort),
+          Row(i.toByte, i.toByte))
+      }
+      val schema = StructType(Seq(
+        StructField("c_l", StructType(
+          Seq(StructField("c1", LongType), StructField("c2", LongType)))),
+        StructField("c_i", StructType(
+          Seq(StructField("c1", IntegerType), StructField("c2", IntegerType)))),
+        StructField("c_s", StructType(
+          Seq(StructField("c1", ShortType), StructField("c2", ShortType)))),
+        StructField("c_b", StructType(
+          Seq(StructField("c1", ByteType), StructField("c2", ByteType))))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.select(
+        f.col("c_l").cast(StructType(
+          Seq(StructField("c1", YM(YM.YEAR, YM.YEAR)), StructField("c2", YM(YM.MONTH, YM.MONTH))))),
+        f.col("c_i").cast(StructType(
+          Seq(StructField("c1", YM(YM.YEAR, YM.YEAR)), StructField("c2", YM(YM.MONTH, YM.MONTH))))),
+        f.col("c_s").cast(StructType(
+          Seq(StructField("c1", YM(YM.YEAR, YM.YEAR)), StructField("c2", YM(YM.MONTH, YM.MONTH))))),
+        f.col("c_b").cast(StructType(
+          Seq(StructField("c1", YM(YM.YEAR, YM.YEAR)), StructField("c2", YM(YM.MONTH, YM.MONTH))))))
+  }
+
+  testSparkResultsAreEqual(
+    "test cast array(integral) to array(year-month)",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        Row(
+          Seq(i.toLong, i.toLong),
+          Seq(i, i),
+          Seq(i.toShort, i.toShort),
+          Seq(i.toByte, i.toByte))
+      }
+      val schema = StructType(Seq(
+        StructField("c_l", ArrayType(LongType)),
+        StructField("c_i", ArrayType(IntegerType)),
+        StructField("c_s", ArrayType(ShortType)),
+        StructField("c_b", ArrayType(ByteType))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.select(
+        f.col("c_l").cast(ArrayType(YM(YM.YEAR, YM.YEAR))),
+        f.col("c_i").cast(ArrayType(YM(YM.MONTH, YM.MONTH))),
+        f.col("c_s").cast(ArrayType(YM(YM.YEAR, YM.YEAR))),
+        f.col("c_b").cast(ArrayType(YM(YM.MONTH, YM.MONTH))))
+  }
+
+  testSparkResultsAreEqual(
+    "test cast map(integral, integral) to map(year-month, year-month)",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        Row(
+          Map((i.toLong, i.toLong)),
+          Map((i, i)),
+          Map((i.toShort, i.toShort)),
+          Map((i.toByte, i.toByte)))
+      }
+      val schema = StructType(Seq(
+        StructField("c_l", MapType(LongType, LongType)),
+        StructField("c_i", MapType(IntegerType, IntegerType)),
+        StructField("c_s", MapType(ShortType, ShortType)),
+        StructField("c_b", MapType(ByteType, ByteType))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.select(
+        f.col("c_l").cast(MapType(YM(YM.YEAR, YM.YEAR), YM(YM.YEAR, YM.YEAR))),
+        f.col("c_i").cast(MapType(YM(YM.MONTH, YM.MONTH), YM(YM.MONTH, YM.MONTH))),
+        f.col("c_s").cast(MapType(YM(YM.YEAR, YM.YEAR), YM(YM.YEAR, YM.YEAR))),
+        f.col("c_b").cast(MapType(YM(YM.MONTH, YM.MONTH), YM(YM.MONTH, YM.MONTH))))
+  }
+
+  testSparkResultsAreEqual(
+    "test cast struct(year-month, year-month) to struct(integral, integral)",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        Row(Row(Period.ofMonths(i), Period.ofMonths(i)))
+      }
+      val schema = StructType(Seq(StructField("c_ym", StructType(Seq(
+        StructField("c1", YM(YM.MONTH, YM.MONTH)),
+        StructField("c2", YM(YM.MONTH, YM.MONTH)))))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.select(
+        f.col("c_ym").cast(StructType(
+          Seq(StructField("c1", LongType), StructField("c2", LongType)))),
+        f.col("c_ym").cast(StructType(
+          Seq(StructField("c1", IntegerType), StructField("c2", IntegerType)))),
+        f.col("c_ym").cast(StructType(
+          Seq(StructField("c1", ShortType), StructField("c2", ShortType)))),
+        f.col("c_ym").cast(StructType(
+          Seq(StructField("c1", ByteType), StructField("c2", ByteType)))))
+  }
+
+  testSparkResultsAreEqual(
+    "test cast array(year-month) to array(integral)",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        Row(Seq(Period.ofMonths(i), Period.ofMonths(i)))
+      }
+      val schema = StructType(Seq(StructField("c_ym", ArrayType(YM(YM.MONTH, YM.MONTH)))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.select(
+        f.col("c_ym").cast(ArrayType(LongType)),
+        f.col("c_ym").cast(ArrayType(IntegerType)),
+        f.col("c_ym").cast(ArrayType(ShortType)),
+        f.col("c_ym").cast(ArrayType(ByteType)))
+  }
+
+  testSparkResultsAreEqual(
+    "test cast map(year-month, year-month) to map(integral, integral)",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        Row(Map((Period.ofMonths(i), Period.ofMonths(i))))
+      }
+      val schema = StructType(Seq(StructField("c_ym",
+        MapType(YM(YM.MONTH, YM.MONTH), YM(YM.MONTH, YM.MONTH)))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.select(
+        f.col("c_ym").cast(MapType(LongType, LongType)),
+        f.col("c_ym").cast(MapType(IntegerType, IntegerType)),
+        f.col("c_ym").cast(MapType(ShortType, ShortType)),
+        f.col("c_ym").cast(MapType(ByteType, ByteType)))
+  }
+
+  testSparkResultsAreEqual(
+    "test cast(ym as (byte or short)) side effect",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        val boolean = if (i % 2 == 0) true else false
+        val sideEffectValue = Period.ofMonths(Int.MaxValue)
+        val ymValue = if (boolean) sideEffectValue else Period.ofMonths(i)
+        Row(boolean, ymValue)
+      }
+      val schema = StructType(Seq(StructField("c_b", BooleanType),
+        StructField("c_ym", YM(YM.MONTH, YM.MONTH))))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      // when `c_b` is true, the `c_ym` is Period.ofMonths(Int.MaxValue)
+      // cast(Period.ofMonths(Int.MaxValue) as byte) will overflow
+      df.selectExpr("if(c_b, cast(0 as byte), cast(c_ym as byte))",
+        "if(c_b, cast(0 as short), cast(c_ym as short))")
+  }
+
+  testSparkResultsAreEqual(
+    "test cast((long or int) as year-month) side effect",
+    spark => {
+      val data = (-128 to 127).map { i =>
+        val boolean = if (i % 2 == 0) true else false
+        val sideEffectLongValue = Long.MaxValue
+        val sideEffectIntValue = Int.MaxValue
+        Row(boolean,
+          if (boolean) sideEffectLongValue else i.toLong,
+          if (boolean) sideEffectIntValue else i
+        )
+      }
+      val schema = StructType(Seq(StructField("c_b", BooleanType),
+        StructField("c_l", LongType),
+        StructField("c_i", IntegerType)))
+      spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    }) {
+    df =>
+      df.selectExpr("if(c_b, interval 0 month, cast(c_l as interval month))",
+        "if(c_b, interval 0 year, cast(c_i as interval year))")
   }
 }

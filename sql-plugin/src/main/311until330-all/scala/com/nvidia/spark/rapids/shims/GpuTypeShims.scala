@@ -133,4 +133,7 @@ object GpuTypeShims {
    */
   def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.none
 
+  def hasSideEffectsIfCastIntToYearMonth(ym: DataType): Boolean = false
+
+  def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean = false
 }

@@ -555,45 +555,44 @@ object GpuCast extends Arm {
         castMapToString(input, from, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
 
       case (dayTime: DataType, _: StringType) if GpuTypeShims.isSupportedDayTimeType(dayTime) =>
-        GpuIntervalUtils.toDayTimeIntervalString(input.asInstanceOf[ColumnVector], dayTime)
+        GpuIntervalUtils.toDayTimeIntervalString(input, dayTime)
 
       case (_: StringType, dayTime: DataType) if GpuTypeShims.isSupportedDayTimeType(dayTime) =>
-        GpuIntervalUtils.castStringToDayTimeIntervalWithThrow(
-          input.asInstanceOf[ColumnVector], dayTime)
+        GpuIntervalUtils.castStringToDayTimeIntervalWithThrow(input, dayTime)
 
       // cast(`day time interval` as integral)
       case (dt: DataType, _: LongType) if GpuTypeShims.isSupportedDayTimeType(dt) =>
-        GpuIntervalUtils.dayTimeIntervalToLong(input.asInstanceOf[ColumnVector], dt)
+        GpuIntervalUtils.dayTimeIntervalToLong(input, dt)
       case (dt: DataType, _: IntegerType) if GpuTypeShims.isSupportedDayTimeType(dt) =>
-        GpuIntervalUtils.dayTimeIntervalToInt(input.asInstanceOf[ColumnVector], dt)
+        GpuIntervalUtils.dayTimeIntervalToInt(input, dt)
       case (dt: DataType, _: ShortType) if GpuTypeShims.isSupportedDayTimeType(dt) =>
-        GpuIntervalUtils.dayTimeIntervalToShort(input.asInstanceOf[ColumnVector], dt)
+        GpuIntervalUtils.dayTimeIntervalToShort(input, dt)
       case (dt: DataType, _: ByteType) if GpuTypeShims.isSupportedDayTimeType(dt) =>
-        GpuIntervalUtils.dayTimeIntervalToByte(input.asInstanceOf[ColumnVector], dt)
+        GpuIntervalUtils.dayTimeIntervalToByte(input, dt)
 
       // cast(integral as `day time interval`)
       case (_: LongType, dt: DataType) if GpuTypeShims.isSupportedDayTimeType(dt) =>
-        GpuIntervalUtils.longToDayTimeInterval(input.asInstanceOf[ColumnVector], dt)
+        GpuIntervalUtils.longToDayTimeInterval(input, dt)
       case (_: IntegerType | ShortType | ByteType, dt: DataType)
         if GpuTypeShims.isSupportedDayTimeType(dt) =>
-        GpuIntervalUtils.intToDayTimeInterval(input.asInstanceOf[ColumnVector], dt)
+        GpuIntervalUtils.intToDayTimeInterval(input, dt)
 
       // cast(`year month interval` as integral)
       case (ym: DataType, _: LongType) if GpuTypeShims.isSupportedYearMonthType(ym) =>
-        GpuIntervalUtils.yearMonthIntervalToLong(input.asInstanceOf[ColumnVector], ym)
+        GpuIntervalUtils.yearMonthIntervalToLong(input, ym)
       case (ym: DataType, _: IntegerType) if GpuTypeShims.isSupportedYearMonthType(ym) =>
-        GpuIntervalUtils.yearMonthIntervalToInt(input.asInstanceOf[ColumnVector], ym)
+        GpuIntervalUtils.yearMonthIntervalToInt(input, ym)
       case (ym: DataType, _: ShortType) if GpuTypeShims.isSupportedYearMonthType(ym) =>
-        GpuIntervalUtils.yearMonthIntervalToShort(input.asInstanceOf[ColumnVector], ym)
+        GpuIntervalUtils.yearMonthIntervalToShort(input, ym)
       case (ym: DataType, _: ByteType) if GpuTypeShims.isSupportedYearMonthType(ym) =>
-        GpuIntervalUtils.yearMonthIntervalToByte(input.asInstanceOf[ColumnVector], ym)
+        GpuIntervalUtils.yearMonthIntervalToByte(input, ym)
 
       // cast(integral as `year month interval`)
       case (_: LongType, ym: DataType) if GpuTypeShims.isSupportedYearMonthType(ym) =>
-        GpuIntervalUtils.longToYearMonthInterval(input.asInstanceOf[ColumnVector], ym)
+        GpuIntervalUtils.longToYearMonthInterval(input, ym)
       case (_: IntegerType | ShortType | ByteType, ym: DataType)
         if GpuTypeShims.isSupportedYearMonthType(ym) =>
-        GpuIntervalUtils.intToYearMonthInterval(input.asInstanceOf[ColumnVector], ym)
+        GpuIntervalUtils.intToYearMonthInterval(input, ym)
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -1580,6 +1579,20 @@ case class GpuCast(
       case (FloatType | DoubleType, ShortType) if ansiMode => true
       case (FloatType | DoubleType, IntegerType) if ansiMode => true
       case (FloatType | DoubleType, LongType) if ansiMode => true
+      case (_: LongType, dayTimeIntervalType: DataType)
+        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) => true
+      case (_: IntegerType, dayTimeIntervalType: DataType)
+        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) =>
+        GpuTypeShims.hasSideEffectsIfCastIntToDayTime(dayTimeIntervalType)
+      case (dayTimeIntervalType: DataType, _: IntegerType | ShortType | ByteType)
+        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) => true
+      case (_: LongType, yearMonthIntervalType: DataType)
+        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
+      case (_: IntegerType, yearMonthIntervalType: DataType)
+        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) =>
+        GpuTypeShims.hasSideEffectsIfCastIntToYearMonth(yearMonthIntervalType)
+      case (yearMonthIntervalType: DataType, _: ShortType | ByteType)
+        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
       case _ => false
     }
   }

@@ -2086,16 +2086,16 @@ object GpuOverrides extends Logging {
       "IF expression",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-            TypeSig.MAP).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.MAP).nested(),
+                TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.MAP).nested(),
+                TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {

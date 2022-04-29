@@ -135,7 +135,7 @@ object GpuIntervalUtils extends Arm {
   private val secondPatternString = s"$sign$secondBoundPattern$microPattern"
   private val secondLiteralRegex = s"^$INTERVAL$blanks$sign'$secondPatternString'$blanks$SECOND$$"
 
-  def castStringToDayTimeIntervalWithThrow(cv: ColumnVector, t: DataType): ColumnVector = {
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnView, t: DataType): ColumnVector = {
     castStringToDayTimeIntervalWithThrow(cv, t.asInstanceOf[DT])
   }
 
@@ -147,7 +147,7 @@ object GpuIntervalUtils extends Arm {
    * @return long column of micros
    * @throws IllegalArgumentException if have a row failed
    */
-  def castStringToDayTimeIntervalWithThrow(cv: ColumnVector, t: DT): ColumnVector = {
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnView, t: DT): ColumnVector = {
     withResource(castStringToDTInterval(cv, t)) { ret =>
       if(ret.getNullCount > cv.getNullCount) {
         throw new IllegalArgumentException("Cast string to day time interval failed, " +
@@ -166,7 +166,7 @@ object GpuIntervalUtils extends Arm {
    * @param t              day-time interval type
    * @return long column of micros
    */
-  def castStringToDTInterval(cv: ColumnVector, t: DT): ColumnVector = {
+  def castStringToDTInterval(cv: ColumnView, t: DT): ColumnVector = {
     (t.startField, t.endField) match {
       case (DT.DAY, DT.DAY) => withResource(cv.extractRe(dayLiteralRegex)) {
         groupsTable => {
@@ -538,7 +538,7 @@ object GpuIntervalUtils extends Arm {
     }
   }
 
-  def toDayTimeIntervalString(micros: ColumnVector, dayTimeType: DataType): ColumnVector = {
+  def toDayTimeIntervalString(micros: ColumnView, dayTimeType: DataType): ColumnVector = {
     val t = dayTimeType.asInstanceOf[DT]
     toDayTimeIntervalString(micros, t.startField, t.endField)
   }
@@ -554,7 +554,7 @@ object GpuIntervalUtils extends Arm {
    * @return ANSI day-time interval string, e.g.: interval '01 08:30:30.001' DAY TO SECOND
    */
   def toDayTimeIntervalString(
-      micros: ColumnVector,
+      micros: ColumnView,
       startField: Byte,
       endField: Byte): ColumnVector = {
 
@@ -563,11 +563,10 @@ object GpuIntervalUtils extends Arm {
     val to = DT.fieldToString(endField).toUpperCase
     val postfixStr = s"' ${if (startField == endField) from else s"$from TO $to"}"
 
-    val retCv = withResource(new CloseableHolder(micros.incRefCount())) { restHolder =>
-      withResource(new ArrayBuffer[ColumnView]) { parts =>
+    val retCv = withResource(new ArrayBuffer[ColumnView]) { parts =>
         // prefix with sign part: INTERVAL ' or INTERVAL '-
         parts += withResource(Scalar.fromLong(0L)) { zero =>
-          withResource(restHolder.get.lessThan(zero)) { less =>
+          withResource(micros.lessThan(zero)) { less =>
             withResource(Scalar.fromString(prefixStr + "-")) { negPrefix =>
               withResource(Scalar.fromString(prefixStr)) { prefix =>
                 less.ifElse(negPrefix, prefix)
@@ -577,7 +576,7 @@ object GpuIntervalUtils extends Arm {
         }
 
         // calculate abs, abs(Long.MinValue) will overflow, handle in the last as special case
-        restHolder.setAndCloseOld(restHolder.get.abs())
+        withResource(new CloseableHolder(micros.abs())) { restHolder =>
 
         startField match {
           case DT.DAY =>
@@ -742,7 +741,7 @@ object GpuIntervalUtils extends Arm {
     }
   }
 
-  def dayTimeIntervalToLong(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+  def dayTimeIntervalToLong(dtCv: ColumnView, dt: DataType): ColumnVector = {
     dt.asInstanceOf[DT].endField match {
       case DT.DAY => withResource(Scalar.fromLong(MICROS_PER_DAY)) { micros =>
         dtCv.div(micros)
@@ -759,25 +758,25 @@ object GpuIntervalUtils extends Arm {
     }
   }
 
-  def dayTimeIntervalToInt(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+  def dayTimeIntervalToInt(dtCv: ColumnView, dt: DataType): ColumnVector = {
     withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
       castToTargetWithOverflowCheck(longCv, DType.INT32)
     }
   }
 
-  def dayTimeIntervalToShort(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+  def dayTimeIntervalToShort(dtCv: ColumnView, dt: DataType): ColumnVector = {
     withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
       castToTargetWithOverflowCheck(longCv, DType.INT16)
     }
   }
 
-  def dayTimeIntervalToByte(dtCv: ColumnVector, dt: DataType): ColumnVector = {
+  def dayTimeIntervalToByte(dtCv: ColumnView, dt: DataType): ColumnVector = {
     withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
       castToTargetWithOverflowCheck(longCv, DType.INT8)
     }
   }
 
-  def yearMonthIntervalToLong(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+  def yearMonthIntervalToLong(ymCv: ColumnView, ym: DataType): ColumnVector = {
     ym.asInstanceOf[YM].endField match {
       case YM.YEAR => withResource(Scalar.fromLong(MONTHS_PER_YEAR)) { monthsPerYear =>
         ymCv.div(monthsPerYear)
@@ -786,28 +785,28 @@ object GpuIntervalUtils extends Arm {
     }
   }
 
-  def yearMonthIntervalToInt(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+  def yearMonthIntervalToInt(ymCv: ColumnView, ym: DataType): ColumnVector = {
     ym.asInstanceOf[YM].endField match {
       case YM.YEAR => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) { monthsPerYear =>
         ymCv.div(monthsPerYear)
       }
-      case YM.MONTH => ymCv.incRefCount()
+      case YM.MONTH => ymCv.copyToColumnVector()
     }
   }
 
-  def yearMonthIntervalToShort(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+  def yearMonthIntervalToShort(ymCv: ColumnView, ym: DataType): ColumnVector = {
     withResource(yearMonthIntervalToInt(ymCv, ym)) { i =>
       castToTargetWithOverflowCheck(i, DType.INT16)
     }
   }
 
-  def yearMonthIntervalToByte(ymCv: ColumnVector, ym: DataType): ColumnVector = {
+  def yearMonthIntervalToByte(ymCv: ColumnView, ym: DataType): ColumnVector = {
     withResource(yearMonthIntervalToInt(ymCv, ym)) { i =>
       castToTargetWithOverflowCheck(i, DType.INT8)
     }
   }
 
-  private def castToTargetWithOverflowCheck(cv: ColumnVector, dType: DType): ColumnVector = {
+  private def castToTargetWithOverflowCheck(cv: ColumnView, dType: DType): ColumnVector = {
     withResource(cv.castTo(dType)) { retTarget =>
       withResource(cv.notEqualTo(retTarget)) { notEqual =>
         if (BoolUtils.isAnyValidTrue(notEqual)) {
@@ -822,7 +821,7 @@ object GpuIntervalUtils extends Arm {
   /**
    * Convert long cv to `day time interval`
    */
-  def longToDayTimeInterval(longCv: ColumnVector, dt: DataType): ColumnVector = {
+  def longToDayTimeInterval(longCv: ColumnView, dt: DataType): ColumnVector = {
     val microsScalar = dt.asInstanceOf[DT].endField match {
       case DT.DAY => Scalar.fromLong(MICROS_PER_DAY)
       case DT.HOUR => Scalar.fromLong(MICROS_PER_HOUR)
@@ -838,11 +837,17 @@ object GpuIntervalUtils extends Arm {
   /**
    * Convert (byte | short | int) cv to `day time interval`
    */
-  def intToDayTimeInterval(intCv: ColumnVector, dt: DataType): ColumnVector = {
+  def intToDayTimeInterval(intCv: ColumnView, dt: DataType): ColumnVector = {
     dt.asInstanceOf[DT].endField match {
       case DT.DAY => withResource(Scalar.fromLong(MICROS_PER_DAY)) { micros =>
-        // leverage `Decimal 128` to check the overflow
-        IntervalUtils.multipleToLongWithOverflowCheck(intCv, micros)
+        if (intCv.getType.equals(DType.INT32)) {
+          // leverage `Decimal 128` to check the overflow
+          // Int.MaxValue * `micros` can cause overflow
+          IntervalUtils.multipleToLongWithOverflowCheck(intCv, micros)
+        } else {
+          // no need to check overflow for short byte types
+          intCv.mul(micros)
+        }
       }
       case DT.HOUR => withResource(Scalar.fromLong(MICROS_PER_HOUR)) { micros =>
         // no need to check overflow
@@ -862,7 +867,7 @@ object GpuIntervalUtils extends Arm {
   /**
    * Convert long cv to `year month interval`
    */
-  def longToYearMonthInterval(longCv: ColumnVector, ym: DataType): ColumnVector = {
+  def longToYearMonthInterval(longCv: ColumnView, ym: DataType): ColumnVector = {
     ym.asInstanceOf[YM].endField match {
       case YM.YEAR => withResource(Scalar.fromLong(MONTHS_PER_YEAR)) { num12 =>
         // leverage `Decimal 128` to check the overflow
@@ -875,7 +880,7 @@ object GpuIntervalUtils extends Arm {
   /**
    * Convert (byte | short | int) cv to `year month interval`
    */
-  def intToYearMonthInterval(intCv: ColumnVector, ym: DataType): ColumnVector = {
+  def intToYearMonthInterval(intCv: ColumnView, ym: DataType): ColumnVector = {
     (ym.asInstanceOf[YM].endField, intCv.getType) match {
       case (YM.YEAR, DType.INT32) => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) { num12 =>
         // leverage `Decimal 128` to check the overflow
