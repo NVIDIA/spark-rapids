@@ -52,6 +52,7 @@ object QualificationMain extends Logging {
       Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
     val timeout = appArgs.timeout.toOption
     val readScorePercent = appArgs.readScorePercent.getOrElse(20)
+    val uiEnabled = appArgs.uiEnabled.getOrElse(true)
     val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
     val order = appArgs.order.getOrElse("desc")
 
@@ -86,7 +87,8 @@ object QualificationMain extends Logging {
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
-      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
+      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout,
+      uiEnabled)
     val res = qual.qualifyApps(filteredLogs)
     (0, res)
   }

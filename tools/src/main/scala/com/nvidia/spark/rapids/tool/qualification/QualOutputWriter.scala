@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  */
 class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
 
-  private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
+  private val finalOutputDir = outputDir
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
@@ -101,6 +101,7 @@ object QualOutputWriter {
   val APP_DUR_STR = "App Duration"
   val SQL_DUR_STR = "SQL DF Duration"
   val TASK_DUR_STR = "SQL Dataframe Task Duration"
+  val NONSQL_DUR_STR = "c"
   val SCORE_STR = "Score"
   val POT_PROBLEM_STR = "Potential Problems"
   val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
@@ -114,9 +115,19 @@ object QualOutputWriter {
   val COMPLEX_TYPES_STR = "Complex Types"
   val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
+  val ESTIMATED_DURATION_STR = "Estimated Duration"
+  val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
+  val SPEEDUP_DURATION_STR = "Speedup Duration"
+  val SPEEDUP_FACTOR_STR = "Speedup Factor"
+  val TOTAL_SPEEDUP_STR = "Total Speedup"
+  val SPEEDUP_BUCKET_STR = "Recommendation"
+  val LONGEST_SQL_DURATION_STR = "Longest SQL Duration"
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
   val PROBLEM_DUR_SIZE: Int = PROBLEM_DUR_STR.size
+  val SPEEDUP_BUCKET_STR_SIZE: Int = SPEEDUP_BUCKET_STR.size
+  val TOTAL_SPEEDUP_STR_SIZE: Int = TOTAL_SPEEDUP_STR.size
+  val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
@@ -172,7 +183,9 @@ object QualOutputWriter {
       APP_ID_STR -> appIdMaxSize,
       APP_DUR_STR -> APP_DUR_STR_SIZE,
       SQL_DUR_STR -> SQL_DUR_STR_SIZE,
-      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE
+      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE,
+      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR_SIZE,
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
     )
   }
 
@@ -189,6 +202,7 @@ object QualOutputWriter {
       POT_PROBLEM_STR ->
         getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       SQL_DUR_STR -> SQL_DUR_STR.size,
+      NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       APP_DUR_STR -> APP_DUR_STR.size,
       EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
@@ -205,7 +219,14 @@ object QualOutputWriter {
       COMPLEX_TYPES_STR ->
         getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
-        NESTED_TYPES_STR)
+        NESTED_TYPES_STR),
+      ESTIMATED_DURATION_STR -> ESTIMATED_DURATION_STR.size,
+      UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size,
+      SPEEDUP_DURATION_STR -> SPEEDUP_DURATION_STR.size,
+      SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
+      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR.size,
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size,
+      LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -227,7 +248,9 @@ object QualOutputWriter {
       sumInfo.appId -> appIdMaxSize,
       sumInfo.appDuration.toString -> APP_DUR_STR_SIZE,
       sumInfo.sqlDataFrameDuration.toString -> SQL_DUR_STR_SIZE,
-      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE
+      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE,
+      sumInfo.totalSpeedup.toString -> TOTAL_SPEEDUP_STR_SIZE,
+      sumInfo.speedupBucket -> SPEEDUP_BUCKET_STR_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -258,6 +281,7 @@ object QualOutputWriter {
       appInfo.score.toString -> headersAndSizes(SCORE_STR),
       potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
+      appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
@@ -271,7 +295,16 @@ object QualOutputWriter {
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
-      nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR)
+      nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
+      appInfo.estimatedDuration.toString -> headersAndSizes(ESTIMATED_DURATION_STR),
+      appInfo.unsupportedDuration.toString ->
+        headersAndSizes(UNSUPPORTED_DURATION_STR),
+      appInfo.speedupDuration.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
+      appInfo.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      appInfo.totalSpeedup.toString -> headersAndSizes(TOTAL_SPEEDUP_STR),
+      stringIfempty(appInfo.speedupBucket) -> headersAndSizes(SPEEDUP_BUCKET_STR),
+      stringIfempty(appInfo.longestSqlDuration.toString) ->
+        headersAndSizes(LONGEST_SQL_DURATION_STR)
     )
 
     if (reportReadSchema) {

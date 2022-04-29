@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling._
@@ -63,6 +64,15 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     super.doSparkListenerTaskEnd(app, event)
+    // keep all stage task times to see for nonsql duration
+    val taskSum = app.stageIdToTaskEndSum.getOrElseUpdate(event.stageId, {
+      new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0, 0)
+    })
+    taskSum.executorRunTime += event.taskMetrics.executorRunTime
+    taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
+    taskSum.totalTaskDuration += event.taskInfo.duration
+
+    // TODO - change below to use stageIdToTaskEndSum
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
@@ -131,6 +141,21 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       }
       app.jobIdToSqlID(event.jobId) = sqlID
     }
+    // TODO - can we combine with above
+    val sqlID = ProfileUtils.stringToLong(sqlIDString)
+    val thisJob = new JobInfoClass(
+      event.jobId,
+      event.stageIds,
+      sqlID,
+      event.properties.asScala,
+      event.time,
+      None,
+      None,
+      None,
+      None,
+      false  // hardcode to false for now
+    )
+    app.jobIdToInfo.put(event.jobId, thisJob)
   }
 
   override def doSparkListenerJobEnd(
@@ -138,6 +163,12 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.lastJobEndTime = Some(event.time)
+    val jobTime = app.jobIdToInfo.get(event.jobId) match {
+      case Some(j) =>
+        ProfileUtils.OptionLongMinusLong(Some(event.time), j.startTime).getOrElse(0L)
+      case None => 0L
+    }
+    app.aggJobTime = Some(app.aggJobTime.getOrElse(0L) + jobTime)
     if (event.jobResult != JobSucceeded) {
       val sqlID = app.jobIdToSqlID.get(event.jobId) match {
         case Some(id) =>
