@@ -329,17 +329,28 @@ object RapidsExecutorPlugin {
   private val CUDA_FATAL_EXCEPTION: String = classOf[ai.rapids.cudf.CudaFatalException].getName
   private val CUDF_EXCEPTION: String = classOf[ai.rapids.cudf.CudfException].getName
 
-  def isCudaException(ef: ExceptionFailure): Boolean = {
-    ef.description.contains(CUDA_EXCEPTION) || ef.toErrorString.contains(CUDA_EXCEPTION)
+  def isCudaException(ef: ExceptionFailure): Boolean = ef.exception match {
+    case Some(ex) =>
+      ex.isInstanceOf[ai.rapids.cudf.CudaException]
+    case None =>
+      ef.description.contains(CUDA_EXCEPTION) ||
+        ef.toErrorString.contains(CUDA_EXCEPTION)
   }
 
-  def isCudaFatalException(ef: ExceptionFailure): Boolean = {
-    ef.description.contains(CUDA_FATAL_EXCEPTION) ||
-      ef.toErrorString.contains(CUDA_FATAL_EXCEPTION)
+  def isCudaFatalException(ef: ExceptionFailure): Boolean = ef.exception match {
+    case Some(ex) =>
+      ex.isInstanceOf[ai.rapids.cudf.CudaFatalException]
+    case None =>
+      ef.description.contains(CUDA_FATAL_EXCEPTION) ||
+        ef.toErrorString.contains(CUDA_FATAL_EXCEPTION)
   }
 
-  def isCudfException(ef: ExceptionFailure): Boolean = {
-    ef.description.contains(CUDF_EXCEPTION) || ef.toErrorString.contains(CUDF_EXCEPTION)
+  def isCudfException(ef: ExceptionFailure): Boolean = ef.exception match {
+    case Some(ex) =>
+      ex.isInstanceOf[ai.rapids.cudf.CudfException]
+    case None =>
+      ef.description.contains(CUDF_EXCEPTION) ||
+        ef.toErrorString.contains(CUDF_EXCEPTION)
   }
 }
 
