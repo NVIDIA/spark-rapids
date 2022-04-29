@@ -21,7 +21,6 @@ import java.net.URI
 import java.util.concurrent.{Callable, ThreadPoolExecutor}
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters._
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
@@ -124,7 +123,7 @@ case class GpuAvroScan(
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
         parsedOptions, metrics, pushedFilters, queryUsesInputFile)
       // Now only coalescing is supported, so need to check it can be used for the final choice.
-      if (f.canUseCoalesceFilesReader){
+      if (f.canUseCoalesceFilesReader) {
         f
       } else {
         // Fall back to PerFile reading
@@ -203,7 +202,6 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   private val numThreads = rapidsConf.avroMultiThreadReadNumThreads
-  private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -248,13 +246,13 @@ case class GpuAvroMultiFilePartitionReaderFactory(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${file.filePath}", e)
-          AvroBlockMeta(null, Seq.empty)
+          AvroBlockMeta(null, 0L, Seq.empty)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          AvroBlockMeta(null, Seq.empty)
+          AvroBlockMeta(null, 0L, Seq.empty)
       }
       val fPath = new Path(new URI(file.filePath))
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
@@ -382,7 +380,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
   protected final def readPartFile(
       partFilePath: Path,
       blocks: Seq[BlockInfo],
-      header: Header,
+      headerSize: Long,
       conf: Configuration): (HostMemoryBuffer, Long) = {
     withResource(new NvtxWithMetrics("Avro buffer file split", NvtxColor.YELLOW,
         metrics("bufferTime"))) { _ =>
@@ -390,11 +388,11 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
         // No need to check the header here since it can not be null when blocks is not empty.
         return (null, 0L)
       }
-      val estOutSize = estimateOutputSize(blocks, header)
+      val estOutSize = estimateOutputSize(blocks, headerSize)
       withResource(partFilePath.getFileSystem(conf).open(partFilePath)) { in =>
         closeOnExcept(HostMemoryBuffer.allocate(estOutSize)) { hmb =>
           withResource(new HostMemoryOutputStream(hmb)) { out =>
-            val headerAndBlocks = BlockInfo(0, header.firstBlockStart, 0, 0) +: blocks
+            val headerAndBlocks = BlockInfo(0, headerSize, 0, 0) +: blocks
             copyBlocksData(headerAndBlocks, in, out)
             // check we didn't go over memory
             if (out.getPos > estOutSize) {
@@ -409,9 +407,9 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
   }
 
   /** Estimate the total size from the given blocks and header */
-  protected final def estimateOutputSize(blocks: Seq[BlockInfo], header: Header): Long = {
+  protected final def estimateOutputSize(blocks: Seq[BlockInfo], headerSize: Long): Long = {
     // Start from the Header
-    var totalSize: Long = header.firstBlockStart
+    var totalSize: Long = headerSize
     // Add all blocks
     totalSize += blocks.map(_.blockLength).sum
     totalSize
@@ -530,7 +528,7 @@ class GpuAvroPartitionReader(
           None
         } else {
           val (dataBuffer, dataSize) = readPartFile(partFilePath, currentChunkedBlocks,
-            blockMeta.header, conf)
+            blockMeta.headerSize, conf)
           sendToGpu(dataBuffer, dataSize, Array(partFile))
         }
       }
@@ -586,7 +584,7 @@ class GpuMultiFileAvroPartitionReader(
     // in 'checkIfNeedToSplitDataBlock'
     Header.mergeMetadata(headers.toSeq).map { mergedHeader =>
       val allBlocks = blocks.values.flatten.toSeq
-      estimateOutputSize(allBlocks, mergedHeader)
+      estimateOutputSize(allBlocks, Header.headerSizeInBytes(mergedHeader))
     } getOrElse 0L
   }
 
@@ -710,11 +708,11 @@ case class AvroFileFilterHandler(
               filteredBlocks.append(block)
             }
           })
-          AvroBlockMeta(reader.getHeader(), filteredBlocks)
+          AvroBlockMeta(reader.getHeader, reader.getHeaderSize, filteredBlocks)
         }
       }
     } else {
-      AvroBlockMeta(null, Seq.empty)
+      AvroBlockMeta(null, 0L, Seq.empty)
     }
   }
 }
@@ -725,7 +723,7 @@ case class AvroFileFilterHandler(
  * @param header the header of avro file
  * @param blocks the total block info of avro file
  */
-case class AvroBlockMeta(header: Header, blocks: Seq[BlockInfo])
+case class AvroBlockMeta(header: Header, headerSize: Long, blocks: Seq[BlockInfo])
 
 /**
  * CopyRange to indicate from where to copy.

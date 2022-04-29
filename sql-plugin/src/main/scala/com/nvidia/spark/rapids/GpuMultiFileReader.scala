@@ -715,7 +715,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * Write a header for a specific file format. If there is no header for the file format,
    * just ignore it and return 0
    *
-   * @param paths the paths of files to be coalcesed into a single batch
+   * @param paths the paths of files to be coalesced into a single batch
    * @param buffer where the header will be written
    * @return how many bytes written
    */

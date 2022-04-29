@@ -32,15 +32,22 @@ _enable_all_types_conf = {
 
 rapids_reader_types = ['PERFILE', 'COALESCING']
 
+# 50 files for the coalescing reading case
+coalescingPartitionNum = 50
+
+def gen_avro_files(gen_list, out_path):
+    with_cpu_session(
+        lambda spark: gen_df(spark,
+            gen_list).repartition(coalescingPartitionNum).write.format("avro").save(out_path)
+    )
+
+
 @pytest.mark.parametrize('v1_enabled_list', ["avro", ""], ids=["v1", "v2"])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_basic_read(spark_tmp_path, v1_enabled_list, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(support_gens)]
     data_path = spark_tmp_path + '/AVRO_DATA'
-    # 50 files for the coalescing reading case
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).repartition(50).write.format("avro").save(data_path)
-    )
+    gen_avro_files(gen_list, data_path)
 
     all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.rapids.sql.format.avro.reader.type': reader_type,
@@ -54,20 +61,11 @@ def test_basic_read(spark_tmp_path, v1_enabled_list, reader_type):
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_avro_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(support_gens)]
-    first_data_path = spark_tmp_path + '/AVRO_DATA/key=0/key2=20'
-    with_cpu_session(
-        lambda spark: gen_df(spark,
-            gen_list).repartition(50).write.format("avro").save(first_data_path))
-    second_data_path = spark_tmp_path + '/AVRO_DATA/key=1/key2=21'
-    with_cpu_session(
-        lambda spark: gen_df(spark,
-            gen_list).repartition(50).write.format("avro").save(second_data_path))
-    third_data_path = spark_tmp_path + '/AVRO_DATA/key=2/key2=22'
-    with_cpu_session(
-        lambda spark: gen_df(spark,
-            gen_list).repartition(50).write.format("avro").save(third_data_path))
-
     data_path = spark_tmp_path + '/AVRO_DATA'
+    # generate partitioned files
+    for v in [0, 1, 2]:
+        out_path = data_path + '/key={}/key2=2{}'.format(v, v)
+        gen_avro_files(gen_list, out_path)
 
     all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.rapids.sql.format.avro.reader.type': reader_type,
@@ -80,13 +78,11 @@ def test_avro_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_ty
 @pytest.mark.parametrize('v1_enabled_list', ["", "avro"], ids=["v1", "v2"])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_avro_input_meta(spark_tmp_path, v1_enabled_list, reader_type):
-    first_data_path = spark_tmp_path + '/AVRO_DATA/key=0'
-    with_cpu_session(
-        lambda spark: unary_op_df(spark, long_gen).write.format("avro").save(first_data_path))
-    second_data_path = spark_tmp_path + '/AVRO_DATA/key=1'
-    with_cpu_session(
-        lambda spark: unary_op_df(spark, long_gen).write.format("avro").save(second_data_path))
     data_path = spark_tmp_path + '/AVRO_DATA'
+    for v in [0, 1]:
+        out_path = data_path + '/key={}'.format(v)
+        with_cpu_session(
+            lambda spark: unary_op_df(spark, long_gen).write.format("avro").save(out_path))
 
     all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.rapids.sql.format.avro.reader.type': reader_type,
