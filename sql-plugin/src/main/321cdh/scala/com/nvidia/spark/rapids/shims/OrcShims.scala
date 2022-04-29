@@ -21,7 +21,7 @@ import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.types.DataType
 
 // 320+ ORC shims
-object OrcShims extends OrcShims311until320Base {
+object OrcShims extends OrcShims321CDHBase {
 
   // orcTypeDescriptionString is renamed to getOrcSchemaString from 3.3+
   override def getOrcSchemaString(dt: DataType): String = {

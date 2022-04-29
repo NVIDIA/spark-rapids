@@ -168,6 +168,12 @@
                     <version>2.0.0</version>
                 </dependency>
             </dependencies>
+             <pluginRepositories>
+                <pluginRepository>
+                <id>cloudera-repo</id>
+                <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+             </pluginRepositories>
         </profile>
         <profile>
             <id>individual</id>

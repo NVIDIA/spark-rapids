@@ -27,7 +27,7 @@ import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.types.DataType
 
-trait OrcShims311until320Base {
+trait OrcShims321CDHBase {
 
   // read data to buffer
   def readFileData(dataReader: DataReader, inputDataRanges: DiskRangeList): DiskRangeList = {

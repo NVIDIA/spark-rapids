@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids.shims.spark321cdh
 import com.nvidia.spark.rapids.{ClouderaShimVersion, ShimVersion}
 
 object SparkShimServiceProvider {
-  val VERSION = ClouderaShimVersion(3, 2, 1, "3.2.7170")
+  val VERSION = ClouderaShimVersion(3, 2, 1, "3.2.7171000")
   // cdh version can have numbers after after 7170
-  val CDH_BASE_VERSION = "3.2.1.7170.1000"
+  val CDH_BASE_VERSION = "3.2.1.3.2.7171000"
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
