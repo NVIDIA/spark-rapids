@@ -100,9 +100,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test order asc") {
     val logFiles = Array(
-      s"$logDir/eventlog_nested_dsv2",
+      s"$logDir/dataset_eventlog",
       s"$logDir/dsAndDf_eventlog.zstd",
-      s"$logDir/eventlog_complex_dec_nested",
+      s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
     TrampolineUtil.withTempDir { outpath =>
@@ -116,7 +116,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1630551716813"))
+      assert(appSum.head.appId.equals("local-1623281204390"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -136,9 +136,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test order desc") {
     val logFiles = Array(
-      s"$logDir/eventlog_nested_dsv2",
+      s"$logDir/dataset_eventlog",
       s"$logDir/dsAndDf_eventlog.zstd",
-      s"$logDir/eventlog_complex_dec_nested",
+      s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
     TrampolineUtil.withTempDir { outpath =>
@@ -152,7 +152,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1630551716813"))
+      assert(appSum.head.appId.equals("local-1623281204390"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -163,7 +163,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1630551716813"))
+        assert(firstRow.contains("local-1623281204390"))
       } finally {
         inputSource.close()
       }
@@ -235,7 +235,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test skip gpu event logs") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-    val logFiles = Array(s"$qualLogDir/dataset_eventlog")
+    val logFiles = Array(s"$qualLogDir/gpu_eventlog")
     var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
@@ -248,7 +248,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(appSum.size == 0)
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
-          s"rapids_4_spark_qualification_output.csv"
+        s"rapids_4_spark_qualification_output.csv"
       val inputSource = Source.fromFile(filename)
       try {
         val lines = inputSource.getLines.toSeq
@@ -280,7 +280,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       appName,
       s"$logDir/rdd_only_eventlog",
       s"$logDir/empty_eventlog",
-      s"$logDir/udf_dataset_eventlog"
+      s"$logDir/udf_func_eventlog"
     ))
 
     val (eventLogInfo, _) = EventLogPathProcessor.processAllPaths(
@@ -301,7 +301,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       appName,
       s"$logDir/rdd_only_eventlog",
       s"$logDir/empty_eventlog",
-      s"$logDir/udf_dataset_eventlog"
+      s"$logDir/udf_func_eventlog"
     ))
 
     val (eventLogInfo, _) = EventLogPathProcessor.processAllPaths(
