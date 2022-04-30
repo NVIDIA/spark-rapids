@@ -56,8 +56,9 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    spark.sql.legacy.parquet.int96RebaseModeInWrite
    ```
    
-   It will cause CPU fallback when writing parquet files. If you do not need "LEGACY" mode, please 
-   set them back to "EXCEPTION" which is the default value in Apache Spark.
+   These settings will cause a CPU fallback for Parquet writes involving dates and timestamps.
+   If you do not need `LEGACY` write semantics, set these configs to `EXCEPTION` which is
+   the default value in Apache Spark.
 
 6. Databricks makes changes to the runtime without notification.
 
