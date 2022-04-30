@@ -58,7 +58,7 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    
    These settings will cause a CPU fallback for Parquet writes involving dates and timestamps.
    If you do not need `LEGACY` write semantics, set these configs to `EXCEPTION` which is
-   the default value in Apache Spark.
+   the default value in Apache Spark 3.0 and higher.
 
 6. Databricks makes changes to the runtime without notification.
 
