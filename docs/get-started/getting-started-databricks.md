@@ -49,7 +49,7 @@ when using the plugin. Queries may still see significant speedups even with AQE 
 
 5. Parquet rebase mode is set to "LEGACY" by default.
 
-   Below 2 rebase mode related Spark configurations are set to `LEGACY` by default on Databricks:
+   The following Spark configurations are set to `LEGACY` by default on Databricks:
    
    ```
    spark.sql.legacy.parquet.datetimeRebaseModeInWrite
