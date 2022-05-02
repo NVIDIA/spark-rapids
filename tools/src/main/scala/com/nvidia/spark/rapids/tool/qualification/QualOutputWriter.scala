@@ -33,7 +33,6 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  */
 class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
 
-  private val finalOutputDir = outputDir
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
@@ -44,7 +43,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
-    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv", "CSV")
+    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
       val headersAndSizes = QualOutputWriter
         .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
@@ -60,7 +59,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 
   // write the text summary report
   def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int) : Unit = {
-    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log",
+    val textFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.log",
       "Summary report")
     try {
       writeTextSummary(textFileWriter, summaries, numOutputRows)

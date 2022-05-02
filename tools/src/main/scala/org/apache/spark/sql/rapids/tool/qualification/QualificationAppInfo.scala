@@ -160,7 +160,6 @@ class QualificationAppInfo(
   }
 
   // Assume that overhead is the all time windows that do not overlap with a running job.
-  // TODO - What about shell where idle?
   private def calculateOverHeadTime(startTime: Long): Long = {
     // Simple algorithm:
     // 1- sort all jobs by start/endtime.
@@ -199,7 +198,6 @@ class QualificationAppInfo(
       sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     val taskTimeDataSetOrRDD = validSums.values.map(dur => dur.totalTaskDuration).sum
-    // TODO make more efficient
     val res = allTaskTime - taskTimeDataSetOrRDD - taskDFDuration
     assert(res >= 0)
     res
@@ -246,14 +244,12 @@ class QualificationAppInfo(
     }
   }
 
-  // TODO calculate the unsupported operator task duration, going to very hard
   // for now it is a helper to generate random values for the POC. The values have to be
   // [0, sqlDataframeTaskDuration[
   private def calculateUnsupportedDuration(upperBound: Long = 0): Long = {
     (upperBound * Random.nextDouble().abs).toLong
   }
 
-  // TODO calculate speedup_factor - which is average of operator factors???
   // For now it is a helper to generate random values for the POC. Returns rounded value
   private def calculateSpeedupFactor(bounds: (Double, Double) = (1.0, 10.0)): Double = {
     bounds._1 + (bounds._2 - bounds._1) *  Random.nextDouble().abs
@@ -317,7 +313,6 @@ class QualificationAppInfo(
       // TODO - construct the final outputs - multiple things required now. Also need to
       // calculate durations, if ops don't have them use stage durations or job durations
 
-      // TODO - find the correct unsupported duration
       val unsupportedDuration = calculateUnsupportedDuration(sqlDataframeTaskDuration)
       val speedupDuration = sqlDataframeTaskDuration - unsupportedDuration
       val speedupFactor = calculateSpeedupFactor()
@@ -349,7 +344,6 @@ class QualificationAppInfo(
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
-      // TODO - likely can combine some code below with some of the above matching
       checkGraphNodeForReads(sqlID, node)
       if (isDataSetOrRDDPlan(node.desc)) {
         sqlIDToDataSetOrRDDCase += sqlID
@@ -429,12 +423,6 @@ case class QualificationSummaryInfo(
     totalSpeedup: Double,
     speedupBucket: String)
 
-/**
- * A class that holds datasource information.
- *
- * @param appId
- * @param dsData
- */
 case class AppDataSourceCase(
     appId: String,
     dsData: Seq[DataSourceCase])

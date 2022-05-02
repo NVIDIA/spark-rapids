@@ -106,9 +106,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
           allApps.add(qualSumInfo.get)
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
-          // TODO: we should also catch the application info when exception occurs so that
-          //       the report generator reports it to the users.
-          collectQualificationInfoForApp(startTime, endTime, app.get)
+          allAppsInfo.add(app.get.appInfo.get)
+          allDataSourceInfo.add(AppDataSourceCase(app.get.appId, app.get.dataSourceInfo))
         } else {
           logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
         }
@@ -129,26 +128,6 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   // Define fields and helpers used for generating UI
   private val allAppsInfo = new ConcurrentLinkedQueue[QualApplicationInfo]()
   private val allDataSourceInfo = new ConcurrentLinkedQueue[AppDataSourceCase]()
-
-  /**
-   * Pull the required data from application object and report the status of the qualification run.
-   * This also provides information about the analysis of the app.
-   * For example, time, runtime Information, properties..etc.
-   *
-   * @param analysisStartTime
-   * @param analysisEndTime
-   * @param app
-   */
-  def collectQualificationInfoForApp(
-      analysisStartTime: Long,
-      analysisEndTime: Long,
-      app: QualificationAppInfo) : Unit = {
-    // add appInfo
-    if (app.appInfo.isDefined) {
-      allAppsInfo.add(app.appInfo.get)
-    }
-    allDataSourceInfo.add(AppDataSourceCase(app.appId, app.dataSourceInfo))
-  }
 
   def launchUIReportGenerator() : Unit = {
     if (uiEnabled) {

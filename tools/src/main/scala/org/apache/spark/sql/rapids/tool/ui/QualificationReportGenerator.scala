@@ -16,9 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.ui
 
-import java.io.{File, InputStream, OutputStream}
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.io.{InputStream, OutputStream}
 
 import com.nvidia.spark.rapids.tool.qualification.Qualification
 import org.apache.hadoop.conf.Configuration
@@ -37,13 +35,7 @@ class QualificationReportGenerator(
 
   val outputWorkPath = new Path(provider.getReportOutputPath, "ui-report")
 
-  private val fs = FileSystem.get(outputWorkPath.toUri, new Configuration())
-
-  val outputWorkDir = Some(fs.mkdirs(outputWorkPath))
-  val destinationFolder = {
-    val timestamp = new SimpleDateFormat("yyyyMMddHHmm").format(new Date())
-    new File(s"${outputWorkDir}-${timestamp}")
-  }
+  val fs = FileSystem.get(outputWorkPath.toUri, new Configuration())
 
   def copyAssetFiles() : Unit = {
     if (fs.mkdirs(outputWorkPath)) {
