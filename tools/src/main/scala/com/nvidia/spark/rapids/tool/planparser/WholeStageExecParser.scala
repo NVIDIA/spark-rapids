@@ -33,6 +33,9 @@ case class WholeStageExecParser(
   override def parse: Seq[ExecInfo] = {
     // TODO - does metrics for time have previous ops?  per op thing, likely does
     // but verify
+    // the durations in wholestage code gen can include durations of other wholestage code
+    // gen in the same stage, so we can't just add them  all up.
+    // Perhaps take the max of those in Stage?
     val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
