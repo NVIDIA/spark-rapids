@@ -245,11 +245,24 @@ class QualificationAppInfo(
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (sqlID, execInfos) =>
+          val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
+          val (execsWithDuration, execsWithoutDuration) = execInfos.partition(_.duration.nonEmpty)
+          val totalTaskTimeExecDurMetrics = execsWithDuration.flatMap(_.duration).sum
+          val speedups = execsWithoutDuration.map(_.speedupFactor)
+          val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
+          logWarning(s"total sql time is: $totalTaskTimeSQL total metrics " +
+            s"duration is: $totalTaskTimeExecDurMetrics other speedsup: " +
+            s"${speedups.mkString(",")} average speedup: $averageSpeedup")
+
+          /*
+          // if we want to break down each stage:
           logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val (execsWithoutDuration, execsWithDuration) = execInfos.partition(_.duration.isEmpty)
           val withOutDur = getStageToExec(execsWithoutDuration)
           val withDur = getStageToExec(execsWithDuration)
           val allStageIds = execInfos.flatMap(_.stages)
+          stageIdToSqlID
+          sqlIDToTaskEndSum
           val unAccounted = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0)
@@ -259,7 +272,9 @@ class QualificationAppInfo(
             val averagespeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
             (averagespeedup, taskTimeNotAccountedFor)
           }
-          logWarning("unacounted for each stages is: " + unAccounted.mkString(","))
+            logWarning("unacounted for each stages is: " + unAccounted.mkString(","))
+
+           */
         }
       }
 

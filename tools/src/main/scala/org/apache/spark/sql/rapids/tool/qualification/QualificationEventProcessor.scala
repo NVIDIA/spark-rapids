@@ -98,7 +98,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       ""
     )
     app.sqlStart += (event.executionId -> sqlExecution)
-    app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    // app.processSQLPlan(event.executionId, event.sparkPlanInfo)
     app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
     // -1 to indicate that it started but not complete
     app.sqlDurationTime += (event.executionId -> -1)
@@ -148,7 +148,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     logDebug("Processing event: " + event.getClass)
     app.lastJobEndTime = Some(event.time)
     if (event.jobResult != JobSucceeded) {
-      val sqlID = app.jobIdToSqlID.get(event.jobId) match {
+      app.jobIdToSqlID.get(event.jobId) match {
         case Some(id) =>
           // zero out the cpu and run times since failed
           app.sqlIDToTaskEndSum.get(id).foreach { sum =>

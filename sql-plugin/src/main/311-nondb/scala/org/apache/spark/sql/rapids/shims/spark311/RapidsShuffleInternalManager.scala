@@ -42,7 +42,7 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
 }
 
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
+  extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
 
   def getReader[K, C](
       handle: ShuffleHandle,
