@@ -86,7 +86,7 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final boolean isNullAt(int rowId) {
-    GpuColumnVector.debug("GERA_DEBUG", cudfCv);
+    GpuColumnVector.debug("GERA_DEBUG_" + rowId, cudfCv);
     return cudfCv.isNull(rowId);
   }
 
