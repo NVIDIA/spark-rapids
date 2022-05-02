@@ -16,7 +16,9 @@
 
 package org.apache.spark.sql.rapids.tool.ui
 
-import java.io.{File, FileInputStream, FileOutputStream, PrintWriter}
+import java.io.{File, FileOutputStream, PrintWriter}
+import java.nio.channels.Channels
+
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -26,40 +28,38 @@ import org.json4s.jackson.Serialization
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.util.Utils.getPropertiesFromFile
 
 class QualificationReportGenerator(
     conf: SparkConf,
-    provider: Qualification) {
+    provider: Qualification) extends Logging {
 
   import QualificationReportGenerator._
 
   // TODO: use HDFS API to create the logoutput if necessary
-  val assetsFolder = new File(getAssetsPath)
   val outputWorkDir = new File(provider.getReportOutputPath, "ui-report")
   val destinationFolder = {
     val timestamp = new SimpleDateFormat("yyyyMMddHHmm").format(new Date())
     new File(s"${outputWorkDir}-${timestamp}")
   }
 
-  def getAssetsPath(): String = s"${UI_HOME}${File.separator}${RAPIDS_UI_ASSETS_DIR}"
-
-  def copyAssetFolder(src: File, dest: File): Unit = {
-    if (src.isDirectory) {
-      if (!dest.exists()) {
-        dest.mkdirs()
+  def copyAssetFiles() : Unit = {
+    for ((folder, assets) <- ASSETS_FOLDER_MAP) {
+      val destFolder = new File(destinationFolder, folder)
+      val relativePath = s"${RAPIDS_UI_ASSETS_DIR}/${folder}"
+      destFolder.mkdirs()
+      assets.foreach { srcFile =>
+        val inputStream = getClass().getResourceAsStream(s"${relativePath}/${srcFile}")
+        val ch  = Channels.newChannel(inputStream)
+        val dest = new File(destFolder, srcFile)
+        new FileOutputStream(
+              dest) getChannel() transferFrom(
+              ch, 0, Long.MaxValue)
       }
-      src.listFiles().foreach { srcDir =>
-        copyAssetFolder(srcDir, new File(dest, srcDir.getName))
-      }
-    } else {
-      new FileOutputStream(dest) getChannel() transferFrom(
-        new FileInputStream(src) getChannel(), 0, Long.MaxValue)
     }
   }
 
   def launch(): Unit = {
-    copyAssetFolder(assetsFolder, destinationFolder)
+    copyAssetFiles
     generateJSFiles
   }
 
@@ -70,7 +70,6 @@ class QualificationReportGenerator(
     val dataSourceInfo = Serialization.write(provider.getDataSourceInfo())
     val qualInfoSummaryContent =
       s"""
-         |
          |let appInfoRecords =
          |\t${appInfoRecs};
          |let qualificationRecords =
@@ -86,34 +85,19 @@ class QualificationReportGenerator(
 }
 
 object QualificationReportGenerator extends Logging {
-  val RAPIDS_UI_PREFIX = "spark.rapids.tool.qualification.ui."
-  val UI_HOME = getClass.getResource("/ui").getPath
-  val RAPIDS_UI_CONF_DIR = "conf"
-  val RAPIDS_UI_ASSETS_DIR = "assets"
-  val RAPIDS_UI_CONF_FILE = "qual-ui-report-defaults.conf"
+  val UI_HOME = getClass.getResource("/ui")
+  val RAPIDS_UI_ASSETS_DIR = "/ui/assets"
+  val ASSETS_FOLDER_MAP = Map(
+    "html" -> Seq("index.html", "application.html", "raw.html"),
+    "css" -> Seq("spur.css"),
+    "js" -> Seq("app-report.js", "qual-report.js", "raw-report.js", "spur.js", "ui-data.js",
+      "uiutils.js"))
 
   private val conf = new SparkConf
 
   def createQualReportGenerator(
-      provider: Qualification,
-      propFilePath: String = null): Unit = {
-    loadDefaultSparkProperties(conf, propFilePath)
+      provider: Qualification): Unit = {
     val generator = new QualificationReportGenerator(conf, provider)
     generator.launch()
-  }
-
-  def loadDefaultSparkProperties(conf: SparkConf, filePath: String = null): String = {
-    val propPath = Option(filePath).getOrElse(getDefaultUIProperties())
-    getPropertiesFromFile(propPath).filter { case (k, v) =>
-      k.startsWith(RAPIDS_UI_PREFIX)
-    }.foreach { case (k, v) =>
-      conf.setIfMissing(k, v)
-      sys.props.getOrElseUpdate(k, v)
-    }
-    propPath
-  }
-
-  def getDefaultUIProperties(): String = {
-    s"${UI_HOME}${File.separator}${RAPIDS_UI_CONF_DIR}${File.separator}${RAPIDS_UI_CONF_FILE}"
   }
 }
