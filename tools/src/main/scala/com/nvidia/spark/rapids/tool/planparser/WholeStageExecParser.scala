@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
-import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.internal.Logging

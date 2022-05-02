@@ -95,9 +95,9 @@ object SQLPlanParser extends Logging {
       case w if (w.name.contains("WholeStageCodegen")) =>
         WholeStageExecParser(w.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
       case f if (f.name == "Filter") =>
-        FilterExecParser(f, checker, sqlID).parse
+        FilterExecParser(f, checker, sqlID, app).parse
       case p if (p.name == "Project") =>
-        ProjectExecParser(p, checker, sqlID).parse
+        ProjectExecParser(p, checker, sqlID, app).parse
       case o =>
         logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
