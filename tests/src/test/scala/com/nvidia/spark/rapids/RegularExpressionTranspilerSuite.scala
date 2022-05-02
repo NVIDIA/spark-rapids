@@ -204,12 +204,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("string anchor \\Z fall back to CPU - replace or split") {
-    for (mode <- Seq(RegexReplaceMode, RegexSplitMode)) {
-      assertUnsupported("a\\Z", mode, "string anchor \\Z is not supported in split or replace mode")
-    }
-  }
-
   test("string anchor \\Z fall back to CPU in groups") {
     val patterns = Seq(raw"(\Z)", raw"(\Z)+")
     patterns.foreach(pattern =>
@@ -225,14 +219,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("string anchors - replace") {
-    val patterns = Seq("\\Atest")
+  test("string anchor \\Z fall back to CPU - split") {
+    for (mode <- Seq(RegexSplitMode)) {
+      assertUnsupported("\\Z", mode, "string anchor \\Z is not supported in split or replace mode")
+    }
+  }
+
+  test("line anchors - replace") {
+    val patterns = Seq("^test", "test$", "^test$")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
-  test("line anchor $ fall back to CPU - split and replace") {
-    for (mode <- Seq(RegexSplitMode, RegexReplaceMode)) {
+  test("string anchors - replace") {
+    val patterns = Seq("\\Atest", "test\\z", "test\\Z")
+    assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
+      "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
+  }
+
+  test("line anchor $ fall back to CPU - split") {
+    for (mode <- Seq(RegexSplitMode)) {
       assertUnsupported("a$b", mode, "line anchor $ is not supported in split or replace")
     }
   }

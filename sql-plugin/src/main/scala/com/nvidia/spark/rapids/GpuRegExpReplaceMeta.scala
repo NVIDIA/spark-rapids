@@ -34,23 +34,6 @@ class GpuRegExpReplaceMeta(
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
-    expr.regexp match {
-      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
-          canUseGpuStringReplace = true
-        } else {
-          try {
-            pattern = Some(new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString))
-          } catch {
-            case e: RegexUnsupportedException =>
-              willNotWorkOnGpu(e.getMessage)
-          }
-        }
-
-      case _ =>
-        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
-    }
-
     expr.rep match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         GpuRegExpUtils.backrefConversion(s.toString) match {
@@ -59,6 +42,26 @@ class GpuRegExpReplaceMeta(
             replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
         }
       case _ =>
+    }
+
+    expr.regexp match {
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
+        if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+          canUseGpuStringReplace = true
+        } else {
+          try {
+            val (pat, repl) = 
+                new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
+            pattern = pat
+            replacement = repl
+          } catch {
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
+          }
+        }
+
+      case _ =>
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
     GpuOverrides.extractLit(expr.pos).foreach { lit =>

@@ -447,8 +447,9 @@ object RegexSplitMode extends RegexMode
  * Transpile Java/Spark regular expression to a format that cuDF supports, or throw an exception
  * if this is not possible.
  *
- * @param replace True if performing a replacement (regexp_replace), false
- *                if matching only (rlike)
+ * @param mode  RegexFindMode    if matching only (rlike)
+                RegexReplaceMode if performing a replacement (regexp_replace)
+                RegexSplitMode   if performing a split (string_split)
  */
 class CudfRegexTranspiler(mode: RegexMode) {
   private val regexMetaChars = ".$^[]\\|?*+(){}"
@@ -463,14 +464,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * @param pattern Regular expression that is valid in Java's engine
    * @return Regular expression in cuDF format
    */
-  def transpile(pattern: String): String = {
+  def transpile(pattern: String, repl: Option[String]): (Option[String], Option[String]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, None)
+    val cudfRegex = rewrite(regex, repl, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
-    cudfRegex.toRegexString
+    (Some(cudfRegex.toRegexString), repl)
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
@@ -559,7 +560,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def rewrite(regex: RegexAST, previous: Option[RegexAST]): RegexAST = {
+  private def rewrite(regex: RegexAST, replacement: Option[String], previous: Option[RegexAST]): RegexAST = {
     regex match {
 
       case RegexChar(ch) => ch match {
@@ -568,8 +569,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
           terminatorChars ++= lineTerminatorChars.map(RegexChar)
           RegexCharacterClass(negated = true, terminatorChars)
-        case '$' if mode == RegexSplitMode || mode == RegexReplaceMode =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4533
+        case '$' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("line anchor $ is not supported in split or replace")
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
@@ -648,17 +648,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException("word boundaries are not supported")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
-        case 'Z' if mode == RegexSplitMode || mode == RegexReplaceMode =>
+        case 'Z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
               "string anchor \\Z is not supported in split or replace mode")
         case 'z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\z is not supported in split mode")
         case 'z' =>
-          if (mode == RegexReplaceMode) {
-            // see https://github.com/NVIDIA/spark-rapids/issues/4425
-            throw new RegexUnsupportedException(
-              "string anchor \\z is not supported in replace mode")
-          }
+          // if (mode == RegexReplaceMode) {
+          //   // see https://github.com/NVIDIA/spark-rapids/issues/4425
+          //   throw new RegexUnsupportedException(
+          //     "string anchor \\z is not supported in replace mode")
+          // }
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>
@@ -668,7 +668,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case Some(RegexEscaped('Z')) =>
               RegexEmpty()
             case _ =>
-              rewrite(RegexChar('$'), previous)
+              rewrite(RegexChar('$'), replacement, previous)
           }
         case 's' | 'S' =>
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
@@ -705,7 +705,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val components: Seq[RegexCharacterClassComponent] = characters
           .map(x => x match {
             case RegexChar(ch) if "^$".contains(ch) => x
-            case _ => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent]
+            case _ => rewrite(x, replacement, None).asInstanceOf[RegexCharacterClassComponent]
           })
 
         if (negated) {
@@ -809,15 +809,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
                     r(j) = RegexSequence(
                       ListBuffer(
-                        rewrite(part, None),
+                        rewrite(part, replacement, None),
                         RegexSequence(ListBuffer(
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true),
                             SimpleQuantifier('?')), RegexChar('$')))))
                   case _ =>
-                    r.append(rewrite(part, last))
+                    r.append(rewrite(part, replacement, last))
                 }
               case _ =>
-                r.append(rewrite(part, last))
+                r.append(rewrite(part, replacement, last))
             }
             r.last match {
               case RegexEmpty() =>
@@ -869,7 +869,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // (\A)+ can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
-              RegexGroup(capture, rewrite(term, previous))
+              RegexGroup(capture, rewrite(term, replacement, previous))
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
@@ -883,7 +883,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // (\A){1,} can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
-              RegexGroup(capture, rewrite(term, previous))
+              RegexGroup(capture, rewrite(term, replacement, previous))
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
@@ -897,40 +897,40 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // (\A){1,} can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
-              RegexGroup(capture, rewrite(term, previous))
+              RegexGroup(capture, rewrite(term, replacement, previous))
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
               throw new RegexUnsupportedException(nothingToRepeat)
           }
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
-          RegexRepetition(rewrite(base, None), quantifier)
+          RegexRepetition(rewrite(base, replacement, None), quantifier)
         case (RegexEscaped(ch), SimpleQuantifier('+')) if "AZ".contains(ch) =>
           // \A+ can be transpiled to \A (dropping the repetition)
           // \Z+ can be transpiled to \Z (dropping the repetition)
           // we use rewrite(...) here to handle logic regarding modes
           // (\A and \Z are not supported in RegexSplitMode)
-          rewrite(base, previous)
+          rewrite(base, replacement, previous)
         // NOTE: \A* can be transpiled to \A?
         // however, \A? is not supported in libcudf yet
         case (RegexEscaped(ch), QuantifierFixedLength(n)) if n > 0 && "AZ".contains(ch) =>
           // \A{2} can be transpiled to \A (dropping the repetition)
           // \Z{2} can be transpiled to \Z (dropping the repetition)
-          rewrite(base, previous)
+          rewrite(base, replacement, previous)
         case (RegexEscaped(ch), QuantifierVariableLength(n,_)) if n > 0 && "AZ".contains(ch) =>
           // \A{1,5} can be transpiled to \A (dropping the repetition)
           // \Z{1,} can be transpiled to \Z (dropping the repetition)
-          rewrite(base, previous)
+          rewrite(base, replacement, previous)
         case _ if isSupportedRepetitionBase(base) =>
-          RegexRepetition(rewrite(base, None), quantifier)
+          RegexRepetition(rewrite(base, replacement, None), quantifier)
         case _ =>
           throw new RegexUnsupportedException(nothingToRepeat)
 
       }
 
       case RegexChoice(l, r) =>
-        val ll = rewrite(l, None)
-        val rr = rewrite(r, None)
+        val ll = rewrite(l, replacement, None)
+        val rr = rewrite(r, replacement, None)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
         if (isRepetition(ll) || isRepetition(rr)) {
@@ -954,7 +954,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
-        RegexGroup(capture, rewrite(term, None))
+        RegexGroup(capture, rewrite(term, replacement, None))
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
