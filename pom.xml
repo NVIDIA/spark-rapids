@@ -883,6 +883,12 @@
               <scope>provided</scope>
             </dependency>
             <dependency>
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-avro_${scala.binary.version}</artifactId>
+              <version>${spark.version}</version>
+              <scope>provided</scope>
+            </dependency>
+            <dependency>
                 <groupId>com.google.flatbuffers</groupId>
                 <artifactId>flatbuffers-java</artifactId>
                 <version>${flatbuffers.java.version}</version>
@@ -910,12 +916,6 @@
               <artifactId>mockito-core</artifactId>
               <version>${mockito.version}</version>
               <scope>test</scope>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.spark</groupId>
-              <artifactId>spark-avro_${scala.binary.version}</artifactId>
-              <version>${spark.version}</version>
-              <scope>provided</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

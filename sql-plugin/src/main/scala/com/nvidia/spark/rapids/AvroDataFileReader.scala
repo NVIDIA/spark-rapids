@@ -135,25 +135,15 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
   private val sin = new SeekableInputStream(si)
   sin.seek(0) // seek to the start of file and get some meta info.
   private var vin: BinaryDecoder = DecoderFactory.get.binaryDecoder(sin, vin);
-  private var header: Header = null
   private var firstBlockStart: Long = 0
 
+  val header: Header = initialize()
+
+  lazy val headerSize: Long = firstBlockStart
   // store all blocks info
-  private var blocks: Option[Seq[BlockInfo]] = None
+  lazy val blocks: Seq[BlockInfo] = parseBlocks()
 
-  initialize()
-
-  def getHeader(): Header = header
-
-  def getHeaderSize(): Long = firstBlockStart
-
-  def getBlocks(): Seq[BlockInfo] = blocks.getOrElse {
-    val b = parseBlocks()
-    blocks = Some(b)
-    b
-  }
-
-  private def initialize(): Unit = {
+  private def initialize(): Header = {
     // read magic
     val magic = new Array[Byte](MAGIC.length)
     vin.readFixed(magic)
@@ -181,8 +171,8 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
     // read sync marker
     val sync = new Array[Byte](SYNC_SIZE)
     vin.readFixed(sync)
-    header = Header(meta.toMap, sync)
     firstBlockStart = sin.tell - vin.inputStream.available
+    Header(meta.toMap, sync)
   }
 
   private def seek(position: Long): Unit = {

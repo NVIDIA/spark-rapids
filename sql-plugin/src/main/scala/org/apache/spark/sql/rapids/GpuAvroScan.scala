@@ -700,7 +700,7 @@ case class AvroFileFilterHandler(
       val in = new FsInput(new Path(new URI(partFile.filePath)), hadoopConf)
       closeOnExcept(in) { _ =>
         withResource(AvroDataFileReader.openReader(in)) { reader =>
-          val blocks = reader.getBlocks()
+          val blocks = reader.blocks
           val filteredBlocks = new ArrayBuffer[BlockInfo]()
           blocks.foreach(block => {
             if (partFile.start <= block.blockStart - SYNC_SIZE &&
@@ -708,7 +708,7 @@ case class AvroFileFilterHandler(
               filteredBlocks.append(block)
             }
           })
-          AvroBlockMeta(reader.getHeader, reader.getHeaderSize, filteredBlocks)
+          AvroBlockMeta(reader.header, reader.headerSize, filteredBlocks)
         }
       }
     } else {
