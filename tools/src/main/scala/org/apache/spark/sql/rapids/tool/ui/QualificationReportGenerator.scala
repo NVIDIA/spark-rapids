@@ -16,13 +16,13 @@
 
 package org.apache.spark.sql.rapids.tool.ui
 
-import java.io.{File, FileOutputStream, PrintWriter}
-import java.nio.channels.Channels
-
+import java.io.{File, InputStream, OutputStream}
 import java.text.SimpleDateFormat
 import java.util.Date
 
 import com.nvidia.spark.rapids.tool.qualification.Qualification
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.Serialization
 
@@ -35,25 +35,43 @@ class QualificationReportGenerator(
 
   import QualificationReportGenerator._
 
-  // TODO: use HDFS API to create the logoutput if necessary
-  val outputWorkDir = new File(provider.getReportOutputPath, "ui-report")
+  val outputWorkPath = new Path(provider.getReportOutputPath, "ui-report")
+
+  private val fs = FileSystem.get(outputWorkPath.toUri, new Configuration())
+
+  val outputWorkDir = Some(fs.mkdirs(outputWorkPath))
   val destinationFolder = {
     val timestamp = new SimpleDateFormat("yyyyMMddHHmm").format(new Date())
     new File(s"${outputWorkDir}-${timestamp}")
   }
 
   def copyAssetFiles() : Unit = {
-    for ((folder, assets) <- ASSETS_FOLDER_MAP) {
-      val destFolder = new File(destinationFolder, folder)
-      val relativePath = s"${RAPIDS_UI_ASSETS_DIR}/${folder}"
-      destFolder.mkdirs()
-      assets.foreach { srcFile =>
-        val inputStream = getClass().getResourceAsStream(s"${relativePath}/${srcFile}")
-        val ch  = Channels.newChannel(inputStream)
-        val dest = new File(destFolder, srcFile)
-        new FileOutputStream(
-              dest) getChannel() transferFrom(
-              ch, 0, Long.MaxValue)
+    if (fs.mkdirs(outputWorkPath)) {
+      for ((folder, assets) <- ASSETS_FOLDER_MAP) {
+        val destinationAssetPath = new Path(outputWorkPath, folder)
+        if(fs.mkdirs(destinationAssetPath)) {
+          val relativePath = s"${RAPIDS_UI_ASSETS_DIR}/${folder}"
+          assets.foreach { srcFile =>
+            var inputStream: InputStream = null;
+            var outputStream: OutputStream = null;
+            try {
+              outputStream = fs.create(new Path(destinationAssetPath, srcFile))
+              inputStream = getClass().getResourceAsStream(s"${relativePath}/${srcFile}")
+              val buffer = new Array[Byte](130 * 1024)
+              Iterator.continually(inputStream.read(buffer)).takeWhile(_ != -1).foreach { bCount =>
+                outputStream.write(buffer, 0, bCount)
+                outputStream.flush()
+              }
+            } finally {
+              if (inputStream != null) {
+                inputStream.close()
+              }
+              if (outputStream != null) {
+                outputStream.close()
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -77,10 +95,17 @@ class QualificationReportGenerator(
          |let dataSourceInfoRecords =
          |\t${dataSourceInfo};
        """.stripMargin
-    val outputFile = new File(destinationFolder, s"js/mock-data.js")
-    val pw = new PrintWriter(outputFile)
-    pw.write(qualInfoSummaryContent)
-    pw.close
+    val outputFile = Some(fs.create(new Path(outputWorkPath, s"js/mock-data.js")))
+    try {
+      outputFile.foreach { dataFile =>
+        dataFile.writeBytes(qualInfoSummaryContent)
+      }
+    } finally {
+      outputFile.foreach { dataFile =>
+        dataFile.flush()
+        dataFile.close()
+      }
+    }
   }
 }
 
