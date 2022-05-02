@@ -352,23 +352,10 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerStageSubmitted(
-      app: ApplicationInfo,
-      event: SparkListenerStageSubmitted): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    app.getOrCreateStage(event.stageInfo)
-  }
-
   override def doSparkListenerStageCompleted(
       app: ApplicationInfo,
       event: SparkListenerStageCompleted): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val stage = app.getOrCreateStage(event.stageInfo)
-    stage.completionTime = event.stageInfo.completionTime
-    stage.failureReason = event.stageInfo.failureReason
-
-    stage.duration = ProfileUtils.optionLongMinusOptionLong(stage.completionTime,
-      stage.info.submissionTime)
 
     // Parse stage accumulables
     for (res <- event.stageInfo.accumulables) {

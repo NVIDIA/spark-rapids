@@ -19,13 +19,13 @@ package org.apache.spark.sql.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
-import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
+import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, SQLPlanParser}
 import com.nvidia.spark.rapids.tool.profiling._
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
+import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent, StageInfo}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
@@ -51,6 +51,8 @@ class QualificationAppInfo(
 
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
+  val stageIdToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
+    HashMap.empty[Long, StageTaskQualificationSummary]
 
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
@@ -58,6 +60,8 @@ class QualificationAppInfo(
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
   var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
+  // val sqlPlanNodeIdToStageIds: HashMap[(Long, Long), SparkGraphNodeToStagesInfo] =
+  //   HashMap.empty[(Long, Long), SparkGraphNodeToStagesInfo]
 
   private lazy val eventProcessor =  new QualificationEventProcessor(this)
 
@@ -188,6 +192,23 @@ class QualificationAppInfo(
     }
   }
 
+  private def getStageToExec(execInfos: Seq[ExecInfo]): Map[Int, Seq[ExecInfo]] = {
+    execInfos.flatMap { execInfo =>
+      if (execInfo.stages.size > 1) {
+        execInfo.stages.map((_, execInfo))
+      } else if (execInfo.stages.size < 1) {
+        // we don't know what stage its in our its duration
+        logWarning(s"No stage or duration associated with ${execInfo.exec} " +
+          s"so speedup factor isn't applied anywhere.")
+        Seq.empty
+      } else {
+        Seq((execInfo.stages.head, execInfo))
+      }
+    }.groupBy(_._1).map { case (k, v) =>
+      (k, v.map(_._2))
+    }
+  }
+
   /**
    * Aggregate and process the application after reading the events.
    * @return Option of QualificationSummaryInfo, Some if we were able to process the application
@@ -223,11 +244,22 @@ class QualificationAppInfo(
       }.toSeq
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
-        perSQLId.foreach { case (id, execInfos) =>
-          val totalDur = execInfos.map(_.duration.getOrElse(0L)).sum
-          logDebug(s"sqlID: ${id}, exec: ${execInfos.map(_.toString).mkString("\n")}")
-          logDebug(s"sql id: ${pInfo.sqlID} total duration is: " +
-            s"${totalDur}")
+        perSQLId.foreach { case (sqlID, execInfos) =>
+          logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          val (execsWithoutDuration, execsWithDuration) = execInfos.partition(_.duration.isEmpty)
+          val withOutDur = getStageToExec(execsWithoutDuration)
+          val withDur = getStageToExec(execsWithDuration)
+          val allStageIds = execInfos.flatMap(_.stages)
+          val unAccounted = allStageIds.map { stageId =>
+            val stageTaskTime = stageIdToTaskEndSum.get(stageId)
+              .map(_.totalTaskDuration).getOrElse(0)
+            val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
+            val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
+            val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
+            val averagespeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
+            (averagespeedup, taskTimeNotAccountedFor)
+          }
+          logWarning("unacounted for each stages is: " + unAccounted.mkString(","))
         }
       }
 
@@ -238,6 +270,8 @@ class QualificationAppInfo(
       // line up the SQLID to stage and then which operators were in each Stage based on the accums
       // Then if the stage task duration > the duration from parse plan then
       // difference * (speedup factor averaged for execs without duration)
+      // sqlPlanNodeIdToStageIds.map { case ((sqlID, nodeId), info) =>
+      // }
 
       // TODO - construct the final outputs - multiple things required now. Also need to
       // calculate durations, if ops don't have them use stage durations or job durations
@@ -250,9 +284,45 @@ class QualificationAppInfo(
     }
   }
 
+  case class SparkGraphNodeToStagesInfo(sqlID: Long, nodeId: Long,
+      nodeName: String, stageIdToDuration: Map[Int, Option[Long]])
+
+  /**
+   * Connects Operators to Stages by doing the following:
+   * 1. Read the SparkGraph to get every Node's name and respective AccumulatorIDs.
+   * 2. Gets each stage's AccumulatorIDs.
+   * 3. Maps Operators to stages by checking for non-zero intersection of 1 and 2's AccumulatorIDs.
+   */
+  /* def connectOperatorToStage(sqlID: Long, planGraph: SparkPlanGraph): Unit = {
+    val nodeIdToAccumulatorIds = planGraph.allNodes.map { node =>
+      (node.id, node.name, node.metrics.map(_.accumulatorId))
+    }
+    // Maps stages to operators by checking for non-zero intersection
+    // between nodeMetrics and stageAccumulateIDs
+    val nodeIdToStage = nodeIdToAccumulatorIds.map { case (nodeId, nodeName, nodeAccums) =>
+      val mappedStages = stageAccumulators.flatMap { case (stageId, stageAccums) =>
+        if (nodeAccums.intersect(stageAccums).nonEmpty) {
+          Some(stageId)
+        } else {
+          None
+        }
+      }.toList.sorted
+      val stageIdAndDurations = mappedStages.map { sId =>
+        val dur = stageIdToInfo.get(sId) match {
+          case Some(info) => info.duration
+          case None => None
+        }
+        (sId, dur)
+      }.toMap
+      ((sqlID, nodeId), SparkGraphNodeToStagesInfo(sqlID, nodeId, nodeName, stageIdAndDurations))
+    }.toMap
+    sqlPlanNodeIdToStageIds ++= nodeIdToStage
+  }
+
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
+    // connectOperatorToStage(sqlID, planGraph)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       // TODO - likely can combine some code below with some of the above matching
@@ -272,7 +342,7 @@ class QualificationAppInfo(
       }
     }
   }
-
+*/
   private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.isWriteFormatsupported(writeFormat)

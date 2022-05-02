@@ -23,14 +23,14 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
 import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
-import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, TaskStageAccumCase}
+import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, StageInfoClass, TaskStageAccumCase}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.SparkListenerEvent
+import org.apache.spark.scheduler.{SparkListenerEvent, StageInfo}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.util.{JsonProtocol, Utils}
@@ -51,6 +51,14 @@ abstract class AppBase(
   // accum id to task stage accum info
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
+
+  val stageIdToInfo = new HashMap[Int, StageInfoClass]()
+  val stageAccumulators: HashMap[Int, Seq[Long]] = new HashMap[Int, Seq[Long]]()
+
+  def getOrCreateStage(info: StageInfo): StageInfoClass = {
+    val stage = stageIdToInfo.getOrElseUpdate(info.stageId, new StageInfoClass(info))
+    stage
+  }
 
   def processEvent(event: SparkListenerEvent): Boolean
 

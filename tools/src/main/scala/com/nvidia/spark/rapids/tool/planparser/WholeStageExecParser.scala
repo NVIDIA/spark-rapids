@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
+import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.internal.Logging
@@ -35,6 +36,7 @@ case class WholeStageExecParser(
     // but verify
     val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
+    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
 
     val childNodeRes = node.nodes.flatMap { c =>
       SQLPlanParser.parsePlanNode(c, sqlID, checker, app)
@@ -45,6 +47,6 @@ case class WholeStageExecParser(
     // average speedup across the execs in the WholeStageCodegen for now
     val avSpeedupFactor = SQLPlanParser.averageSpeedup(childNodeRes.map(_.speedupFactor))
     Seq(ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
-      maxDuration, node.id, anySupported, Some(childNodeRes)))
+      maxDuration, node.id, anySupported, Some(childNodeRes), stagesInNode))
   }
 }

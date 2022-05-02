@@ -195,8 +195,6 @@ class ApplicationInfo(
   // resourceprofile id to resource profile info
   val resourceProfIdToInfo = new HashMap[Int, ResourceProfileInfoCase]()
 
-  // stageid, stageAttemptId to stage info
-  val stageIdToInfo = new HashMap[(Int, Int), StageInfoClass]()
   // jobId to job info
   val jobIdToInfo = new HashMap[Int, JobInfoClass]()
   // sqlId to sql info
@@ -246,12 +244,6 @@ class ApplicationInfo(
     executorIdToInfo.getOrElseUpdate(executorId, {
       new ExecutorInfoClass(executorId, addTime)
     })
-  }
-
-  def getOrCreateStage(info: StageInfo): StageInfoClass = {
-    val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber),
-      new StageInfoClass(info))
-    stage
   }
 
   /**

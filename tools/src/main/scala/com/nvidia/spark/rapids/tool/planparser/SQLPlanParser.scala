@@ -33,7 +33,8 @@ case class ExecInfo(
     duration: Option[Long],
     nodeId: Long,
     isSupported: Boolean,
-    children: Option[Seq[ExecInfo]]) {
+    children: Option[Seq[ExecInfo]],
+    stages: Seq[Int]) {
   private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
@@ -73,6 +74,17 @@ object SQLPlanParser extends Logging {
     PlanInfo(sqlID, execInfos)
   }
 
+  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
+    val nodeAccums = node.metrics.map(_.accumulatorId)
+    app.stageAccumulators.flatMap { case (stageId, stageAccums) =>
+      if (nodeAccums.intersect(stageAccums).nonEmpty) {
+        Some(stageId)
+      } else {
+        None
+      }
+    }.toSeq
+  }
+
   def parsePlanNode(
       node: SparkPlanGraphNode,
       sqlID: Long,
@@ -88,8 +100,9 @@ object SQLPlanParser extends Logging {
         ProjectExecParser(p, checker, sqlID).parse
       case o =>
         logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
+        val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
         ArrayBuffer(ExecInfo(sqlID, o.name, expr = "", 1, duration = None, o.id,
-          isSupported = false, None))
+          isSupported = false, None, stagesInNode))
     }
   }
 
@@ -100,7 +113,7 @@ object SQLPlanParser extends Logging {
    * the array shouldn't be empty, but if there is some weird case we don't want to
    * blow up, just say we don't speed it up.
    */
-  def averageSpeedup(arr: ArrayBuffer[Int]): Int = if (arr.isEmpty) 1 else arr.sum / arr.size
+  def averageSpeedup(arr: Seq[Int]): Int = if (arr.isEmpty) 1 else arr.sum / arr.size
 
   /**
    * Get the total duration by finding the accumulator with the largest value.
