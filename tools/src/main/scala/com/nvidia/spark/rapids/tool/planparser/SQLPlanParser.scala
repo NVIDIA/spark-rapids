@@ -98,8 +98,12 @@ object SQLPlanParser extends Logging {
         FilterExecParser(f, checker, sqlID, app).parse
       case p if (p.name == "Project") =>
         ProjectExecParser(p, checker, sqlID, app).parse
+      case s if (s.name.startsWith("Scan")) =>
+        FileSourceScanExecParser(s, checker, sqlID, app).parse
+      // case b if (b.name == "BatchScan") =>
+      //  BatchScanExecParser(b, checker, sqlID, app).parse
       case o =>
-        logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
+        logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
         ArrayBuffer(ExecInfo(sqlID, o.name, expr = "", 1, duration = None, o.id,
           isSupported = false, None, stagesInNode))
