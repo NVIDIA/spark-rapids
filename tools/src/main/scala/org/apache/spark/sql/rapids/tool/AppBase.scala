@@ -52,11 +52,12 @@ abstract class AppBase(
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
-  val stageIdToInfo = new HashMap[Int, StageInfoClass]()
+  val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
   val stageAccumulators: HashMap[Int, Seq[Long]] = new HashMap[Int, Seq[Long]]()
 
   def getOrCreateStage(info: StageInfo): StageInfoClass = {
-    val stage = stageIdToInfo.getOrElseUpdate(info.stageId, new StageInfoClass(info))
+    val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber()),
+      new StageInfoClass(info))
     stage
   }
 
