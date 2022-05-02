@@ -244,13 +244,21 @@ class QualificationAppInfo(
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (sqlID, execInfos) =>
+          logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
           val (execsWithDuration, execsWithoutDuration) = execInfos.partition(_.duration.nonEmpty)
           val totalTaskTimeExecDurMetrics = execsWithDuration.flatMap(_.duration).sum
+          val estimatedSpeedup = execsWithDuration.map { info =>
+            info.speedupFactor * info.duration.get
+          }.sum
+
           val speedups = execsWithoutDuration.map(_.speedupFactor)
           val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
-          logWarning(s"total sql time is: $totalTaskTimeSQL total metrics " +
-            s"duration is: $totalTaskTimeExecDurMetrics other speedsup: " +
+          logWarning(s"total sql time is: " +
+            s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
+            s"total dur from exec metrics " +
+            s"duration is: $totalTaskTimeExecDurMetrics with speedupFactor: $estimatedSpeedup " +
+            s"other speedsup: " +
             s"${speedups.mkString(",")} average speedup: $averageSpeedup")
 
           /*
