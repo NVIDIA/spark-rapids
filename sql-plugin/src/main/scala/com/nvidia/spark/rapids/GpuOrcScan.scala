@@ -776,7 +776,7 @@ private object OrcTools extends Arm {
           .withZeroCopy(zeroCopy)
           .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
           .build())
-      reader.open() // 311cdh needs to initialize the internal FSDataInputStream file variable.
+      reader.open()
       reader
     }
   }
