@@ -103,8 +103,10 @@ object SQLPlanParser extends Logging {
       case b if (b.name == "BatchScan") =>
         BatchScanExecParser(b, checker, sqlID, app).parse
       case i if (i.name.contains("InsertIntoHadoopFsRelationCommand") ||
-        i.name.contains("CreateDataSourceTableAsSelectCommand") ||
         i.name == "DataWritingCommandExec") =>
+        DataWritingCommandExecParser(i, checker, sqlID, app).parse
+      case i if (i.name.contains("CreateDataSourceTableAsSelectCommand")) =>
+        // TODO - create data source table doesn't show the format...
         DataWritingCommandExecParser(i, checker, sqlID, app).parse
       case m if (m.name == "InMemoryTableScanExec") =>
         InMemoryTableScanExecParser(m, checker, sqlID, app).parse

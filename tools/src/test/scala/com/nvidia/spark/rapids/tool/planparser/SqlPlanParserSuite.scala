@@ -258,11 +258,11 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
           import spark.implicits._
           val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
           val dfWithStrings = df.select(col("value").cast("string"))
-          dfWithStrings.write.format("text").mode("overwrite").saveAsTable("tbltext")
-          df.write.format("parquet").mode("overwrite").saveAsTable("tblparquet")
-          df.write.format("orc").mode("overwrite").saveAsTable("tblorc")
-          df.write.format("csv").mode("overwrite").saveAsTable("tblcsv")
-          df.write.format("json").mode("overwrite").saveAsTable("tbljson")
+          dfWithStrings.write.format("text").saveAsTable("tbltext")
+          df.write.format("parquet").saveAsTable("tblparquet")
+          df.write.format("orc").saveAsTable("tblorc")
+          df.write.format("csv").saveAsTable("tblcsv")
+          df.write.format("json").saveAsTable("tbljson")
           df
         }
 
