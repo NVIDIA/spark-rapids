@@ -109,7 +109,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val csv = allExecInfo.filter(_.exec.contains("Scan csv"))
 
     for (t <- Seq(json)) {
-      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.size == 2, t)
       assert(t.forall(_.speedupFactor == 1), t)
       assert(t.forall(_.isSupported == false), t)
       assert(t.forall(_.children.isEmpty), t)
@@ -117,11 +117,19 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
 
     for (t <- Seq(text)) {
-      assert(t.size == 1, s"num is ${t.size} values: $t")
+      assert(t.size == 1, t)
       assert(t.head.speedupFactor == 1, t)
       assert(t.head.isSupported == false, t)
       assert(t.head.children.isEmpty, t)
       assert(t.head.duration.isEmpty, t)
+    }
+
+    for (t <- Seq(parquet, csv)) {
+      assert(t.size == 1, t)
+      assert(t.forall(_.speedupFactor == 2), t)
+      assert(t.forall(_.isSupported == true), t)
+      assert(t.forall(_.children.isEmpty), t)
+      assert(t.forall(_.duration.isEmpty), t)
     }
 
     for (t <- Seq(orc)) {
@@ -144,7 +152,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       pluginTypeChecker, 20)
     assert(appOption.nonEmpty)
     val app = appOption.get
-    assert(app.sqlPlans.size == 7)
+    assert(app.sqlPlans.size == 9)
 
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
@@ -173,7 +181,15 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(t.head.duration.isEmpty, t)
     }
 
-    for (t <- Seq(orc)) {
+    for (t <- Seq(csv)) {
+      assert(t.size == 1, t)
+      assert(t.forall(_.speedupFactor == 2), t)
+      assert(t.forall(_.isSupported == true), t)
+      assert(t.forall(_.children.isEmpty), t)
+      assert(t.forall(_.duration.isEmpty), t)
+    }
+
+    for (t <- Seq(orc, parquet)) {
       assert(t.size == 2, s"num is ${t.size} values: $t")
       assert(t.forall(_.speedupFactor == 2), t)
       assert(t.forall(_.isSupported == true), t)
