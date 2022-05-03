@@ -964,16 +964,6 @@ object RapidsConf {
       .integerConf
       .createWithDefault(20)
 
-  val AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
-    conf("spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel")
-      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
-        "side before the file is sent to the GPU. This affects the amount of host memory used " +
-        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.avro.reader.type")
-      .integerConf
-      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
-      .createWithDefault(Integer.MAX_VALUE)
-
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1756,8 +1746,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val avroMultiThreadReadNumThreads: Int = get(AVRO_MULTITHREAD_READ_NUM_THREADS)
-
-  lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
