@@ -19,12 +19,13 @@ package org.apache.spark.sql.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -177,7 +178,8 @@ abstract class GpuTimeMath(
 
 case class GpuDateAddInterval(start: Expression,
     interval: Expression,
-    timeZoneId: Option[String] = None)
+    timeZoneId: Option[String] = None,
+    ansiEnabled: Boolean = SQLConf.get.ansiEnabled)
     extends GpuTimeMath(start, interval, timeZoneId) {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
@@ -203,6 +205,15 @@ case class GpuDateAddInterval(start: Expression,
             // the Scala value instead.
             // Skip the null check because it wll be detected by the following calls.
             val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
+
+            // ANSI mode checking
+            if(ansiEnabled && intvl.microseconds != 0) {
+              val msg = "IllegalArgumentException: Cannot add hours, minutes or seconds" +
+                  ", milliseconds, microseconds to a date. " +
+                  "If necessary set spark.sql.ansi.enabled to false to bypass this error."
+              throw new IllegalArgumentException(msg)
+            }
+
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
             }
@@ -363,16 +374,10 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
    rule: DataFromReplacementRule)
   extends BinaryExprMeta[A](expr, conf, parent, rule) {
 
-  def shouldFallbackOnAnsiTimestamp: Boolean
-
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
     checkTimeZoneId(expr.timeZoneId)
-
-    if (shouldFallbackOnAnsiTimestamp) {
-      willNotWorkOnGpu("ANSI mode is not supported")
-    }
 
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
@@ -499,10 +504,17 @@ object GpuToTimestamp extends Arm {
       lhs: GpuColumnVector,
       sparkFormat: String,
       strfFormat: String,
-      dtype: DType): ColumnVector = {
+      dtype: DType,
+      failOnError: Boolean): ColumnVector = {
 
     // `tsVector` will be closed in replaceSpecialDates
     val tsVector = withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTs =>
+      if(failOnError && !BoolUtils.isAllValidTrue(isTs)) {
+        // ANSI mode and has invalid value.
+        // CPU may throw `DateTimeParseException`, `DateTimeException` or `ParseException`
+        throw new IllegalArgumentException("Exception occurred when parsing timestamp in ANSI mode")
+      }
+
       withResource(Scalar.fromNull(dtype)) { nullValue =>
         withResource(lhs.getBase.asTimestamp(dtype, strfFormat)) { tsVec =>
           isTs.ifElse(tsVec, nullValue)
@@ -634,6 +646,8 @@ abstract class GpuToTimestamp
 
   val timeParserPolicy = getTimeParserPolicy
 
+  val failOnError: Boolean = SQLConf.get.ansiEnabled
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("rhs has to be a scalar for the unixtimestamp to work")
   }
@@ -658,7 +672,8 @@ abstract class GpuToTimestamp
           lhs,
           sparkFormat,
           strfFormat,
-          DType.TIMESTAMP_MICROSECONDS)
+          DType.TIMESTAMP_MICROSECONDS,
+          failOnError)
       }
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
@@ -707,7 +722,8 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
           lhs,
           sparkFormat,
           strfFormat,
-          DType.TIMESTAMP_SECONDS)
+          DType.TIMESTAMP_SECONDS,
+          failOnError)
       }
     } else if (lhs.dataType() == DateType){
       lhs.getBase.asTimestampSeconds()

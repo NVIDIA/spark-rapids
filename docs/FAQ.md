@@ -501,5 +501,7 @@ Below are some troubleshooting tips on GPU query performance issue:
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
 
-
-  
+### I have more questions, where do I go? 
+We use github to track bugs, feature requests, and answer questions. File an
+[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
+or answer a question on the [discussion board](https://github.com/NVIDIA/spark-rapids/discussions).

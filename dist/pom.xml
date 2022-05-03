@@ -42,11 +42,11 @@
         <target.classifier/>
         <noSnapshot.buildvers>
             311,
-            311cdh,
             312,
             313,
             320,
-            321
+            321,
+            321cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
@@ -98,7 +98,7 @@
                 <included_buildvers>
                     312,
                     320,
-                    311cdh
+                    321cdh
                 </included_buildvers>
             </properties>
         </profile>
@@ -122,11 +122,11 @@
             </properties>
         </profile>
         <profile>
-            <id>release311cdh</id>
+            <id>release321cdh</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>311cdh</value>
+                    <value>321cdh</value>
                 </property>
             </activation>
             <properties>
@@ -136,28 +136,59 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
                         <exclusion>
-                            <groupId>org.apache.curator</groupId>
-                            <artifactId>curator-recipes</artifactId>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
                         </exclusion>
                     </exclusions>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.curator</groupId>
-                    <artifactId>curator-recipes</artifactId>
-                    <version>4.3.0.7.2.7.0-184</version>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark321cdh.version}</version>
+                    <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
                     <scope>provided</scope>
                 </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>${arrow.cdh.version}</version>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-core</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-annotations</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>io.netty</groupId>
+                            <artifactId>netty-common</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
             </dependencies>
-            <pluginRepositories>
+             <pluginRepositories>
                 <pluginRepository>
                     <id>cloudera-repo</id>
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
                 </pluginRepository>
-            </pluginRepositories>
+             </pluginRepositories>
         </profile>
         <profile>
             <id>individual</id>
@@ -322,6 +353,18 @@
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
                                             <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/operatorsScore.csv"/>
+                                            <arg value="operatorScore"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExecs.csv"/>
+                                            <arg value="execs"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExprs.csv"/>
+                                            <arg value="exprs"/>
                                         </java>
                                     </ac:then>
                                 </ac:if>

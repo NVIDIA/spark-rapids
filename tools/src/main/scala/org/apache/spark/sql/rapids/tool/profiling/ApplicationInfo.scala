@@ -225,10 +225,6 @@ class ApplicationInfo(
   var driverAccumMap: mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]]()
 
-  // accum id to task stage accum info
-  var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
-    mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
-
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()

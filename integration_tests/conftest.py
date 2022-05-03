@@ -42,3 +42,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--fuzz_test", action='store_true', default=False, help="if true enable fuzz tests"
     )
+    parser.addoption(
+        "--iceberg", action="store_true", default=False, help="if true enable Iceberg tests"
+    )

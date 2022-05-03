@@ -188,29 +188,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       app: ApplicationInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-
-    // Parse task accumulables
-    for (res <- event.taskInfo.accumulables) {
-      try {
-        val value = res.value.map(_.toString.toLong)
-        val update = res.update.map(_.toString.toLong)
-        val thisMetric = TaskStageAccumCase(
-          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
-          res.id, res.name, value, update, res.internal)
-        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
-          ArrayBuffer[TaskStageAccumCase]())
-        app.accumIdToStageId.put(res.id, event.stageId)
-        arrBuf += thisMetric
-      } catch {
-        case NonFatal(e) =>
-          logWarning("Exception when parsing accumulables for task "
-            + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
-            + ": ")
-          logWarning(e.toString)
-          logWarning("The problematic accumulable is: name="
-            + res.name + ",value=" + res.value + ",update=" + res.update)
-      }
-    }
+    super.doSparkListenerTaskEnd(app, event)
     val reason = event.reason match {
       case failed: TaskFailedReason =>
         failed.toErrorString

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -254,7 +254,7 @@ object CatalystExpressionBuilder extends Logging {
       val res = expr match {
         case And(Literal.TrueLiteral, c) => simplifyExpr(c)
         case And(c, Literal.TrueLiteral) => simplifyExpr(c)
-        case And(Literal.FalseLiteral, _) => Literal.FalseLiteral
+        case and: And if and.containsChild(Literal.FalseLiteral) => Literal.FalseLiteral
         case And(c1@LessThan(s1, Literal(v1, t1)),
         c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
           t1 match {
@@ -346,7 +346,7 @@ object CatalystExpressionBuilder extends Logging {
           }
         }
         case And(c1, c2) => And(simplifyExpr(c1), simplifyExpr(c2))
-        case Or(Literal.TrueLiteral, _) => Literal.TrueLiteral
+        case or: Or if or.containsChild(Literal.TrueLiteral) => Literal.TrueLiteral
         case Or(Literal.FalseLiteral, c) => simplifyExpr(c)
         case Or(c, Literal.FalseLiteral) => simplifyExpr(c)
         case Or(c1@GreaterThan(s1, Literal(v1, t1)),
@@ -374,6 +374,7 @@ object CatalystExpressionBuilder extends Logging {
         case Not(LessThanOrEqual(c1, c2)) => GreaterThan(c1, c2)
         case Not(GreaterThan(c1, c2)) => LessThanOrEqual(c1, c2)
         case Not(GreaterThanOrEqual(c1, c2)) => LessThan(c1, c2)
+        case Not(c) => Not(simplifyExpr(c))
         case EqualTo(Literal(v1, _), Literal(v2, _)) =>
           if (v1 == v2) Literal.TrueLiteral else Literal.FalseLiteral
         case LessThan(If(c1,
@@ -424,6 +425,9 @@ object CatalystExpressionBuilder extends Logging {
           }
         case If(c, Repr.ArrayBuffer(t), Repr.ArrayBuffer(f)) => Repr.ArrayBuffer(If(c, t, f))
         case If(c, Repr.StringBuilder(t), Repr.StringBuilder(f)) => Repr.StringBuilder(If(c, t, f))
+        case If(c, Literal.TrueLiteral, Literal.FalseLiteral) => c
+        case If(c, Literal.FalseLiteral, Literal.TrueLiteral) => Not(c)
+        case If(c, t, f) => If(simplifyExpr(c), simplifyExpr(t), simplifyExpr(f))
         case _ => expr
       }
       logDebug(s"[CatalystExpressionBuilder] simplify: ${expr} ==> ${res}")

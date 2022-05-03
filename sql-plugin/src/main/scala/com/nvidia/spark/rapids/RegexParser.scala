@@ -467,7 +467,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex)
+    val cudfRegex = rewrite(regex, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     cudfRegex.toRegexString
@@ -535,19 +535,79 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  private val lineTerminatorChars = Seq('\n', '\r', '\u0085', '\u2028', '\u2029')
 
-  private def rewrite(regex: RegexAST): RegexAST = {
+  // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
+  // the end of a line of an input character sequence. 
+  // this method produces a RegexAST which outputs a regular expression to match any possible
+  // combination of line terminators
+  private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean):RegexAST = {
+    val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
+    terminatorChars ++= lineTerminatorChars.filter(!exclude.contains(_)).map(RegexChar)
+
+    if (terminatorChars.size == 0 && excludeCRLF) {
+      RegexEmpty()
+    } else if (terminatorChars.size == 0) {
+      RegexGroup(capture = false, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))))
+    } else if (excludeCRLF) {
+      RegexCharacterClass(negated = false, characters = terminatorChars)
+    } else {
+      RegexGroup(capture = false,
+        RegexChoice(
+          RegexCharacterClass(negated = false, characters = terminatorChars),
+          RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))))
+    }
+  }
+
+  private def rewrite(regex: RegexAST, previous: Option[RegexAST]): RegexAST = {
     regex match {
 
       case RegexChar(ch) => ch match {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
-        case '$' =>
+        case '$' if mode == RegexSplitMode || mode == RegexReplaceMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4533
-          throw new RegexUnsupportedException("line anchor $ is not supported")
+          throw new RegexUnsupportedException("line anchor $ is not supported in split or replace")
+        case '$' =>
+          // in the case of the line anchor $, the JVM has special conditions when handling line 
+          // terminators in and around the anchor
+          // this handles cases where the line terminator characters are *before* the anchor ($)
+          // NOTE: this applies to when using *standard* mode. In multiline mode, all these 
+          // conditions will change. Currently Spark does not use multiline mode.
+          previous match {
+            case Some(RegexChar('$')) =>
+              // repeating the line anchor in cuDF (for example b$$) causes matches to fail, but in 
+              // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
+              // an empty RegexAST that outputs to empty string
+              RegexEmpty()
+            case Some(RegexChar(ch)) if ch == '\r' =>
+              // when using the the CR (\r), it prevents the line anchor from handling any other 
+              // line terminator sequences, so we just output the anchor and we are finished
+              // for example: \r$ -> \r$ (no transpilation)
+              RegexChar('$')
+            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
+              // when using any other line terminator character, you can match any of the other
+              // line terminator characters individually as part of the line anchor match.
+              // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
+              RegexSequence(ListBuffer(
+                RegexRepetition(lineTerminatorMatcher(Set(ch), true), SimpleQuantifier('?')),
+                RegexChar('$')))
+            case _ =>
+              // otherwise by default we can match any or none the full set of line terminators
+              RegexSequence(ListBuffer(
+                RegexRepetition(lineTerminatorMatcher(Set.empty, false), SimpleQuantifier('?')),
+                RegexChar('$')))
+          }
         case '^' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("line anchor ^ is not supported in split mode")
+        case '\r' | '\n' if mode == RegexFindMode =>
+          previous match {
+            case Some(RegexChar('$')) =>
+              RegexEmpty()
+            case _ =>
+              regex
+          }
         case _ =>
           regex
       }
@@ -586,8 +646,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException("word boundaries are not supported")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
-        case 'Z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("string anchor \\Z is not supported in split mode")
+        case 'Z' if mode == RegexSplitMode || mode == RegexReplaceMode =>
+          throw new RegexUnsupportedException(
+              "string anchor \\Z is not supported in split or replace mode")
         case 'z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\z is not supported in split mode")
         case 'z' =>
@@ -599,8 +660,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4532
-          throw new RegexUnsupportedException("string anchor \\Z is not supported")
+          // \Z is really a synonymn for $. It's used in Java to preserve that behavior when
+          // using modes that change the meaning of $ (such as MULTILINE or UNIX_LINES)
+          previous match {
+            case Some(RegexEscaped('Z')) =>
+              RegexEmpty()
+            case _ =>
+              rewrite(RegexChar('$'), previous)
+          }
         case 's' | 'S' =>
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar(' '), RegexChar('\u000b'))
@@ -634,7 +701,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
-          .map(x => rewrite(x).asInstanceOf[RegexCharacterClassComponent])
+          .map(x => x match {
+            case RegexChar(ch) if "^$".contains(ch) => x
+            case _ => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent]
+          })
 
         if (negated) {
           // There are differences between cuDF and Java handling of newlines
@@ -699,7 +769,61 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "sequences that only contain '^' or '$' are not supported")
         }
-        RegexSequence(parts.map(rewrite))
+
+        // Special handling for line anchor ($)
+        // This code is implemented here because to make it work in cuDF, we have to reorder 
+        // the items in the regex.
+        // In the JVM, regexes like "\n$" and "$\n" have similar treatment
+        RegexSequence(parts.foldLeft((new ListBuffer[RegexAST](),
+          Option.empty[RegexAST]))((m, part) => {
+            val (r, last) = m
+            last match {
+              // when the previous character is a line anchor ($), the JVM has special handling
+              // when matching against line terminator characters
+              case Some(RegexChar('$')) | Some(RegexEscaped('Z')) => 
+                val j = r.lastIndexWhere {
+                  case RegexEmpty() => false
+                  case _ => true
+                }
+                part match {
+                  case RegexGroup(capture, RegexSequence(
+                      ListBuffer(RegexCharacterClass(true, parts))))
+                      if parts.forall(!isBeginOrEndLineAnchor(_)) =>
+                    r(j) = RegexSequence(ListBuffer(RegexGroup(capture, RegexSequence(
+                        ListBuffer(lineTerminatorMatcher(Set.empty, true)))), RegexChar('$')))
+                  case RegexGroup(capture, RegexCharacterClass(true, parts))
+                      if parts.forall(!isBeginOrEndLineAnchor(_)) =>
+                    r(j) = RegexSequence(ListBuffer(RegexGroup(capture, RegexSequence(
+                        ListBuffer(lineTerminatorMatcher(Set.empty, true)))), RegexChar('$')))
+                  case RegexCharacterClass(true, parts)
+                      if parts.forall(!isBeginOrEndLineAnchor(_)) =>
+                    r(j) = RegexSequence(
+                      ListBuffer(lineTerminatorMatcher(Set.empty, true), RegexChar('$')))
+                  case RegexChar(ch) if ch == '\n' =>
+                    // what's really needed here is negative lookahead, but that is not 
+                    // supported by cuDF
+                    // in this case: $\n would transpile to (?!\r)\n$
+                    throw new RegexUnsupportedException("regex sequence $\\n is not supported")
+                  case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
+                    r(j) = RegexSequence(
+                      ListBuffer(
+                        rewrite(part, None),
+                        RegexSequence(ListBuffer(
+                          RegexRepetition(lineTerminatorMatcher(Set(ch), true),
+                            SimpleQuantifier('?')), RegexChar('$')))))
+                  case _ =>
+                    r.append(rewrite(part, last))
+                }
+              case _ =>
+                r.append(rewrite(part, last))
+            }
+            r.last match {
+              case RegexEmpty() =>
+                (r, last)
+              case _ =>
+                (r, Some(part))
+            }
+        })._1)
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
         case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
@@ -742,17 +866,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // specifically this variable length repetition: \A{2,}
           throw new RegexUnsupportedException(nothingToRepeat)
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
-          RegexRepetition(rewrite(base), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case _ if isSupportedRepetitionBase(base) =>
-          RegexRepetition(rewrite(base), quantifier)
+          RegexRepetition(rewrite(base, None), quantifier)
         case _ =>
           throw new RegexUnsupportedException(nothingToRepeat)
 
       }
 
       case RegexChoice(l, r) =>
-        val ll = rewrite(l)
-        val rr = rewrite(r)
+        val ll = rewrite(l, None)
+        val rr = rewrite(r, None)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
         if (isRepetition(ll) || isRepetition(rr)) {
@@ -776,7 +900,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
-        RegexGroup(capture, rewrite(term))
+        RegexGroup(capture, rewrite(term, None))
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
@@ -802,6 +926,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
 sealed trait RegexAST {
   def children(): Seq[RegexAST]
   def toRegexString: String
+}
+
+sealed case class RegexEmpty() extends RegexAST {
+  override def children(): Seq[RegexAST] = Seq.empty
+  override def toRegexString: String = ""
 }
 
 sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {

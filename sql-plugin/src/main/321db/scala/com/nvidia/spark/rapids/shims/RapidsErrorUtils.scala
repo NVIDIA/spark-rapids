@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -31,6 +32,7 @@ object RapidsErrorUtils {
 
   def mapKeyNotExistError(
       key: String,
+      keyType: DataType,
       origin: Origin): NoSuchElementException = {
     // For now, the default argument is false. The caller sets the correct value accordingly.
     QueryExecutionErrors.mapKeyNotExistError(key)
