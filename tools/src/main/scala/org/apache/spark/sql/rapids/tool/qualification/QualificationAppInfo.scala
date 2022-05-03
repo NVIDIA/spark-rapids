@@ -355,12 +355,12 @@ class QualificationAppInfo(
   }
 */
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
-    // checkMetadataForReadSchema(sqlID, planInfo)
+    checkMetadataForReadSchema(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     // connectOperatorToStage(sqlID, planGraph)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
-      // checkGraphNodeForReads(sqlID, node)
+      checkGraphNodeForReads(sqlID, node)
       if (isDataSetOrRDDPlan(node.desc)) {
         sqlIDToDataSetOrRDDCase += sqlID
       }
