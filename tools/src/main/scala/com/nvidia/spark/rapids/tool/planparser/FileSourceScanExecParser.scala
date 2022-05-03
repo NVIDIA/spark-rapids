@@ -34,20 +34,19 @@ case class FileSourceScanExecParser(
     // can we use scan time?
     val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
+
     logWarning(s"file source scan ${node.desc} scan time " +
       s"accum: $accumId max duration: $maxDuration")
-    val readInfo = ReadParser.parseReadNode(node)
-    val score = ReadParser.calculateReadScoreRatio(readInfo, checker)
-    logWarning(s"read score is $score")
 
-    val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
-      (checker.getSpeedupFactor(fullExecName), true)
-    } else {
-      (1, false)
-    }
+    val readInfo = ReadParser.parseReadNode(node)
+    // don't use the isExecSupported because we have finer grain.
+    val score = ReadParser.calculateReadScoreRatio(readInfo, checker)
+    val speedupFactor = checker.getSpeedupFactor(fullExecName)
+    val overallSpeedup = (speedupFactor * score).toInt
+
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      maxDuration, node.id, isSupported, None, stagesInNode))
+    Seq(ExecInfo(sqlID, node.name, "", overallSpeedup,
+      maxDuration, node.id, score > 0, None, stagesInNode))
   }
 }
