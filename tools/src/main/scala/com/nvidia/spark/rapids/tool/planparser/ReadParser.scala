@@ -22,18 +22,15 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.sql.rapids.tool.AppBase
 
-case class FileSourceScanExecParser(
-    node: SparkPlanGraphNode,
-    checker: PluginTypeChecker,
-    sqlID: Long,
-    app: AppBase) extends ExecParser with Logging {
+case class ReadMetaData(schema: String, location: String, filters: String, format: String)
 
-  val fullExecName = "FileSourceScanExec"
+object ReadParser extends Logging {
 
   // strip off the struct<> part that Spark adds to the ReadSchema
   private def formatSchemaStr(schema: String): String = {
     schema.stripPrefix("struct<").stripSuffix(">")
   }
+
   // This tries to get just the field specified by tag in a string that
   // may contain multiple fields.  It looks for a comma to delimit fields.
   private def getFieldWithoutTag(str: String, tag: String): String = {
@@ -48,7 +45,8 @@ case class FileSourceScanExecParser(
     }
   }
 
-  private def parseRead: Unit = {
+
+  def parseRead(node: SparkPlanGraphNode): ReadMetaData = {
     val schemaTag = "ReadSchema: "
     val schema = if (node.desc.contains(schemaTag)) {
       formatSchemaStr(getFieldWithoutTag(node.desc, schemaTag))
@@ -93,27 +91,6 @@ case class FileSourceScanExecParser(
       "unknown"
     }
     logWarning(s"fileFormat is: $fileFormat")
-
-  }
-
-  override def parse: Seq[ExecInfo] = {
-    // can we use scan time?
-    val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
-    val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
-    logWarning(s"file source scan ${node.desc} scan time " +
-      s"accum: $accumId max duration: $maxDuration")
-    parseRead
-
-    //     if (planInfo.metadata != null && planInfo.metadata.contains("ReadSchema")) {
-
-    val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
-      (checker.getSpeedupFactor(fullExecName), true)
-    } else {
-      (1, false)
-    }
-    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
-    // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      maxDuration, node.id, isSupported, None, stagesInNode))
+    ReadMetaData(schema, location, pushedFilters, fileFormat)
   }
 }
