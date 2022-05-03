@@ -17,9 +17,18 @@
 package org.apache.spark.sql.rapids.tool
 
 import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.util.Utils
 
 object ToolUtils extends Logging {
+
+  def withTable(sparkSession: SparkSession, tableNames: String*)(f: => Unit): Unit = {
+    Utils.tryWithSafeFinally(f) {
+      tableNames.foreach { name =>
+        sparkSession.sql(s"DROP TABLE IF EXISTS $name")
+      }
+    }
+  }
 
   def isPluginEnabled(properties: Map[String, String]): Boolean = {
     (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")

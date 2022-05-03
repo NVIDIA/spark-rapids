@@ -24,6 +24,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -231,7 +232,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val csv = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand csv"))
 
         for (t <- Seq(json, csv, text)) {
-          assert(t.size == 1, t)
+          assert(t.size == 1, allExecInfo.mkString(","))
           assert(t.forall(_.speedupFactor == 1), t)
           assert(t.forall(_.isSupported == false), t)
           assert(t.forall(_.children.isEmpty), t)
@@ -245,7 +246,63 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
           assert(t.forall(_.children.isEmpty), t)
           assert(t.forall(_.duration.isEmpty), t)
         }
+      }
+    }
+  }
 
+  test("CreateDataSourceTableAsSelectCommand") {
+    ToolUtils.withTable(sparkSession, "tblorc", "tblparquet", "tblcsv",
+      "tbljson", "tbltext") {
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+          import spark.implicits._
+          val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
+          val dfWithStrings = df.select(col("value").cast("string"))
+          dfWithStrings.write.format("text").mode("overwrite").saveAsTable("tbltext")
+          df.write.format("parquet").mode("overwrite").saveAsTable("tblparquet")
+          df.write.format("orc").mode("overwrite").saveAsTable("tblorc")
+          df.write.format("csv").mode("overwrite").saveAsTable("tblcsv")
+          df.write.format("json").mode("overwrite").saveAsTable("tbljson")
+          df
+        }
+
+        val hadoopConf = new Configuration()
+        val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
+          None, None, List(eventLog), hadoopConf)
+        val pluginTypeChecker = new PluginTypeChecker()
+        assert(allEventLogs.size == 1)
+        val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
+          pluginTypeChecker, 20)
+        assert(appOption.nonEmpty)
+        val app = appOption.get
+        assert(app.sqlPlans.size == 6)
+        val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+          SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+        }
+        val allExecInfo = parsedPlans.flatMap(_.execInfo)
+
+        val text = allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand text"))
+        val json = allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand json"))
+        val orc = allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand orc"))
+        val parquet =
+          allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand parquet"))
+        val csv = allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand csv"))
+
+        for (t <- Seq(json, csv, text)) {
+          assert(t.size == 1, allExecInfo.mkString(","))
+          assert(t.forall(_.speedupFactor == 1), t)
+          assert(t.forall(_.isSupported == false), t)
+          assert(t.forall(_.children.isEmpty), t)
+          assert(t.forall(_.duration.isEmpty), t)
+        }
+
+        for (t <- Seq(orc, parquet)) {
+          assert(t.size == 1, t)
+          assert(t.forall(_.speedupFactor == 2), t)
+          assert(t.forall(_.isSupported == true), t)
+          assert(t.forall(_.children.isEmpty), t)
+          assert(t.forall(_.duration.isEmpty), t)
+        }
       }
     }
   }
