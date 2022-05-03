@@ -23,6 +23,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -83,6 +84,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
+
   test("FileSourceScan") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val eventLog = s"$profileLogDir/eventlog_dsv1.zstd"
@@ -140,6 +142,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(t.forall(_.duration.isEmpty), t)
     }
   }
+
   test("BatchScan") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val eventLog = s"$profileLogDir/eventlog_dsv2.zstd"
@@ -159,26 +162,18 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
 
+    // Note that the text scan from this file is v1 so ignore it
     val json = allExecInfo.filter(_.exec.contains("BatchScan json"))
     val orc = allExecInfo.filter(_.exec.contains("BatchScan orc"))
     val parquet = allExecInfo.filter(_.exec.contains("BatchScan parquet"))
-    val text = allExecInfo.filter(_.exec.contains("BatchScan text"))
     val csv = allExecInfo.filter(_.exec.contains("BatchScan csv"))
 
     for (t <- Seq(json)) {
-      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.size == 2, t)
       assert(t.forall(_.speedupFactor == 1), t)
       assert(t.forall(_.isSupported == false), t)
       assert(t.forall(_.children.isEmpty), t)
       assert(t.forall(_.duration.isEmpty), t)
-    }
-
-    for (t <- Seq(text)) {
-      assert(t.size == 1, s"num is ${t.size} values: $t")
-      assert(t.head.speedupFactor == 1, t)
-      assert(t.head.isSupported == false, t)
-      assert(t.head.children.isEmpty, t)
-      assert(t.head.duration.isEmpty, t)
     }
 
     for (t <- Seq(csv)) {
@@ -190,11 +185,43 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
 
     for (t <- Seq(orc, parquet)) {
-      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.size == 2, t)
       assert(t.forall(_.speedupFactor == 2), t)
       assert(t.forall(_.isSupported == true), t)
       assert(t.forall(_.children.isEmpty), t)
       assert(t.forall(_.duration.isEmpty), t)
+    }
+  }
+
+  test("InsertIntoHadoopFsRelationCommand") {
+    TrampolineUtil.withTempDir { outputLoc =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+          import spark.implicits._
+          val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
+          val dfWithStrings = df.select(col("value").cast("string"))
+          dfWithStrings.write.text(s"$outputLoc/testtext")
+          df.write.parquet(s"$outputLoc/testparquet")
+          df.write.orc(s"$outputLoc/testorc")
+          df.write.json(s"$outputLoc/testjson")
+          df.write.csv(s"$outputLoc/testcsv")
+          df
+        }
+
+        val hadoopConf = new Configuration()
+        val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
+          None, None, List(eventLog), hadoopConf)
+        val pluginTypeChecker = new PluginTypeChecker()
+        assert(allEventLogs.size == 1)
+        val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
+          pluginTypeChecker, 20)
+        assert(appOption.nonEmpty)
+        val app = appOption.get
+        assert(app.sqlPlans.size == 6)
+        app.sqlPlans.foreach { case (sqlID, plan) =>
+        }
+
+      }
     }
   }
 }
