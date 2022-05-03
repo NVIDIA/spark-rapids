@@ -179,7 +179,6 @@ class _RowCmp(object):
 
 def _prep_func_for_compare(func, mode):
     sort_locally = should_sort_locally()
-    print(f"GERA_DEBUG sort_locally={sort_locally}, should_sort_on_spark={should_sort_on_spark()}")
     if should_sort_on_spark():
         def with_sorted(spark):
             df = func(spark)
@@ -199,7 +198,6 @@ def _prep_func_for_compare(func, mode):
         limit_func = sorted_func
 
     if mode == 'COLLECT':
-        print(f"GERA_DEBUG limit_func={limit_func}")
         bring_back = lambda spark: limit_func(spark).collect()
         collect_type = 'COLLECT'
     elif mode == 'COUNT':
