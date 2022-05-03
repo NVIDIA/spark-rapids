@@ -49,39 +49,67 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
           .filter($"b" < 100)
       }
 
-      TrampolineUtil.withTempDir { outpath =>
-        val hadoopConf = new Configuration()
-        val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
-          None, None, List(eventLog), hadoopConf)
-        val pluginTypeChecker = new PluginTypeChecker()
-        assert(allEventLogs.size == 1)
-        val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
-          pluginTypeChecker, 20)
-        assert(appOption.nonEmpty)
-        val app = appOption.get
-        assert(app.sqlPlans.size == 1)
-        app.sqlPlans.foreach { case(sqlID, plan) =>
-          val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-          assert(planInfo.execInfo.size == 9)
-          val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
-          assert(wholeStages.size == 5)
-          // only 2 in the above example have projects and filters
-          val numSupported = wholeStages.filter(_.isSupported).size
-          assert(numSupported == 2)
-          assert(wholeStages.forall(_.duration.nonEmpty))
-          val allChildren = wholeStages.flatMap(_.children).flatten
-          assert(allChildren.size == 9)
-          val filters = allChildren.filter(_.exec == "FilterExec")
-          assert(filters.forall(_.speedupFactor == 2))
-          assert(filters.forall(_.isSupported == true))
-          assert(filters.forall(_.children.isEmpty))
-          assert(filters.forall(_.duration.isEmpty))
-          val projects = allChildren.filter(_.exec == "ProjectExec")
-          assert(projects.forall(_.speedupFactor == 2))
-          assert(projects.forall(_.isSupported == true))
-          assert(projects.forall(_.children.isEmpty))
-          assert(projects.forall(_.duration.isEmpty))
-        }
+      val hadoopConf = new Configuration()
+      val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
+        None, None, List(eventLog), hadoopConf)
+      val pluginTypeChecker = new PluginTypeChecker()
+      assert(allEventLogs.size == 1)
+      val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
+        pluginTypeChecker, 20)
+      assert(appOption.nonEmpty)
+      val app = appOption.get
+      assert(app.sqlPlans.size == 1)
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+        assert(planInfo.execInfo.size == 9)
+        val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.size == 5)
+        // only 2 in the above example have projects and filters
+        val numSupported = wholeStages.filter(_.isSupported).size
+        assert(numSupported == 2)
+        assert(wholeStages.forall(_.duration.nonEmpty))
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        assert(allChildren.size == 9)
+        val filters = allChildren.filter(_.exec == "FilterExec")
+        assert(filters.forall(_.speedupFactor == 2))
+        assert(filters.forall(_.isSupported == true))
+        assert(filters.forall(_.children.isEmpty))
+        assert(filters.forall(_.duration.isEmpty))
+        val projects = allChildren.filter(_.exec == "ProjectExec")
+        assert(projects.forall(_.speedupFactor == 2))
+        assert(projects.forall(_.isSupported == true))
+        assert(projects.forall(_.children.isEmpty))
+        assert(projects.forall(_.duration.isEmpty))
+      }
+    }
+  }
+  test("FileSourceScan") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val eventLog = s"$profileLogDir/eventlog_dsv1.zstd"
+    val hadoopConf = new Configuration()
+    val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
+      None, None, List(eventLog), hadoopConf)
+    val pluginTypeChecker = new PluginTypeChecker()
+    assert(allEventLogs.size == 1)
+    val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
+      pluginTypeChecker, 20)
+    assert(appOption.nonEmpty)
+    val app = appOption.get
+    assert(app.sqlPlans.size == 6)
+    app.sqlPlans.foreach { case (sqlID, plan) =>
+      val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      val json = planInfo.execInfo.filter(_.exec.contains("Scan json"))
+      val orc = planInfo.execInfo.filter(_.exec.contains("Scan orc"))
+      val parquet = planInfo.execInfo.filter(_.exec.contains("Scan parquet"))
+      val text = planInfo.execInfo.filter(_.exec.contains("Scan text"))
+      val csv = planInfo.execInfo.filter(_.exec.contains("Scan csv"))
+
+      for (t <- Seq(json, orc, parquet, text, csv)) {
+        assert(t.size == 1)
+        assert(t.head.speedupFactor == 2)
+        assert(t.head.isSupported == true)
+        assert(t.head.children.isEmpty)
+        assert(t.head.duration.isEmpty)
       }
     }
   }
