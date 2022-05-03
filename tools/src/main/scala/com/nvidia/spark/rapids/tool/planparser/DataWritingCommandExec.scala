@@ -37,7 +37,7 @@ case class DataWritingCommandExecParser(
     val finalSpeedup = if (writeSupported) speedupFactor else 1
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, s"${node.name} ${writeFormat}", "", finalSpeedup,
+    Seq(ExecInfo(sqlID, s"${node.name} ${writeFormat.toLowerCase}", "", finalSpeedup,
       duration, node.id, writeSupported, None, stagesInNode))
   }
 }

@@ -223,7 +223,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         }
         val allExecInfo = parsedPlans.flatMap(_.execInfo)
 
-        val text = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand json"))
+        val text = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand text"))
         val json = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand json"))
         val orc = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand orc"))
         val parquet =
