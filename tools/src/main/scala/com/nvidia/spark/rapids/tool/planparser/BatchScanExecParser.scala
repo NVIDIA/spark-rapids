@@ -43,7 +43,7 @@ case class BatchScanExecParser(
 
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", overallSpeedup,
+    Seq(ExecInfo(sqlID, s"${node.name} ${readInfo.format}", "", overallSpeedup,
       maxDuration, node.id, score > 0, None, stagesInNode))
   }
 }

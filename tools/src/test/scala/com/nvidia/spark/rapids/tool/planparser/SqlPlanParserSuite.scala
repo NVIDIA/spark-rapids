@@ -159,11 +159,11 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
 
-    val json = allExecInfo.filter(_.exec.contains("Scan json"))
-    val orc = allExecInfo.filter(_.exec.contains("Scan orc"))
-    val parquet = allExecInfo.filter(_.exec.contains("Scan parquet"))
-    val text = allExecInfo.filter(_.exec.contains("Scan text"))
-    val csv = allExecInfo.filter(_.exec.contains("Scan csv"))
+    val json = allExecInfo.filter(_.exec.contains("BatchScan json"))
+    val orc = allExecInfo.filter(_.exec.contains("BatchScan orc"))
+    val parquet = allExecInfo.filter(_.exec.contains("BatchScan parquet"))
+    val text = allExecInfo.filter(_.exec.contains("BatchScan text"))
+    val csv = allExecInfo.filter(_.exec.contains("BatchScan csv"))
 
     for (t <- Seq(json)) {
       assert(t.size == 2, s"num is ${t.size} values: $t")
