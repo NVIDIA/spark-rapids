@@ -284,6 +284,33 @@ def test_array_max(data_gen):
                 'array_max(a)'),
             conf=no_nans_conf)
 
+
+@pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
+def test_array_repeat_with_count_column(data_gen):
+    cnt_gen = IntegerGen(min_val=-5, max_val=5, special_cases=[])
+    cnt_not_null_gen = IntegerGen(min_val=-5, max_val=5, special_cases=[], nullable=False)
+    gen = StructGen(
+        [('elem', data_gen), ('cnt', cnt_gen), ('cnt_nn', cnt_not_null_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'array_repeat(elem, cnt)',
+            'array_repeat(elem, cnt_nn)',
+            'array_repeat("abc", cnt)'))
+
+
+@pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
+def test_array_repeat_with_count_scalar(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'array_repeat(a, 3)',
+            'array_repeat(a, 1)',
+            'array_repeat(a, 0)',
+            'array_repeat(a, -2)',
+            'array_repeat("abc", 2)',
+            'array_repeat("abc", 0)',
+            'array_repeat("abc", -1)'))
+
+
 # We add in several types of processing for foldable functions because the output
 # can be different types.
 @pytest.mark.parametrize('query', [

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
-import org.apache.spark.sql.rapids.tool.{EventProcessorBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{EventProcessorBase, GpuEventLogException, ToolUtils}
 
 class QualificationEventProcessor(app: QualificationAppInfo)
   extends EventProcessorBase[QualificationAppInfo](app) {
@@ -37,7 +37,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     logDebug("Processing event: " + event.getClass)
     val sparkProperties = event.environmentDetails("Spark Properties").toMap
     if (ToolUtils.isPluginEnabled(sparkProperties)) {
-      app.isPluginEnabled = true
+      throw GpuEventLogException(s"Eventlog is from GPU run. Skipping ...")
     }
   }
 
@@ -62,6 +62,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerTaskEnd(app, event)
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
@@ -89,6 +90,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     )
     app.sqlStart += (event.executionId -> sqlExecution)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
     // -1 to indicate that it started but not complete
     app.sqlDurationTime += (event.executionId -> -1)
   }
@@ -129,7 +131,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       }
       app.jobIdToSqlID(event.jobId) = sqlID
     }
-
   }
 
   override def doSparkListenerJobEnd(

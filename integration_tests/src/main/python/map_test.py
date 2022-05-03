@@ -288,9 +288,6 @@ def test_simple_get_map_value_ansi_fail(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(),
                     reason="Only in Spark 3.3.0 + ANSI mode + Strict Index, map key throws on no such element")
-@pytest.mark.xfail(not is_before_spark_330(),
-                    reason="There was a bug introduced in Spark 3.3.0 which is being tracked by " \
-                           "https://issues.apache.org/jira/browse/SPARK-39015")
 @pytest.mark.parametrize('strict_index', ['true', 'false'])
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value_with_strict_index(strict_index, data_gen):
@@ -362,9 +359,6 @@ def test_element_at_map_timestamp_keys(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
-@pytest.mark.xfail(not is_before_spark_330(),
-                    reason="There was a bug introduced in Spark 3.3.0 which is being tracked by " \
-                           "https://issues.apache.org/jira/browse/SPARK-39015")
 def test_map_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
     # For 3.3.0+ strictIndexOperator should not affect element_at
