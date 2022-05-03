@@ -30,19 +30,14 @@ case class DataWritingCommandExecParser(
   val fullExecName = "DataWritingCommandExec"
 
   override def parse: Seq[ExecInfo] = {
-    val duration = None
     val writeFormat = node.desc.split(",")(2)
-    // Filter unsupported write data format
-    val unSupportedWriteFormat = checker.isWriteFormatsupported(writeFormat)
-
-    val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
-      (checker.getSpeedupFactor(fullExecName), true)
-    } else {
-      (1, false)
-    }
+    val writeSupported = checker.isWriteFormatsupported(writeFormat)
+    val duration = None
+    val speedupFactor = checker.getSpeedupFactor(fullExecName)
+    val finalSpeedup = if (writeSupported) speedupFactor else 1
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      duration, node.id, isSupported, None, stagesInNode))
+    Seq(ExecInfo(sqlID, node.name, "", finalSpeedup,
+      duration, node.id, writeSupported, None, stagesInNode))
   }
 }
