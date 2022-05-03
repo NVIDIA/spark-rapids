@@ -356,6 +356,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       app: ApplicationInfo,
       event: SparkListenerStageCompleted): Unit = {
     logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerStageCompleted(app, event)
 
     // Parse stage accumulables
     for (res <- event.stageInfo.accumulables) {
