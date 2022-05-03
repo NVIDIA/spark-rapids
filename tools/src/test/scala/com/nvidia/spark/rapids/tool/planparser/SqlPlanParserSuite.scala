@@ -132,4 +132,53 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(t.forall(_.duration.isEmpty), t)
     }
   }
+  test("BatchScan") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val eventLog = s"$profileLogDir/eventlog_dsv2.zstd"
+    val hadoopConf = new Configuration()
+    val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
+      None, None, List(eventLog), hadoopConf)
+    val pluginTypeChecker = new PluginTypeChecker()
+    assert(allEventLogs.size == 1)
+    val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
+      pluginTypeChecker, 20)
+    assert(appOption.nonEmpty)
+    val app = appOption.get
+    assert(app.sqlPlans.size == 7)
+
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+    }
+    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+
+    val json = allExecInfo.filter(_.exec.contains("Scan json"))
+    val orc = allExecInfo.filter(_.exec.contains("Scan orc"))
+    val parquet = allExecInfo.filter(_.exec.contains("Scan parquet"))
+    val text = allExecInfo.filter(_.exec.contains("Scan text"))
+    val csv = allExecInfo.filter(_.exec.contains("Scan csv"))
+
+    for (t <- Seq(json)) {
+      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.forall(_.speedupFactor == 1), t)
+      assert(t.forall(_.isSupported == false), t)
+      assert(t.forall(_.children.isEmpty), t)
+      assert(t.forall(_.duration.isEmpty), t)
+    }
+
+    for (t <- Seq(text)) {
+      assert(t.size == 1, s"num is ${t.size} values: $t")
+      assert(t.head.speedupFactor == 1, t)
+      assert(t.head.isSupported == false, t)
+      assert(t.head.children.isEmpty, t)
+      assert(t.head.duration.isEmpty, t)
+    }
+
+    for (t <- Seq(orc)) {
+      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.forall(_.speedupFactor == 2), t)
+      assert(t.forall(_.isSupported == true), t)
+      assert(t.forall(_.children.isEmpty), t)
+      assert(t.forall(_.duration.isEmpty), t)
+    }
+  }
 }
