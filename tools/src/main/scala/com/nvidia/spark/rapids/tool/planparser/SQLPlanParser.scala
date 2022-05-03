@@ -102,8 +102,13 @@ object SQLPlanParser extends Logging {
         FileSourceScanExecParser(s, checker, sqlID, app).parse
       case b if (b.name == "BatchScan") =>
         BatchScanExecParser(b, checker, sqlID, app).parse
-      case i if (i.name == "InsertIntoHadoopFsRelationCommand") =>
+      case i if (i.name == "InsertIntoHadoopFsRelationCommand" ||
+        i.name == "CreateDataSourceTableAsSelectCommand") =>
         InsertIntoHadoopFsRelationCommandParser(i, checker, sqlID, app).parse
+      case w if (w.name == "DataWritingCommandExec") =>
+        DataWritingCommandExecParser(w, checker, sqlID, app).parse
+      case m if (m.name == "InMemoryTableScanExec") =>
+        InMemoryTableScanExecParser(m, checker, sqlID, app).parse
       case o =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)

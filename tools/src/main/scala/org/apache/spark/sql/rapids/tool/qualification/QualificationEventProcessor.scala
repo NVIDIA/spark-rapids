@@ -98,7 +98,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       ""
     )
     app.sqlStart += (event.executionId -> sqlExecution)
-    // app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    app.processSQLPlan(event.executionId, event.sparkPlanInfo)
     app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
     // -1 to indicate that it started but not complete
     app.sqlDurationTime += (event.executionId -> -1)
@@ -168,6 +168,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart
     app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
-    // app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    app.processSQLPlan(event.executionId, event.sparkPlanInfo)
   }
 }

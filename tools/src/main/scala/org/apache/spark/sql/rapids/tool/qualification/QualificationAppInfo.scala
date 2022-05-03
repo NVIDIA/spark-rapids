@@ -27,6 +27,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualificationAppInfo(
@@ -353,7 +354,7 @@ class QualificationAppInfo(
     }.toMap
     sqlPlanNodeIdToStageIds ++= nodeIdToStage
   }
-
+*/
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
@@ -377,7 +378,7 @@ class QualificationAppInfo(
       }
     }
   }
-*/
+
   private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.isWriteFormatsupported(writeFormat)

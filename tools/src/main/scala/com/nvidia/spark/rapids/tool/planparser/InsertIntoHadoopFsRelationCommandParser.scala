@@ -26,8 +26,8 @@ case class InsertIntoHadoopFsRelationCommandParser(
     checker: PluginTypeChecker,
     sqlID: Long,
     app: AppBase) extends ExecParser {
-
-  val fullExecName = "InsertIntoHadoopFsRelationCommand"
+  // TODO - lie for now and lookup DataWritingCommandExec
+  val fullExecName = "DataWritingCommandExec"
 
   override def parse: Seq[ExecInfo] = {
     val duration = None

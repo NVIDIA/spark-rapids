@@ -18,27 +18,19 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.sql.rapids.tool.AppBase
 
-case class FileSourceScanExecParser(
+case class InMemoryTableScanExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) extends ExecParser with Logging {
+    app: AppBase) extends ExecParser {
 
-  val fullExecName = "FileSourceScanExec"
+  val fullExecName = "InMemoryTableScanExec"
 
   override def parse: Seq[ExecInfo] = {
-    // can we use scan time?
-    val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
-    val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
-    logWarning(s"file source scan ${node.desc} scan time " +
-      s"accum: $accumId max duration: $maxDuration")
-
-    //     if (planInfo.metadata != null && planInfo.metadata.contains("ReadSchema")) {
-
+    val duration = None
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
@@ -47,6 +39,6 @@ case class FileSourceScanExecParser(
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
     Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      maxDuration, node.id, isSupported, None, stagesInNode))
+      duration, node.id, isSupported, None, stagesInNode))
   }
 }
