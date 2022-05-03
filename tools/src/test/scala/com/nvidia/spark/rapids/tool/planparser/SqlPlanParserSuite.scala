@@ -110,10 +110,10 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     for (t <- Seq(json)) {
       assert(t.size == 2, s"num is ${t.size} values: $t")
-      assert(t.head.speedupFactor == 1, t)
-      assert(t.head.isSupported == false, t)
-      assert(t.head.children.isEmpty, t)
-      assert(t.head.duration.isEmpty, t)
+      assert(t.forall(_.speedupFactor == 1), t)
+      assert(t.forall(_.isSupported == false), t)
+      assert(t.forall(_.children.isEmpty), t)
+      assert(t.forall(_.duration.isEmpty), t)
     }
 
     for (t <- Seq(text)) {
@@ -126,10 +126,10 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     for (t <- Seq(orc)) {
       assert(t.size == 2, s"num is ${t.size} values: $t")
-      assert(t.head.speedupFactor == 2, t)
-      assert(t.head.isSupported == true, t)
-      assert(t.head.children.isEmpty, t)
-      assert(t.head.duration.isEmpty, t)
+      assert(t.forall(_.speedupFactor == 2), t)
+      assert(t.forall(_.isSupported == true), t)
+      assert(t.forall(_.children.isEmpty), t)
+      assert(t.forall(_.duration.isEmpty), t)
     }
   }
 }
