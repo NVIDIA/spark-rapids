@@ -95,22 +95,25 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       pluginTypeChecker, 20)
     assert(appOption.nonEmpty)
     val app = appOption.get
-    assert(app.sqlPlans.size == 6)
-    app.sqlPlans.foreach { case (sqlID, plan) =>
-      val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-      val json = planInfo.execInfo.filter(_.exec.contains("Scan json"))
-      val orc = planInfo.execInfo.filter(_.exec.contains("Scan orc"))
-      val parquet = planInfo.execInfo.filter(_.exec.contains("Scan parquet"))
-      val text = planInfo.execInfo.filter(_.exec.contains("Scan text"))
-      val csv = planInfo.execInfo.filter(_.exec.contains("Scan csv"))
+    assert(app.sqlPlans.size == 7)
 
-      for (t <- Seq(json, orc, parquet, text, csv)) {
-        assert(t.size == 1)
-        assert(t.head.speedupFactor == 2)
-        assert(t.head.isSupported == true)
-        assert(t.head.children.isEmpty)
-        assert(t.head.duration.isEmpty)
-      }
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+    }
+    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+
+    val json = allExecInfo.filter(_.exec.contains("Scan json"))
+    val orc = allExecInfo.filter(_.exec.contains("Scan orc"))
+    val parquet = allExecInfo.filter(_.exec.contains("Scan parquet"))
+    val text = allExecInfo.filter(_.exec.contains("Scan text"))
+    val csv = allExecInfo.filter(_.exec.contains("Scan csv"))
+
+    for (t <- Seq(json, orc, parquet, text, csv)) {
+      assert(t.size == 1, t)
+      assert(t.head.speedupFactor == 2)
+      assert(t.head.isSupported == true)
+      assert(t.head.children.isEmpty)
+      assert(t.head.duration.isEmpty)
     }
   }
 }
