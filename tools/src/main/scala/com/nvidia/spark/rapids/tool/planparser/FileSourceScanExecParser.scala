@@ -42,7 +42,7 @@ case class FileSourceScanExecParser(
     // don't use the isExecSupported because we have finer grain.
     val score = ReadParser.calculateReadScoreRatio(readInfo, checker)
     val speedupFactor = checker.getSpeedupFactor(fullExecName)
-    val overallSpeedup = (speedupFactor * score).toInt
+    val overallSpeedup = Math.max((speedupFactor * score).toInt, 1)
 
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?

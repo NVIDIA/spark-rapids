@@ -108,12 +108,28 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val text = allExecInfo.filter(_.exec.contains("Scan text"))
     val csv = allExecInfo.filter(_.exec.contains("Scan csv"))
 
-    for (t <- Seq(json, orc, parquet, text, csv)) {
-      assert(t.size == 1, t)
-      assert(t.head.speedupFactor == 2)
-      assert(t.head.isSupported == true)
-      assert(t.head.children.isEmpty)
-      assert(t.head.duration.isEmpty)
+    for (t <- Seq(json)) {
+      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.head.speedupFactor == 1, t)
+      assert(t.head.isSupported == false, t)
+      assert(t.head.children.isEmpty, t)
+      assert(t.head.duration.isEmpty, t)
+    }
+
+    for (t <- Seq(text)) {
+      assert(t.size == 1, s"num is ${t.size} values: $t")
+      assert(t.head.speedupFactor == 1, t)
+      assert(t.head.isSupported == false, t)
+      assert(t.head.children.isEmpty, t)
+      assert(t.head.duration.isEmpty, t)
+    }
+
+    for (t <- Seq(orc)) {
+      assert(t.size == 2, s"num is ${t.size} values: $t")
+      assert(t.head.speedupFactor == 2, t)
+      assert(t.head.isSupported == true, t)
+      assert(t.head.children.isEmpty, t)
+      assert(t.head.duration.isEmpty, t)
     }
   }
 }
