@@ -191,13 +191,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
   
   test("string anchors - find") {
-    val patterns = Seq("\\Atest", "test\\z")
+    val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
+        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test", "test\\z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
   }
 
   test("string anchor \\A will fall back to CPU in some repetitions") {
-    val patterns = Seq(raw"(\A)+", raw"(\A)*", raw"(\A){2,}")
+    val patterns = Seq(raw"(\A)*a", raw"(\A){0,}a", raw"(\A){0}a")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
     )
@@ -205,8 +206,23 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("string anchor \\Z fall back to CPU - replace or split") {
     for (mode <- Seq(RegexReplaceMode, RegexSplitMode)) {
-      assertUnsupported("\\Z", mode, "string anchor \\Z is not supported in split or replace mode")
+      assertUnsupported("a\\Z", mode, "string anchor \\Z is not supported in split or replace mode")
     }
+  }
+
+  test("string anchor \\Z fall back to CPU in groups") {
+    val patterns = Seq(raw"(\Z)", raw"(\Z)+")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, 
+          "sequences that only contain '^' or '$' are not supported")
+    )
+  }
+
+  test("string anchor \\Z fall back to CPU in some repetitions") {
+    val patterns = Seq(raw"a(\Z)*", raw"a(\Z){2,}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+    )
   }
 
   test("string anchors - replace") {
@@ -236,7 +252,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("string anchor \\Z - find") {
     val patterns = Seq("\\Z\r", "a\\Z", "\r\\Z", "\f\\Z", "\\Z\f", "\u0085\\Z", "\u2028\\Z",
-        "\u2029\\Z", "\n\\Z", "\r\n\\Z", "[\r\n]?\\Z", "\\00*[D$3]\\Z", "a\\Zb")
+        "\u2029\\Z", "\n\\Z", "\r\n\\Z", "[\r\n]?\\Z", "\\00*[D$3]\\Z", "a\\Zb", "a\\Z+")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
@@ -298,6 +314,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         .replaceAll("\\\\z", "\\$"))
   }
 
+  test("transpile \\A repetitions") {
+    doTranspileTest("a\\A+", "a\\A")
+    doTranspileTest("a\\A{1,}", "a\\A")
+    doTranspileTest("a\\A{2}", "a\\A")
+    doTranspileTest("a(\\A)+", "a(\\A)")
+  }
+
   test("transpile \\z") {
     doTranspileTest("abc\\z", "abc$")
   }
@@ -316,6 +339,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("]\\Z\r", "]\r[\n\u0085\u2028\u2029]?$")
     doTranspileTest("^\\Z[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
     doTranspileTest("^\\Z([^*A-ZA-Z])", "^([\n\r\u0085\u2028\u2029])$")
+    doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {

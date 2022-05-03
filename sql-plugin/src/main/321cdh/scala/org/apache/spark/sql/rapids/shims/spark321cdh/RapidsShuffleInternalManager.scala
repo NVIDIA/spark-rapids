@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark311cdh
+package org.apache.spark.sql.rapids.shims.spark321cdh
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
@@ -41,17 +41,18 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
   }
 }
 
+
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
+  extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
 
   def getReader[K, C](
-      handle: ShuffleHandle,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int,
-      context: TaskContext,
-      metrics: ShuffleReadMetricsReporter
+    handle: ShuffleHandle,
+    startMapIndex: Int,
+    endMapIndex: Int,
+    startPartition: Int,
+    endPartition: Int,
+    context: TaskContext,
+    metrics: ShuffleReadMetricsReporter
   ): ShuffleReader[K, C] = {
     self.getReader(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
       metrics)

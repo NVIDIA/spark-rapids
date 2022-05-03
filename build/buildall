@@ -139,7 +139,7 @@ case $DIST_PROFILE in
   snapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
       311
-      311cdh
+      321cdh
       312
       313
       314
@@ -153,7 +153,7 @@ case $DIST_PROFILE in
   noSnapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
       311
-      311cdh
+      321cdh
       312
       313
       320
@@ -163,7 +163,7 @@ case $DIST_PROFILE in
 
   minimumFeatureVersionMix)
     SPARK_SHIM_VERSIONS=(
-      311cdh
+      321cdh
       312
       320
     )

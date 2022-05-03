@@ -13,20 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims
 
-import org.apache.orc.Reader
+package com.nvidia.spark.rapids.shims.spark321cdh
 
-object OrcShims extends OrcShims311until320Base {
+import com.nvidia.spark.rapids.{ClouderaShimVersion, ShimVersion}
 
-  // ORC Reader of the 311cdh Spark has no close method.
-  // The resource is closed internally.
-  def withReader[V](r: Reader)(block: Reader => V): V = {
-    block(r)
+object SparkShimServiceProvider {
+  val VERSION = ClouderaShimVersion(3, 2, 1, "3.2.7171000")
+  // cdh version can have numbers after after 7170
+  val CDH_BASE_VERSION = "3.2.1.3.2.7171000"
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  def matchesVersion(version: String): Boolean = {
+    version.contains(SparkShimServiceProvider.CDH_BASE_VERSION)
   }
-
-  // empty
-  def closeReader(reader: Reader): Unit = {
-  }
-
 }
