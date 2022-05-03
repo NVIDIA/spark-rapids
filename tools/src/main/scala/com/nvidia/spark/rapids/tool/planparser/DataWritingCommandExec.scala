@@ -31,6 +31,10 @@ case class DataWritingCommandExecParser(
 
   override def parse: Seq[ExecInfo] = {
     val duration = None
+    val writeFormat = node.desc.split(",")(2)
+    // Filter unsupported write data format
+    val unSupportedWriteFormat = checker.isWriteFormatsupported(writeFormat)
+
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {

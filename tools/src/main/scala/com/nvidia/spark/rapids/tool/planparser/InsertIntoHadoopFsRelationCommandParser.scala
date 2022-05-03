@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.sql.rapids.tool.AppBase
 
@@ -25,11 +26,15 @@ case class InsertIntoHadoopFsRelationCommandParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) extends ExecParser {
+    app: AppBase) extends ExecParser with Logging {
   // TODO - lie for now and lookup DataWritingCommandExec
   val fullExecName = "DataWritingCommandExec"
 
   override def parse: Seq[ExecInfo] = {
+    val writeFormat = node.desc.split(",")(2)
+    // Filter unsupported write data format
+    val unSupportedWriteFormat = checker.isWriteFormatsupported(writeFormat)
+    logWarning(s"insert node: ${node.desc} format $writeFormat supported $unSupportedWriteFormat")
     val duration = None
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
