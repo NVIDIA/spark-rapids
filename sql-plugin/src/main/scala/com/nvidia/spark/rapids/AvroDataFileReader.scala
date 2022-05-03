@@ -135,15 +135,13 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
   private val sin = new SeekableInputStream(si)
   sin.seek(0) // seek to the start of file and get some meta info.
   private var vin: BinaryDecoder = DecoderFactory.get.binaryDecoder(sin, vin);
-  private var firstBlockStart: Long = 0
 
-  val header: Header = initialize()
+  val (header, headerSize): (Header, Long) = initialize()
 
-  lazy val headerSize: Long = firstBlockStart
   // store all blocks info
   lazy val blocks: Seq[BlockInfo] = parseBlocks()
 
-  private def initialize(): Header = {
+  private def initialize(): (Header, Long) = {
     // read magic
     val magic = new Array[Byte](MAGIC.length)
     vin.readFixed(magic)
@@ -171,8 +169,7 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
     // read sync marker
     val sync = new Array[Byte](SYNC_SIZE)
     vin.readFixed(sync)
-    firstBlockStart = sin.tell - vin.inputStream.available
-    Header(meta.toMap, sync)
+    (Header(meta.toMap, sync), sin.tell - vin.inputStream.available)
   }
 
   private def seek(position: Long): Unit = {
@@ -181,14 +178,14 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
   }
 
   private def parseBlocks(): Seq[BlockInfo] = {
-    if (firstBlockStart >= sin.length() || vin.isEnd()) {
+    var blockStart = headerSize
+    if (blockStart >= sin.length() || vin.isEnd()) {
       // no blocks
       return Seq.empty
     }
     val blocks = mutable.ArrayBuffer.empty[BlockInfo]
     // buf is used for writing long
     val buf = new Array[Byte](12)
-    var blockStart = firstBlockStart
     while (blockStart < sin.length()) {
       seek(blockStart)
       if (vin.isEnd()) {
