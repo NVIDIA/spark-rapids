@@ -87,7 +87,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("Parsing various Execs - 1") {
+  test("Parsing various Execs - Coalesce, CollectLimit, Expand, Range, Sample" +
+      "TakeOrderedAndProject and Union") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         import spark.implicits._
@@ -126,7 +127,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
                 // Execs not supported by default
                 case "CollectLimit" => assert(supportedExec.forall(_.isSupported == false))
                   assert(supportedExec.forall(_.speedupFactor == 1), execName)
-
                 case _ => assert(supportedExec.forall(_.isSupported == true))
                   assert(supportedExec.forall(_.speedupFactor == 2), execName)
               }
