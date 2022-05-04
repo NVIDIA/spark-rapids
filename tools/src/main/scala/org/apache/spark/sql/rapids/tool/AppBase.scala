@@ -24,7 +24,7 @@ import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
 import com.nvidia.spark.rapids.tool.planparser.ReadParser
-import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, StageInfoClass, TaskStageAccumCase}
+import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, DriverAccumCase, StageInfoClass, TaskStageAccumCase}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
@@ -55,6 +55,9 @@ abstract class AppBase(
 
   val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
   val stageAccumulators: HashMap[Int, Seq[Long]] = new HashMap[Int, Seq[Long]]()
+
+  var driverAccumMap: HashMap[Long, ArrayBuffer[DriverAccumCase]] =
+    HashMap[Long, ArrayBuffer[DriverAccumCase]]()
 
   def getOrCreateStage(info: StageInfo): StageInfoClass = {
     val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber()),

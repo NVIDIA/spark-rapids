@@ -269,20 +269,6 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerDriverAccumUpdates(
-      app: ApplicationInfo,
-      event: SparkListenerDriverAccumUpdates): Unit = {
-    logDebug("Processing event: " + event.getClass)
-
-    val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
-    accumUpdates.foreach { accum =>
-      val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
-      val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
-        ArrayBuffer[DriverAccumCase]())
-      arrBuf += driverAccum
-    }
-  }
-
   override def doSparkListenerJobStart(
       app: ApplicationInfo,
       event: SparkListenerJobStart): Unit = {

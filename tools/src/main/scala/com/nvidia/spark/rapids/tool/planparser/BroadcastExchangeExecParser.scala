@@ -32,13 +32,14 @@ case class BroadcastExchangeExecParser(
 
   override def parse: Seq[ExecInfo] = {
     // TODO - check the relation?
-    val collectTimeId = node.metrics.find(_.name == "collectTime").map(_.accumulatorId)
-    val buildTimeId = node.metrics.find(_.name == "buildTime").map(_.accumulatorId)
-    val broadcastTimeId = node.metrics.find(_.name == "broadcastTime").map(_.accumulatorId)
+    logWarning("all broadcast metrics are: " + node.metrics.mkString(","))
+    val collectTimeId = node.metrics.find(_.name == "time to collect").map(_.accumulatorId)
+    val buildTimeId = node.metrics.find(_.name == "time to build").map(_.accumulatorId)
+    val broadcastTimeId = node.metrics.find(_.name == "time to broadcast").map(_.accumulatorId)
     logWarning(s"broadcast ids are: $collectTimeId, $buildTimeId, $broadcastTimeId ")
-    val maxCollectTime = SQLPlanParser.getTotalDuration(collectTimeId, app)
-    val maxBuildTime = SQLPlanParser.getTotalDuration(buildTimeId, app)
-    val maxBroadcastTime = SQLPlanParser.getTotalDuration(broadcastTimeId, app)
+    val maxCollectTime = SQLPlanParser.getDriverTotalDuration(collectTimeId, app)
+    val maxBuildTime = SQLPlanParser.getDriverTotalDuration(buildTimeId, app)
+    val maxBroadcastTime = SQLPlanParser.getDriverTotalDuration(broadcastTimeId, app)
     logWarning(s"broadcast times: $maxCollectTime, $maxBuildTime, $maxBroadcastTime ")
 
     val duration = (maxCollectTime ++ maxBuildTime ++ maxBroadcastTime).reduceOption(_ + _)

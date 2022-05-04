@@ -148,7 +148,18 @@ object SQLPlanParser extends Logging {
     val taskForAccum = accumId.flatMap(id => app.taskStageAccumMap.get(id))
       .getOrElse(ArrayBuffer.empty)
     val accumValues = taskForAccum.map(_.value.getOrElse(0L))
-    taskForAccum.map(_.value.getOrElse(0L))
+    val maxDuration = if (accumValues.isEmpty) {
+      None
+    } else {
+      Some(accumValues.max)
+    }
+    maxDuration
+  }
+
+  def getDriverTotalDuration(accumId: Option[Long], app: AppBase): Option[Long] = {
+    val accums = accumId.flatMap(id => app.driverAccumMap.get(id))
+      .getOrElse(ArrayBuffer.empty)
+    val accumValues = accums.map(_.value)
     val maxDuration = if (accumValues.isEmpty) {
       None
     } else {

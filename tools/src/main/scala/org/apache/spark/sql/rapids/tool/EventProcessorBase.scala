@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.tool
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.tool.profiling.{ProfileUtils, TaskStageAccumCase}
+import com.nvidia.spark.rapids.tool.profiling.{DriverAccumCase, ProfileUtils, TaskStageAccumCase}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
@@ -133,7 +133,17 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
 
   def doSparkListenerDriverAccumUpdates(
       app: T,
-      event: SparkListenerDriverAccumUpdates): Unit = {}
+      event: SparkListenerDriverAccumUpdates): Unit = {
+    logDebug("Processing event: " + event.getClass)
+
+    val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
+    accumUpdates.foreach { accum =>
+      val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
+      val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
+        ArrayBuffer[DriverAccumCase]())
+      arrBuf += driverAccum
+    }
+  }
 
   def doSparkListenerSQLAdaptiveExecutionUpdate(
       app: T,
