@@ -316,77 +316,17 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
   }
 }
 
+/**
+ * This implementation leverages the default implementation of equal-to on the GPU
+ * to perform the binary equals comparison. This is used for operations like PivotFirst,
+ * where NaN != NaN (unlike most other cases) when pivoting on a float or double column. 
+ */
 case class GpuEqualToNoNans(left: Expression, right: Expression) extends CudfBinaryComparison
     with NullIntolerant {
   override def symbol: String = "="
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    val result = super.doColumnar(lhs, rhs)
-    if (hasFloatingPointInputs) {
-      withResource(result) { result =>
-        withResource(lhs.getBase.isNan) { lhsNan =>
-          withResource(rhs.getBase.isNan) { rhsNan =>
-            withResource(lhsNan.or(rhsNan)) { lhsNanOrRhsNan =>
-              withResource(lhsNanOrRhsNan.not) { neitherNan =>
-                neitherNan.and(result)
-              }
-            }
-          }
-        }
-      }
-    } else {
-      result
-    }
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    val result = super.doColumnar(lhs, rhs)
-    if (hasFloatingPointInputs) {
-      withResource(result) { result =>
-        withResource(Scalar.fromBool(lhs.isNan)) { lhsNan =>
-          withResource(rhs.getBase.isNan) { rhsNan =>
-            withResource(lhsNan.or(rhsNan)) { lhsNanOrRhsNan =>
-              withResource(lhsNanOrRhsNan.not) { neitherNan =>
-                neitherNan.and(result)
-              }
-            }
-          }
-        }
-      }
-    } else {
-      result
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val result = super.doColumnar(lhs, rhs)
-    if (hasFloatingPointInputs) {
-      withResource(result) { result =>
-        withResource(lhs.getBase.isNan) { lhsNan =>
-          withResource(Scalar.fromBool(rhs.isNan)) { rhsNan =>
-            withResource(lhsNan.or(rhsNan)) { lhsNanOrRhsNan =>
-              withResource(lhsNanOrRhsNan.not) { neitherNan =>
-                neitherNan.and(result)
-              }
-            }
-          }
-        }
-      }
-    } else {
-      result
-    }
-  }
-
-  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
-    // Currently AST computeColumn assumes nulls compare true for EQUAL, but NOT_EQUAL will
-    // return null for null input.
-    new ast.UnaryOperation(ast.UnaryOperator.NOT,
-      new ast.BinaryOperation(ast.BinaryOperator.NOT_EQUAL,
-        left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
-        right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)))
-  }
 }
 
 /**
