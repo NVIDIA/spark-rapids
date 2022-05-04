@@ -19,25 +19,22 @@ package com.nvidia.spark.rapids.tool.planparser
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
-import org.apache.spark.sql.rapids.tool.AppBase
 
-case class FilterExecParser(
+case class RangeExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
-    sqlID: Long,
-    app: AppBase) extends ExecParser {
+    sqlID: Long) extends ExecParser {
 
   val fullExecName = node.name + "Exec"
 
   override def parse: Seq[ExecInfo] = {
-    // filter doesn't have duration
+    // range doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1, false)
     }
-    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
     Seq(ExecInfo(sqlID, node.name, "", speedupFactor,
       duration, node.id, isSupported, None))

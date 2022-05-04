@@ -92,35 +92,49 @@ object SQLPlanParser extends Logging {
       app: AppBase
   ): Seq[ExecInfo] = {
     node.name match {
-      case w if (w.contains("WholeStageCodegen")) =>
-        WholeStageExecParser(node.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
-      case "Filter" =>
-        FilterExecParser(node, checker, sqlID, app).parse
-      case "Project" =>
-        ProjectExecParser(node, checker, sqlID, app).parse
       case "BatchScan" =>
         BatchScanExecParser(node, checker, sqlID, app).parse
-      case "InMemoryTableScan" =>
-        InMemoryTableScanExecParser(node, checker, sqlID, app).parse
-      case "Exchange" =>
-        ShuffleExchangeExecParser(node, checker, sqlID, app).parse
       case "BroadcastExchange" =>
         BroadcastExchangeExecParser(node, checker, sqlID, app).parse
-      case "SubqueryBroadcast" =>
-        SubqueryBroadcastExecParser(node, checker, sqlID, app).parse
-      case "CustomShuffleReader" | "AQEShuffleRead" =>
-        CustomShuffleReaderExecParser(node, checker, sqlID, app).parse
-      case s if (s.startsWith("Scan")) =>
-        FileSourceScanExecParser(node, checker, sqlID, app).parse
-      case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
-        i == "DataWritingCommandExec") =>
-        DataWritingCommandExecParser(node, checker, sqlID, app).parse
+      case "Coalesce" =>
+        CoalesceExecParser(node, checker, sqlID).parse
+      case "CollectLimit" =>
+        CollectLimitExecParser(node, checker, sqlID).parse
       case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
         // create data source table doesn't show the format so we can't determine
         // if we support it
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
         ArrayBuffer(ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
           isSupported = false, None, stagesInNode))
+      case "CustomShuffleReader" | "AQEShuffleRead" =>
+        CustomShuffleReaderExecParser(node, checker, sqlID, app).parse
+      case "Exchange" =>
+        ShuffleExchangeExecParser(node, checker, sqlID, app).parse
+      case "Expand" =>
+        ExpandExecParser(node, checker, sqlID).parse
+      case "Filter" =>
+        FilterExecParser(node, checker, sqlID, app).parse
+      case "InMemoryTableScan" =>
+        InMemoryTableScanExecParser(node, checker, sqlID, app).parse
+      case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
+        i == "DataWritingCommandExec") =>
+        DataWritingCommandExecParser(node, checker, sqlID, app).parse
+      case "Project" =>
+        ProjectExecParser(node, checker, sqlID, app).parse
+      case "Range" =>
+        RangeExecParser(node, checker, sqlID).parse
+      case "Sample" =>
+        SampleExecParser(node, checker, sqlID).parse
+      case s if (s.startsWith("Scan")) =>
+        FileSourceScanExecParser(node, checker, sqlID, app).parse
+      case "SubqueryBroadcast" =>
+        SubqueryBroadcastExecParser(node, checker, sqlID, app).parse
+      case "TakeOrderedAndProject" =>
+        TakeOrderedAndProjectExecParser(node, checker, sqlID).parse
+      case "Union" =>
+        UnionExecParser(node, checker, sqlID).parse
+      case w if (w.contains("WholeStageCodegen")) =>
+        WholeStageExecParser(node.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
       case _ =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)

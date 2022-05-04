@@ -32,14 +32,14 @@ case class   ProjectExecParser(
   override def parse: Seq[ExecInfo] = {
     // Project doesn't have duration
     val duration = None
-    val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1, false)
     }
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      duration, node.id, isSupported, None, stagesInNode))
+    Seq(ExecInfo(sqlID, node.name, "", speedupFactor,
+      duration, node.id, isSupported, None))
   }
 }

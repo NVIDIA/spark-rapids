@@ -77,7 +77,7 @@ mvn -Dbuildver=312 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=313 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=311cdh install -Drat.skip=true -DskipTests
+mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 #### Building with buildall script
@@ -87,7 +87,7 @@ There is a build script `build/buildall` that automates the local build process.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots`
-- `minimumFeatureVersionMix` that currently includes 311cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
+- `minimumFeatureVersionMix` that currently includes 321cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
 
 For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=311` for Spark 3.1.1.
 
@@ -118,8 +118,8 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|cdh    |Cloudera CDH|311cdh |Cloudera CDH Spark based on Apache Spark 3.1.1|
 |db     |Databricks  |312db  |Databricks Spark based on Spark 3.1.2         |
+|cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
 
 The version-specific directory names have one of the following forms / use cases:
 - `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
