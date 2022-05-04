@@ -32,16 +32,12 @@ case class BroadcastExchangeExecParser(
 
   override def parse: Seq[ExecInfo] = {
     // TODO - check the relation?
-    logWarning("all broadcast metrics are: " + node.metrics.mkString(","))
     val collectTimeId = node.metrics.find(_.name == "time to collect").map(_.accumulatorId)
     val buildTimeId = node.metrics.find(_.name == "time to build").map(_.accumulatorId)
     val broadcastTimeId = node.metrics.find(_.name == "time to broadcast").map(_.accumulatorId)
-    logWarning(s"broadcast ids are: $collectTimeId, $buildTimeId, $broadcastTimeId ")
     val maxCollectTime = SQLPlanParser.getDriverTotalDuration(collectTimeId, app)
     val maxBuildTime = SQLPlanParser.getDriverTotalDuration(buildTimeId, app)
     val maxBroadcastTime = SQLPlanParser.getDriverTotalDuration(broadcastTimeId, app)
-    logWarning(s"broadcast times: $maxCollectTime, $maxBuildTime, $maxBroadcastTime ")
-
     val duration = (maxCollectTime ++ maxBuildTime ++ maxBroadcastTime).reduceOption(_ + _)
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)

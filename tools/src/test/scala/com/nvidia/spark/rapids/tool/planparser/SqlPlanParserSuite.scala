@@ -248,7 +248,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
     val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
     val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
-    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1), Some(1), Some(1)))
+    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
     assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
   }
 }
