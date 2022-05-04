@@ -17,8 +17,7 @@
 package org.apache.spark.sql.rapids.tool
 
 import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.util.Utils
+import org.apache.spark.sql.DataFrame
 
 object ToolUtils extends Logging {
 

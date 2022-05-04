@@ -24,7 +24,6 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -189,32 +188,20 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("CreateDataSourceTableAsSelectCommand") {
-    val name = "tblparquet"
-    try {
-      TrampolineUtil.withTempDir { eventLogDir =>
-        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
-          "CreateDataSourceTableAsSelectCommand") { spark =>
-          import spark.implicits._
-          val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
-          // since we can't determine what format it is just test one
-          df.write.format("parquet").saveAsTable(name)
-          df
-        }
-        val pluginTypeChecker = new PluginTypeChecker()
-        val app = createAppFromEventlog(eventLog)
-        assert(app.sqlPlans.size == 2)
-        val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
-          SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-        }
-        val allExecInfo = parsedPlans.flatMap(_.execInfo)
-        val parquet = {
-          allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand"))
-        }
-        assertSizeAndNotSupported(1, parquet.toSeq)
-      }
-    } finally {
-      sparkSession.sql(s"DROP TABLE IF EXISTS $name")
+    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    // using event log to not deal with enabling hive support
+    val eventLog = s"$qualLogDir/createdatasourcetable_eventlog"
+    val app = createAppFromEventlog(eventLog)
+    val pluginTypeChecker = new PluginTypeChecker()
+    assert(app.sqlPlans.size == 1)
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
+    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val parquet = {
+      allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand"))
+    }
+    assertSizeAndNotSupported(1, parquet.toSeq)
   }
 
   test("InMemoryTableScan") {
