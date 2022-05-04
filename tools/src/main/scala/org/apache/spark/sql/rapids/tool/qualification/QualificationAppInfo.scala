@@ -197,7 +197,7 @@ class QualificationAppInfo(
         execInfo.stages.map((_, execInfo))
       } else if (execInfo.stages.size < 1) {
         // we don't know what stage its in our its duration
-        logWarning(s"No stage or duration associated with ${execInfo.exec} " +
+        logWarning(s"No stage associated with ${execInfo.exec} " +
           s"so speedup factor isn't applied anywhere.")
         Seq.empty
       } else {
@@ -282,6 +282,7 @@ class QualificationAppInfo(
           // val withDur = getStageToExec(execsWithDuration)
           val allStagesToExecs = getStageToExec(execInfos)
           val allStageIds = execInfos.flatMap(_.stages)
+          logWarning(s"all stageids are: ${allStageIds.mkString(",")}")
           val unAccounted = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0)
