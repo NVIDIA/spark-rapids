@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.sql.rapids.tool.AppBase
 
@@ -25,7 +26,7 @@ case class BroadcastExchangeExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) extends ExecParser {
+    app: AppBase) extends ExecParser with Logging {
 
   val fullExecName = node.name + "Exec"
 
@@ -34,9 +35,12 @@ case class BroadcastExchangeExecParser(
     val collectTimeId = node.metrics.find(_.name == "collectTime").map(_.accumulatorId)
     val buildTimeId = node.metrics.find(_.name == "buildTime").map(_.accumulatorId)
     val broadcastTimeId = node.metrics.find(_.name == "broadcastTime").map(_.accumulatorId)
+    logWarning(s"broadcast ids are: $collectTimeId, $buildTimeId, $broadcastTimeId ")
     val maxCollectTime = SQLPlanParser.getTotalDuration(collectTimeId, app)
     val maxBuildTime = SQLPlanParser.getTotalDuration(buildTimeId, app)
     val maxBroadcastTime = SQLPlanParser.getTotalDuration(broadcastTimeId, app)
+    logWarning(s"broadcast times: $maxCollectTime, $maxBuildTime, $maxBroadcastTime ")
+
     val duration = (maxCollectTime ++ maxBuildTime ++ maxBroadcastTime).reduceOption(_ + _)
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
