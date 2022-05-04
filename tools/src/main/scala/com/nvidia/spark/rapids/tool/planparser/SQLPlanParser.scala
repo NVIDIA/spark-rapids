@@ -113,6 +113,8 @@ object SQLPlanParser extends Logging {
           isSupported = false, None, stagesInNode))
       case m if (m.name == "InMemoryTableScan") =>
         InMemoryTableScanExecParser(m, checker, sqlID, app).parse
+      case e if (e.name == "Exchange") =>
+        ShuffleExchangeExecParser(e, checker, sqlID, app).parse
       case o =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
