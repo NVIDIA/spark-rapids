@@ -72,9 +72,6 @@ class ShimCurrentBatchIterator(
       options,
       hadoopConf) {
 
-  // reset spark schema calculated from parquet schema
-  hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
-  hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, inMemReqSparkSchema.json)
   val missingColumns: util.Set[ParquetColumn] = new util.HashSet[ParquetColumn]()
   val config = new Configuration
   config.setBoolean(SQLConf.PARQUET_BINARY_AS_STRING.key, false)
