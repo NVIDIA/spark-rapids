@@ -58,15 +58,6 @@ object ToolUtils extends Logging {
       resScale.toDouble
     }
   }
-
-  // For testing purposes
-  def withTable(sparkSession: SparkSession, tableNames: String*)(f: => Unit): Unit = {
-    Utils.tryWithSafeFinally(f) {
-      tableNames.foreach { name =>
-        sparkSession.sql(s"DROP TABLE IF EXISTS $name")
-      }
-    }
-  }
 }
 
 case class GpuEventLogException(message: String) extends Exception(message)
