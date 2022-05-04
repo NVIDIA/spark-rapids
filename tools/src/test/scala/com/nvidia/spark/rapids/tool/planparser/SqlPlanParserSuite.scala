@@ -201,7 +201,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("CreateDataSourceTableAsSelectCommand") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     // using event log to not deal with enabling hive support
-    val eventLog = s"$qualLogDir/createdatasourcetable_eventlog"
+    val eventLog = s"$qualLogDir/createdatasourcetable_eventlog.zstd"
     val app = createAppFromEventlog(eventLog)
     val pluginTypeChecker = new PluginTypeChecker()
     assert(app.sqlPlans.size == 1)
@@ -239,6 +239,40 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("BroadcastExchangeExec and SubqueryBroadcastExec") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val eventLog = s"$profileLogDir/nds_q86_test"
+    val pluginTypeChecker = new PluginTypeChecker()
+    val app = createAppFromEventlog(eventLog)
+    assert(app.sqlPlans.size > 0)
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+    }
+    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
+    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
+    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
+    assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
+  }
+
+  test("CustomShuffleReaderExec") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    // this is eventlog because CustomShuffleReaderExec only available before 3.2.0
+    val eventLog = s"$profileLogDir/customshuffle_eventlog.zstd"
+    val pluginTypeChecker = new PluginTypeChecker()
+    val app = createAppFromEventlog(eventLog)
+    assert(app.sqlPlans.size > 0)
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+    }
+    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
+    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
+    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
+    assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
+  }
+
+  test("AQEShuffleReadExec") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    // this is eventlog because AQEShuffleReadExec only available after 3.2.0
+    val eventLog = s"$profileLogDir/aqeshuffle_eventlog.zstd"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size > 0)
