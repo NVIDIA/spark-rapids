@@ -281,7 +281,7 @@ class QualificationAppInfo(
           // val withOutDur = getStageToExec(execsWithoutDuration)
           // val withDur = getStageToExec(execsWithDuration)
           val allStagesToExecs = getStageToExec(execInfos)
-          val allStageIds = execInfos.flatMap(_.stages).flatten
+          val allStageIds = execInfos.flatMap(_.stages)
           val unAccounted = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0)
