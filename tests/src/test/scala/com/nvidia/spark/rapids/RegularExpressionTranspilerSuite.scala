@@ -306,11 +306,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
       "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?\\z"
 
-    // input and output should be identical except for `.` being replaced with `[^\r\n]` and
-    // `\z` being replaced with `$`
+    // input and output should be identical except for `.` being replaced 
+    // with `[^\r\n\u0085\u2028\u2029]` and `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
-        .replaceAll("\\.", "[^\r\n]")
+        .replaceAll("\\.", "[^\r\n\u0085\u2028\u2029]")
         .replaceAll("\\\\z", "\\$"))
   }
 
