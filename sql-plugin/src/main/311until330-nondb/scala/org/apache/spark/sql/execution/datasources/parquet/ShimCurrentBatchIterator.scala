@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.ParquetCachedBatch
 import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
+import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.schema.Type
 
 import org.apache.spark.TaskContext
@@ -64,6 +65,9 @@ class ShimCurrentBatchIterator(
 
   var columnReaders: Array[VectorizedColumnReader] = _
   val missingColumns = new Array[Boolean](reqParquetSchemaInCacheOrder.getFieldCount)
+  val typesInCache: util.List[Type] = reqParquetSchemaInCacheOrder.asGroupType.getFields
+  val columnsInCache: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
+  val columnsRequested: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
 
   // initialize missingColumns to cover the case where requested column isn't present in the
   // cache, which should never happen but just in case it does
@@ -145,8 +149,6 @@ class ShimCurrentBatchIterator(
     }
     rowsReturned += num
     columnarBatch.setNumRows(num)
-    numBatched = num
-    batchIdx = 0
     true
   }
 
@@ -156,7 +158,4 @@ class ShimCurrentBatchIterator(
     close()
   })
 
-  override def close(): Unit = {
-    parquetFileReader.close()
-  }
 }

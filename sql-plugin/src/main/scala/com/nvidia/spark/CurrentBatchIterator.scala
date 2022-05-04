@@ -21,13 +21,10 @@ import java.io.IOException
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.{ByteArrayInputFile, ParquetCachedBatch}
-import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.{ParquetReadOptions, VersionParser}
 import org.apache.parquet.VersionParser.ParsedVersion
-import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.parquet.schema.Type
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -50,8 +47,6 @@ abstract class CurrentBatchIterator(
     OffHeapColumnVector.allocateColumns(capacity, selectedAttributes.toStructType)
   val columnarBatch = new ColumnarBatch(vectors.asInstanceOf[Array[vectorized.ColumnVector]])
   var rowsReturned: Long = 0L
-  var numBatched = 0
-  var batchIdx = 0
   var totalCountLoadedSoFar: Long = 0
   val parquetFileReader = {
     ParquetFileReader.open(new ByteArrayInputFile(parquetCachedBatch.buffer), options)
@@ -91,13 +86,9 @@ abstract class CurrentBatchIterator(
       inMemCacheParquetSchema.getFields().get(inMemCacheParquetSchema.getFieldIndex(f.name))
     }:_*)
 
-  val columnsRequested: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
   // reset spark schema calculated from parquet schema
   hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
   hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, inMemReqSparkSchema.json)
-
-  val columnsInCache: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
-  val typesInCache: util.List[Type] = reqParquetSchemaInCacheOrder.asGroupType.getFields
 
   override def hasNext: Boolean = rowsReturned < totalRowCount
 

@@ -200,8 +200,6 @@ class ShimCurrentBatchIterator(
     }
     rowsReturned += num
     columnarBatch.setNumRows(num)
-    numBatched = num
-    batchIdx = 0
     true
   }
 }
