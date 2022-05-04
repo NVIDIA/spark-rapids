@@ -22,14 +22,6 @@ import org.apache.spark.util.Utils
 
 object ToolUtils extends Logging {
 
-  def withTable(sparkSession: SparkSession, tableNames: String*)(f: => Unit): Unit = {
-    Utils.tryWithSafeFinally(f) {
-      tableNames.foreach { name =>
-        sparkSession.sql(s"DROP TABLE IF EXISTS $name")
-      }
-    }
-  }
-
   def isPluginEnabled(properties: Map[String, String]): Boolean = {
     (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")
       && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean)
@@ -64,6 +56,15 @@ object ToolUtils extends Logging {
       val res = (firstDec / sizeDec)
       val resScale = res.setScale(places, BigDecimal.RoundingMode.HALF_UP)
       resScale.toDouble
+    }
+  }
+
+  // For testing purposes
+  def withTable(sparkSession: SparkSession, tableNames: String*)(f: => Unit): Unit = {
+    Utils.tryWithSafeFinally(f) {
+      tableNames.foreach { name =>
+        sparkSession.sql(s"DROP TABLE IF EXISTS $name")
+      }
     }
   }
 }

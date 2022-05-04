@@ -74,7 +74,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("WholeStage with Filter and Project") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "WholeStageFilterProject") { spark =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "WholeStageFilterProject") { spark =>
         import spark.implicits._
         val df = spark.sparkContext.makeRDD(1 to 100000, 6).toDF
         val df2 = spark.sparkContext.makeRDD(1 to 100000, 6).toDF
@@ -152,7 +153,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("InsertIntoHadoopFsRelationCommand") {
     TrampolineUtil.withTempDir { outputLoc =>
       TrampolineUtil.withTempDir { eventLogDir =>
-        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "InsertIntoHadoopFsRelationCommand") { spark =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+          "InsertIntoHadoopFsRelationCommand") { spark =>
           import spark.implicits._
           val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
           val dfWithStrings = df.select(col("value").cast("string"))
@@ -180,17 +182,17 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
           assertSizeAndNotSupported(1, t.toSeq)
         }
         for (t <- Seq(orc, parquet)) {
-          assertSizeAndSupported(2, t.toSeq)
+          assertSizeAndSupported(1, t.toSeq)
         }
       }
     }
   }
 
   test("CreateDataSourceTableAsSelectCommand") {
-    ToolUtils.withTable(sparkSession, "tblorc", "tblparquet", "tblcsv",
-      "tbljson", "tbltext") {
+    ToolUtils.withTable(sparkSession, "tblparquet") {
       TrampolineUtil.withTempDir { eventLogDir =>
-        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "CreateDataSourceTableAsSelectCommand") { spark =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+          "CreateDataSourceTableAsSelectCommand") { spark =>
           import spark.implicits._
           val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
           // since we can't determine what format it is just test one
@@ -199,21 +201,22 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         }
         val pluginTypeChecker = new PluginTypeChecker()
         val app = createAppFromEventlog(eventLog)
-        assert(app.sqlPlans.size == 1)
+        assert(app.sqlPlans.size == 2)
         val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
           SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
         }
         val allExecInfo = parsedPlans.flatMap(_.execInfo)
         val parquet =
           allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand parquet"))
-        assertSizeAndNotSupported(1, parquet.toSeq))
+        assertSizeAndNotSupported(1, parquet.toSeq)
       }
     }
   }
 
   test("InMemoryTableScan") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "InMemoryTableScan") { spark =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "InMemoryTableScan") { spark =>
         import spark.implicits._
         val df = spark.sparkContext.makeRDD(1 to 10000, 6).toDF
         val dfc = df.cache()
