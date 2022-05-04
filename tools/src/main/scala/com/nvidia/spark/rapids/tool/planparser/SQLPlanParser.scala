@@ -91,40 +91,40 @@ object SQLPlanParser extends Logging {
       checker: PluginTypeChecker,
       app: AppBase
   ): Seq[ExecInfo] = {
-    node match {
-      case w if (w.name.contains("WholeStageCodegen")) =>
+    node.name match {
+      case w if (w.contains("WholeStageCodegen")) =>
         WholeStageExecParser(w.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
-      case f if (f.name == "Filter") =>
-        FilterExecParser(f, checker, sqlID, app).parse
-      case p if (p.name == "Project") =>
-        ProjectExecParser(p, checker, sqlID, app).parse
-      case s if (s.name.startsWith("Scan")) =>
-        FileSourceScanExecParser(s, checker, sqlID, app).parse
-      case b if (b.name == "BatchScan") =>
-        BatchScanExecParser(b, checker, sqlID, app).parse
-      case i if (i.name.contains("InsertIntoHadoopFsRelationCommand") ||
-        i.name == "DataWritingCommandExec") =>
-        DataWritingCommandExecParser(i, checker, sqlID, app).parse
-      case i if (i.name.contains("CreateDataSourceTableAsSelectCommand")) =>
+      case "Filter" =>
+        FilterExecParser(node, checker, sqlID, app).parse
+      case "Project" =>
+        ProjectExecParser(node, checker, sqlID, app).parse
+      case "BatchScan" =>
+        BatchScanExecParser(node, checker, sqlID, app).parse
+      case "InMemoryTableScan" =>
+        InMemoryTableScanExecParser(node, checker, sqlID, app).parse
+      case "Exchange" =>
+        ShuffleExchangeExecParser(node, checker, sqlID, app).parse
+      case "BroadcastExchange" =>
+        BroadcastExchangeExecParser(node, checker, sqlID, app).parse
+      case "SubqueryBroadcast" =>
+        SubqueryBroadcastExecParser(node, checker, sqlID, app).parse
+      case "CustomShuffleReader" | "AQEShuffleRead" =>
+        CustomShuffleReaderExecParser(node, checker, sqlID, app).parse
+      case s if (s.startsWith("Scan")) =>
+        FileSourceScanExecParser(node, checker, sqlID, app).parse
+      case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
+        i == "DataWritingCommandExec") =>
+        DataWritingCommandExecParser(node, checker, sqlID, app).parse
+      case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
         // create data source table doesn't show the format so we can't determine
         // if we support it
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
-        ArrayBuffer(ExecInfo(sqlID, i.name, expr = "", 1, duration = None, i.id,
+        ArrayBuffer(ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
           isSupported = false, None, stagesInNode))
-      case m if (m.name == "InMemoryTableScan") =>
-        InMemoryTableScanExecParser(m, checker, sqlID, app).parse
-      case e if (e.name == "Exchange") =>
-        ShuffleExchangeExecParser(e, checker, sqlID, app).parse
-      case b if (b.name == "BroadcastExchange") =>
-        BroadcastExchangeExecParser(b, checker, sqlID, app).parse
-      case s if (s.name == "SubqueryBroadcast") =>
-        SubqueryBroadcastExecParser(s, checker, sqlID, app).parse
-      case s if (s.name == "CustomShuffleReader" || s.name == "AQEShuffleRead") =>
-        CustomShuffleReaderExecParser(s, checker, sqlID, app).parse
       case o =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
-        ArrayBuffer(ExecInfo(sqlID, o.name, expr = "", 1, duration = None, o.id,
+        ArrayBuffer(ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
           isSupported = false, None, stagesInNode))
     }
   }
