@@ -263,10 +263,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
-    val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
-    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
-    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
-    assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
+    val reader = allExecInfo.filter(_.exec == "CustomShuffleReader")
+    assertSizeAndSupported(1, reader.toSeq)
   }
 
   test("AQEShuffleReadExec") {
@@ -280,9 +278,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
-    val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
-    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
-    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
-    assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
+    val reader = allExecInfo.filter(_.exec == "AQEShuffleRead")
+    assertSizeAndSupported(1, reader.toSeq)
   }
 }
