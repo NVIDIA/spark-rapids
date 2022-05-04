@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphCluster
 import org.apache.spark.sql.rapids.tool.AppBase
 
@@ -26,15 +25,14 @@ case class WholeStageExecParser(
     node: SparkPlanGraphCluster,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) extends ExecParser with Logging {
+    app: AppBase) {
 
   val fullExecName = "WholeStageCodegenExec"
 
-  override def parse: Seq[ExecInfo] = {
-    // TODO - does metrics for time have previous ops?  per op thing, likely does
-    // but verify
+  def parse: Seq[ExecInfo] = {
+    // TODO - does metrics for time have previous ops?  per op thing, only some do
     // the durations in wholestage code gen can include durations of other wholestage code
-    // gen in the same stage, so we can't just add them  all up.
+    // gen in the same stage, so we can't just add them all up.
     // Perhaps take the max of those in Stage?
     val accumId = node.metrics.find(_.name == "duration").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
@@ -48,7 +46,8 @@ case class WholeStageExecParser(
     val anySupported = childNodeRes.exists(_.isSupported == true)
     // average speedup across the execs in the WholeStageCodegen for now
     val avSpeedupFactor = SQLPlanParser.averageSpeedup(childNodeRes.map(_.speedupFactor))
-    Seq(ExecInfo(sqlID, node.name, node.name, avSpeedupFactor,
-      maxDuration, node.id, anySupported, Some(childNodeRes), stagesInNode))
+    val execInfo = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
+      node.id, anySupported, Some(childNodeRes), Some(stagesInNode))
+    Seq(execInfo)
   }
 }

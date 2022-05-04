@@ -17,6 +17,6 @@
 package com.nvidia.spark.rapids.tool.planparser
 
 trait ExecParser {
-  def parse: Seq[ExecInfo]
+  def parse(): ExecInfo
   val fullExecName: String
 }

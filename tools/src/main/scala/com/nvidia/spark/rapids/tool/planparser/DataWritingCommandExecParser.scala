@@ -19,25 +19,22 @@ package com.nvidia.spark.rapids.tool.planparser
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
-import org.apache.spark.sql.rapids.tool.AppBase
 
 case class DataWritingCommandExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
-    sqlID: Long,
-    app: AppBase) extends ExecParser {
+    sqlID: Long) extends ExecParser {
 
   val fullExecName = "DataWritingCommandExec"
 
-  override def parse: Seq[ExecInfo] = {
+  override def parse(): ExecInfo = {
     val writeFormat = node.desc.split(",")(2)
     val writeSupported = checker.isWriteFormatsupported(writeFormat)
     val duration = None
     val speedupFactor = checker.getSpeedupFactor(fullExecName)
     val finalSpeedup = if (writeSupported) speedupFactor else 1
-    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, s"${node.name.trim} ${writeFormat.toLowerCase.trim}", "", finalSpeedup,
-      duration, node.id, writeSupported, None, stagesInNode))
+    ExecInfo(sqlID, s"${node.name.trim} ${writeFormat.toLowerCase.trim}", "", finalSpeedup,
+      duration, node.id, writeSupported, None)
   }
 }

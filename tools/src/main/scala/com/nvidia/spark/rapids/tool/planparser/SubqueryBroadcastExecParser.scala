@@ -29,7 +29,7 @@ case class SubqueryBroadcastExecParser(
 
   val fullExecName = "ShuffleExchangeExec"
 
-  override def parse: Seq[ExecInfo] = {
+  override def parse(): ExecInfo = {
     val collectTimeId = node.metrics.find(_.name == "time to collect (ms)").map(_.accumulatorId)
     val duration = SQLPlanParser.getDriverTotalDuration(collectTimeId, app)
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
@@ -37,10 +37,8 @@ case class SubqueryBroadcastExecParser(
     } else {
       (1, false)
     }
-    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - check is broadcast associated can be replaced
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", filterSpeedupFactor,
-      duration, node.id, isSupported, None, stagesInNode))
+    ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
   }
 }

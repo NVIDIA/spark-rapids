@@ -19,19 +19,17 @@ package com.nvidia.spark.rapids.tool.planparser
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
-import org.apache.spark.sql.rapids.tool.AppBase
 
 case class CustomShuffleReaderExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
-    sqlID: Long,
-    app: AppBase) extends ExecParser {
+    sqlID: Long) extends ExecParser {
 
   // note this is called either AQEShuffleRead and CustomShuffleReader depending
   // on the Spark version, our supported ops list it as CustomShuffleReader
   val fullExecName = "CustomShuffleReaderExec"
 
-  override def parse: Seq[ExecInfo] = {
+  override def parse(): ExecInfo = {
     // doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
@@ -39,8 +37,6 @@ case class CustomShuffleReaderExecParser(
     } else {
       (1, false)
     }
-    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
-    Seq(ExecInfo(sqlID, node.name, "", speedupFactor,
-      duration, node.id, isSupported, None, stagesInNode))
+    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
   }
 }

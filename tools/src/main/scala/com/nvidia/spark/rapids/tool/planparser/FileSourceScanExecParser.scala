@@ -30,7 +30,7 @@ case class FileSourceScanExecParser(
 
   val fullExecName = "FileSourceScanExec"
 
-  override def parse: Seq[ExecInfo] = {
+  override def parse(): ExecInfo = {
     // can we use scan time?
     val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
@@ -44,9 +44,7 @@ case class FileSourceScanExecParser(
     val speedupFactor = checker.getSpeedupFactor(fullExecName)
     val overallSpeedup = Math.max((speedupFactor * score).toInt, 1)
 
-    val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", overallSpeedup,
-      maxDuration, node.id, score > 0, None, stagesInNode))
+    ExecInfo(sqlID, node.name, "", overallSpeedup, maxDuration, node.id, score > 0, None)
   }
 }

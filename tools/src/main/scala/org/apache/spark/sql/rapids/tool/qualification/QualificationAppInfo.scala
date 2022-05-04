@@ -252,18 +252,18 @@ class QualificationAppInfo(
             s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
             s"all speedsup: " +
             s"${speedups.mkString(",")} average speedup: $averageSpeedup")
+
           // there are issues with duration right now where duration of multiple execs is more than
           // entire stage time, for now ignore the exec duration and just calculate based on
           // average
           /*
           val (execsWithDuration, execsWithoutDuration) = execInfos.partition(_.duration.nonEmpty)
-          val totalTaskTimeExecDurMetrics = execsWithDuration.flatMap(_.duration).sum
+          val totalTaskTimeExecDurMetrics = execsWithDuration.map(_.duration).sum
           val estimatedSpeedup = execsWithDuration.map { info =>
             info.speedupFactor * info.duration.get
           }.sum
           val speedups = execsWithoutDuration.map(_.speedupFactor)
           val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
-
 
           logWarning(s"total sql time is: " +
             s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
@@ -274,27 +274,27 @@ class QualificationAppInfo(
 
            */
 
-          /*
+
           // if we want to break down each stage:
           logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val (execsWithoutDuration, execsWithDuration) = execInfos.partition(_.duration.isEmpty)
-          val withOutDur = getStageToExec(execsWithoutDuration)
-          val withDur = getStageToExec(execsWithDuration)
-          val allStageIds = execInfos.flatMap(_.stages)
-          stageIdToSqlID
-          sqlIDToTaskEndSum
+          // val withOutDur = getStageToExec(execsWithoutDuration)
+          // val withDur = getStageToExec(execsWithDuration)
+          val allStagesToExecs = getStageToExec(execInfos)
+          val allStageIds = execInfos.flatMap(_.stages).flatten
           val unAccounted = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0)
-            val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
-            val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
-            val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
+            // val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
+            // val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
+            // val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
+            val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
             val averagespeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
-            (averagespeedup, taskTimeNotAccountedFor)
+            // (averagespeedup, taskTimeNotAccountedFor)
+            (averagespeedup, stageTaskTime)
           }
-            logWarning("unacounted for each stages is: " + unAccounted.mkString(","))
+          logWarning("unaccounted for each stages is: " + unAccounted.mkString(","))
 
-           */
         }
       }
 
