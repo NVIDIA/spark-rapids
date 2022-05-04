@@ -114,6 +114,29 @@ object MultiFileThreadPoolUtil {
   }
 }
 
+/** A thread pool for multi-file reading */
+class MultiFileReaderThreadPool {
+  private var threadPool: Option[ThreadPoolExecutor] = None
+
+  private def initThreadPool(
+      threadTag: String,
+      numThreads: Int): ThreadPoolExecutor = synchronized {
+    if (threadPool.isEmpty) {
+      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
+    }
+    threadPool.get
+  }
+
+  /**
+   * Get the existing internal thread pool or create one with the given tag and thread
+   * number if it does not exist.
+   * Note: The tag and thread number will be ignored if the thread pool is already created.
+   */
+  def getOrCreateThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
+    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
+  }
+}
+
 /**
  * The base multi-file partition reader factory to create the cloud reading or
  * coalescing reading respectively.
@@ -692,10 +715,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * Write a header for a specific file format. If there is no header for the file format,
    * just ignore it and return 0
    *
+   * @param paths the paths of files to be coalesced into a single batch
    * @param buffer where the header will be written
    * @return how many bytes written
    */
-  def writeFileHeader(buffer: HostMemoryBuffer): Long
+  def writeFileHeader(paths: Seq[Path], buffer: HostMemoryBuffer): Long
 
   /**
    * Writer a footer for a specific file format. If there is no footer for the file format,
@@ -823,7 +847,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       val (buffer, bufferSize, footerOffset, outBlocks) =
         closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { hmb =>
           // Second, write header
-          var offset = writeFileHeader(hmb)
+          var offset = writeFileHeader(filesAndBlocks.keys.toSeq, hmb)
 
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[DataBlockBase]()
           val tc = TaskContext.get

@@ -16,43 +16,51 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.RapidsReaderType._
 import com.nvidia.spark.rapids.shims.GpuBatchScanExec
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.FileUtils.withTempPath
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.functions.input_file_name
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.{ExternalSource, GpuFileSourceScanExec}
 
-trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
+trait ReaderTypeSuite extends SparkQueryCompareTestSuite with Arm {
 
   /** File format */
   protected def format: String
 
-  /** Check if use multithreaded reading */
-  private def checkMultiThreadedReading(
+  protected def otherConfs: Iterable[(String, String)] = Seq.empty
+
+  private def checkReaderType(
       readerFactory: PartitionReaderFactory,
       inputFile: Array[String],
-      expected: Boolean) = {
-    readerFactory match {
-      case factory: MultiFilePartitionReaderFactoryBase =>
-        assert(factory.useMultiThread(inputFile) == expected)
-      case _ => assert(false, "PERFILE is Use")
+      expectedReaderType: RapidsReaderType) = {
+    val actualReaderType = readerFactory match {
+      case mf: MultiFilePartitionReaderFactoryBase =>
+        if (mf.useMultiThread(inputFile)) {
+          MULTITHREADED
+        } else {
+          COALESCING
+        }
+      case _ => PERFILE
     }
+    assert(expectedReaderType == actualReaderType,
+      s", expected $expectedReaderType, but got $actualReaderType")
   }
 
   /**
-   * Test if multithreaded reading is Use.
+   * Test if the given reader type will be used.
    *
    * @param conf SparkConf
    * @param files input files
    * @param multithreadedReadingExpected true: multithreaded reading, false: coalescing reading.
    * @param hasInputExpression if has input expression
    */
-  private def testMultiThreadedReader(
+  protected final def testReaderType(
       conf: SparkConf,
       files: Array[String],
-      multithreadedReadingExpected: Boolean,
+      expectedReaderType: RapidsReaderType,
       hasInputExpression: Boolean = false): Unit = {
     withTempPath { file =>
       withCpuSparkSession(spark => {
@@ -65,23 +73,26 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
         val df = if (hasInputExpression) rawDf.withColumn("input", input_file_name()) else rawDf
         val plans = df.queryExecution.executedPlan.collect {
           case plan: GpuBatchScanExec =>
-            checkMultiThreadedReading(plan.readerFactory, files, multithreadedReadingExpected)
+            checkReaderType(plan.readerFactory, files, expectedReaderType)
             plan
           case plan: GpuFileSourceScanExec =>
-            checkMultiThreadedReading(plan.readerFactory, files, multithreadedReadingExpected)
+            checkReaderType(plan.readerFactory, files, expectedReaderType)
             plan
         }
         assert(!plans.isEmpty, "File reader is not running on GPU")
-      }, conf)
+      }, conf.setAll(otherConfs))
     }
   }
+}
+
+trait MultiReaderTypeSuite extends ReaderTypeSuite {
 
   test("Use coalescing reading for local files") {
     val testFile = Array("/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
         .set("spark.sql.sources.useV1SourceList", useV1Source)
-      testMultiThreadedReader(conf, testFile, false)
+      testReaderType(conf, testFile, COALESCING)
     })
   }
 
@@ -90,7 +101,7 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
         .set("spark.sql.sources.useV1SourceList", useV1Source)
-      testMultiThreadedReader(conf, testFile, true)
+      testReaderType(conf, testFile, MULTITHREADED)
     })
   }
 
@@ -100,7 +111,7 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
       val conf = new SparkConf()
         .set("spark.sql.sources.useV1SourceList", useV1Source)
         .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
-      testMultiThreadedReader(conf, testFile, false)
+      testReaderType(conf, testFile, COALESCING)
     })
   }
 
@@ -110,7 +121,7 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
       val conf = new SparkConf()
         .set("spark.sql.sources.useV1SourceList", useV1Source)
         .set(s"spark.rapids.sql.format.${format}.reader.type", "MULTITHREADED")
-      testMultiThreadedReader(conf, testFile, true)
+      testReaderType(conf, testFile, MULTITHREADED)
     })
   }
 
@@ -120,7 +131,7 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
       val conf = new SparkConf()
         .set("spark.sql.sources.useV1SourceList", useV1Source)
         .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
-      testMultiThreadedReader(conf, testFile, true, true)
+      testReaderType(conf, testFile, MULTITHREADED, hasInputExpression=true)
     })
   }
 
@@ -131,15 +142,78 @@ trait FileSourceSuite extends SparkQueryCompareTestSuite with Arm {
         .set("spark.sql.sources.useV1SourceList", useV1Source)
         .set("spark.sql.files.ignoreCorruptFiles", "true")
         .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
-      testMultiThreadedReader(conf, testFile, true )
+      testReaderType(conf, testFile, MULTITHREADED)
     })
   }
 }
 
-class GpuParquetReaderSuites extends FileSourceSuite {
+class GpuParquetReaderTypeSuites extends MultiReaderTypeSuite {
   override protected def format: String = "parquet"
 }
 
-class GpuOrcReaderSuites extends FileSourceSuite {
+class GpuOrcReaderTypeSuites extends MultiReaderTypeSuite {
   override protected def format: String = "orc"
+}
+
+class GpuAvroReaderTypeSuites extends ReaderTypeSuite {
+  override lazy val format: String = "avro"
+  override lazy val otherConfs: Iterable[(String, String)] = Seq(
+    ("spark.rapids.sql.format.avro.read.enabled", "true"),
+    ("spark.rapids.sql.format.avro.enabled", "true"))
+
+  private lazy val hasAvroJar = ExternalSource.hasSparkAvroJar
+
+  test("Use coalescing reading for local files") {
+    assume(hasAvroJar)
+    val testFile = Array("/tmp/xyz")
+    Seq(format, "").foreach(useV1Source => {
+      val conf = new SparkConf()
+        .set("spark.sql.sources.useV1SourceList", useV1Source)
+      testReaderType(conf, testFile, COALESCING)
+    })
+  }
+
+  test("Use coalescing reading for cloud files if coalescing can work") {
+    assume(hasAvroJar)
+    val testFile = Array("s3:/tmp/xyz")
+    Seq(format, "").foreach(useV1Source => {
+      val conf = new SparkConf()
+        .set("spark.sql.sources.useV1SourceList", useV1Source)
+      testReaderType(conf, testFile, COALESCING)
+    })
+  }
+
+  test("Force coalescing reading for cloud files when setting COALESCING ") {
+    assume(hasAvroJar)
+    val testFile = Array("s3:/tmp/xyz")
+    Seq(format, "").foreach(useV1Source => {
+      val conf = new SparkConf()
+        .set("spark.sql.sources.useV1SourceList", useV1Source)
+        .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
+      testReaderType(conf, testFile, COALESCING)
+    })
+  }
+
+  test("Use per-file reading for input expression even setting COALESCING") {
+    assume(hasAvroJar)
+    val testFile = Array("/tmp/xyz")
+    Seq(format, "").foreach(useV1Source => {
+      val conf = new SparkConf()
+        .set("spark.sql.sources.useV1SourceList", useV1Source)
+        .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
+      testReaderType(conf, testFile, PERFILE, hasInputExpression=true)
+    })
+  }
+
+  test("Use per-file reading for ignoreCorruptFiles even setting COALESCING") {
+    assume(hasAvroJar)
+    val testFile = Array("/tmp/xyz")
+    Seq(format, "").foreach(useV1Source => {
+      val conf = new SparkConf()
+        .set("spark.sql.sources.useV1SourceList", useV1Source)
+        .set("spark.sql.files.ignoreCorruptFiles", "true")
+        .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
+      testReaderType(conf, testFile, PERFILE)
+    })
+  }
 }

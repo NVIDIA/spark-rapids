@@ -19,12 +19,13 @@ package com.nvidia.spark.rapids
 import java.io.{InputStream, IOException}
 import java.nio.charset.StandardCharsets
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable
 
 import org.apache.avro.Schema
-import org.apache.avro.file.{DataFileConstants, SeekableInput}
-import org.apache.avro.file.DataFileConstants.{MAGIC, SYNC_SIZE}
+import org.apache.avro.file.DataFileConstants._
+import org.apache.avro.file.SeekableInput
 import org.apache.avro.io.{BinaryData, BinaryDecoder, DecoderFactory}
+import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 
 private class SeekableInputStream(in: SeekableInput) extends InputStream with SeekableInput {
   var oneByte = new Array[Byte](1)
@@ -59,22 +60,62 @@ private class SeekableInputStream(in: SeekableInput) extends InputStream with Se
 }
 
 /**
- * The header information of Avro file
+ * The header information of an Avro file.
  */
-class Header {
-  var meta = Map[String, Array[Byte]]()
-  var metaKeyList = ArrayBuffer[String]()
-  var sync = new Array[Byte](DataFileConstants.SYNC_SIZE)
-  var schema: Schema = _
-  private var firstBlockStart: Long = _
+case class Header(
+    meta: Map[String, Array[Byte]],
+    // Array in scala is mutable, so keep it private to avoid unexpected update.
+    private val syncBuffer: Array[Byte]) {
 
-  private[rapids] def update(schemaValue: String, firstBlockStart: Long) = {
-    schema = new Schema.Parser().setValidate(false).setValidateDefaults(false)
-      .parse(schemaValue)
-    this.firstBlockStart = firstBlockStart
+  /** Get a copy of the sync marker. */
+  def sync: Array[Byte] = syncBuffer.clone
+
+  @transient
+  lazy val schema: Schema = {
+    getMetaString(SCHEMA)
+      .map(s => new Schema.Parser().setValidateDefaults(false).setValidate(false).parse(s))
+      .orNull
   }
 
-  def getFirstBlockStart: Long = firstBlockStart
+  private def getMetaString(key: String): Option[String] = {
+    meta.get(key).map(new String(_, StandardCharsets.UTF_8))
+  }
+}
+
+object Header {
+  /** Compute header size in bytes for serialization */
+  def headerSizeInBytes(h: Header): Long = {
+    val out = new CountingOutputStream(NullOutputStream.NULL_OUTPUT_STREAM)
+    AvroFileWriter(out).writeHeader(h)
+    out.getByteCount
+  }
+
+  /**
+   * Merge the metadata of the given headers.
+   * Note: It does not check the compatibility of the headers.
+   * @param headers whose metadata to be merged.
+   * @return a header with the new merged metadata and the first header's
+   *         sync marker, or None if the input is empty.
+   */
+  def mergeMetadata(headers: Seq[Header]): Option[Header] = {
+    if (headers.isEmpty) {
+      None
+    } else {
+      val mergedMeta = headers.map(_.meta).reduce { (merged, meta) =>
+        merged ++ meta
+      }
+      Some(Header(mergedMeta, headers.head.sync))
+    }
+  }
+
+  /**
+   * Test whether the two headers have conflicts in the metadata.
+   * A conflict means a key exists in both of the two headers' metadata,
+   * and maps to different values.
+   */
+  def hasConflictInMetadata(h1: Header, h2: Header): Boolean = h1.meta.exists {
+    case (k, v) => h2.meta.get(k).exists(!_.sameElements(v))
+  }
 }
 
 /**
@@ -94,31 +135,24 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
   private val sin = new SeekableInputStream(si)
   sin.seek(0) // seek to the start of file and get some meta info.
   private var vin: BinaryDecoder = DecoderFactory.get.binaryDecoder(sin, vin);
-  private val header: Header = new Header()
-  private var firstBlockStart: Long = 0
+
+  val (header, headerSize): (Header, Long) = initialize()
 
   // store all blocks info
-  private val blocks: ArrayBuffer[BlockInfo] = ArrayBuffer.empty
+  lazy val blocks: Seq[BlockInfo] = parseBlocks()
 
-  initialize()
-
-  def getBlocks(): ArrayBuffer[BlockInfo] = {
-    blocks
-  }
-
-  def getHeader(): Header = header
-
-  private def initialize() = {
+  private def initialize(): (Header, Long) = {
+    // read magic
     val magic = new Array[Byte](MAGIC.length)
     vin.readFixed(magic)
-
     magic match {
       case Array(79, 98, 106, 1) => // current avro format
       case Array(79, 98, 106, 0) => // old format
         throw new UnsupportedOperationException("avro 1.2 format is not support by GPU")
       case _ => throw new RuntimeException("Not an Avro data file.")
     }
-
+    // read metadata map
+    val meta = mutable.Map[String, Array[Byte]]()
     var l = vin.readMapStart().toInt
     if (l > 0) {
       do {
@@ -127,16 +161,15 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
           val value = vin.readBytes(null)
           val bb = new Array[Byte](value.remaining())
           value.get(bb)
-          header.meta += (key -> bb)
-          header.metaKeyList += key
+          meta += (key -> bb)
         }
         l = vin.mapNext().toInt
       } while (l != 0)
     }
-    vin.readFixed(header.sync)
-    firstBlockStart = sin.tell - vin.inputStream.available // get the first block Start address
-    header.update(getMetaString(DataFileConstants.SCHEMA), firstBlockStart)
-    parseBlocks()
+    // read sync marker
+    val sync = new Array[Byte](SYNC_SIZE)
+    vin.readFixed(sync)
+    (Header(meta.toMap, sync), sin.tell - vin.inputStream.available)
   }
 
   private def seek(position: Long): Unit = {
@@ -144,18 +177,19 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
     vin = DecoderFactory.get().binaryDecoder(this.sin, vin);
   }
 
-  private def parseBlocks(): Unit = {
-    if (firstBlockStart >= sin.length() || vin.isEnd()) {
+  private def parseBlocks(): Seq[BlockInfo] = {
+    var blockStart = headerSize
+    if (blockStart >= sin.length() || vin.isEnd()) {
       // no blocks
-      return
+      return Seq.empty
     }
+    val blocks = mutable.ArrayBuffer.empty[BlockInfo]
     // buf is used for writing long
     val buf = new Array[Byte](12)
-    var blockStart = firstBlockStart
     while (blockStart < sin.length()) {
       seek(blockStart)
       if (vin.isEnd()) {
-        return
+        return blocks.toSeq
       }
       val blockCount = vin.readLong()
       val blockDataSize = vin.readLong()
@@ -174,15 +208,7 @@ class AvroDataFileReader(si: SeekableInput) extends AutoCloseable {
       // Do we need to check the SYNC BUFFER, or just let cudf do it?
       blockStart += blockLength
     }
-  }
-
-  /** Return the value of a metadata property. */
-  private def getMeta(key: String): Array[Byte] = header.meta.getOrElse(key, new Array[Byte](1))
-
-  private def getMetaString(key: String): String = {
-    val value = getMeta(key)
-    if (value == null) return null
-    new String(value, StandardCharsets.UTF_8)
+    blocks.toSeq
   }
 
   override def close(): Unit = {
