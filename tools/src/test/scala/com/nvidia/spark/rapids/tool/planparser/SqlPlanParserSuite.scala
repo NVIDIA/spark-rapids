@@ -264,7 +264,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
     val reader = allExecInfo.filter(_.exec == "CustomShuffleReader")
-    assertSizeAndSupported(1, reader.toSeq)
+    assertSizeAndSupported(2, reader.toSeq)
   }
 
   test("AQEShuffleReadExec") {
@@ -279,6 +279,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
     val reader = allExecInfo.filter(_.exec == "AQEShuffleRead")
-    assertSizeAndSupported(1, reader.toSeq)
+    assertSizeAndSupported(2, reader.toSeq)
   }
 }
