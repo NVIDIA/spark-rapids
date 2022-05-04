@@ -93,7 +93,7 @@ object SQLPlanParser extends Logging {
   ): Seq[ExecInfo] = {
     node.name match {
       case w if (w.contains("WholeStageCodegen")) =>
-        WholeStageExecParser(w.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
+        WholeStageExecParser(node.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
       case "Filter" =>
         FilterExecParser(node, checker, sqlID, app).parse
       case "Project" =>
@@ -121,7 +121,7 @@ object SQLPlanParser extends Logging {
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
         ArrayBuffer(ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
           isSupported = false, None, stagesInNode))
-      case o =>
+      case _ =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
         ArrayBuffer(ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
