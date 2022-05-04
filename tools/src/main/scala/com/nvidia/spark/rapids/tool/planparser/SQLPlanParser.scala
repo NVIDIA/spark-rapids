@@ -34,7 +34,7 @@ case class ExecInfo(
     nodeId: Long,
     isSupported: Boolean,
     children: Option[Seq[ExecInfo]],
-    stages: Option[Seq[Int]] = None) {
+    stages: Seq[Int] = Seq.empty) {
   private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
@@ -110,18 +110,18 @@ object SQLPlanParser extends Logging {
           ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
         case "CustomShuffleReader" | "AQEShuffleRead" =>
-          CustomShuffleReaderExecParser(node, checker, sqlID, app).parse
+          CustomShuffleReaderExecParser(node, checker, sqlID).parse
         case "Exchange" =>
-          ShuffleExchangeExecParser(node, checker, sqlID, app).parse
+          ShuffleExchangeExecParser(node, checker, sqlID).parse
         case "Expand" =>
           ExpandExecParser(node, checker, sqlID).parse
         case "Filter" =>
-          FilterExecParser(node, checker, sqlID, app).parse
+          FilterExecParser(node, checker, sqlID).parse
         case "InMemoryTableScan" =>
-          InMemoryTableScanExecParser(node, checker, sqlID, app).parse
+          InMemoryTableScanExecParser(node, checker, sqlID).parse
         case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
           i == "DataWritingCommandExec") =>
-          DataWritingCommandExecParser(node, checker, sqlID, app).parse
+          DataWritingCommandExecParser(node, checker, sqlID).parse
         case "Project" =>
           ProjectExecParser(node, checker, sqlID, app).parse
         case "Range" =>
@@ -142,7 +142,7 @@ object SQLPlanParser extends Logging {
             isSupported = false, None)
       }
       val stagesInNode = getStagesInSQLNode(node, app)
-      Seq(execInfos.copy(stages = Some(stagesInNode)))
+      Seq(execInfos.copy(stages = stagesInNode))
     }
   }
 

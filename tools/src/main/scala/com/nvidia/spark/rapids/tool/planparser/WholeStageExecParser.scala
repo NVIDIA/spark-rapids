@@ -47,7 +47,7 @@ case class WholeStageExecParser(
     // average speedup across the execs in the WholeStageCodegen for now
     val avSpeedupFactor = SQLPlanParser.averageSpeedup(childNodeRes.map(_.speedupFactor))
     val execInfo = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
-      node.id, anySupported, Some(childNodeRes), Some(stagesInNode))
+      node.id, anySupported, Some(childNodeRes), stagesInNode)
     Seq(execInfo)
   }
 }
