@@ -115,6 +115,12 @@ object SQLPlanParser extends Logging {
         InMemoryTableScanExecParser(m, checker, sqlID, app).parse
       case e if (e.name == "Exchange") =>
         ShuffleExchangeExecParser(e, checker, sqlID, app).parse
+      case b if (b.name == "BroadcastExchange") =>
+        logWarning(s"broadcast ${b.name} ${b.desc}")
+        BroadcastExchangeExecParser(b, checker, sqlID, app).parse
+      case s if (s.name == "SubqueryBroadcast") =>
+        logWarning(s"subquery broadcast ${s.name} ${s.desc}")
+        SubqueryBroadcastExecParser(s, checker, sqlID, app).parse
       case o =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
         val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)

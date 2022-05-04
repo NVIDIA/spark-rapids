@@ -49,13 +49,22 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo]): Unit = {
+  private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo],
+      expectedDur: Seq[Option[Long]] = Seq.empty): Unit = {
     for (t <- Seq(execs)) {
       assert(t.size == size, t)
       assert(t.forall(_.speedupFactor == 2), t)
       assert(t.forall(_.isSupported == true), t)
       assert(t.forall(_.children.isEmpty), t)
-      assert(t.forall(_.duration.isEmpty), t)
+      if (expectedDur.nonEmpty) {
+        val durations = t.map(_.duration)
+        val foo = durations.diff(expectedDur)
+        assert(durations.diff(expectedDur).isEmpty,
+          s"durations differ expected ${expectedDur.mkString(",")} " +
+            s"but got ${durations.mkString(",")}")
+      } else {
+        assert(t.forall(_.duration.isEmpty), t)
+      }
     }
   }
 
@@ -71,7 +80,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     appOption.get
   }
 
-  test("WholeStage with Filter and Project") {
+  test("WholeStage with Filter, Project and Exchange") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
         "WholeStageFilterProject") { spark =>
@@ -100,7 +109,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assertSizeAndSupported(2, filters)
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
-        val exchanges = allChildren.filter(_.exec == "Exchange")
+        val exchanges = planInfo.execInfo.filter(_.exec == "Exchange")
         assertSizeAndSupported(2, exchanges)
       }
     }
@@ -225,5 +234,21 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val tableScan = allExecInfo.filter(_.exec == ("InMemoryTableScan"))
       assertSizeAndSupported(1, tableScan.toSeq)
     }
+  }
+
+  test("BroadcastExchangeExec and SubqueryBroadcastExec") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    val eventLog = s"$profileLogDir/nds_q86_test"
+    val pluginTypeChecker = new PluginTypeChecker()
+    val app = createAppFromEventlog(eventLog)
+    assert(app.sqlPlans.size > 0)
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+    }
+    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
+    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
+    assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1), Some(1), Some(1)))
+    assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
   }
 }
