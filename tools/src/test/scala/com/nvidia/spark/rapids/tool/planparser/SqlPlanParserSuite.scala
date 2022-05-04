@@ -23,6 +23,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -81,6 +82,56 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
           assert(projects.forall(_.isSupported == true))
           assert(projects.forall(_.children.isEmpty))
           assert(projects.forall(_.duration.isEmpty))
+        }
+      }
+    }
+  }
+
+  test("Parsing various Execs - Coalesce, CollectLimit, Expand, Range, Sample" +
+      "TakeOrderedAndProject and Union") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val df1 = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
+        df1.coalesce(1).collect // Coalesce
+        spark.range(10).where(col("id") === 2).collect // Range
+        df1.orderBy("value").limit(10).collect // TakeOrderedAndProject
+        df1.limit(10).collect // CollectLimit
+        df1.union(df1).collect // Union
+        df1.rollup(col("value")).agg(col("value")).collect // Expand
+        df1.sample(0.1) // Sample
+      }
+
+      TrampolineUtil.withTempDir { outpath =>
+        val hadoopConf = new Configuration()
+        val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
+          None, None, List(eventLog), hadoopConf)
+        val pluginTypeChecker = new PluginTypeChecker()
+        assert(allEventLogs.size == 1)
+        val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
+          pluginTypeChecker, 20)
+        assert(appOption.nonEmpty)
+        val app = appOption.get
+        assert(app.sqlPlans.size == 7)
+        val supportedExecs = Array("Coalesce", "CollectLimit", "Expand", "Range", "Sample",
+          "TakeOrderedAndProject", "Union")
+        app.sqlPlans.foreach { case (sqlID, plan) =>
+          val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+          for (execName <- supportedExecs) {
+            val supportedExec = planInfo.execInfo.filter(_.exec == execName)
+            if (supportedExec.nonEmpty) {
+              assert(supportedExec.size == 1)
+              assert(supportedExec.forall(_.children.isEmpty))
+              assert(supportedExec.forall(_.duration.isEmpty))
+              execName match {
+                // Execs not supported by default
+                case "CollectLimit" => assert(supportedExec.forall(_.isSupported == false))
+                  assert(supportedExec.forall(_.speedupFactor == 1), execName)
+                case _ => assert(supportedExec.forall(_.isSupported == true))
+                  assert(supportedExec.forall(_.speedupFactor == 2), execName)
+              }
+            }
+          }
         }
       }
     }
