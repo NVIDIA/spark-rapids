@@ -96,9 +96,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(wholeStages.forall(_.duration.nonEmpty))
         val allChildren = wholeStages.flatMap(_.children).flatten
         assert(allChildren.size == 9)
-        val filters = allChildren.filter(_.exec == "FilterExec")
+        val filters = allChildren.filter(_.exec == "Filter")
         assertSizeAndSupported(1, filters)
-        val projects = allChildren.filter(_.exec == "ProjectExec")
+        val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(1, projects)
       }
     }
