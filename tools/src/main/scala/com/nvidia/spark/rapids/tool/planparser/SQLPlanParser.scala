@@ -106,9 +106,12 @@ object SQLPlanParser extends Logging {
         i.name == "DataWritingCommandExec") =>
         DataWritingCommandExecParser(i, checker, sqlID, app).parse
       case i if (i.name.contains("CreateDataSourceTableAsSelectCommand")) =>
-        // TODO - create data source table doesn't show the format...
-        DataWritingCommandExecParser(i, checker, sqlID, app).parse
-      case m if (m.name == "InMemoryTableScanExec") =>
+        // create data source table doesn't show the format so we can't determine
+        // if we support it
+        val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
+        ArrayBuffer(ExecInfo(sqlID, i.name, expr = "", 1, duration = None, i.id,
+          isSupported = false, None, stagesInNode))
+      case m if (m.name == "InMemoryTableScan") =>
         InMemoryTableScanExecParser(m, checker, sqlID, app).parse
       case o =>
         logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
