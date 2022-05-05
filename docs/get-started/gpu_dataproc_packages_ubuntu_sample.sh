@@ -26,7 +26,7 @@ readonly CUDA_VERSION
 readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'
 # Parameters for NVIDIA-provided Ubuntu GPU driver
 readonly NVIDIA_UBUNTU_REPOSITORY_URL="${NVIDIA_BASE_DL_URL}/cuda/repos/ubuntu1804/x86_64"
-readonly NVIDIA_UBUNTU_REPOSITORY_KEY="${NVIDIA_UBUNTU_REPOSITORY_URL}/7fa2af80.pub"
+readonly NVIDIA_UBUNTU_REPOSITORY_KEY="${NVIDIA_UBUNTU_REPOSITORY_URL}/3bf863cc.pub"
 readonly NVIDIA_UBUNTU_REPOSITORY_CUDA_PIN="${NVIDIA_UBUNTU_REPOSITORY_URL}/cuda-ubuntu1804.pin"
 # Dataproc configurations
 readonly HADOOP_CONF_DIR='/etc/hadoop/conf'
