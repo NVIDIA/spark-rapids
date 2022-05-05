@@ -283,7 +283,10 @@ class QualificationAppInfo(
             val averageSpeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
             (stageId, averageSpeedup, stageTaskTime)
           }
-          logWarning("unaccounted for each stages is: " + unAccounted.mkString(","))
+          if (unAccounted.nonEmpty) {
+            logInfo(s"stages with average Speedup and stage " +
+              s"Total Task Time: ${unAccounted.mkString(",")}")
+          }
         }
       }
       // TODO - construct the final outputs - multiple things required now. Also need to
