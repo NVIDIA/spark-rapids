@@ -23,7 +23,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, explode}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -80,7 +80,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     appOption.get
   }
 
-  test("WholeStage with Filter, Project") {
+  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+
+  test("WholeStage with Filter, Project and Sort") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
         "WholeStageFilterProject") { spark =>
@@ -90,6 +92,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         df.select( $"value" as "a")
           .join(df2.select($"value" as "b"), $"a" === $"b")
           .filter($"b" < 100)
+          .sort($"b")
       }
       val pluginTypeChecker = new PluginTypeChecker()
       val app = createAppFromEventlog(eventLog)
@@ -109,6 +112,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assertSizeAndSupported(2, filters)
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
+        val sorts = allChildren.filter(_.exec == "Sort")
+        assertSizeAndSupported(3, sorts)
       }
     }
   }
@@ -296,38 +301,67 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         df1.rollup(col("value")).agg(col("value")).collect // Expand
         df1.sample(0.1) // Sample
       }
-
-      TrampolineUtil.withTempDir { outpath =>
-        val hadoopConf = new Configuration()
-        val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
-          None, None, List(eventLog), hadoopConf)
-        val pluginTypeChecker = new PluginTypeChecker()
-        assert(allEventLogs.size == 1)
-        val appOption = QualificationAppInfo.createApp(allEventLogs.head, hadoopConf,
-          pluginTypeChecker, 20)
-        assert(appOption.nonEmpty)
-        val app = appOption.get
-        assert(app.sqlPlans.size == 7)
-        val supportedExecs = Array("Coalesce", "CollectLimit", "Expand", "Range", "Sample",
-          "TakeOrderedAndProject", "Union")
-        app.sqlPlans.foreach { case (sqlID, plan) =>
-          val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-          for (execName <- supportedExecs) {
-            val supportedExec = planInfo.execInfo.filter(_.exec == execName)
-            if (supportedExec.nonEmpty) {
-              assert(supportedExec.size == 1)
-              assert(supportedExec.forall(_.children.isEmpty))
-              assert(supportedExec.forall(_.duration.isEmpty))
-              execName match {
-                // Execs not supported by default
-                case "CollectLimit" => assert(supportedExec.forall(_.isSupported == false))
-                  assert(supportedExec.forall(_.speedupFactor == 1), execName)
-                case _ => assert(supportedExec.forall(_.isSupported == true))
-                  assert(supportedExec.forall(_.speedupFactor == 2), execName)
-              }
-            }
-          }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 7)
+      val supportedExecs = Array("Coalesce", "Expand", "Range", "Sample",
+        "TakeOrderedAndProject", "Union")
+      val unsupportedExecs = Array("CollectLimit")
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+        for (execName <- supportedExecs) {
+          val supportedExec = planInfo.execInfo.filter(_.exec == execName)
+          assertSizeAndSupported(1, supportedExec)
         }
+        for (execName <- unsupportedExecs) {
+          val supportedExec = planInfo.execInfo.filter(_.exec == execName)
+          assertSizeAndNotSupported(1, supportedExec)
+        }
+      }
+    }
+  }
+
+  test("Parse Execs - CartesianProduct and Generate") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val genDf = spark.sparkContext.parallelize(List(List(1, 2, 3), List(4, 5, 6)), 4).toDF
+        val joinDf1 = spark.sparkContext.makeRDD(1 to 10, 4).toDF
+        val joinDf2 = spark.sparkContext.makeRDD(1 to 10, 4).toDF
+        genDf.select(explode($"value")).collect
+        joinDf1.crossJoin(joinDf2)
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 2)
+      val supportedExecs = Array("CartesianProduct", "Generate")
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+        for (execName <- supportedExecs) {
+          val supportedExec = planInfo.execInfo.filter(_.exec == execName)
+          assertSizeAndSupported(1, supportedExec)
+        }
+      }
+    }
+  }
+
+  // GlobalLimit and LocalLimit is not in physical plan when collect is called on the dataframe.
+  // We are reading from static eventlogs to test these execs.
+  test("Parse execs - LocalLimit and GlobalLimit") {
+    val eventLog = s"$logDir/global_local_limit_eventlog.zstd"
+    val pluginTypeChecker = new PluginTypeChecker()
+    val app = createAppFromEventlog(eventLog)
+    assert(app.sqlPlans.size == 1)
+    val supportedExecs = Array("GlobalLimit", "LocalLimit")
+    app.sqlPlans.foreach { case (sqlID, plan) =>
+      val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      // GlobalLimit and LocalLimit are inside WholeStageCodegen. So getting the children of
+      // WholeStageCodegenExec
+      val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+      val allChildren = wholeStages.flatMap(_.children).flatten
+      for (execName <- supportedExecs) {
+        val supportedExec = allChildren.filter(_.exec == execName)
+        assertSizeAndSupported(1, supportedExec)
       }
     }
   }

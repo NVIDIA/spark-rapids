@@ -101,6 +101,8 @@ object SQLPlanParser extends Logging {
           BatchScanExecParser(node, checker, sqlID, app).parse
         case "BroadcastExchange" =>
           BroadcastExchangeExecParser(node, checker, sqlID, app).parse
+      case "CartesianProduct" =>
+        CartesianProductExecParser(node, checker, sqlID).parse
         case "Coalesce" =>
           CoalesceExecParser(node, checker, sqlID).parse
         case "CollectLimit" =>
@@ -122,6 +124,12 @@ object SQLPlanParser extends Logging {
           ExpandExecParser(node, checker, sqlID).parse
         case "Filter" =>
           FilterExecParser(node, checker, sqlID).parse
+        case "Generate" =>
+          GenerateExecParser(node, checker, sqlID).parse
+        case "GlobalLimit" =>
+          GlobalLimitExecParser(node, checker, sqlID).parse
+        case "LocalLimit" =>
+          LocalLimitExecParser(node, checker, sqlID).parse
         case "InMemoryTableScan" =>
           InMemoryTableScanExecParser(node, checker, sqlID).parse
         case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
@@ -133,6 +141,8 @@ object SQLPlanParser extends Logging {
           RangeExecParser(node, checker, sqlID).parse
         case "Sample" =>
           SampleExecParser(node, checker, sqlID).parse
+        case "Sort" =>
+          SortExecParser(node, checker, sqlID).parse
         case s if (s.startsWith("Scan")) =>
           FileSourceScanExecParser(node, checker, sqlID, app).parse
         case "SubqueryBroadcast" =>
