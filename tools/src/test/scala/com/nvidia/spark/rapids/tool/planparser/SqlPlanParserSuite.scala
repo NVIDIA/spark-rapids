@@ -50,20 +50,20 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo],
-      expectedDur: Seq[Option[Long]] = Seq.empty): Unit = {
+      expectedDur: Seq[Option[Long]] = Seq.empty, extraText: String = ""): Unit = {
     for (t <- Seq(execs)) {
-      assert(t.size == size, t)
-      assert(t.forall(_.speedupFactor == 2), t)
-      assert(t.forall(_.isSupported == true), t)
-      assert(t.forall(_.children.isEmpty), t)
+      assert(t.size == size, s"$extraText $t")
+      assert(t.forall(_.speedupFactor == 2), s"$extraText $t")
+      assert(t.forall(_.isSupported == true), s"$extraText $t")
+      assert(t.forall(_.children.isEmpty), s"$extraText $t")
       if (expectedDur.nonEmpty) {
         val durations = t.map(_.duration)
         val foo = durations.diff(expectedDur)
         assert(durations.diff(expectedDur).isEmpty,
-          s"durations differ expected ${expectedDur.mkString(",")} " +
+          s"$extraText durations differ expected ${expectedDur.mkString(",")} " +
             s"but got ${durations.mkString(",")}")
       } else {
-        assert(t.forall(_.duration.isEmpty), t)
+        assert(t.forall(_.duration.isEmpty), s"$extraText $t")
       }
     }
   }
@@ -312,12 +312,12 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
       val allExecInfo = parsedPlans.flatMap(_.execInfo)
       for (execName <- supportedExecs) {
-        val supportedExec = allExecInfo.filter(_.exec == execName)
-        assertSizeAndSupported(1, supportedExec)
+        val execs = allExecInfo.filter(_.exec == execName)
+        assertSizeAndSupported(1, execs.toSeq, Seq.empty, execName)
       }
       for (execName <- unsupportedExecs) {
-        val supportedExec = allExecInfo.filter(_.exec == execName)
-        assertSizeAndNotSupported(1, supportedExec)
+        val execs = allExecInfo.filter(_.exec == execName)
+        assertSizeAndNotSupported(1, execs.toSeq)
       }
     }
   }
