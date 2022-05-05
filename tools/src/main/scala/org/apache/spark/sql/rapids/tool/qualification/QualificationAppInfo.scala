@@ -195,7 +195,7 @@ class QualificationAppInfo(
         execInfo.stages.map((_, execInfo))
       } else if (execInfo.stages.size < 1) {
         // we don't know what stage its in our its duration
-        logWarning(s"No stage associated with ${execInfo.exec} " +
+        logDebug(s"No stage associated with ${execInfo.exec} " +
           s"so speedup factor isn't applied anywhere.")
         Seq.empty
       } else {
@@ -254,7 +254,7 @@ class QualificationAppInfo(
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (sqlID, execInfos) =>
-          logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          logDebug(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
           val speedups = execInfos.map(_.speedupFactor)
           val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)

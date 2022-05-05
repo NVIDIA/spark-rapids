@@ -152,7 +152,7 @@ object SQLPlanParser extends Logging {
         case "Union" =>
           UnionExecParser(node, checker, sqlID).parse
         case _ =>
-          logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
+          logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
           ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }
