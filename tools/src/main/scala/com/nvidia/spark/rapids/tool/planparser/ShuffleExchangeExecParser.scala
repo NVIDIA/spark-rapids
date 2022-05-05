@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.sql.rapids.tool.AppBase
 
@@ -25,7 +26,7 @@ case class ShuffleExchangeExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) extends ExecParser {
+    app: AppBase) extends ExecParser with Logging {
 
   val fullExecName = "ShuffleExchangeExec"
 
@@ -33,8 +34,11 @@ case class ShuffleExchangeExecParser(
     // TODO - check the partitioning (hash partitioining)
     val writeId = node.metrics.find(_.name == "shuffle write time").map(_.accumulatorId)
     val maxWriteTime = SQLPlanParser.getTotalDuration(writeId, app)
+    logWarning(s"shuffle write id: $writeId time $maxWriteTime")
     val fetchId = node.metrics.find(_.name == "fetch wait time").map(_.accumulatorId)
     val maxFetchTime = SQLPlanParser.getTotalDuration(fetchId, app)
+    logWarning(s"shuffle fetch id: $fetchId time $maxFetchTime")
+
     val duration = (maxWriteTime ++ maxFetchTime).reduceOption(_ + _)
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
