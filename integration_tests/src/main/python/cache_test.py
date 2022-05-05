@@ -34,7 +34,6 @@ decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @pytest.mark.xfail(condition=not is_before_spark_330(), reason='The tests are failing due to changes in parquet reader. More details can be found at https://github.com/NVIDIA/spark-rapids/issues/5357')
 @allow_non_gpu('CollectLimitExec')
-@pytest.mark.xfail(condition=not is_before_spark_330(), reason='The tests are failing due to changes in parquet reader. More details can be found at https://github.com/NVIDIA/spark-rapids/issues/5357')
 def test_passing_gpuExpr_as_Expr(enable_vectorized_conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
