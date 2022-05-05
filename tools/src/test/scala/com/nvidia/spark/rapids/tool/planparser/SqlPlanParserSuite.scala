@@ -307,16 +307,17 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val supportedExecs = Array("Coalesce", "Expand", "Range", "Sample",
         "TakeOrderedAndProject", "Union")
       val unsupportedExecs = Array("CollectLimit")
-      app.sqlPlans.foreach { case (sqlID, plan) =>
-        val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-        for (execName <- supportedExecs) {
-          val supportedExec = planInfo.execInfo.filter(_.exec == execName)
-          assertSizeAndSupported(1, supportedExec)
-        }
-        for (execName <- unsupportedExecs) {
-          val supportedExec = planInfo.execInfo.filter(_.exec == execName)
-          assertSizeAndNotSupported(1, supportedExec)
-        }
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      }
+      val allExecInfo = parsedPlans.flatMap(_.execInfo)
+      for (execName <- supportedExecs) {
+        val supportedExec = allExecInfo.filter(_.exec == execName)
+        assertSizeAndSupported(1, supportedExec)
+      }
+      for (execName <- unsupportedExecs) {
+        val supportedExec = allExecInfo.filter(_.exec == execName)
+        assertSizeAndNotSupported(1, supportedExec)
       }
     }
   }
@@ -335,12 +336,13 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val app = createAppFromEventlog(eventLog)
       assert(app.sqlPlans.size == 2)
       val supportedExecs = Array("CartesianProduct", "Generate")
-      app.sqlPlans.foreach { case (sqlID, plan) =>
-        val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
-        for (execName <- supportedExecs) {
-          val supportedExec = planInfo.execInfo.filter(_.exec == execName)
-          assertSizeAndSupported(1, supportedExec)
-        }
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      }
+      val allExecInfo = parsedPlans.flatMap(_.execInfo)
+      for (execName <- supportedExecs) {
+        val supportedExec = allExecInfo.filter(_.exec == execName)
+        assertSizeAndSupported(1, supportedExec.toSeq)
       }
     }
   }
