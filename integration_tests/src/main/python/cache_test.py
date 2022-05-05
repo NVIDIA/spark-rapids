@@ -32,6 +32,7 @@ _cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_n
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(_cache_decimal_gens)])
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@pytest.mark.xfail(condition=not is_before_spark_330(), reason='The tests are failing due to changes in parquet reader. More details can be found at https://github.com/NVIDIA/spark-rapids/issues/5357')
 @allow_non_gpu('CollectLimitExec')
 @pytest.mark.xfail(condition=not is_before_spark_330(), reason='The tests are failing due to changes in parquet reader. More details can be found at https://github.com/NVIDIA/spark-rapids/issues/5357')
 def test_passing_gpuExpr_as_Expr(enable_vectorized_conf):
