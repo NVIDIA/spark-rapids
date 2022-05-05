@@ -277,10 +277,17 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       Seq("", "$", "$9.99"))
   }
 
-  test("dot matches CR on GPU but not on CPU") {
-    // see https://github.com/rapidsai/cudf/issues/9619
-    val pattern = "1."
-    assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
+  test("dot does not match all line terminators") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/5415
+    val pattern = Seq("1.")
+    val inputs = Seq("123", "1\r2", "1\n2", "1\r\n2", "1\u00852", "1\u20282", "1\u20292")
+    assertCpuGpuMatchesRegexpFind(pattern, inputs)
+  }
+
+  test("dot does not match line terminator combinations") {
+    val pattern = Seq("a.")
+    val inputs = Seq("abc", "a\n\rb", "a\n\u0085b", "a\u2029\u0085b", "a\u2082\rb")
+    assertCpuGpuMatchesRegexpFind(pattern, inputs)
   }
 
   test("character class with ranges") {
@@ -307,10 +314,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?\\z"
 
     // input and output should be identical except for `.` being replaced 
-    // with `[^\r\n\u0085\u2028\u2029]` and `\z` being replaced with `$`
+    // with `[^\n\r\u0085\u2028\u2029]` and `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
-        .replaceAll("\\.", "[^\r\n\u0085\u2028\u2029]")
+        .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
         .replaceAll("\\\\z", "\\$"))
   }
 

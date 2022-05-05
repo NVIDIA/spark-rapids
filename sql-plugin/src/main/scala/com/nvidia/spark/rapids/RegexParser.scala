@@ -565,8 +565,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexChar(ch) => ch match {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
-          val terminatorChars = ListBuffer('\r', '\n', '\u0085', '\u2028', '\u2029')
-          RegexCharacterClass(negated = true, terminatorChars.map(RegexChar))
+          val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
+          terminatorChars ++= lineTerminatorChars.map(RegexChar)
+          RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode || mode == RegexReplaceMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4533
           throw new RegexUnsupportedException("line anchor $ is not supported in split or replace")
