@@ -30,13 +30,9 @@ case class FileSourceScanExecParser(
 
   val fullExecName = "FileSourceScanExec"
 
-  override def parse(): ExecInfo = {
-    // can we use scan time?
+  override def parse: ExecInfo = {
     val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
-
-    logWarning(s"file source scan ${node.desc} scan time " +
-      s"accum: $accumId max duration: $maxDuration")
 
     val readInfo = ReadParser.parseReadNode(node)
     // don't use the isExecSupported because we have finer grain.

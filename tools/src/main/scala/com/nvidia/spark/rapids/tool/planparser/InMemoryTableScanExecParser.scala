@@ -27,7 +27,7 @@ case class InMemoryTableScanExecParser(
 
   val fullExecName = "InMemoryTableScanExec"
 
-  override def parse(): ExecInfo = {
+  override def parse: ExecInfo = {
     val duration = None
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)

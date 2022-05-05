@@ -27,7 +27,7 @@ case class CollectLimitExecParser(
 
   val fullExecName = node.name + "Exec"
 
-  override def parse(): ExecInfo = {
+  override def parse: ExecInfo = {
     // collect doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {

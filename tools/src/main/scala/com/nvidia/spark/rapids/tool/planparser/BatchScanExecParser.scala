@@ -30,7 +30,7 @@ case class BatchScanExecParser(
 
   val fullExecName = "BatchScanExec"
 
-  override def parse(): ExecInfo = {
+  override def parse: ExecInfo = {
     val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
     logWarning(s"file source scan scan time accum: $accumId max duration: $maxDuration")

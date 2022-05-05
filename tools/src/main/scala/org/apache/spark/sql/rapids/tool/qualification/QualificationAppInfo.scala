@@ -238,9 +238,15 @@ class QualificationAppInfo(
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
-      val planInfos = sqlPlans.map { case (id, plan) =>
+      val origPlanInfos = sqlPlans.map { case (id, plan) =>
         SQLPlanParser.parseSQLPlan(plan, id, pluginTypeChecker, this)
       }.toSeq
+      // filter out any execs that should be removed
+      val planInfos = origPlanInfos.map { p =>
+        val filteredPlanInfos = p.execInfo.filter(_.shouldRemove == false)
+        p.copy(execInfo = filteredPlanInfos)
+      }
+
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (sqlID, execInfos) =>
@@ -320,8 +326,8 @@ class QualificationAppInfo(
     }
   }
 
-  case class SparkGraphNodeToStagesInfo(sqlID: Long, nodeId: Long,
-      nodeName: String, stageIdToDuration: Map[Int, Option[Long]])
+  // case class SparkGraphNodeToStagesInfo(sqlID: Long, nodeId: Long,
+  //    nodeName: String, stageIdToDuration: Map[Int, Option[Long]])
 
   /**
    * Connects Operators to Stages by doing the following:

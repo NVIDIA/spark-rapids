@@ -34,7 +34,8 @@ case class ExecInfo(
     nodeId: Long,
     isSupported: Boolean,
     children: Option[Seq[ExecInfo]],
-    stages: Seq[Int] = Seq.empty) {
+    stages: Seq[Int] = Seq.empty,
+    shouldRemove: Boolean = false) {
   private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
@@ -104,6 +105,10 @@ object SQLPlanParser extends Logging {
           CoalesceExecParser(node, checker, sqlID).parse
         case "CollectLimit" =>
           CollectLimitExecParser(node, checker, sqlID).parse
+        case "ColumnarToRow" =>
+          // ignore ColumnarToRow to row for now as assume everything is columnar
+          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+            isSupported = false, None, Seq.empty, shouldRemove=true)
         case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
           // create data source table doesn't show the format so we can't determine
           // if we support it
@@ -112,7 +117,7 @@ object SQLPlanParser extends Logging {
         case "CustomShuffleReader" | "AQEShuffleRead" =>
           CustomShuffleReaderExecParser(node, checker, sqlID).parse
         case "Exchange" =>
-          ShuffleExchangeExecParser(node, checker, sqlID).parse
+          ShuffleExchangeExecParser(node, checker, sqlID, app).parse
         case "Expand" =>
           ExpandExecParser(node, checker, sqlID).parse
         case "Filter" =>
@@ -123,7 +128,7 @@ object SQLPlanParser extends Logging {
           i == "DataWritingCommandExec") =>
           DataWritingCommandExecParser(node, checker, sqlID).parse
         case "Project" =>
-          ProjectExecParser(node, checker, sqlID, app).parse
+          ProjectExecParser(node, checker, sqlID).parse
         case "Range" =>
           RangeExecParser(node, checker, sqlID).parse
         case "Sample" =>

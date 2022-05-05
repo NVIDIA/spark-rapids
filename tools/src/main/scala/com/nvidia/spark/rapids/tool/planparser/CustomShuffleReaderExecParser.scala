@@ -29,7 +29,7 @@ case class CustomShuffleReaderExecParser(
   // on the Spark version, our supported ops list it as CustomShuffleReader
   val fullExecName = "CustomShuffleReaderExec"
 
-  override def parse(): ExecInfo = {
+  override def parse: ExecInfo = {
     // doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
