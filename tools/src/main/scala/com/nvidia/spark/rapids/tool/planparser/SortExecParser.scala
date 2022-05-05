@@ -27,7 +27,7 @@ case class SortExecParser(
 
   val fullExecName = node.name + "Exec"
 
-  override def parse: Seq[ExecInfo] = {
+  override def parse: ExecInfo = {
     // Sort doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {

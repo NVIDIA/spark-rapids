@@ -101,8 +101,8 @@ object SQLPlanParser extends Logging {
           BatchScanExecParser(node, checker, sqlID, app).parse
         case "BroadcastExchange" =>
           BroadcastExchangeExecParser(node, checker, sqlID, app).parse
-      case "CartesianProduct" =>
-        CartesianProductExecParser(node, checker, sqlID).parse
+        case "CartesianProduct" =>
+          CartesianProductExecParser(node, checker, sqlID).parse
         case "Coalesce" =>
           CoalesceExecParser(node, checker, sqlID).parse
         case "CollectLimit" =>
