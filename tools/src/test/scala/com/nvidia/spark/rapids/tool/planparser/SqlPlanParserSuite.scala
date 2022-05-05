@@ -190,7 +190,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   // GlobalLimit and LocalLimit is not in physical plan when collect is called on the dataframe.
   // We are reading from static eventlogs to test these execs.
   test("Parse execs - LocalLimit and GlobalLimit") {
-    val logFile = s"$logDir/global_local_limit_eventlog"
+    val logFile = s"$logDir/global_local_limit_eventlog.zstd"
     TrampolineUtil.withTempDir { outpath =>
       val hadoopConf = new Configuration()
       val (_, allEventLogs) = EventLogPathProcessor.processAllPaths(
