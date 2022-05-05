@@ -80,7 +80,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     appOption.get
   }
 
-  test("WholeStage with Filter, Project and Exchange") {
+  test("WholeStage with Filter, Project") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
         "WholeStageFilterProject") { spark =>
@@ -109,8 +109,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assertSizeAndSupported(2, filters)
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
-        val exchanges = planInfo.execInfo.filter(_.exec == "Exchange")
-        assertSizeAndSupported(2, exchanges, Seq(Some(9126184), Some(9621536)))
       }
     }
   }
@@ -236,7 +234,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("BroadcastExchangeExec and SubqueryBroadcastExec") {
+  test("BroadcastExchangeExec, SubqueryBroadcastExec and Exchange") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val eventLog = s"$profileLogDir/nds_q86_test"
     val pluginTypeChecker = new PluginTypeChecker()
@@ -247,9 +245,11 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val allExecInfo = parsedPlans.flatMap(_.execInfo)
     val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
-    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
     assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
+    val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
     assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
+    val exchanges = allExecInfo.filter(_.exec == "Exchange")
+    assertSizeAndSupported(2, exchanges.toSeq, Seq(Some(1141), Some(8)))
   }
 
   test("CustomShuffleReaderExec") {
