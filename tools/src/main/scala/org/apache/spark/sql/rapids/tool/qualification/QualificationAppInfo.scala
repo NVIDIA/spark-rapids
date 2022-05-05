@@ -243,7 +243,13 @@ class QualificationAppInfo(
       }.toSeq
       // filter out any execs that should be removed
       val planInfos = origPlanInfos.map { p =>
-        val filteredPlanInfos = p.execInfo.filter(_.shouldRemove == false)
+        val execFilteredChildren = p.execInfo.map { e =>
+          val filteredChildren = e.children.map { c =>
+            c.filterNot(_.shouldRemove)
+          }
+          e.copy(children = filteredChildren)
+        }
+        val filteredPlanInfos = execFilteredChildren.filterNot(_.shouldRemove)
         p.copy(execInfo = filteredPlanInfos)
       }
 

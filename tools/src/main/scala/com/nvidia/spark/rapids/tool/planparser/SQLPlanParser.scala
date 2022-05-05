@@ -33,7 +33,7 @@ case class ExecInfo(
     duration: Option[Long],
     nodeId: Long,
     isSupported: Boolean,
-    children: Option[Seq[ExecInfo]],
+    children: Option[Seq[ExecInfo]], // only one level deep
     stages: Seq[Int] = Seq.empty,
     shouldRemove: Boolean = false) {
   private def childrenToString = {
