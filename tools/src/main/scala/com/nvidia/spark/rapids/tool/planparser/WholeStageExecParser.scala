@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphCluster
 import org.apache.spark.sql.rapids.tool.AppBase
 
@@ -25,7 +26,7 @@ case class WholeStageExecParser(
     node: SparkPlanGraphCluster,
     checker: PluginTypeChecker,
     sqlID: Long,
-    app: AppBase) {
+    app: AppBase) extends Logging {
 
   val fullExecName = "WholeStageCodegenExec"
 
@@ -47,6 +48,8 @@ case class WholeStageExecParser(
     // average speedup across the execs in the WholeStageCodegen for now
     val supportedChildren = childNodeRes.filterNot(_.isSupported)
     val avSpeedupFactor = SQLPlanParser.averageSpeedup(supportedChildren.map(_.speedupFactor))
+    logWarning(s"supported children: ${supportedChildren.mkString(",")} " +
+      s"speedups ${supportedChildren.map(_.speedupFactor)} ovearll speedup $avSpeedupFactor")
     val execInfo = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
       node.id, anySupported, Some(childNodeRes), stagesInNode)
     Seq(execInfo)
