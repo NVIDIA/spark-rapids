@@ -17,7 +17,6 @@
 package org.apache.spark.sql.execution.datasources.parquet
 
 import java.io.IOException
-import java.lang.reflect.Method
 
 import com.nvidia.spark.CurrentBatchIterator
 import com.nvidia.spark.rapids.ParquetCachedBatch
@@ -35,15 +34,11 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 
 object ParquetVectorizedReader {
-  private var readBatchMethod: Method = null
-  def getReadBatchMethod(): Method = {
-    if (readBatchMethod == null) {
-      readBatchMethod =
-        classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
-          classOf[WritableColumnVector])
-      readBatchMethod.setAccessible(true)
-    }
-    readBatchMethod
+  lazy val readBatchMethod = {
+    val method = classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
+        classOf[WritableColumnVector])
+    method.setAccessible(true)
+    method
   }
 }
 
@@ -92,11 +87,6 @@ class ShimCurrentBatchIterator(
         throw new IOException(s"Required column is missing in data file: ${colPath.toList}")
       }
       missingColumns(i) = true
-    }
-  }
-
-  for (i <- missingColumns.indices) {
-    if (missingColumns(i)) {
       vectors(i).putNulls(0, capacity)
       vectors(i).setIsConstant()
     }
@@ -142,7 +132,7 @@ class ShimCurrentBatchIterator(
     val num = Math.min(capacity.toLong, totalCountLoadedSoFar - rowsReturned).toInt
     for (i <- columnReaders.indices) {
       if (columnReaders(i) != null) {
-        ParquetVectorizedReader.getReadBatchMethod()
+        ParquetVectorizedReader.readBatchMethod
             .invoke(columnReaders(i), num.asInstanceOf[AnyRef],
           vectors(cacheSchemaToReqSchemaMap(i)).asInstanceOf[AnyRef])
       }

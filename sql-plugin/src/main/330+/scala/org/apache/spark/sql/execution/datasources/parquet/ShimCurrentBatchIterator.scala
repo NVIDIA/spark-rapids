@@ -17,7 +17,6 @@
 package org.apache.spark.sql.execution.datasources.parquet
 
 import java.io.IOException
-import java.lang.reflect.Method
 
 import scala.collection.JavaConverters._
 
@@ -40,18 +39,13 @@ object ParquetVectorizedReader {
   /**
    * We are getting this method using reflection because its a package-private
    */
-  private var readBatchMethod: Method = null
-
-  def getReadBatchMethod(): Method = {
-    if (readBatchMethod == null) {
-      readBatchMethod =
-        classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
-          classOf[WritableColumnVector],
-          classOf[WritableColumnVector],
-          classOf[WritableColumnVector])
-      readBatchMethod.setAccessible(true)
-    }
-    readBatchMethod
+  lazy val readBatchMethod = {
+    val method = classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
+      classOf[WritableColumnVector],
+      classOf[WritableColumnVector],
+      classOf[WritableColumnVector])
+    method.setAccessible(true)
+    method
   }
 }
 
@@ -188,7 +182,7 @@ class ShimCurrentBatchIterator(
       for (leafCv <- cv.getLeaves.asScala) {
         val columnReader = leafCv.getColumnReader
         if (columnReader != null) {
-          ParquetVectorizedReader.getReadBatchMethod.invoke(
+          ParquetVectorizedReader.readBatchMethod.invoke(
             columnReader,
             num.asInstanceOf[AnyRef],
             leafCv.getValueVector.asInstanceOf[AnyRef],
