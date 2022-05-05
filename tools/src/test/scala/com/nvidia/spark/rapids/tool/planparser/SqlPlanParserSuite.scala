@@ -110,7 +110,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
         val exchanges = planInfo.execInfo.filter(_.exec == "Exchange")
-        assertSizeAndSupported(2, exchanges)
+        assertSizeAndSupported(2, exchanges, Seq(Some(9126184), Some(9621536)))
       }
     }
   }
