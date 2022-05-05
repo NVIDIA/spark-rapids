@@ -249,7 +249,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
     assertSizeAndSupported(1, subqueryBroadcast.toSeq, Seq(Some(1175)))
     val exchanges = allExecInfo.filter(_.exec == "Exchange")
-    assertSizeAndSupported(2, exchanges.toSeq, Seq(Some(1141), Some(8)))
+    assertSizeAndSupported(2, exchanges.toSeq, Seq(Some(15688), Some(8)))
   }
 
   test("CustomShuffleReaderExec") {
