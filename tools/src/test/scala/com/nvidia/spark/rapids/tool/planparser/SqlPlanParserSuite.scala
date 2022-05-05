@@ -80,6 +80,13 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     appOption.get
   }
 
+  private def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
+    val topExecInfo = plans.flatMap(_.execInfo)
+    topExecInfo.flatMap { e =>
+      e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
   test("WholeStage with Filter, Project and Sort") {
@@ -127,7 +134,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
-    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val json = allExecInfo.filter(_.exec.contains("Scan json"))
     val orc = allExecInfo.filter(_.exec.contains("Scan orc"))
     val parquet = allExecInfo.filter(_.exec.contains("Scan parquet"))
@@ -150,7 +157,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
-    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     // Note that the text scan from this file is v1 so ignore it
     val json = allExecInfo.filter(_.exec.contains("BatchScan json"))
     val orc = allExecInfo.filter(_.exec.contains("BatchScan orc"))
@@ -184,7 +191,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
           SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
         }
-        val allExecInfo = parsedPlans.flatMap(_.execInfo)
+        val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
         val text = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand text"))
         val json = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand json"))
         val orc = allExecInfo.filter(_.exec.contains("InsertIntoHadoopFsRelationCommand orc"))
@@ -211,7 +218,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
-    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val parquet = {
       allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand"))
     }
@@ -233,7 +240,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
         SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
       }
-      val allExecInfo = parsedPlans.flatMap(_.execInfo)
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       val tableScan = allExecInfo.filter(_.exec == ("InMemoryTableScan"))
       assertSizeAndSupported(1, tableScan.toSeq)
     }
@@ -248,7 +255,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
-    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")
     assertSizeAndSupported(3, broadcasts.toSeq, Seq(Some(1154), Some(1154), Some(1855)))
     val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
@@ -267,7 +274,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
-    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val reader = allExecInfo.filter(_.exec == "CustomShuffleReader")
     assertSizeAndSupported(2, reader.toSeq)
   }
@@ -282,7 +289,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
       SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
     }
-    val allExecInfo = parsedPlans.flatMap(_.execInfo)
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val reader = allExecInfo.filter(_.exec == "AQEShuffleRead")
     assertSizeAndSupported(2, reader.toSeq)
   }
@@ -310,7 +317,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
         SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
       }
-      val allExecInfo = parsedPlans.flatMap(_.execInfo)
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       for (execName <- supportedExecs) {
         val execs = allExecInfo.filter(_.exec == execName)
         assertSizeAndSupported(1, execs.toSeq, Seq.empty, execName)
@@ -339,7 +346,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
         SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
       }
-      val allExecInfo = parsedPlans.flatMap(_.execInfo)
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       for (execName <- supportedExecs) {
         val supportedExec = allExecInfo.filter(_.exec == execName)
         assertSizeAndSupported(1, supportedExec.toSeq)
