@@ -36,7 +36,6 @@ case class CartesianProductExecParser(
       (1, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", speedupFactor,
-      duration, node.id, isSupported, None))
+    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
   }
 }
