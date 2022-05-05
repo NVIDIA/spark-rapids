@@ -80,6 +80,8 @@ object SQLPlanParser extends Logging {
       app: AppBase
   ): Seq[ExecInfo] = {
     node match {
+      case c if (c.name == "CartesianProduct") =>
+        CartesianProductExecParser(c, checker, sqlID).parse
       case c if (c.name == "Coalesce") =>
         CoalesceExecParser(c, checker, sqlID).parse
       case c if (c.name == "CollectLimit") =>
@@ -88,12 +90,20 @@ object SQLPlanParser extends Logging {
         ExpandExecParser(e, checker, sqlID).parse
       case f if (f.name == "Filter") =>
         FilterExecParser(f, checker, sqlID).parse
+      case g if (g.name == "Generate") =>
+        GenerateExecParser(g, checker, sqlID).parse
+      case g if (g.name == "GlobalLimit") =>
+        GlobalLimitExecParser(g, checker, sqlID).parse
+      case l if (l.name == "LocalLimit") =>
+        LocalLimitExecParser(l, checker, sqlID).parse
       case p if (p.name == "Project") =>
         ProjectExecParser(p, checker, sqlID).parse
       case r if (r.name == "Range") =>
         RangeExecParser(r, checker, sqlID).parse
       case s if (s.name == "Sample") =>
         SampleExecParser(s, checker, sqlID).parse
+      case s if (s.name == "Sort") =>
+        SortExecParser(s, checker, sqlID).parse
       case t if (t.name == "TakeOrderedAndProject") =>
         TakeOrderedAndProjectExecParser(t, checker, sqlID).parse
       case u if (u.name == "Union") =>
