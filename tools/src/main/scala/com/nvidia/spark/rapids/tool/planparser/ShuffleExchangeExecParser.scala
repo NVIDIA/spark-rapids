@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
+import java.util.concurrent.TimeUnit.NANOSECONDS
+
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.internal.Logging
@@ -32,11 +34,12 @@ case class ShuffleExchangeExecParser(
 
   override def parse: ExecInfo = {
     // TODO - check the partitioning (hash partitioining)
+    // these timings are in nanoseconds
     val writeId = node.metrics.find(_.name == "shuffle write time").map(_.accumulatorId)
-    val maxWriteTime = SQLPlanParser.getTotalDuration(writeId, app)
+    val maxWriteTime = SQLPlanParser.getTotalDuration(writeId, app).map(NANOSECONDS.toMillis(_))
     logWarning(s"shuffle write id: $writeId time $maxWriteTime")
     val fetchId = node.metrics.find(_.name == "fetch wait time").map(_.accumulatorId)
-    val maxFetchTime = SQLPlanParser.getTotalDuration(fetchId, app)
+    val maxFetchTime = SQLPlanParser.getTotalDuration(fetchId, app).map(NANOSECONDS.toMillis(_))
     logWarning(s"shuffle fetch id: $fetchId time $maxFetchTime")
 
     val duration = (maxWriteTime ++ maxFetchTime).reduceOption(_ + _)
