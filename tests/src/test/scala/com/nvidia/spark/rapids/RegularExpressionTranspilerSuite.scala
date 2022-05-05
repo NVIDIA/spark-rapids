@@ -54,7 +54,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       Seq(RegexFindMode, RegexReplaceMode).foreach { mode =>
         try {
           if (mode == RegexReplaceMode) {
-            gpuReplace(pattern, inputs)
+            gpuReplace(pattern, REPLACE_STRING, inputs)
           } else {
             gpuContains(pattern, inputs)
           }
@@ -310,7 +310,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("a[-b]", "a[+-]", "a[-+]", "a[-]", "a[^-]")
     val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r\n]|[^\\-])")
     val transpiler = new CudfRegexTranspiler(RegexFindMode)
-    val transpiled = patterns.map(transpiler.transpile)
+    val transpiled = patterns.map(transpiler.transpile(_, None)._1.get)
     assert(transpiled === expected)
   }
 
@@ -626,7 +626,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val (isRegex, cudfPattern) = if (RegexParser.isRegExpString(pattern)) {
         transpiler.transpileToSplittableString(pattern) match {
           case Some(simplified) => (false, simplified)
-          case _ => (true, transpiler.transpile(pattern))
+          case _ => (true, transpiler.transpile(pattern, None)._1.get)
         }
       } else {
         (false, pattern)
@@ -682,7 +682,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private def assertCpuGpuMatchesRegexpFind(javaPatterns: Seq[String], input: Seq[String]) = {
     for (javaPattern <- javaPatterns) {
       val cpu = cpuContains(javaPattern, input)
-      val cudfPattern = new CudfRegexTranspiler(RegexFindMode).transpile(javaPattern)
+      val cudfPattern =
+          (new CudfRegexTranspiler(RegexFindMode)).transpile(javaPattern, None)._1.get
       val gpu = try {
         gpuContains(cudfPattern, input)
       } catch {
@@ -705,9 +706,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       input: Seq[String]) = {
     for (javaPattern <- javaPatterns) {
       val cpu = cpuReplace(javaPattern, input)
-      val cudfPattern = new CudfRegexTranspiler(RegexReplaceMode).transpile(javaPattern)
+      val cudfPattern =
+          (new CudfRegexTranspiler(RegexReplaceMode)).transpile(javaPattern, None)._1.get
       val gpu = try {
-        gpuReplace(cudfPattern, input)
+        gpuReplace(cudfPattern, REPLACE_STRING, input)
       } catch {
         case e: CudfException =>
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
@@ -740,9 +742,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private val REPLACE_STRING = "\\_\\RE\\\\P\\L\\A\\C\\E\\_"
 
   /** cuDF replaceRe helper */
-  private def gpuReplace(cudfPattern: String, input: Seq[String]): Array[String] = {
+  private def gpuReplace(cudfPattern: String, replaceString: String,
+      input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
-    val replace = GpuRegExpUtils.unescapeReplaceString(REPLACE_STRING)
+    val replace = GpuRegExpUtils.unescapeReplaceString(replaceString)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       withResource(GpuScalar.from(replace, DataTypes.StringType)) { replace =>
         withResource(cv.replaceRegex(cudfPattern, replace)) { c =>
@@ -801,7 +804,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   private def transpile(pattern: String, mode: RegexMode): String = {
-    new CudfRegexTranspiler(mode).transpile(pattern)
+    new CudfRegexTranspiler(mode).transpile(pattern, None)._1.get
   }
 
   private def assertUnsupported(pattern: String, mode: RegexMode, message: String): Unit = {
