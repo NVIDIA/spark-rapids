@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from webbrowser import get
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -818,3 +819,16 @@ def test_parquet_push_down_on_interval_type(spark_tmp_path):
         lambda spark: spark.read.parquet(data_path),
         "testData",
         "select * from testData where _c1 > interval '10 0:0:0' day to second")
+
+
+def test_parquet_read_case_insensitivity(spark_tmp_path):
+    gen_list = [('one', int_gen), ('tWo', byte_gen), ('THREE', boolean_gen)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
+    read_fn = lambda spark: spark.read.parquet(data_path).select('one', 'two', 'three')
+
+    assert_gpu_and_cpu_are_equal_collect(
+        read_fn,
+        {'spark.sql.caseSensitive': 'false'}
+    )
