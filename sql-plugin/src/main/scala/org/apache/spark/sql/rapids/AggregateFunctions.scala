@@ -1174,7 +1174,9 @@ case class GpuPivotFirst(
       if (pivotColumnValue == null) {
         GpuIf(GpuIsNull(pivotColumn), valueColumn, GpuLiteral(null, valueDataType))
       } else {
-        GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(pivotColumnValue, pivotColumn.dataType)),
+        // Need to use an equal to comparison that is != when both values are NaN to be consistent
+        // with Spark's inconsistency with regards to PivotFirst
+        GpuIf(GpuEqualToNoNans(pivotColumn, GpuLiteral(pivotColumnValue, pivotColumn.dataType)),
           valueColumn, GpuLiteral(null, valueDataType))
       }
     })

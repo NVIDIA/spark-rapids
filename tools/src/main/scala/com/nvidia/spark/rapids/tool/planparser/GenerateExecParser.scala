@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 
-case class FilterExecParser(
+case class GenerateExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long) extends ExecParser {
@@ -28,7 +28,7 @@ case class FilterExecParser(
   val fullExecName = node.name + "Exec"
 
   override def parse: Seq[ExecInfo] = {
-    // filter doesn't have duration
+    // Generate doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
