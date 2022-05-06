@@ -826,9 +826,8 @@ def test_parquet_read_case_insensitivity(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
-    read_fn = lambda spark: spark.read.parquet(data_path).select('one', 'two', 'three')
 
     assert_gpu_and_cpu_are_equal_collect(
-        read_fn,
+        lambda spark: spark.read.parquet(data_path).select('one', 'two', 'three'),
         {'spark.sql.caseSensitive': 'false'}
     )
