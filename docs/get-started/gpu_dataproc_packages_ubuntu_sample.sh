@@ -26,7 +26,6 @@ readonly CUDA_VERSION
 readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'
 # Parameters for NVIDIA-provided Ubuntu GPU driver
 readonly NVIDIA_UBUNTU_REPO_URL="${NVIDIA_BASE_DL_URL}/cuda/repos/ubuntu1804/x86_64"
-readonly NVIDIA_UBUNTU_REPO_KEY="${NVIDIA_UBUNTU_REPO_URL}/3bf863cc.pub"
 readonly NVIDIA_UBUNTU_REPO_KEY_PACKAGE="${NVIDIA_UBUNTU_REPO_URL}/cuda-keyring_1.0-1_all.deb"
 readonly NVIDIA_UBUNTU_REPO_CUDA_PIN="${NVIDIA_UBUNTU_REPO_URL}/cuda-ubuntu1804.pin"
 # Dataproc configurations
