@@ -21,13 +21,11 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
 import java.util.concurrent._
-
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 import scala.math.max
-
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
@@ -43,9 +41,8 @@ import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
+import org.apache.parquet.schema.{GroupType, LogicalTypeAnnotation, MessageType, OriginalType, PrimitiveType, Type, Types}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
-
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -54,8 +51,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -411,6 +409,11 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
           val clippedSchemaTmp = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
             isCaseSensitive)
+          // Check if the read schema is compatible with the file schema.
+          clippedSchemaTmp.getColumns.asScala.zip(readDataSchema.fields).foreach {
+            case (descriptor, field) =>
+              checkTypeCompatibility(descriptor, field.dataType)
+          }
           // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
           // everything in readDataSchema, even if it is not in fileSchema we want to remove those
           // for our own purposes
@@ -427,6 +430,98 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         clippedSchema, isCorrectedInt96RebaseForThisFile, isCorrectedRebaseForThisFile,
         hasInt96Timestamps)
     }
+  }
+
+  private def checkTypeCompatibility(descriptor: ColumnDescriptor, dt: DataType): Unit = {
+    val att = descriptor.getPrimitiveType.getLogicalTypeAnnotation
+
+    descriptor.getPrimitiveType.getPrimitiveTypeName match {
+      case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
+      case PrimitiveTypeName.BOOLEAN  =>
+        throwTypeIncompatibleError(descriptor, dt)
+
+      case PrimitiveTypeName.INT32 if dt == DataTypes.IntegerType =>
+      case PrimitiveTypeName.INT32 if DecimalType.is32BitDecimalType(dt) =>
+        if (!isDecimalTypeMatched(att, dt)) {
+          throwTypeIncompatibleError(descriptor, dt)
+        }
+      case PrimitiveTypeName.INT32 if dt == DataTypes.LongType =>
+        if (!isUnsignedIntTypeMatched(att, 32)) {
+          throwTypeIncompatibleError(descriptor, dt)
+        }
+
+      case PrimitiveTypeName.INT64 if dt == DataTypes.LongType =>
+      case PrimitiveTypeName.INT64 if dt.isInstanceOf[DecimalType] =>
+        val decType = dt.asInstanceOf[DecimalType]
+        if (!(decType.precision == 20 && decType.scale == 0
+          && isUnsignedIntTypeMatched(att, 64))) {
+          throwTypeIncompatibleError(descriptor, dt)
+        }
+      case PrimitiveTypeName.INT64 => att match {
+        case time: LogicalTypeAnnotation.TimeLogicalTypeAnnotation
+          if time.getUnit == LogicalTypeAnnotation.TimeUnit.MICROS ||
+            time.getUnit == LogicalTypeAnnotation.TimeUnit.MILLIS =>
+        case _ =>
+          throwTypeIncompatibleError(descriptor, dt)
+      }
+
+      case PrimitiveTypeName.FLOAT if dt == DataTypes.FloatType =>
+      case PrimitiveTypeName.FLOAT =>
+        throwTypeIncompatibleError(descriptor, dt)
+
+      case PrimitiveTypeName.DOUBLE if dt == DataTypes.DoubleType =>
+      case PrimitiveTypeName.DOUBLE =>
+        throwTypeIncompatibleError(descriptor, dt)
+
+      case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
+      case PrimitiveTypeName.INT96 =>
+        throwTypeIncompatibleError(descriptor, dt)
+
+      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType =>
+      case PrimitiveTypeName.BINARY if dt == DataTypes.BinaryType =>
+      case PrimitiveTypeName.BINARY if DecimalType.isByteArrayDecimalType(dt) &&
+        isDecimalTypeMatched(att, dt) =>
+      case PrimitiveTypeName.BINARY =>
+        throwTypeIncompatibleError(descriptor, dt)
+
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if DecimalType.is32BitDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if DecimalType.is64BitDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if DecimalType.isByteArrayDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY =>
+        throwTypeIncompatibleError(descriptor, dt)
+
+      // If we get here, it means the combination of Spark and Parquet type is invalid or not
+      // supported.
+      case _ =>
+        throwTypeIncompatibleError(descriptor, dt)
+    }
+  }
+
+  private def throwTypeIncompatibleError(descriptor: ColumnDescriptor, dt: DataType): Unit = {
+    throw new SchemaColumnConvertNotSupportedException(
+      descriptor.toString,
+      descriptor.getPrimitiveType.getPrimitiveTypeName.toString,
+      dt.catalogString)
+  }
+
+  private def isUnsignedIntTypeMatched(annotation: LogicalTypeAnnotation,
+                                       bitWidth: Int): Boolean = annotation match {
+    case int: LogicalTypeAnnotation.IntLogicalTypeAnnotation =>
+      !int.isSigned && int.getBitWidth == bitWidth
+    case _ =>
+      false
+  }
+
+  private def isDecimalTypeMatched(annotation: LogicalTypeAnnotation,
+                                   sparkType: DataType): Boolean = annotation match {
+    case dec: LogicalTypeAnnotation.DecimalLogicalTypeAnnotation =>
+      val dt = sparkType.asInstanceOf[DecimalType]
+      dec.getPrecision <= dt.precision && dec.getScale == dt.scale
+    case _ =>
+      false
   }
 }
 
