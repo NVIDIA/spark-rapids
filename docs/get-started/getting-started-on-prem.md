@@ -22,7 +22,7 @@ with Docker on Kubernetes then skip these as you will do this as part of the doc
   - While JDK11 is supported by Spark, RAPIDS Spark is built and tested with JDK8, so JDK8 is
   recommended. 
 - Install the GPU driver and CUDA toolkit
-  - [Download](https://developer.nvidia.com/cuda-11.0-update1-download-archive) and install
+  - [Download](https://developer.nvidia.com/cuda-11-6-1-download-archive) and install
     GPU drivers and the CUDA Toolkit. A reboot will be required after installation. 
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
