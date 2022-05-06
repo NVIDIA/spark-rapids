@@ -665,6 +665,17 @@ class GpuMultiFileCloudAvroPartitionReader(
 
     private val stopPosition = partFile.start + partFile.length
 
+    /**
+     * Read the split to one or more batches.
+     * Here is overview of the process:
+     *     - some preparation
+     *     - while (has next block in this split) {
+     *     -   1) peek the current head block and estimate the batch buffer size
+     *     -   2) read blocks as many as possible to fill the batch buffer
+     *     -   3) One batch is done, append it to the list
+     *     - }
+     *     - post processing
+     */
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
       val in = new FsInput(new Path(new URI(partFile.filePath)), config)

@@ -158,6 +158,10 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     vin = DecoderFactory.get.binaryDecoder(sin, vin)
   }
 
+  // parse the Avro file header:
+  //  ----------------------------------
+  //  | magic | metadata | sync marker |
+  //  ----------------------------------
   private def initialize(): (Header, Long) = {
     // read magic
     val magic = new Array[Byte](MAGIC.length)
@@ -192,6 +196,8 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
 
   /** Return true if current point is past the next sync point after a position. */
   def pastSync(position: Long): Boolean = {
+    // If 'position' is in a block, this block will be read into this partition.
+    // If 'position' is in a sync marker, the next block will be read into this partition.
     (curBlockStart >= position + SYNC_SIZE) || (curBlockStart >= sin.length())
   }
 
@@ -322,19 +328,35 @@ class AvroMetaFileReader(si: SeekableInput) extends AvroFileReader(si) {
  * AvroDataFileReader reads the Avro file data in the iterator pattern.
  */
 class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
+  // Avro file format:
+  //    ----------------------------------------
+  //    | header | block | block | ... | block |
+  //    ----------------------------------------
+  // One block format:    /     \
+  //    ----------------------------------------------------
+  //    | Count | Data Size | Data in binary | sync marker |
+  //    ----------------------------------------------------
+  //  - longsBuffer for the encoded block count and data size, each is at most 10 bytes.
+  //  - syncBuffer for the sync marker, with the fixed size: 16 bytes.
+  //  - dataBuffer for the block binary data
   private val longsBuffer = new Array[Byte](20)
   private val syncBuffer = new Array[Byte](SYNC_SIZE)
   private var dataBuffer: Array[Byte] = null
 
+  // the decoded current block count
   private var curCount: Long = 0L
+  // the decoded current block data size
   private var curDataSize: Long = 0L
+  // block size = encoded count long size + encoded data-size long size + data size + 16
   private var curBlockSize: Long = 0L
+  // a flag to indicate whether there is block available currently
   private var curBlockReady = false
 
   /** Test if there is a block. */
   def hasNextBlock(): Boolean = {
     try {
       if (curBlockReady) { return true }
+      // if reaching the end of stream
       if (vin.isEnd()) { return false }
       curCount = vin.readLong() // read block count
       curDataSize = vin.readLong() // read block data size
