@@ -565,8 +565,8 @@ trait SingleDataBlockInfo {
  * A context lives during the whole process of reading partitioned files
  * to a batch buffer (aka HostMemoryBuffer) to build a memory file.
  * Children can extend this to add more necessary fields.
- * @param origChunkedBlocks a map with file as the key, and its blocks as the value
- * @param schema shema info
+ * @param origChunkedBlocks mapping of file path to data blocks
+ * @param schema schema info
  */
 class BatchContext(
   val origChunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
@@ -760,8 +760,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *   - writeFileFooter
    * It is useful when something is needed by some or all of the above APIs.
    * Children can override this to return a customized batch context.
-   * @param chunkedBlocks a map with file as the key, and its stripes as the value
-   * @param clippedSchema shema info
+   * @param chunkedBlocks mapping of file path to data blocks
+   * @param clippedSchema schema info
    */
   protected def createBatchContext(
       chunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
