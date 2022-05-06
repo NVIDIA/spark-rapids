@@ -108,7 +108,7 @@ class ShimCurrentBatchIterator(
         val desc = column.descriptor.get
         val fd = inMemCacheParquetSchema.getColumnDescription(desc.getPath)
         if (!fd.equals(desc)) {
-          throw new UnsupportedOperationException("Complex types not supported.")
+          throw new UnsupportedOperationException("Schema evolution not supported")
         }
       } else {
         for (childColumn <- column.children) {
