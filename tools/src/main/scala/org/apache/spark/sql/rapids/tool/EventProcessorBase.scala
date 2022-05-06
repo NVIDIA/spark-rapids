@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
  */
 
 package org.apache.spark.sql.rapids.tool
+
+import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
+
+import com.nvidia.spark.rapids.tool.profiling.TaskStageAccumCase
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
@@ -235,7 +240,29 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
 
   def doSparkListenerTaskEnd(
       app: T,
-      event: SparkListenerTaskEnd): Unit = {}
+      event: SparkListenerTaskEnd): Unit = {
+    // Parse task accumulables
+    for (res <- event.taskInfo.accumulables) {
+      try {
+        val value = res.value.map(_.toString.toLong)
+        val update = res.update.map(_.toString.toLong)
+        val thisMetric = TaskStageAccumCase(
+          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
+          res.id, res.name, value, update, res.internal)
+        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
+          ArrayBuffer[TaskStageAccumCase]())
+        arrBuf += thisMetric
+      } catch {
+        case NonFatal(e) =>
+          logWarning("Exception when parsing accumulables for task "
+            + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
+            + ": ")
+          logWarning(e.toString)
+          logWarning("The problematic accumulable is: name="
+            + res.name + ",value=" + res.value + ",update=" + res.update)
+      }
+    }
+  }
 
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
     doSparkListenerTaskEnd(app, taskEnd)

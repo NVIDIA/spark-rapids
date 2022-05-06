@@ -93,17 +93,13 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
   }
 
-  testGpuFallback("String regexp_extract regex 1",
-    "RegExpExtract",
-    extractStrings, execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec", "Alias",
-      "RegExpExtract", "AttributeReference", "Literal"),conf = conf) {
+  testSparkResultsAreEqual("String regexp_extract regex 1",
+    extractStrings, conf = conf) {
     frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
   }
 
-  testGpuFallback("String regexp_extract regex 2",
-    "RegExpExtract",
-    extractStrings, execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec", "Alias",
-      "RegExpExtract", "AttributeReference", "Literal"),conf = conf) {
+  testSparkResultsAreEqual("String regexp_extract regex 2",
+    extractStrings, conf = conf) {
     frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
   }
 

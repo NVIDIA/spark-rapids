@@ -1306,22 +1306,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
 // Singleton threadpool that is used across all the tasks.
 // Please note that the TaskContext is not set in these threads and should not be used.
-object ParquetMultiFileThreadPoolFactory {
-  private var threadPool: Option[ThreadPoolExecutor] = None
-
-  private def initThreadPool(
-      threadTag: String,
-      numThreads: Int): ThreadPoolExecutor = synchronized {
-    if (threadPool.isEmpty) {
-      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
-    }
-    threadPool.get
-  }
-
-  def getThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
-    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
-  }
-}
+object ParquetMultiFileThreadPool extends MultiFileReaderThreadPool
 
 // Parquet schema wrapper
 private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase
@@ -1481,7 +1466,7 @@ class MultiFileParquetPartitionReader(
   }
 
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   override def getBatchRunner(
@@ -1525,7 +1510,7 @@ class MultiFileParquetPartitionReader(
     evolveSchemaIfNeededAndClose(table, splits.mkString(","), clippedSchema)
   }
 
-  override def writeFileHeader(buffer: HostMemoryBuffer): Long = {
+  override def writeFileHeader(paths: Seq[Path], buffer: HostMemoryBuffer): Long = {
     withResource(new HostMemoryOutputStream(buffer)) { out =>
       out.write(ParquetPartitionReader.PARQUET_MAGIC)
       out.getPos
@@ -1731,7 +1716,7 @@ class MultiFileCloudParquetPartitionReader(
    * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**

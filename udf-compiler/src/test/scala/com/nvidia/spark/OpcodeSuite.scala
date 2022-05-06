@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -851,6 +851,30 @@ class OpcodeSuite extends FunSuite {
     val result = dataset.withColumn("new", u(col("x"),col("y")))
     val ref = dataset.withColumn("new", lit(2.0))
     checkEquiv(result, ref)
+  }
+
+  test("Conditional simplification - if (c) true else false => c") {
+    val myudf: (Int) => Boolean = i => {
+      if (i < 20) true else false
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(20, 19).toDF("x")
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x") < 20)
+    assert(udfIsCompiled(result))
+    assert(!result.queryExecution.analyzed.toString.contains("if"))
+  }
+
+  test("Conditional simplification - if (c) false else true => !c") {
+    val myudf: (Int) => Boolean = i => {
+      if (i < 20) false else true
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(20, 19).toDF("x")
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x") >= 20)
+    checkEquiv(result, ref)
+    assert(!result.queryExecution.analyzed.toString.contains("if"))
   }
 
   test("LDC_W opcode") {

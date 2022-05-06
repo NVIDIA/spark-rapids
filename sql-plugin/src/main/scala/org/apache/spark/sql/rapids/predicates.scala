@@ -317,6 +317,19 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
 }
 
 /**
+ * This implementation leverages the default implementation of equal-to on the GPU
+ * to perform the binary equals comparison. This is used for operations like PivotFirst,
+ * where NaN != NaN (unlike most other cases) when pivoting on a float or double column. 
+ */
+case class GpuEqualToNoNans(left: Expression, right: Expression) extends CudfBinaryComparison
+    with NullIntolerant {
+  override def symbol: String = "="
+  override def outputTypeOverride: DType = DType.BOOL8
+  override def binaryOp: BinaryOp = BinaryOp.EQUAL
+
+}
+
+/**
  * The table below shows how the result is calculated for greater-than. To make calculation easier
  * we are leveraging the fact that the cudf-result(r) always returns false. So that result is used
  * in place of false when needed.
