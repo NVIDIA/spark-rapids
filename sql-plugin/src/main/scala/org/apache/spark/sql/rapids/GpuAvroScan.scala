@@ -31,6 +31,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.avro.Schema
+import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.avro.mapred.FsInput
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -434,7 +435,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
       // Copy every block without the tailing sync marker if a sync is given. This
       // is for coalescing reader who requires to append this given sync marker
       // to each block. Then we can not merge sequential blocks.
-      blocks.map(b => CopyRange(b.blockStart, b.blockLength - SYNC_SIZE))
+      blocks.map(b => CopyRange(b.blockStart, b.blockSize - SYNC_SIZE))
     }.getOrElse(computeCopyRanges(blocks))
 
     val copySyncFunc: OutputStream => Unit = if (sync.isEmpty) {
