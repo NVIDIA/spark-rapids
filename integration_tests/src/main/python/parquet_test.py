@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, \
+    assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -818,3 +819,68 @@ def test_parquet_push_down_on_interval_type(spark_tmp_path):
         lambda spark: spark.read.parquet(data_path),
         "testData",
         "select * from testData where _c1 > interval '10 0:0:0' day to second")
+
+
+def test_parquet_check_schema_compatibility(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('int', int_gen), ('long', long_gen), ('dec32', decimal_gen_32bit)]
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
+
+    read_int_as_long = StructType(
+        [StructField('long', LongType()), StructField('int', LongType())])
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.read.schema(read_int_as_long).parquet(data_path).collect(),
+        conf={},
+        error_message='Parquet column cannot be converted in')
+
+    read_dec32_as_dec64 = StructType(
+        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
+        conf={},
+        error_message='Parquet column cannot be converted in')
+
+
+# For nested types, GPU throws incompatible exception with a different message from CPU.
+def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('array_long', ArrayGen(long_gen)),
+                ('array_array_int', ArrayGen(ArrayGen(int_gen))),
+                ('struct_float', StructGen([('f', float_gen), ('d', double_gen)])),
+                ('struct_array_int', StructGen([('a', ArrayGen(int_gen))])),
+                ('map', map_string_string_gen[0])]
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
+
+    read_array_long_as_int = StructType([StructField('array_long', ArrayType(IntegerType()))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_array_long_as_int).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted in')
+
+    read_arr_arr_int_as_long = StructType(
+        [StructField('array_array_int', ArrayType(ArrayType(LongType())))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_arr_arr_int_as_long).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted in')
+
+    read_struct_flt_as_dbl = StructType([StructField(
+        'struct_float', StructType([StructField('f', DoubleType())]))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_struct_flt_as_dbl).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted in')
+
+    read_struct_arr_int_as_long = StructType([StructField(
+        'struct_array_int', StructType([StructField('a', ArrayType(LongType()))]))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_struct_arr_int_as_long).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted in')
+
+    read_map_str_str_as_str_int = StructType([StructField(
+        'map', MapType(StringType(), IntegerType()))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted in')

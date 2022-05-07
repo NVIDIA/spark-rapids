@@ -54,6 +54,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
@@ -412,10 +413,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
           val clippedSchemaTmp = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
             isCaseSensitive)
           // Check if the read schema is compatible with the file schema.
-          clippedSchemaTmp.getColumns.asScala.zip(readDataSchema.fields).foreach {
-            case (descriptor, field) =>
-              checkTypeCompatibility(descriptor, field.dataType)
-          }
+          checkSchemaCompat(clippedSchemaTmp, readDataSchema,
+            (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath))
           // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
           // everything in readDataSchema, even if it is not in fileSchema we want to remove those
           // for our own purposes
@@ -434,57 +433,135 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
   }
 
-  private def checkTypeCompatibility(descriptor: ColumnDescriptor, dt: DataType): Unit = {
-    val att = descriptor.getPrimitiveType.getLogicalTypeAnnotation
+  /**
+   * Recursively check if the read schema is compatible with the file schema. The errorCallback
+   * will be invoked to throw an exception once any incompatible type pairs are found.
+   *
+   * The function assumes all elements in read schema are included in file schema, so please
+   * run this check after clipping read schema upon file schema.
+   *
+   * The function only accepts top-level schemas, which means structures of root columns. Based
+   * on this assumption, it can infer root types from input schemas.
+   *
+   * @param fileType input file's Parquet schema
+   * @param readType spark type read from Parquet file
+   * @param errorCallback call back function to throw exception if type mismatch
+   * @param rootFileType file type of each root column
+   * @param rootReadType read type of each root column
+   */
+  private def checkSchemaCompat(fileType: Type,
+                                readType: DataType,
+                                errorCallback: (Type, DataType) => Unit,
+                                rootFileType: Option[Type] = None,
+                                rootReadType: Option[DataType] = None): Unit = {
+    readType match {
+      case struct: StructType =>
+        // case insensitive field matching
+        val fileFieldMap = fileType.asGroupType().getFields.asScala
+          .map(f => f.getName.toLowerCase -> f).toMap
+        struct.fields.foreach { f =>
+          val curFile = fileFieldMap(f.name.toLowerCase)
+          checkSchemaCompat(curFile,
+            f.dataType,
+            errorCallback,
+            // Record root types for each column, so as to throw a readable exception
+            // over nested types.
+            Some(rootFileType.getOrElse(curFile)),
+            Some(rootReadType.getOrElse(f.dataType)))
+        }
 
-    descriptor.getPrimitiveType.getPrimitiveTypeName match {
+      case array: ArrayType =>
+        if (!fileType.getLogicalTypeAnnotation
+          .isInstanceOf[LogicalTypeAnnotation.ListLogicalTypeAnnotation]) {
+          errorCallback(rootFileType.get, rootReadType.get)
+        }
+        val fileChild = fileType.asGroupType().getType(0)
+          .asGroupType().getType(0)
+        checkSchemaCompat(fileChild, array.elementType, errorCallback,
+          rootFileType, rootReadType)
+
+      case map: MapType =>
+        val parquetMap = fileType.asGroupType().getType(0).asGroupType()
+        val parquetMapKey = parquetMap.getType(0)
+        val parquetMapValue = parquetMap.getType(1)
+        checkSchemaCompat(parquetMapKey, map.keyType, errorCallback,
+          rootFileType, rootReadType)
+        checkSchemaCompat(parquetMapValue, map.valueType, errorCallback,
+          rootFileType, rootReadType)
+
+      case dt =>
+        checkPrimitiveCompat(fileType.asPrimitiveType(),
+          dt,
+          () => errorCallback(rootFileType.get, rootReadType.get))
+    }
+  }
+
+  /**
+   * Check the compatibility over primitive types. This function refers to the `getUpdater` method
+   * of [[org.apache.spark.sql.execution.datasources.parquet.ParquetVectorUpdaterFactory]].
+   *
+   * To avoid unnecessary pattern matching, this function is designed to return or throw ASAP.
+   */
+  private def checkPrimitiveCompat(pt: PrimitiveType,
+                                   dt: DataType,
+                                   errorCallback: () => Unit): Unit = {
+    val att = pt.getLogicalTypeAnnotation
+
+    pt.getPrimitiveTypeName match {
       case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
-      case PrimitiveTypeName.BOOLEAN  =>
-        throwTypeIncompatibleError(descriptor, dt)
+      case PrimitiveTypeName.BOOLEAN =>
+        errorCallback()
 
+      // TODO: add YearMonthIntervalType which introduced in Spark 3.2
       case PrimitiveTypeName.INT32 if dt == DataTypes.IntegerType =>
-      case PrimitiveTypeName.INT32 if DecimalType.is32BitDecimalType(dt) =>
-        if (!isDecimalTypeMatched(att, dt)) {
-          throwTypeIncompatibleError(descriptor, dt)
-        }
-      case PrimitiveTypeName.INT32 if dt == DataTypes.LongType =>
-        if (!isUnsignedIntTypeMatched(att, 32)) {
-          throwTypeIncompatibleError(descriptor, dt)
-        }
+      case PrimitiveTypeName.INT32 if dt == DataTypes.ByteType =>
+      case PrimitiveTypeName.INT32 if dt == DataTypes.ShortType =>
+      case PrimitiveTypeName.INT32 if dt == DataTypes.DateType =>
+      case PrimitiveTypeName.INT32
+        if dt == DataTypes.LongType && isUnsignedIntTypeMatched(att, 32) =>
+      case PrimitiveTypeName.INT32
+        if DecimalType.is32BitDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
+      case PrimitiveTypeName.INT32 =>
+        errorCallback()
 
+      // TODO: add DayTimeIntervalType which introduced in Spark 3.2
       case PrimitiveTypeName.INT64 if dt == DataTypes.LongType =>
-      case PrimitiveTypeName.INT64 if dt.isInstanceOf[DecimalType] =>
-        val decType = dt.asInstanceOf[DecimalType]
-        if (!(decType.precision == 20 && decType.scale == 0
-          && isUnsignedIntTypeMatched(att, 64))) {
-          throwTypeIncompatibleError(descriptor, dt)
-        }
-      case PrimitiveTypeName.INT64 => att match {
-        case time: LogicalTypeAnnotation.TimeLogicalTypeAnnotation
-          if time.getUnit == LogicalTypeAnnotation.TimeUnit.MICROS ||
-            time.getUnit == LogicalTypeAnnotation.TimeUnit.MILLIS =>
+      case PrimitiveTypeName.INT64
+        if DecimalType.is64BitDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
+      case PrimitiveTypeName.INT64
+        if DecimalType.is64BitDecimalType(dt) && {
+          val decType = dt.asInstanceOf[DecimalType]
+          decType.precision == 20 && decType.scale == 0 &&
+            isUnsignedIntTypeMatched(att, 64)
+        } =>
+      case PrimitiveTypeName.INT64 if (att match {
+        case time: LogicalTypeAnnotation.TimestampLogicalTypeAnnotation =>
+          time.getUnit == LogicalTypeAnnotation.TimeUnit.MICROS ||
+            time.getUnit == LogicalTypeAnnotation.TimeUnit.MILLIS
         case _ =>
-          throwTypeIncompatibleError(descriptor, dt)
-      }
+          false
+      }) =>
+      case PrimitiveTypeName.INT64 =>
+        errorCallback()
 
       case PrimitiveTypeName.FLOAT if dt == DataTypes.FloatType =>
       case PrimitiveTypeName.FLOAT =>
-        throwTypeIncompatibleError(descriptor, dt)
+        errorCallback()
 
       case PrimitiveTypeName.DOUBLE if dt == DataTypes.DoubleType =>
       case PrimitiveTypeName.DOUBLE =>
-        throwTypeIncompatibleError(descriptor, dt)
+        errorCallback()
 
       case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
       case PrimitiveTypeName.INT96 =>
-        throwTypeIncompatibleError(descriptor, dt)
+        errorCallback()
 
       case PrimitiveTypeName.BINARY if dt == DataTypes.StringType =>
       case PrimitiveTypeName.BINARY if dt == DataTypes.BinaryType =>
       case PrimitiveTypeName.BINARY if DecimalType.isByteArrayDecimalType(dt) &&
         isDecimalTypeMatched(att, dt) =>
       case PrimitiveTypeName.BINARY =>
-        throwTypeIncompatibleError(descriptor, dt)
+        errorCallback()
 
       case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
         if DecimalType.is32BitDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
@@ -493,20 +570,29 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
         if DecimalType.isByteArrayDecimalType(dt) && isDecimalTypeMatched(att, dt) =>
       case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY =>
-        throwTypeIncompatibleError(descriptor, dt)
+        errorCallback()
 
       // If we get here, it means the combination of Spark and Parquet type is invalid or not
       // supported.
       case _ =>
-        throwTypeIncompatibleError(descriptor, dt)
+        errorCallback()
     }
   }
 
-  private def throwTypeIncompatibleError(descriptor: ColumnDescriptor, dt: DataType): Unit = {
-    throw new SchemaColumnConvertNotSupportedException(
-      descriptor.toString,
-      descriptor.getPrimitiveType.getPrimitiveTypeName.toString,
-      dt.catalogString)
+  private def throwTypeIncompatibleError(parquetType: Type,
+                                         sparkType: DataType,
+                                         filePath: String): Unit = {
+    val exception = new SchemaColumnConvertNotSupportedException(
+      parquetType.getName,
+      parquetType.toString,
+      sparkType.catalogString)
+
+    throw QueryExecutionErrors.unsupportedSchemaColumnConvertError(
+      filePath,
+      parquetType.getName,
+      sparkType.catalogString,
+      parquetType.toString,
+      exception)
   }
 
   private def isUnsignedIntTypeMatched(annotation: LogicalTypeAnnotation,
