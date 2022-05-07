@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_gpu_session
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
@@ -95,6 +95,28 @@ def test_avro_input_meta(spark_tmp_path, v1_enabled_list, reader_type):
                         'input_file_block_start()',
                         'input_file_block_length()'),
         conf=all_confs)
+
+
+# This is for https://github.com/NVIDIA/spark-rapids/issues/5312
+@pytest.mark.parametrize('v1_enabled_list', ["avro", ""], ids=["v1", "v2"])
+def test_coalescing_uniform_sync(spark_tmp_path, v1_enabled_list):
+    # Generate the data files
+    data_path = spark_tmp_path + '/AVRO_DATA'
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, long_gen).repartition(coalescingPartitionNum)\
+            .write.format("avro").save(data_path))
+    # dump the coalesced files
+    dump_path = spark_tmp_path + '/AVRO_DUMP/'
+    all_confs = copy_and_update(_enable_all_types_conf, {
+        'spark.rapids.sql.format.avro.reader.type': 'COALESCING',
+        'spark.rapids.sql.avro.debug.dumpPrefix': dump_path,
+        'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_gpu_session(
+        lambda spark: spark.read.format("avro").load(data_path).collect(),
+        conf=all_confs)
+    # read the coalesced files by CPU
+    with_cpu_session(
+        lambda spark: spark.read.format("avro").load(dump_path).collect())
 
 
 @ignore_order(local=True)
