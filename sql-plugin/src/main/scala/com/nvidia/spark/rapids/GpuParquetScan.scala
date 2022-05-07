@@ -496,7 +496,11 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
    * of [[org.apache.spark.sql.execution.datasources.parquet.ParquetVectorUpdaterFactory]].
    *
    * To avoid unnecessary pattern matching, this function is designed to return or throw ASAP.
+   *
+   * This function uses some deprecated Parquet APIs, because Spark 3.1 is relied on parquet-mr
+   * of an older version.
    */
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
   private def checkPrimitiveCompat(pt: PrimitiveType,
                                    dt: DataType,
                                    errorCallback: () => Unit): Unit = {
@@ -588,6 +592,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     throw new QueryExecutionException(message, exception)
   }
 
+  @scala.annotation.nowarn("msg=class DecimalMetadata in package schema is deprecated")
   private def isDecimalTypeMatched(metadata: DecimalMetadata,
                                    sparkType: DataType): Boolean = {
     if (metadata == null) {
