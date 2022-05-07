@@ -821,7 +821,6 @@ def test_parquet_push_down_on_interval_type(spark_tmp_path):
         "select * from testData where _c1 > interval '10 0:0:0' day to second")
 
 
-<<<<<<< HEAD
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('int', int_gen), ('long', long_gen), ('dec32', decimal_gen_32bit)]
@@ -840,6 +839,18 @@ def test_parquet_check_schema_compatibility(spark_tmp_path):
         lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
         conf={},
         error_message='Parquet column cannot be converted in')
+
+
+def test_parquet_read_case_insensitivity(spark_tmp_path):
+    gen_list = [('one', int_gen), ('tWo', byte_gen), ('THREE', boolean_gen)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).select('one', 'two', 'three'),
+        {'spark.sql.caseSensitive': 'false'}
+    )
 
 
 # For nested types, GPU throws incompatible exception with a different message from CPU.
@@ -885,14 +896,3 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted in')
-
-def test_parquet_read_case_insensitivity(spark_tmp_path):
-    gen_list = [('one', int_gen), ('tWo', byte_gen), ('THREE', boolean_gen)]
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-
-    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).select('one', 'two', 'three'),
-        {'spark.sql.caseSensitive': 'false'}
-    )
