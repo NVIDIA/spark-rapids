@@ -28,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{AppBase, GpuEventLogException, ToolUtils}
 
 class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
@@ -38,7 +38,6 @@ class QualificationAppInfo(
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
-  var isPluginEnabled = false
   var lastJobEndTime: Option[Long] = None
   var lastSQLEndTime: Option[Long] = None
   val writeDataFormat: ArrayBuffer[String] = ArrayBuffer[String]()
@@ -339,6 +338,9 @@ object QualificationAppInfo extends Logging {
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
+        case gpuLog: GpuEventLogException =>
+          logWarning(gpuLog.message)
+          None
         case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON: ${path.eventLog.toString}")
           None
