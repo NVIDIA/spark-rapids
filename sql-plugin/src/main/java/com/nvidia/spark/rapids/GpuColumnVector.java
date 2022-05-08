@@ -127,7 +127,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static synchronized void debug(String name, HostColumnVectorCore hostCol) {
     DType type = hostCol.getType();
-    System.err.println("COLUMN " + name + " - " + type + " (" + hostCol.getRowCount() + " rows)");
+    System.err.println("COLUMN " + name + " - " + type);
     if (type.isDecimalType()) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {

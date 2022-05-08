@@ -86,8 +86,8 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final boolean isNullAt(int rowId) {
-    return rowId < 0 || rowId >= getRowCount() || cudfCv.isNull(rowId);
-  } 
+    return cudfCv.isNull(rowId);
+  }
 
   @Override
   public final boolean getBoolean(int rowId) {
