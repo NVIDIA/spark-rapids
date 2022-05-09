@@ -284,6 +284,12 @@ def test_array_max(data_gen):
                 'array_max(a)'),
             conf=no_nans_conf)
 
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen, all_null=True)], ids=idfn)
+def test_array_max_all_nulls(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'array_max(a)'),
+            conf=no_nans_conf)
 
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
 def test_array_repeat_with_count_column(data_gen):
@@ -389,7 +395,7 @@ def test_arrays_zip_corner_cases():
             'arrays_zip(a, array(1, 2, 4, 3), array(5))')
     )
 
-def test_array_max_empty():
-    def do_it(spark):
+def test_array_max_q1():
+    def q1(spark):
         return spark.sql('SELECT ARRAY_MAX(TRANSFORM(ARRAY_REPEAT(STRUCT(1, 2), 0), s -> s.col2))')
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+    assert_gpu_and_cpu_are_equal_collect(q1)
