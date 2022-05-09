@@ -25,9 +25,9 @@ readonly CUDA_VERSION
 
 readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'
 # Parameters for NVIDIA-provided Ubuntu GPU driver
-readonly NVIDIA_UBUNTU_REPOSITORY_URL="${NVIDIA_BASE_DL_URL}/cuda/repos/ubuntu1804/x86_64"
-readonly NVIDIA_UBUNTU_REPOSITORY_KEY="${NVIDIA_UBUNTU_REPOSITORY_URL}/7fa2af80.pub"
-readonly NVIDIA_UBUNTU_REPOSITORY_CUDA_PIN="${NVIDIA_UBUNTU_REPOSITORY_URL}/cuda-ubuntu1804.pin"
+readonly NVIDIA_UBUNTU_REPO_URL="${NVIDIA_BASE_DL_URL}/cuda/repos/ubuntu1804/x86_64"
+readonly NVIDIA_UBUNTU_REPO_KEY_PACKAGE="${NVIDIA_UBUNTU_REPO_URL}/cuda-keyring_1.0-1_all.deb"
+readonly NVIDIA_UBUNTU_REPO_CUDA_PIN="${NVIDIA_UBUNTU_REPO_URL}/cuda-ubuntu1804.pin"
 # Dataproc configurations
 readonly HADOOP_CONF_DIR='/etc/hadoop/conf'
 readonly HIVE_CONF_DIR='/etc/hive/conf'
@@ -61,11 +61,13 @@ function install_nvidia_gpu_driver() {
   execute_with_retries "apt-get install -y -q 'linux-headers-$(uname -r)'"
 
   curl -fsSL --retry-connrefused --retry 10 --retry-max-time 30 \
-    "${NVIDIA_UBUNTU_REPOSITORY_KEY}" | apt-key add -
-  curl -fsSL --retry-connrefused --retry 10 --retry-max-time 30 \
-    "${NVIDIA_UBUNTU_REPOSITORY_CUDA_PIN}" -o /etc/apt/preferences.d/cuda-repository-pin-600
+    "${NVIDIA_UBUNTU_REPO_KEY_PACKAGE}" -o /tmp/cuda-keyring.deb
+  dpkg -i "/tmp/cuda-keyring.deb"
 
-  add-apt-repository "deb ${NVIDIA_UBUNTU_REPOSITORY_URL} /"
+  curl -fsSL --retry-connrefused --retry 10 --retry-max-time 30 \
+    "${NVIDIA_UBUNTU_REPO_CUDA_PIN}" -o /etc/apt/preferences.d/cuda-repository-pin-600
+
+  add-apt-repository "deb ${NVIDIA_UBUNTU_REPO_URL} /"
   execute_with_retries "apt-get update"
 
   if [[ -n "${CUDA_VERSION}" ]]; then
