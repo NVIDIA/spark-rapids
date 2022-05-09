@@ -559,7 +559,7 @@ object RapidsConf {
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
     .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
@@ -578,7 +578,7 @@ object RapidsConf {
       "In some cases this can result in cudf producing an answer when spark overflows. " +
       "Because this is not as compatible with spark, we have it disabled by default.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val HAS_NANS = conf("spark.rapids.sql.hasNans")
     .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
@@ -599,7 +599,7 @@ object RapidsConf {
       "different results on the GPU as the aggregation is done in parallel.  This can enable " +
       "those operations if you know the query is only computing it once.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -616,13 +616,13 @@ object RapidsConf {
     .doc("Casting from floating point types to decimal on the GPU returns results that have " +
       "tiny difference compared to results returned from CPU.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_STRING = conf("spark.rapids.sql.castFloatToString.enabled")
     .doc("Casting from floating point types to string on the GPU returns results that have " +
       "a different precision than the default results of Spark.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
@@ -630,13 +630,13 @@ object RapidsConf {
           "slightly different range of values when using Spark 3.1.0 or later. Refer to the CAST " +
           "documentation for more details.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_CAST_DECIMAL_TO_FLOAT = conf("spark.rapids.sql.castDecimalToFloat.enabled")
       .doc("Casting from decimal to floating point types on the GPU returns results that have " +
           "tiny difference compared to results returned from CPU.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
@@ -647,7 +647,7 @@ object RapidsConf {
       "the GPU returns Double.MaxValue while CPU returns \"+Infinity\" and \"-Infinity\" " +
       "respectively")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
     .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
@@ -888,7 +888,7 @@ object RapidsConf {
   val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
     .doc("CSV reading is not 100% compatible when reading floats.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
     .doc("CSV reading is not 100% compatible when reading doubles.")
@@ -914,7 +914,7 @@ object RapidsConf {
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
     .doc("JSON reading is not 100% compatible when reading doubles.")

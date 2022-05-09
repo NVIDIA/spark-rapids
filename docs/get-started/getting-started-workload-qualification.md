@@ -101,15 +101,11 @@ the driver logs with `spark.rapids.sql.explain=all`.
    [configuration documentation](../configs.md) for details of RAPIDS Accelerator
    parameters.
 
-   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
+   For example, if your jobs have `decimal` operators together with some Scala
    UDFs, you can set the following parameters:
 
   ```scala
-   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
    spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
-   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
-   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 
@@ -220,15 +216,11 @@ Throws:
    the meaning and risk of above parameters before enabling it. Please refer to the
    [configuration documentation](../configs.md) for details of RAPIDS Accelerator parameters.
    
-   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
+   For example, if your jobs have `decimal` operators together with some Scala
    UDFs, you can set the following parameters:
    
    ```scala
-   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
    spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
-   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
-   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 
