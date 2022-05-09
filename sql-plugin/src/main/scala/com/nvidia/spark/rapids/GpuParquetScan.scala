@@ -340,54 +340,17 @@ private case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[Bloc
     partValues: InternalRow, schema: MessageType, isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean, hasInt96Timestamps: Boolean)
 
-class HMBSeekableInputStream(hmb: HostMemoryBuffer, hmbLength: Long) extends SeekableInputStream {
-  private var pos = 0L
-  private var mark = -1L
+/**
+ * A parquet compatible stream that allows reading from a HostMemoryBuffer to Parquet.
+ * The majority of the code here was copied from Parquet's DelegatingSeekableInputStream with
+ * minor modifications to have it be make it Scala and call into the
+ * HostMemoryInputStreamMixIn's state.
+ */
+class HMBSeekableInputStream(
+    val hmb: HostMemoryBuffer,
+    val hmbLength: Long) extends SeekableInputStream
+    with HostMemoryInputStreamMixIn {
   private val temp = new Array[Byte](8192)
-
-  override def read(): Int = {
-    if (pos >= hmbLength) {
-      -1
-    } else {
-      val result = hmb.getByte(pos)
-      pos += 1
-      result & 0xFF
-    }
-  }
-
-  override def read(buffer: Array[Byte], offset: Int, length: Int): Int = {
-    if (pos >= hmbLength) {
-      -1
-    } else {
-      val numBytes = Math.min(available(), length)
-      hmb.getBytes(buffer, offset, pos, numBytes)
-      pos += numBytes
-      numBytes
-    }
-  }
-
-  override def skip(count: Long): Long = {
-    val oldPos = pos
-    pos = Math.min(pos + count, hmbLength)
-    pos - oldPos
-  }
-
-  override def available(): Int = Math.min(hmbLength - pos, Integer.MAX_VALUE).toInt
-
-  override def mark(ignored: Int): Unit = {
-    mark = pos
-  }
-
-  override def reset(): Unit = {
-    if (mark <= 0) {
-      throw new IOException("reset called before mark")
-    }
-    pos = mark
-  }
-
-  override def markSupported(): Boolean = true
-
-  def getPos: Long = pos
 
   override def seek(offset: Long): Unit = {
     pos = offset
@@ -519,13 +482,17 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   }
 
   private def addNamesAndCount(names: ArrayBuffer[String], children: ArrayBuffer[Int],
-      name: String, num_children: Int): Unit = {
+      name: String, numChildren: Int): Unit = {
     names += name
-    children += num_children
+    children += numChildren
   }
 
-  // TODO this needs to move into spark.sql package of some kind to get the right type
-  // checks, for now it is a bit hacky
+  /**
+   * Flatten a Spark schema according to the parquet standard. This does not work for older
+   * parquet files that did not fully follow the standard, or were before some of these
+   * things were standardized. This will be fixed as a part of
+   * https://github.com/NVIDIA/spark-rapids-jni/issues/210
+   */
   private def depthFirstNamesHelper(schema: DataType, elementName: String, makeLowerCase: Boolean,
       names: ArrayBuffer[String], children: ArrayBuffer[Int]): Unit = {
     val name = if (makeLowerCase) {
@@ -543,13 +510,10 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         addNamesAndCount(names, children, name, 0)
       case at: ArrayType =>
         addNamesAndCount(names, children, name, 1)
-        // TODO are element and list hard coded in parquet? or is it something that we should skip
         addNamesAndCount(names, children, "list", 1)
         depthFirstNamesHelper(at.elementType, "element", makeLowerCase, names, children)
       case mt: MapType =>
         addNamesAndCount(names, children, name, 1)
-        // TODO are key_value, key, and value hard coded in parquet? or is it something that we
-        //  should skip
         addNamesAndCount(names, children, "key_value", 2)
         depthFirstNamesHelper(mt.keyType, "key", makeLowerCase, names, children)
         depthFirstNamesHelper(mt.valueType, "value", makeLowerCase, names, children)
@@ -578,7 +542,6 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     val (names, children) = depthFirstNames(readDataSchema, !isCaseSensitive)
     val fs = filePath.getFileSystem(conf)
     val stat = fs.getFileStatus(filePath)
-    // TODO should we do some checks here???
     // Much of this code came from the parquet_mr projects ParquetFileReader, and was modified
     // to match our needs
     val fileLen = stat.getLen
@@ -659,7 +622,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
             tableFooter =>
               if (tableFooter.getNumColumns <= 0) {
                 // Special case because java parquet reader does not like having 0 columns.
-                val numRows = tableFooter.getNumRows()
+                val numRows = tableFooter.getNumRows
                 val block = new BlockMetaData()
                 block.setRowCount(numRows)
                 val schema = new MessageType("root")

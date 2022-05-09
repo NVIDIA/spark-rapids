@@ -1694,7 +1694,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val parquetReaderFooterType: ParquetFooterReaderType.Value = {
     get(PARQUET_READER_FOOTER_TYPE) match {
       case "NATIVE" => ParquetFooterReaderType.NATIVE
-      case _ => ParquetFooterReaderType.JAVA
+      case "JAVA" => ParquetFooterReaderType.JAVA
+      case other =>
+        throw new IllegalArgumentException(s"Internal Error $other is not a supported for " +
+            s"${PARQUET_READER_FOOTER_TYPE.key}")
     }
   }
 
