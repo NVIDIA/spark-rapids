@@ -25,7 +25,7 @@ case class DataWritingCommandExecParser(
     checker: PluginTypeChecker,
     sqlID: Long) extends ExecParser {
 
-  val fullExecName = "DataWritingCommandExec"
+  val fullExecName = node.name + "Exec"
 
   override def parse: ExecInfo = {
     val writeFormat = node.desc.split(",")(2)

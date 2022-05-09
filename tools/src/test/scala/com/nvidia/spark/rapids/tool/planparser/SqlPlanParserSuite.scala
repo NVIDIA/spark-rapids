@@ -30,6 +30,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   private var sparkSession: SparkSession = _
 
+  private val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+  private val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+
   override protected def beforeEach(): Unit = {
     TrampolineUtil.cleanupAnyExistingSession()
     sparkSession = SparkSession
@@ -87,8 +90,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-
   test("WholeStage with Filter, Project and Sort") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
@@ -109,7 +110,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(planInfo.execInfo.size == 11)
         val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
         assert(wholeStages.size == 6)
-        // only 2 in the above example have projects and filters
+        // only 2 in the above example have projects and filters and other 3 have sort
         val numSupported = wholeStages.filter(_.isSupported).size
         assert(numSupported == 5)
         assert(wholeStages.forall(_.duration.nonEmpty))
@@ -126,7 +127,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("FileSourceScan") {
-    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val eventLog = s"$profileLogDir/eventlog_dsv1.zstd"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
@@ -149,7 +149,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("BatchScan") {
-    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val eventLog = s"$profileLogDir/eventlog_dsv2.zstd"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
@@ -209,7 +208,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("CreateDataSourceTableAsSelectCommand") {
-    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     // using event log to not deal with enabling hive support
     val eventLog = s"$qualLogDir/createdatasourcetable_eventlog.zstd"
     val app = createAppFromEventlog(eventLog)
@@ -247,8 +245,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("BroadcastExchangeExec, SubqueryBroadcastExec and Exchange") {
-    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-    val eventLog = s"$profileLogDir/nds_q86_test"
+    val eventLog = s"$qualLogDir/nds_q86_test"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size > 0)
@@ -265,9 +262,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("CustomShuffleReaderExec") {
-    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     // this is eventlog because CustomShuffleReaderExec only available before 3.2.0
-    val eventLog = s"$profileLogDir/customshuffle_eventlog.zstd"
+    val eventLog = s"$qualLogDir/customshuffle_eventlog.zstd"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size > 0)
@@ -280,9 +276,8 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("AQEShuffleReadExec") {
-    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     // this is eventlog because AQEShuffleReadExec only available after 3.2.0
-    val eventLog = s"$profileLogDir/aqeshuffle_eventlog.zstd"
+    val eventLog = s"$qualLogDir/aqeshuffle_eventlog.zstd"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size > 0)
@@ -357,7 +352,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   // GlobalLimit and LocalLimit is not in physical plan when collect is called on the dataframe.
   // We are reading from static eventlogs to test these execs.
   test("Parse execs - LocalLimit and GlobalLimit") {
-    val eventLog = s"$logDir/global_local_limit_eventlog.zstd"
+    val eventLog = s"$qualLogDir/global_local_limit_eventlog.zstd"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size == 1)
