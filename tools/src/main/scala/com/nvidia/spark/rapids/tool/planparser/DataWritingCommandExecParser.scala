@@ -25,7 +25,10 @@ case class DataWritingCommandExecParser(
     checker: PluginTypeChecker,
     sqlID: Long) extends ExecParser {
 
-  val fullExecName = node.name + "Exec"
+  // hardcode because InsertIntoHadoopFsRelationCommand uses this same exec
+  // and InsertIntoHadoopFsRelationCommand doesn't have an entry in the
+  // supported execs file
+  val fullExecName = "DataWritingCommandExec"
 
   override def parse: ExecInfo = {
     val writeFormat = node.desc.split(",")(2)
