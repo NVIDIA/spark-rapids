@@ -28,6 +28,7 @@ case class FileSourceScanExecParser(
     sqlID: Long,
     app: AppBase) extends ExecParser with Logging {
 
+  // The node name for Scans is Scan <format> so here we hardcode
   val fullExecName = "FileSourceScanExec"
 
   override def parse: ExecInfo = {

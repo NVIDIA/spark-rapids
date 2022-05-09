@@ -25,7 +25,7 @@ case class InMemoryTableScanExecParser(
     checker: PluginTypeChecker,
     sqlID: Long) extends ExecParser {
 
-  val fullExecName = "InMemoryTableScanExec"
+  val fullExecName = node.name + "Exec"
 
   override def parse: ExecInfo = {
     val duration = None
