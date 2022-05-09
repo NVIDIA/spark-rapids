@@ -655,11 +655,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       val filePath = new Path(new URI(file.filePath))
       val footer = footerReader match {
         case ParquetFooterReaderType.NATIVE =>
-          System.err.println("NATIVE FOOTER READER...")
           val serialized = withResource(readAndFilterFooter(file, conf, readDataSchema, filePath)) {
             tableFooter =>
-              System.err.println(
-                s"GOT TABLE FOOTER WITH ${tableFooter.getNumColumns} BY ${tableFooter.getNumRows}")
               if (tableFooter.getNumColumns <= 0) {
                 // Special case because java parquet reader does not like having 0 columns.
                 val numRows = tableFooter.getNumRows()
