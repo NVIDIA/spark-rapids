@@ -34,7 +34,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     TrampolineUtil.cleanupAnyExistingSession()
     sparkSession = SparkSession
       .builder()
-      .master("local[1]")
+      .master("local[*]")
       .appName("Rapids Spark Profiling Tool Unit Tests")
       .getOrCreate()
   }

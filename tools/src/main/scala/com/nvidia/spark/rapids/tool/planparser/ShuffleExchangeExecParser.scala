@@ -33,7 +33,6 @@ case class ShuffleExchangeExecParser(
   val fullExecName = "ShuffleExchangeExec"
 
   override def parse: ExecInfo = {
-    // TODO - check the partitioning (hash partitioining)
     val writeId = node.metrics.find(_.name == "shuffle write time").map(_.accumulatorId)
     // shuffle write time is in nanoseconds
     val maxWriteTime = SQLPlanParser.getTotalDuration(writeId, app).map(NANOSECONDS.toMillis(_))

@@ -31,7 +31,7 @@ case class BroadcastExchangeExecParser(
   val fullExecName = node.name + "Exec"
 
   override def parse: ExecInfo = {
-    // TODO - check the relation?
+    // TODO - check the relation to see if really supported
     val collectTimeId = node.metrics.find(_.name == "time to collect").map(_.accumulatorId)
     val buildTimeId = node.metrics.find(_.name == "time to build").map(_.accumulatorId)
     val broadcastTimeId = node.metrics.find(_.name == "time to broadcast").map(_.accumulatorId)

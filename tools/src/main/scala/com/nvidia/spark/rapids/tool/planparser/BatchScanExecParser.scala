@@ -33,8 +33,6 @@ case class BatchScanExecParser(
   override def parse: ExecInfo = {
     val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
-    logWarning(s"file source scan scan time accum: $accumId max duration: $maxDuration")
-
     val readInfo = ReadParser.parseReadNode(node)
     // don't use the isExecSupported because we have finer grain.
     val score = ReadParser.calculateReadScoreRatio(readInfo, checker)

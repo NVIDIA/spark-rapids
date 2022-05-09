@@ -71,7 +71,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
     taskSum.totalTaskDuration += event.taskInfo.duration
 
-    // TODO - change below to use stageIdToTaskEndSum
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
