@@ -150,14 +150,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support octal digits 0o177 < n <= 0o377"))
   }
 
-  test("cuDF does not support hex digits > 0x7F") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4866
-    val patterns = Seq(raw"\x80", raw"\xff", raw"\xFF", raw"\x{ABC}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support hex digits > 0x7F"))
-  }
-
   test("cuDF does not support octal digits in character classes") {
     // see https://github.com/NVIDIA/spark-rapids/issues/4862
     val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
@@ -188,6 +180,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
         "\u0007\u003f\u007f", "\u007f", "\u007f2"))
+  }
+
+  test("hex digits >= 0x7F - find") {
+    val patterns = Seq(raw"\x7f", raw"\x80", raw"\xff", raw"\xfe", raw"\x{7f}", raw"\x{0008f}")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u007f", "a\u007fb", 
+        "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
   }
   
   test("string anchors - find") {
