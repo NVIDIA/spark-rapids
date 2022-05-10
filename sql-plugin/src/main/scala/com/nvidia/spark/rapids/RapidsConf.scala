@@ -1696,7 +1696,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       case "NATIVE" => ParquetFooterReaderType.NATIVE
       case "JAVA" => ParquetFooterReaderType.JAVA
       case other =>
-        throw new IllegalArgumentException(s"Internal Error $other is not a supported for " +
+        throw new IllegalArgumentException(s"Internal Error $other is not supported for " +
             s"${PARQUET_READER_FOOTER_TYPE.key}")
     }
   }
