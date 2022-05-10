@@ -144,8 +144,7 @@ object QualificationReportGenerator extends Logging {
       "fa-brands-400.eot"),
     "assets/bootstrap-4.6.1-dist/css" -> Seq("bootstrap.min.css"),
     "assets/bootstrap-4.6.1-dist/js" -> Seq("bootstrap.bundle.min.js"),
-    "assets/spur/dist/css" -> Seq("spur.min.css"),
-  )
+    "assets/spur/dist/css" -> Seq("spur.min.css"))
 
   private val conf = new SparkConf
 

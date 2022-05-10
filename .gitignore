@@ -35,3 +35,6 @@ scalastyle-output.xml
 scalastyle.txt
 target/
 cufile.log
+
+# Ignore static files pulled during build by the qualification UI
+tools/src/main/resources/ui/assets/
