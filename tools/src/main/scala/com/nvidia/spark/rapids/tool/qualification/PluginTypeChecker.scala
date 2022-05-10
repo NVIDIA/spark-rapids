@@ -19,13 +19,15 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer,HashMap}
 import scala.io.{BufferedSource, Source}
 
+import org.apache.spark.internal.Logging
+
 /**
  * This class is used to check what the RAPIDS Accelerator for Apache Spark
  * supports for data formats and data types.
  * By default it relies on a csv file included in the jar which is generated
  * by the plugin which lists the formats and types supported.
  */
-class PluginTypeChecker {
+class PluginTypeChecker extends Logging {
 
   private val NS = "NS"
   private val PS = "PS"
@@ -77,10 +79,6 @@ class PluginTypeChecker {
     // We are reading only first 2 columns for now and other columns are ignored intentionally.
     supportedExprs = readSupportedOperators(source)
   }
-
-  def getOperatorScore: Map[String, Int] = supportedOperatorsScore
-
-  def getSupportedExecs: Map[String, String] = supportedExecs
 
   def getSupportedExprs: Map[String, String] = supportedExprs
 
@@ -223,8 +221,38 @@ class PluginTypeChecker {
     score
   }
 
+  def isWriteFormatsupported(writeFormat: String): Boolean = {
+    val format = writeFormat.toLowerCase.trim
+    writeFormats.map(x => x.trim).contains(format)
+  }
+
   def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
       writeFormats.map(x => x.trim).contains(_))
+  }
+
+  def getSpeedupFactor(execOrExpr: String): Int = {
+    supportedOperatorsScore.get(execOrExpr).getOrElse(-1)
+  }
+
+  def isExecSupported(exec: String): Boolean = {
+    // special case ColumnarToRow and assume it will be removed or will we replace
+    // with GPUColumnarToRow. TODO - we can add more logic here to look at operator
+    //  before and after
+    if (exec == "ColumnarToRow") {
+      return true
+    }
+    if (supportedExecs.contains(exec)) {
+      val execSupported = supportedExecs.getOrElse(exec, "NS")
+      if (execSupported == "S") {
+        true
+      } else {
+        logDebug(s"Exec explicitly not supported, value: $execSupported")
+        false
+      }
+    } else {
+      logDebug(s"Exec $exec does not exist in supported execs file")
+      false
+    }
   }
 }

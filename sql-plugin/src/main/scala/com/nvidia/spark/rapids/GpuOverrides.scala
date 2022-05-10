@@ -2234,7 +2234,6 @@ object GpuOverrides extends Logging {
           TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          checkAndTagFloatNanAgg("Pivot", pivot.pivotColumn.dataType, conf, this)
           // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
             willNotWorkOnGpu("PivotFirst does not work on the GPU when there are duplicate" +
@@ -2738,6 +2737,20 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuArrayMax(child)
       }),
+    expr[ArrayRepeat](
+      "Returns the array containing the given input value (left) count (right) times",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
+          + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("left", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
+          + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+        ("right", TypeSig.integral, TypeSig.integral)),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayRepeat](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuArrayRepeat(lhs, rhs)
+      }
+    ),
     expr[CreateNamedStruct](
       "Creates a struct with the given field names and values",
       CreateNamedStructCheck,

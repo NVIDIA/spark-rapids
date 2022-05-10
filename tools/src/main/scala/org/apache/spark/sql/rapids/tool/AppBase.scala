@@ -23,14 +23,15 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
 import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
-import com.nvidia.spark.rapids.tool.profiling.DataSourceCase
+import com.nvidia.spark.rapids.tool.planparser.ReadParser
+import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, DriverAccumCase, StageInfoClass, TaskStageAccumCase}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.SparkListenerEvent
+import org.apache.spark.scheduler.{SparkListenerEvent, StageInfo}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.util.{JsonProtocol, Utils}
@@ -47,6 +48,22 @@ abstract class AppBase(
   // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
   val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
+
+  // accum id to task stage accum info
+  var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
+    HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
+
+  val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
+  val stageAccumulators: HashMap[Int, Seq[Long]] = new HashMap[Int, Seq[Long]]()
+
+  var driverAccumMap: HashMap[Long, ArrayBuffer[DriverAccumCase]] =
+    HashMap[Long, ArrayBuffer[DriverAccumCase]]()
+
+  def getOrCreateStage(info: StageInfo): StageInfoClass = {
+    val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber()),
+      new StageInfoClass(info))
+    stage
+  }
 
   def processEvent(event: SparkListenerEvent): Boolean
 
@@ -145,18 +162,13 @@ abstract class AppBase(
     }
   }
 
-  // strip off the struct<> part that Spark adds to the ReadSchema
-  private def formatSchemaStr(schema: String): String = {
-    schema.stripPrefix("struct<").stripSuffix(">")
-  }
-
   // The ReadSchema metadata is only in the eventlog for DataSource V1 readers
   protected def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     // check if planInfo has ReadSchema
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
-      val readSchema = formatSchemaStr(meta.getOrElse("ReadSchema", ""))
+      val readSchema = ReadParser.formatSchemaStr(meta.getOrElse("ReadSchema", ""))
 
       dataSourceInfo += DataSourceCase(sqlID,
         meta.getOrElse("Format", "unknown"),
@@ -167,20 +179,6 @@ abstract class AppBase(
     }
   }
 
-  // This tries to get just the field specified by tag in a string that
-  // may contain multiple fields.  It looks for a comma to delimit fields.
-  private def getFieldWithoutTag(str: String, tag: String): String = {
-    val index = str.indexOf(tag)
-    // remove the tag from the final string retruned
-    val subStr = str.substring(index + tag.size)
-    val endIndex = subStr.indexOf(", ")
-    if (endIndex != -1) {
-      subStr.substring(0, endIndex)
-    } else {
-      subStr
-    }
-  }
-
   // This will find scans for DataSource V2, if the schema is very large it
   // will likely be incomplete and have ... at the end.
   protected def checkGraphNodeForReads(sqlID: Long, node: SparkPlanGraphNode): Unit = {
@@ -188,50 +186,13 @@ abstract class AppBase(
         node.name.contains("GpuScan") ||
         node.name.contains("GpuBatchScan") ||
         node.name.contains("JDBCRelation")) {
-      val schemaTag = "ReadSchema: "
-      val schema = if (node.desc.contains(schemaTag)) {
-        formatSchemaStr(getFieldWithoutTag(node.desc, schemaTag))
-      } else {
-        ""
-      }
-      val locationTag = "Location: "
-      val location = if (node.desc.contains(locationTag)) {
-        getFieldWithoutTag(node.desc, locationTag)
-      } else if (node.name.contains("JDBCRelation")) {
-        // see if we can report table or query
-        val JDBCPattern = raw".*JDBCRelation\((.*)\).*".r
-        node.name match {
-          case JDBCPattern(tableName) => tableName
-          case _ => "unknown"
-        }
-      } else {
-        "unknown"
-      }
-      val pushedFilterTag = "PushedFilters: "
-      val pushedFilters = if (node.desc.contains(pushedFilterTag)) {
-        getFieldWithoutTag(node.desc, pushedFilterTag)
-      } else {
-        "unknown"
-      }
-      val formatTag = "Format: "
-      val fileFormat = if (node.desc.contains(formatTag)) {
-        val format = getFieldWithoutTag(node.desc, formatTag)
-        if (node.name.startsWith("Gpu")) {
-          s"${format}(GPU)"
-        } else {
-          format
-        }
-      } else if (node.name.contains("JDBCRelation")) {
-        "JDBC"
-      } else {
-        "unknown"
-      }
+      val res = ReadParser.parseReadNode(node)
 
       dataSourceInfo += DataSourceCase(sqlID,
-        fileFormat,
-        location,
-        pushedFilters,
-        schema
+        res.format,
+        res.location,
+        res.filters,
+        res.schema
       )
     }
   }

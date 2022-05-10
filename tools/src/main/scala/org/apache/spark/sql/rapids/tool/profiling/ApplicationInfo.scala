@@ -195,8 +195,6 @@ class ApplicationInfo(
   // resourceprofile id to resource profile info
   val resourceProfIdToInfo = new HashMap[Int, ResourceProfileInfoCase]()
 
-  // stageid, stageAttemptId to stage info
-  val stageIdToInfo = new HashMap[(Int, Int), StageInfoClass]()
   // jobId to job info
   val jobIdToInfo = new HashMap[Int, JobInfoClass]()
   // sqlId to sql info
@@ -222,13 +220,6 @@ class ApplicationInfo(
   var allSQLMetrics: ArrayBuffer[SQLMetricInfoCase] = ArrayBuffer[SQLMetricInfoCase]()
   var sqlPlanMetricsAdaptive: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
 
-  var driverAccumMap: mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]] =
-    mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]]()
-
-  // accum id to task stage accum info
-  var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
-    mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
-
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
@@ -250,12 +241,6 @@ class ApplicationInfo(
     executorIdToInfo.getOrElseUpdate(executorId, {
       new ExecutorInfoClass(executorId, addTime)
     })
-  }
-
-  def getOrCreateStage(info: StageInfo): StageInfoClass = {
-    val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber),
-      new StageInfoClass(info))
-    stage
   }
 
   /**

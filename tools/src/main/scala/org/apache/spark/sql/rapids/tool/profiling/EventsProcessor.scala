@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.spark.TaskFailedReason
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
+import org.apache.spark.sql.execution.ui.{SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 import org.apache.spark.sql.rapids.tool.EventProcessorBase
 
 /**
@@ -188,29 +188,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       app: ApplicationInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-
-    // Parse task accumulables
-    for (res <- event.taskInfo.accumulables) {
-      try {
-        val value = res.value.map(_.toString.toLong)
-        val update = res.update.map(_.toString.toLong)
-        val thisMetric = TaskStageAccumCase(
-          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
-          res.id, res.name, value, update, res.internal)
-        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
-          ArrayBuffer[TaskStageAccumCase]())
-        app.accumIdToStageId.put(res.id, event.stageId)
-        arrBuf += thisMetric
-      } catch {
-        case NonFatal(e) =>
-          logWarning("Exception when parsing accumulables for task "
-            + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
-            + ": ")
-          logWarning(e.toString)
-          logWarning("The problematic accumulable is: name="
-            + res.name + ",value=" + res.value + ",update=" + res.update)
-      }
-    }
+    super.doSparkListenerTaskEnd(app, event)
     val reason = event.reason match {
       case failed: TaskFailedReason =>
         failed.toErrorString
@@ -291,20 +269,6 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerDriverAccumUpdates(
-      app: ApplicationInfo,
-      event: SparkListenerDriverAccumUpdates): Unit = {
-    logDebug("Processing event: " + event.getClass)
-
-    val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
-    accumUpdates.foreach { accum =>
-      val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
-      val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
-        ArrayBuffer[DriverAccumCase]())
-      arrBuf += driverAccum
-    }
-  }
-
   override def doSparkListenerJobStart(
       app: ApplicationInfo,
       event: SparkListenerJobStart): Unit = {
@@ -374,23 +338,11 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerStageSubmitted(
-      app: ApplicationInfo,
-      event: SparkListenerStageSubmitted): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    app.getOrCreateStage(event.stageInfo)
-  }
-
   override def doSparkListenerStageCompleted(
       app: ApplicationInfo,
       event: SparkListenerStageCompleted): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val stage = app.getOrCreateStage(event.stageInfo)
-    stage.completionTime = event.stageInfo.completionTime
-    stage.failureReason = event.stageInfo.failureReason
-
-    stage.duration = ProfileUtils.optionLongMinusOptionLong(stage.completionTime,
-      stage.info.submissionTime)
+    super.doSparkListenerStageCompleted(app, event)
 
     // Parse stage accumulables
     for (res <- event.stageInfo.accumulables) {

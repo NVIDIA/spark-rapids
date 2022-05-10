@@ -114,6 +114,29 @@ object MultiFileThreadPoolUtil {
   }
 }
 
+/** A thread pool for multi-file reading */
+class MultiFileReaderThreadPool {
+  private var threadPool: Option[ThreadPoolExecutor] = None
+
+  private def initThreadPool(
+      threadTag: String,
+      numThreads: Int): ThreadPoolExecutor = synchronized {
+    if (threadPool.isEmpty) {
+      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
+    }
+    threadPool.get
+  }
+
+  /**
+   * Get the existing internal thread pool or create one with the given tag and thread
+   * number if it does not exist.
+   * Note: The tag and thread number will be ignored if the thread pool is already created.
+   */
+  def getOrCreateThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
+    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
+  }
+}
+
 /**
  * The base multi-file partition reader factory to create the cloud reading or
  * coalescing reading respectively.
@@ -539,6 +562,17 @@ trait SingleDataBlockInfo {
 }
 
 /**
+ * A context lives during the whole process of reading partitioned files
+ * to a batch buffer (aka HostMemoryBuffer) to build a memory file.
+ * Children can extend this to add more necessary fields.
+ * @param origChunkedBlocks mapping of file path to data blocks
+ * @param schema schema info
+ */
+class BatchContext(
+  val origChunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+  val schema: SchemaBase) {}
+
+/**
  * The abstracted multi-file coalescing reading class, which tries to coalesce small
  * ColumnarBatch into a bigger ColumnarBatch according to maxReadBatchSizeRows,
  * maxReadBatchSizeBytes and the [[checkIfNeedToSplitDataBlock]].
@@ -609,12 +643,10 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * Please be note, the estimated size should be at least equal to size of HEAD + Blocks + FOOTER
    *
-   * @param blocks a map with file as the key, and its stripes as the value
-   * @param schema shema info
+   * @param batchContext the batch building context
    * @return Long, the estimated output size
    */
-  def calculateEstimatedBlocksOutputSize(blocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
-    schema: SchemaBase): Long
+  def calculateEstimatedBlocksOutputSize(batchContext: BatchContext): Long
 
   /**
    * Calculate the final block output size which will be used to decide
@@ -629,11 +661,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * @param footerOffset  footer offset
    * @param blocks        blocks to be evaluated
-   * @param schema        schema info
+   * @param batchContext  the batch building context
    * @return the output size
    */
   def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: Seq[DataBlockBase],
-    schema: SchemaBase): Long
+    batchContext: BatchContext): Long
 
   /**
    * Get ThreadPoolExecutor to run the Callable.
@@ -656,6 +688,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *               is in charge of closing it in sub-class
    * @param blocks blocks meta info to specify which blocks to be read
    * @param offset used as the offset adjustment
+   * @param batchContext the batch building context
    * @return Callable[(Seq[DataBlockBase], Long)], which will be submitted to a
    *         ThreadPoolExecutor, and the Callable will return a tuple result and
    *         result._1 is block meta info with the offset adjusted
@@ -666,7 +699,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long): Callable[(Seq[DataBlockBase], Long)]
+      offset: Long,
+      batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)]
 
   /**
    * File format short name used for logging and other things to uniquely identity
@@ -693,9 +727,10 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * just ignore it and return 0
    *
    * @param buffer where the header will be written
+   * @param batchContext the batch building context
    * @return how many bytes written
    */
-  def writeFileHeader(buffer: HostMemoryBuffer): Long
+  def writeFileHeader(buffer: HostMemoryBuffer, batchContext: BatchContext): Long
 
   /**
    * Writer a footer for a specific file format. If there is no footer for the file format,
@@ -709,11 +744,30 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
    * @param footerOffset   Where begin to write the footer
    * @param blocks         The data block meta info
-   * @param clippedSchema  The clipped schema info
+   * @param batchContext   The batch building context
    * @return the buffer and the buffer size
    */
   def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
-    blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long)
+    blocks: Seq[DataBlockBase], batchContext: BatchContext): (HostMemoryBuffer, Long)
+
+  /**
+   * Return a batch context which will be shared during the process of building a memory file,
+   * aka with the following APIs.
+   *   - calculateEstimatedBlocksOutputSize
+   *   - writeFileHeader
+   *   - getBatchRunner
+   *   - calculateFinalBlocksOutputSize
+   *   - writeFileFooter
+   * It is useful when something is needed by some or all of the above APIs.
+   * Children can override this to return a customized batch context.
+   * @param chunkedBlocks mapping of file path to data blocks
+   * @param clippedSchema schema info
+   */
+  protected def createBatchContext(
+      chunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+      clippedSchema: SchemaBase): BatchContext = {
+    new BatchContext(chunkedBlocks, clippedSchema)
+  }
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -816,14 +870,15 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       }
       val tasks = new java.util.ArrayList[Future[(Seq[DataBlockBase], Long)]]()
 
+      val batchContext = createBatchContext(filesAndBlocks, clippedSchema)
       // First, estimate the output file size for the initial allocating.
       //   the estimated size should be >= size of HEAD + Blocks + FOOTER
-      val initTotalSize = calculateEstimatedBlocksOutputSize(filesAndBlocks, clippedSchema)
+      val initTotalSize = calculateEstimatedBlocksOutputSize(batchContext)
 
       val (buffer, bufferSize, footerOffset, outBlocks) =
         closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { hmb =>
           // Second, write header
-          var offset = writeFileHeader(hmb)
+          var offset = writeFileHeader(hmb, batchContext)
 
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[DataBlockBase]()
           val tc = TaskContext.get
@@ -833,7 +888,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             val outLocal = hmb.slice(offset, fileBlockSize)
             // Third, copy the blocks for each file in parallel using background threads
             tasks.add(getThreadPool(numThreads).submit(
-              getBatchRunner(tc, file, outLocal, blocks, offset)))
+              getBatchRunner(tc, file, outLocal, blocks, offset, batchContext)))
             offset += fileBlockSize
           }
 
@@ -845,7 +900,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
           // Fourth, calculate the final buffer size
           val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks,
-            clippedSchema)
+            batchContext)
 
           (hmb, finalBufferSize, offset, allOutputBlocks)
       }
@@ -884,7 +939,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       // reason to do that.
       // If you have to do this, please think about to add other abstract methods first.
       val (finalBuffer, finalBufferSize) = writeFileFooter(buf, totalBufferSize, footerOffset,
-        outBlocks, clippedSchema)
+        outBlocks, batchContext)
 
       closeOnExcept(finalBuffer) { _ =>
         // triple check we didn't go over memory
