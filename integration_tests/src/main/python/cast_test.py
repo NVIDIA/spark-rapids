@@ -436,13 +436,15 @@ def test_cast_integral_to_day_time_interval_overflow(large_day, integral_type):
         conf={},
         error_message="overflow")
 
+@pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
 def test_cast_integral_to_day_time_side_effect():
     def getDf(spark):
         # INT_MAX > 106751991 (max value of interval day)
         return spark.createDataFrame([(True, INT_MAX, LONG_MAX), (False, 0, 0)], "c_b boolean, c_i int, c_l long").repartition(1)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: getDf(spark).selectExpr("if(c_b, interval 0 day, cast(c_i as interval day))", "if(c_b, interval 0 day, cast(c_l as interval second))"))
+        lambda spark: getDf(spark).selectExpr("if(c_b, interval 0 day, cast(c_i as interval day))", "if(c_b, interval 0 second, cast(c_l as interval second))"))
 
+@pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
 def test_cast_day_time_to_integral_side_effect():
     def getDf(spark):
         # 106751991 > Byte.MaxValue
