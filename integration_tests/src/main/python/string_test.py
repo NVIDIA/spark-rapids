@@ -836,6 +836,17 @@ def test_regexp_extract_idx_0():
                 'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)\\z", 0)'),
         conf=_regexp_conf)
 
+def test_regexp_hexadecimal_digits():
+    gen = mk_str_gen('[abcd]\\\\x00\\\\x7f\\\\x80\\\\xff[\\\\xa0-\\\\xb0][abcd]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "\\\\x7f")',
+                'rlike(a, "\\\\x80")',
+                'regexp_extract(a, "([a-d]+)\\\\xa0([a-d]+)", 1)',
+                'regexp_replace(a, "\\\\xff", "")',
+            ),
+        conf=_regexp_conf)
+
 def test_regexp_whitespace():
     gen = mk_str_gen('\u001e[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f[0-9]{0,10}')
     assert_gpu_and_cpu_are_equal_collect(
