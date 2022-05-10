@@ -20,71 +20,60 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.4.1/css/all.css"
-        integrity="sha384-5sAR7xN1Nv6T6+dT2mhtzEpVJvfS3NScPQTrOxhwjIuvcA67KV2R5Jz6kr4abQsz" crossorigin="anonymous">
-  <link href="https://fonts.googleapis.com/css?family=Nunito:400,600|Open+Sans:400,600,700" rel="stylesheet">
 
+  <!-- font Awesome -->
+  <link rel="stylesheet" type="text/css" href="../assets/fontawesome-free-5.15.4-web/css/fontawesome.min.css"/>
+  <link rel="stylesheet" type="text/css" href="../assets/fontawesome-free-5.15.4-web/css/solid.min.css"/>
+  <link rel="stylesheet" type="text/css" href="../assets/fontawesome-free-5.15.4-web/css/brands.min.css"/>
 
-
-
-
-
+  <!-- bootstrap4 CSS -->
+  <link rel="stylesheet" type="text/css" href="../assets/bootstrap-4.6.1-dist/css/bootstrap.min.css"/>
 
   <!-- datatables CSS -->
-  <link rel="stylesheet" type="text/css" href="https://nightly.datatables.net/css/dataTables.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css" href="../assets/dataTables.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/buttons.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/responsive.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/searchPanes.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/select.bootstrap4.min.css"/>
 
-
-  <link rel="stylesheet" type="text/css"
-        href="https://nightly.datatables.net/buttons/css/buttons.bootstrap4.min.css"/>
-  <link rel="stylesheet" type="text/css"
-        href="https://nightly.datatables.net/responsive/css/responsive.bootstrap4.min.css"/>
-<!--  <link rel="stylesheet" type="text/css"-->
-<!--        href="https://cdn.datatables.net/rowgroup/1.1.4/css/rowGroup.bootstrap4.min.css"/>-->
-
-  <link rel="stylesheet" type="text/css"
-        href="https://nightly.datatables.net/searchpanes/css/searchPanes.bootstrap4.min.css"/>
-  <!--  <link rel="stylesheet" type="text/css"-->
-  <!--        href="https://cdn.datatables.net/searchpanes/2.0.0/css/searchPanes.bootstrap4.min.css"/>-->
-  <link rel="stylesheet" type="text/css"
-        href="https://nightly.datatables.net/select/css/select.bootstrap4.min.css"/>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="../css/spur.css">
+  <link rel="stylesheet" href="../assets/spur/dist/css/spur.min.css">
+  <link rel="stylesheet" href="../css/rapids-dashboard.css">
+
+  <!-- JQuery and Bootstrap4 -->
+  <script type="text/javascript" src="../assets/jquery-3.6.0.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/bootstrap-4.6.1-dist/js/bootstrap.bundle.min.js"></script>
 
   <!-- datatables JS -->
-  <script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
-          integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
-          crossorigin="anonymous"></script>
   <script type="text/javascript"
-          src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.0/js/bootstrap.min.js"></script>
-  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/2.5.0/jszip.min.js"></script>
+          src="../assets/jquery.dataTables.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/dataTables.bootstrap4.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/dataTables.buttons.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/buttons.bootstrap4.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/buttons.html5.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/dataTables.responsive.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/dataTables.searchPanes.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/searchPanes.bootstrap4.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/dataTables.select.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/responsive.bootstrap4.min.js"></script>
 
+  <!-- Dynamic code replacement using Mustache -->
+  <script src="../assets/mustache-2.3.0.min.js"></script>
 
-  <script type="text/javascript" src="https://nightly.datatables.net/js/jquery.dataTables.min.js"></script>
-  <script type="text/javascript" src="https://nightly.datatables.net/js/dataTables.bootstrap4.min.js"></script>
-
-
-
-  <script type="text/javascript" src="https://nightly.datatables.net/buttons/js/dataTables.buttons.min.js"></script>
-  <script type="text/javascript" src="https://nightly.datatables.net/buttons/js/buttons.bootstrap4.min.js"></script>
-  <script type="text/javascript" src="https://nightly.datatables.net/buttons/js/buttons.html5.min.js"></script>
-  <script type="text/javascript"
-          src="https://nightly.datatables.net/responsive/js/dataTables.responsive.min.js"></script>
-<!--  <script type="text/javascript"-->
-<!--          src="https://cdn.datatables.net/rowgroup/1.1.4/js/dataTables.rowGroup.min.js"></script>-->
-  <script type="text/javascript"
-          src="https://nightly.datatables.net/searchpanes/js/dataTables.searchPanes.min.js"></script>
-  <script type="text/javascript"
-          src="https://nightly.datatables.net/searchpanes/js/searchPanes.bootstrap4.min.js"></script>
-  <!--  use nighly build to avoid the bug in searchpanes that breaks paging when cascadeOptions is selected-->
-  <!--      <script type="text/javascript"-->
-  <!--          src="https://cdn.datatables.net/searchpanes/2.0.0/js/dataTables.searchPanes.min.js"></script>-->
-  <!--  <script type="text/javascript"-->
-  <!--          src="https://cdn.datatables.net/searchpanes/2.0.0/js/searchPanes.bootstrap4.min.js"></script>-->
-  <script type="text/javascript"
-          src="https://nightly.datatables.net/select/js/dataTables.select.min.js"></script>
-  <script type="text/javascript"
-          src="https://nightly.datatables.net/responsive/js/responsive.bootstrap4.min.js"></script>
   <title>Spark Qualification tool - Is RAPIDS good fit for GPU Acceleration?</title>
 </head>
 
@@ -200,8 +189,7 @@
     </main>
   </div>
 </div>
-<!-- Dynamic code replacement using Mustache -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"></script>
+
 
 <script id="qual-report-summary-template" type="text/template">
   <div class="row dash-row">
@@ -302,7 +290,6 @@
   </div>
 </script>
 
-<script src="../js/spur.js"></script>
 <script src="../js/mock-data.js"></script>
 <script src="../js/ui-data.js"></script>
 <script src="../js/uiutils.js"></script>

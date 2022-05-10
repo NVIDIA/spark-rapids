@@ -82,11 +82,6 @@
     </dependencies>
 
     <build>
-        <resources>
-            <resource>
-              <directory>${project.basedir}/src/main/resources</directory>
-            </resource>
-        </resources>
         <plugins>
             <plugin>
                 <groupId>org.scalatest</groupId>
@@ -138,6 +133,136 @@
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>download-datatables</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <!-- download datatable-files -->
+                                <mkdir dir="${project.basedir}/src/main/resources/ui/assets"/>
+                                <get src="https://code.jquery.com/jquery-3.6.0.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/mustache-2.3.0.min.js"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/css/dataTables.bootstrap4.min.css"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/js/jquery.dataTables.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/js/dataTables.bootstrap4.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/buttons/css/buttons.bootstrap4.min.css"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/buttons/js/dataTables.buttons.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/buttons/js/buttons.bootstrap4.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/buttons/js/buttons.html5.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/responsive/css/responsive.bootstrap4.min.css"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/responsive/js/dataTables.responsive.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/responsive/js/responsive.bootstrap4.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/searchpanes/css/searchPanes.bootstrap4.min.css"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/searchpanes/js/dataTables.searchPanes.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/searchpanes/js/searchPanes.bootstrap4.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/select/css/select.bootstrap4.min.css"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://nightly.datatables.net/select/js/dataTables.select.min.js"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://github.com/twbs/bootstrap/releases/download/v4.6.1/bootstrap-4.6.1-dist.zip"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/bootstrap.zip"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://use.fontawesome.com/releases/v5.15.4/fontawesome-free-5.15.4-web.zip"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/fontawesome.zip"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <get src="https://hackerthemes.com/spur/package/spur-admin-1.1.0.zip"
+                                     dest="${project.basedir}/src/main/resources/ui/assets/spur.zip"
+                                     verbose="true"
+                                     usetimestamp="false"/>
+                                <unzip src="${project.basedir}/src/main/resources/ui/assets/spur.zip"
+                                       dest="${project.basedir}/src/main/resources/ui/assets/spur/">
+                                    <patternset>
+                                        <include name="**/spur.min.css"/>
+                                    </patternset>
+                                </unzip>
+                                <unzip src="${project.basedir}/src/main/resources/ui/assets/bootstrap.zip"
+                                       dest="${project.basedir}/src/main/resources/ui/assets/">
+                                    <patternset>
+                                        <include name="**/bootstrap.min.css"/>
+                                        <include name="**/bootstrap.bundle.min.js"/>
+                                    </patternset>
+                                </unzip>
+                                <unzip src="${project.basedir}/src/main/resources/ui/assets/fontawesome.zip"
+                                       dest="${project.basedir}/src/main/resources/ui/assets/">
+                                    <patternset>
+                                        <include name="**/brands.min.css"/>
+                                        <include name="**/fontawesome.min.css"/>
+                                        <include name="**/solid.min.css"/>
+                                        <include name="**/fa-brands-400*"/>
+                                        <include name="**/fa-solid-900*"/>
+                                    </patternset>
+                                </unzip>
+                                <delete>
+                                    <fileset dir="${project.basedir}/src/main/resources/ui/assets" includes="*.zip" />
+                                </delete>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
+        <resources>
+            <resource>
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+        </resources>
     </build>
 </project>

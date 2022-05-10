@@ -141,4 +141,6 @@ $(document).ready(function() {
   };
   var rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
   $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip();
+
+  setupNavigation();
 });

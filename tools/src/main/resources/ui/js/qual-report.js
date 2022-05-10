@@ -434,4 +434,6 @@ $(document).ready(function(){
     animation: true,
     placement:"bottom",
     delay: {show: 0, hide: 10.0}});
+
+  setupNavigation();
 });

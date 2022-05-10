@@ -89,4 +89,6 @@ $(document).ready(function(){
     ],
   };
   let appDSInfoTable = $('#app-details-datasourceinfo-table').DataTable(dataSrcTableConf);
+
+  setupNavigation();
 });

@@ -103,12 +103,49 @@ class QualificationReportGenerator(
 
 object QualificationReportGenerator extends Logging {
   val UI_HOME = getClass.getResource("/ui")
-  val RAPIDS_UI_ASSETS_DIR = "/ui/assets"
+  val RAPIDS_UI_ASSETS_DIR = "/ui"
   val ASSETS_FOLDER_MAP = Map(
     "html" -> Seq("index.html", "application.html", "raw.html"),
-    "css" -> Seq("spur.css"),
-    "js" -> Seq("app-report.js", "qual-report.js", "raw-report.js", "spur.js", "ui-data.js",
-      "uiutils.js"))
+    "css" -> Seq("rapids-dashboard.css"),
+    "js" -> Seq(
+      "app-report.js", "qual-report.js", "raw-report.js", "ui-data.js", "uiutils.js"),
+    "assets" -> Seq(
+      "searchPanes.bootstrap4.min.js",
+      "buttons.bootstrap4.min.css",
+      "buttons.bootstrap4.min.js",
+      "buttons.html5.min.js",
+      "dataTables.bootstrap4.min.css",
+      "dataTables.bootstrap4.min.js",
+      "dataTables.buttons.min.js",
+      "dataTables.responsive.min.js",
+      "dataTables.searchPanes.min.js",
+      "dataTables.select.min.js",
+      "jquery-3.6.0.min.js",
+      "jquery.dataTables.min.js",
+      "mustache-2.3.0.min.js",
+      "responsive.bootstrap4.min.css",
+      "responsive.bootstrap4.min.js",
+      "searchPanes.bootstrap4.min.css",
+      "select.bootstrap4.min.css"),
+    "assets/fontawesome-free-5.15.4-web/css" -> Seq(
+      "solid.min.css",
+      "fontawesome.min.css",
+      "brands.min.css"),
+    "assets/fontawesome-free-5.15.4-web/webfonts" -> Seq(
+      "fa-solid-900.woff2",
+      "fa-solid-900.woff",
+      "fa-solid-900.ttf",
+      "fa-solid-900.svg",
+      "fa-solid-900.eot",
+      "fa-brands-400.woff2",
+      "fa-brands-400.woff",
+      "fa-brands-400.ttf",
+      "fa-brands-400.svg",
+      "fa-brands-400.eot"),
+    "assets/bootstrap-4.6.1-dist/css" -> Seq("bootstrap.min.css"),
+    "assets/bootstrap-4.6.1-dist/js" -> Seq("bootstrap.bundle.min.js"),
+    "assets/spur/dist/css" -> Seq("spur.min.css"),
+  )
 
   private val conf = new SparkConf
 
