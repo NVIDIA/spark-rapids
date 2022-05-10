@@ -291,9 +291,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   }
 
-  test("replace_replace - ?, *, and {0, n} repetitions") {
-    val patterns = Seq("D?", "D*", "D{0,}", "D{0,1}", "D{0,5}", "[1a-zA-Z]{0,}", "[1a-zA-Z]{0,2}")
-    val inputs = Seq("SS", "DD", "SDSDSDS", "DDDD", "DDDDDD", "ABCDEFG")
+  test("replace_replace - ?, *, +, and {0, n} repetitions") {
+    val patterns = Seq("D?", "D*", "D+", "D{0,}", "D{0,1}", "D{0,5}", "[1a-zA-Z]{0,}",
+        "[1a-zA-Z]{0,2}", "A+")
+    val inputs = Seq("SS", "DD", "SDSDSDS", "DDDD", "DDDDDD", "ABCDEFG",
+        "\u000e\u0011\u0006h¹TEST\ud720AA")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
