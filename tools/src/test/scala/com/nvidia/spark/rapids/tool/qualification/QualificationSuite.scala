@@ -66,7 +66,15 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("Unsupported Read File Formats and Types", StringType, true)
     .add("Unsupported Write Data Format", StringType, true)
     .add("Complex Types", StringType, true)
-    .add("Unsupported Nested Complex Types", StringType, true)
+    .add("Nested Complex Types", StringType, true)
+    .add("Longest SQL Duration", LongType, true)
+    .add("NONSQL Task Duration Plug Overhead", LongType, true)
+    .add("Estimated Duration", DoubleType, true)
+    .add("Unsupported Duration", LongType, true)
+    .add("Speedup Duration", LongType, true)
+    .add("Speedup Factor", DoubleType, true)
+    .add("Total Speedup", DoubleType, true)
+    .add("Recommendation", StringType, true)
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -651,8 +659,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(valuesDetailed(12).toDouble == 50.0)
         assert(headersDetailed(13).contains("Read File Formats"))
         assert(valuesDetailed(13).contains("JSON"))
-        assert(headersDetailed(17).contains("Read Schema"))
-        assert(valuesDetailed(17).contains("json") && valuesDetailed(17).contains("parquet"))
+        val readSchemaIndex = headersDetailed.length - 1
+        assert(headersDetailed(readSchemaIndex).contains("Read Schema"))
+        assert(
+          valuesDetailed(readSchemaIndex).contains("json") &&
+            valuesDetailed(readSchemaIndex).contains("parquet"))
       }
     }
   }
