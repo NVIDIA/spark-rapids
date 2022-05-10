@@ -538,10 +538,7 @@ case class GpuMapFilter(argument: Expression,
     boundIntermediate: Seq[GpuExpression] = Seq.empty)
     extends GpuMapSimpleHigherOrderFunction {
 
-  @transient lazy val MapType(keyType, valueType, valueContainsNull) = argument.dataType
-
-  // set parameter 'valueContainsNull' to the argument's `valueContainsNull`
-  override def dataType: DataType = MapType(keyType, valueType, valueContainsNull)
+  override def dataType: DataType = argument.dataType
 
   override def prettyName: String = "map_filter"
 
