@@ -413,7 +413,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
             isCaseSensitive)
           // Check if the read schema is compatible with the file schema.
           checkSchemaCompat(clippedSchemaTmp, readDataSchema,
-            (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath))
+            (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath),
+            isCaseSensitive)
           // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
           // everything in readDataSchema, even if it is not in fileSchema we want to remove those
           // for our own purposes
@@ -451,18 +452,21 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private def checkSchemaCompat(fileType: Type,
                                 readType: DataType,
                                 errorCallback: (Type, DataType) => Unit,
+                                isCaseSensitive: Boolean,
                                 rootFileType: Option[Type] = None,
                                 rootReadType: Option[DataType] = None): Unit = {
     readType match {
       case struct: StructType =>
-        // case insensitive field matching
         val fileFieldMap = fileType.asGroupType().getFields.asScala
-          .map(f => f.getName.toLowerCase -> f).toMap
+          .map { f =>
+            (if (isCaseSensitive) f.getName else f.getName.toLowerCase) -> f
+          }.toMap
         struct.fields.foreach { f =>
-          val curFile = fileFieldMap(f.name.toLowerCase)
+          val curFile = fileFieldMap(if (isCaseSensitive) f.name else f.name.toLowerCase)
           checkSchemaCompat(curFile,
             f.dataType,
             errorCallback,
+            isCaseSensitive,
             // Record root types for each column, so as to throw a readable exception
             // over nested types.
             Some(rootFileType.getOrElse(curFile)),
@@ -472,16 +476,16 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       case array: ArrayType =>
         val fileChild = fileType.asGroupType().getType(0)
           .asGroupType().getType(0)
-        checkSchemaCompat(fileChild, array.elementType, errorCallback,
+        checkSchemaCompat(fileChild, array.elementType, errorCallback, isCaseSensitive,
           rootFileType, rootReadType)
 
       case map: MapType =>
         val parquetMap = fileType.asGroupType().getType(0).asGroupType()
         val parquetMapKey = parquetMap.getType(0)
         val parquetMapValue = parquetMap.getType(1)
-        checkSchemaCompat(parquetMapKey, map.keyType, errorCallback,
+        checkSchemaCompat(parquetMapKey, map.keyType, errorCallback, isCaseSensitive,
           rootFileType, rootReadType)
-        checkSchemaCompat(parquetMapValue, map.valueType, errorCallback,
+        checkSchemaCompat(parquetMapValue, map.valueType, errorCallback, isCaseSensitive,
           rootFileType, rootReadType)
 
       case dt =>
@@ -506,74 +510,60 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
                                    errorCallback: () => Unit): Unit = {
     pt.getPrimitiveTypeName match {
       case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
-      case PrimitiveTypeName.BOOLEAN =>
-        errorCallback()
+        return
 
-      // TODO: After we deprecate Spark 3.1, add YearMonthIntervalType
-      case PrimitiveTypeName.INT32 if dt == DataTypes.IntegerType =>
-      case PrimitiveTypeName.INT32 if dt == DataTypes.ByteType =>
-      case PrimitiveTypeName.INT32 if dt == DataTypes.ShortType =>
-      case PrimitiveTypeName.INT32 if dt == DataTypes.DateType =>
-      // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
-      case PrimitiveTypeName.INT32 if dt == DataTypes.LongType &&
-        pt.getOriginalType == OriginalType.UINT_32 =>
-      // TODO: After we deprecate Spark 3.1, fetch meta data from LogicalTypeAnnotation
-      case PrimitiveTypeName.INT32 if DecimalType.is32BitDecimalType(dt) &&
-        isDecimalTypeMatched(pt.getDecimalMetadata, dt) =>
+      // TODO: add YearMonthIntervalType
       case PrimitiveTypeName.INT32 =>
-        errorCallback()
+        if (dt == DataTypes.IntegerType || canReadAsIntDecimal(pt, dt)) {
+          return
+        }
+        // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
+        if (dt == DataTypes.LongType && pt.getOriginalType == OriginalType.UINT_32) {
+          return
+        }
+        // TODO: enable below matches after we support downcast INT32 during parquet reading
+        //  https://github.com/NVIDIA/spark-rapids/issues/5445
+        // if (dt == DataTypes.ByteType || dt == DataTypes.ShortType || dt == DataTypes.DateType) {
+        //   return
+        // }
 
-      // TODO: After we deprecate Spark 3.1, add DayTimeIntervalType
-      case PrimitiveTypeName.INT64 if dt == DataTypes.LongType =>
-      // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
-      case PrimitiveTypeName.INT64 if pt.getOriginalType == OriginalType.UINT_64 &&
-        DecimalType.is64BitDecimalType(dt) && {
-        val decType = dt.asInstanceOf[DecimalType]
-        decType.precision == 20 && decType.scale == 0
-      } =>
-      case PrimitiveTypeName.INT64 if pt.getOriginalType == OriginalType.TIMESTAMP_MICROS ||
-        pt.getOriginalType == OriginalType.TIMESTAMP_MILLIS =>
-      // TODO: After we deprecate Spark 3.1, fetch meta data from LogicalTypeAnnotation
-      case PrimitiveTypeName.INT64 if DecimalType.is64BitDecimalType(dt) &&
-        isDecimalTypeMatched(pt.getDecimalMetadata, dt) =>
+      // TODO: add DayTimeIntervalType
       case PrimitiveTypeName.INT64 =>
-        errorCallback()
+        if (dt == DataTypes.LongType || canReadAsLongDecimal(pt, dt)) {
+          return
+        }
+        // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
+        if (isLongDecimal(dt) && pt.getOriginalType == OriginalType.UINT_64) {
+          return
+        }
+        if (pt.getOriginalType == OriginalType.TIMESTAMP_MICROS ||
+          pt.getOriginalType == OriginalType.TIMESTAMP_MILLIS) {
+          return
+        }
 
       case PrimitiveTypeName.FLOAT if dt == DataTypes.FloatType =>
-      case PrimitiveTypeName.FLOAT =>
-        errorCallback()
+        return
 
       case PrimitiveTypeName.DOUBLE if dt == DataTypes.DoubleType =>
-      case PrimitiveTypeName.DOUBLE =>
-        errorCallback()
+        return
 
       case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
-      case PrimitiveTypeName.INT96 =>
-        errorCallback()
+        return
 
-      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType =>
-      case PrimitiveTypeName.BINARY if dt == DataTypes.BinaryType =>
-      // TODO: After we deprecate Spark 3.1, fetch meta data from LogicalTypeAnnotation
-      case PrimitiveTypeName.BINARY if DecimalType.isByteArrayDecimalType(dt) &&
-        isDecimalTypeMatched(pt.getDecimalMetadata, dt) =>
-      case PrimitiveTypeName.BINARY =>
-        errorCallback()
+      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType ||
+        dt == DataTypes.BinaryType || canReadAsBinaryDecimal(pt, dt) =>
+        return
 
-      // TODO: After we deprecate Spark 3.1, fetch meta data from LogicalTypeAnnotation
-      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if DecimalType.is32BitDecimalType(dt) &&
-        isDecimalTypeMatched(pt.getDecimalMetadata, dt) =>
-      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if DecimalType.is64BitDecimalType(dt) &&
-        isDecimalTypeMatched(pt.getDecimalMetadata, dt) =>
-      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if DecimalType.isByteArrayDecimalType(dt) &&
-        isDecimalTypeMatched(pt.getDecimalMetadata, dt) =>
-      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY =>
-        errorCallback()
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if canReadAsIntDecimal(pt, dt) ||
+        canReadAsLongDecimal(pt, dt) || canReadAsBinaryDecimal(pt, dt) =>
+        return
 
-      // If we get here, it means the combination of Spark and Parquet type is invalid or not
-      // supported.
       case _ =>
-        errorCallback()
     }
+
+    // If we get here, it means the combination of Spark and Parquet type is invalid or not
+    // supported.
+    errorCallback()
   }
 
   private def throwTypeIncompatibleError(parquetType: Type,
@@ -592,6 +582,31 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     throw new QueryExecutionException(message, exception)
   }
 
+  private def isLongDecimal(dt: DataType): Boolean =
+    dt match {
+      case d: DecimalType => d.precision == 20 && d.scale == 0
+      case _ => false
+    }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def canReadAsIntDecimal(pt: PrimitiveType, dt: DataType) = {
+    DecimalType.is32BitDecimalType(dt) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+  }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def canReadAsLongDecimal(pt: PrimitiveType, dt: DataType): Boolean = {
+    DecimalType.is64BitDecimalType(dt) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+  }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def canReadAsBinaryDecimal(pt: PrimitiveType, dt: DataType): Boolean = {
+    DecimalType.isByteArrayDecimalType(dt) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+  }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
   @scala.annotation.nowarn("msg=class DecimalMetadata in package schema is deprecated")
   private def isDecimalTypeMatched(metadata: DecimalMetadata,
                                    sparkType: DataType): Boolean = {
