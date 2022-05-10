@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 
-case class GenerateExecParser(
+case class InMemoryTableScanExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long) extends ExecParser {
@@ -28,14 +28,13 @@ case class GenerateExecParser(
   val fullExecName = node.name + "Exec"
 
   override def parse: ExecInfo = {
-    // Generate doesn't have duration
     val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
   }
 }

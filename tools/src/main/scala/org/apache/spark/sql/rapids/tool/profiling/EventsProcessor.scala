@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.spark.TaskFailedReason
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
+import org.apache.spark.sql.execution.ui.{SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 import org.apache.spark.sql.rapids.tool.EventProcessorBase
 
 /**
@@ -269,20 +269,6 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerDriverAccumUpdates(
-      app: ApplicationInfo,
-      event: SparkListenerDriverAccumUpdates): Unit = {
-    logDebug("Processing event: " + event.getClass)
-
-    val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
-    accumUpdates.foreach { accum =>
-      val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
-      val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
-        ArrayBuffer[DriverAccumCase]())
-      arrBuf += driverAccum
-    }
-  }
-
   override def doSparkListenerJobStart(
       app: ApplicationInfo,
       event: SparkListenerJobStart): Unit = {
@@ -352,23 +338,11 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerStageSubmitted(
-      app: ApplicationInfo,
-      event: SparkListenerStageSubmitted): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    app.getOrCreateStage(event.stageInfo)
-  }
-
   override def doSparkListenerStageCompleted(
       app: ApplicationInfo,
       event: SparkListenerStageCompleted): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val stage = app.getOrCreateStage(event.stageInfo)
-    stage.completionTime = event.stageInfo.completionTime
-    stage.failureReason = event.stageInfo.failureReason
-
-    stage.duration = ProfileUtils.optionLongMinusOptionLong(stage.completionTime,
-      stage.info.submissionTime)
+    super.doSparkListenerStageCompleted(app, event)
 
     // Parse stage accumulables
     for (res <- event.stageInfo.accumulables) {
