@@ -176,16 +176,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "\u0007\u003f\u007f", "\u007f", "\u007f2"))
   }
 
-  test("hex digits < 0x7F - find") {
-    val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}")
+  test("hex digits - find") {
+    val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}",
+      raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
-        "\u0007\u003f\u007f", "\u007f", "\u007f2"))
-  }
-
-  test("hex digits >= 0x7F - find") {
-    val patterns = Seq(raw"\x7f", raw"\x80", raw"\xff", raw"\xfe", raw"\x{7f}", raw"\x{0008f}")
-    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u007f", "a\u007fb", 
-        "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
+        "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
   }
   
   test("string anchors - find") {
