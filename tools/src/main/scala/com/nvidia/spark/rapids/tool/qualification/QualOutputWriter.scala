@@ -113,7 +113,7 @@ object QualOutputWriter {
   val COMPLEX_TYPES_STR = "Complex Types"
   val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
-  val NONSQL_DUR_STR = "NONSQL Task Duration Plug Overhead"
+  val NONSQL_DUR_STR = "NONSQL Task Duration Plus Overhead"
   val ESTIMATED_DURATION_STR = "Estimated Duration"
   val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
   val SPEEDUP_DURATION_STR = "Speedup Duration"

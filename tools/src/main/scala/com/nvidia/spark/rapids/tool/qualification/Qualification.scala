@@ -34,7 +34,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
     pluginTypeChecker: PluginTypeChecker, readScorePercent: Int,
-    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean = false) extends Logging {
+    reportReadSchema: Boolean, printStdout: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
   // default is 24 hours

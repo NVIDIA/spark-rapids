@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ object QualificationMain extends Logging {
     val readScorePercent = appArgs.readScorePercent.getOrElse(20)
     val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
     val order = appArgs.order.getOrElse("desc")
-    val uiEnabled = appArgs.uiEnabled.getOrElse(false)
+
     val hadoopConf = new Configuration()
 
     val pluginTypeChecker = try {
@@ -86,8 +86,7 @@ object QualificationMain extends Logging {
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
-      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout,
-      uiEnabled)
+      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
     val res = qual.qualifyApps(filteredLogs)
     (0, res)
   }

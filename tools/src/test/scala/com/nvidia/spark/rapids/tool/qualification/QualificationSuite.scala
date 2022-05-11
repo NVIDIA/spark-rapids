@@ -68,7 +68,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("Complex Types", StringType, true)
     .add("Nested Complex Types", StringType, true)
     .add("Longest SQL Duration", LongType, true)
-    .add("NONSQL Task Duration Plug Overhead", LongType, true)
+    .add("NONSQL Task Duration Plus Overhead", LongType, true)
     .add("Estimated Duration", DoubleType, true)
     .add("Unsupported Duration", LongType, true)
     .add("Speedup Duration", LongType, true)
