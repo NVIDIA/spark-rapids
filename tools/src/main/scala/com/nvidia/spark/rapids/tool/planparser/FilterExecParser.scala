@@ -19,13 +19,11 @@ package com.nvidia.spark.rapids.tool.planparser
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
-import org.apache.spark.sql.rapids.tool.AppBase
 
 case class FilterExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
-    sqlID: Long,
-    app: AppBase) extends ExecParser {
+    sqlID: Long) extends ExecParser {
 
   val fullExecName = node.name + "Exec"
 
@@ -37,8 +35,7 @@ case class FilterExecParser(
     } else {
       (1, false)
     }
-    val ds = app.isDataSetOrRDDPlan(node.desc)
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported && !ds, None)
+    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
   }
 }

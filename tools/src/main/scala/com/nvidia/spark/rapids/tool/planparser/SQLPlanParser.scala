@@ -156,8 +156,10 @@ object SQLPlanParser extends Logging {
           ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }
+      // check is the node has a dataset operations and if so change to not supported
+      val ds = app.isDataSetOrRDDPlan(node.desc)
       val stagesInNode = getStagesInSQLNode(node, app)
-      Seq(execInfos.copy(stages = stagesInNode))
+      Seq(execInfos.copy(stages = stagesInNode, isSupported = execInfos.isSupported && !ds))
     }
   }
 
