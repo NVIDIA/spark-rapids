@@ -48,19 +48,12 @@ class HostMemoryOutputStream(buffer: HostMemoryBuffer) extends OutputStream {
   def getPos: Long = pos
 }
 
-/**
- * An implementation of InputStream that reads from a HostMemoryBuffer.
- *
- * NOTE: Closing this input stream does NOT close the buffer!
- *
- * @param hmb the buffer from which to read data
- * @param hmbLength the amount of data available in the buffer
- */
-class HostMemoryInputStream(
-    hmb: HostMemoryBuffer,
-    hmbLength: Long) extends InputStream {
-  private var pos = 0L
-  private var mark = -1L
+trait HostMemoryInputStreamMixIn extends InputStream {
+  protected val hmb: HostMemoryBuffer
+  protected val hmbLength: Long
+
+  protected var pos = 0L
+  protected var mark = -1L
 
   override def read(): Int = {
     if (pos >= hmbLength) {
@@ -68,7 +61,10 @@ class HostMemoryInputStream(
     } else {
       val result = hmb.getByte(pos)
       pos += 1
-      result
+      // because byte in java is signed, result will be sign extended when it is auto cast to an
+      // int for the return value. We need to mask off the upper bits to avoid returning a
+      // negative value which indicated EOF.
+      result & 0xFF
     }
   }
 
@@ -105,4 +101,17 @@ class HostMemoryInputStream(
   override def markSupported(): Boolean = true
 
   def getPos: Long = pos
+}
+
+/**
+ * An implementation of InputStream that reads from a HostMemoryBuffer.
+ *
+ * NOTE: Closing this input stream does NOT close the buffer!
+ *
+ * @param hmb the buffer from which to read data
+ * @param hmbLength the amount of data available in the buffer
+ */
+class HostMemoryInputStream(
+    val hmb: HostMemoryBuffer,
+    val hmbLength: Long) extends HostMemoryInputStreamMixIn {
 }
