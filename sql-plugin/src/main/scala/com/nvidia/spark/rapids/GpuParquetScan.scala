@@ -459,10 +459,11 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       case struct: StructType =>
         val fileFieldMap = fileType.asGroupType().getFields.asScala
           .map { f =>
-            (if (isCaseSensitive) f.getName else f.getName.toLowerCase) -> f
+            (if (isCaseSensitive) f.getName else f.getName.toLowerCase(Locale.ROOT)) -> f
           }.toMap
         struct.fields.foreach { f =>
-          val curFile = fileFieldMap(if (isCaseSensitive) f.name else f.name.toLowerCase)
+          val curFile = fileFieldMap(
+            if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT))
           checkSchemaCompat(curFile,
             f.dataType,
             errorCallback,
@@ -521,11 +522,11 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         if (dt == DataTypes.LongType && pt.getOriginalType == OriginalType.UINT_32) {
           return
         }
-        // TODO: enable below matches after we support downcast INT32 during parquet reading
-        //  https://github.com/NVIDIA/spark-rapids/issues/5445
-        // if (dt == DataTypes.ByteType || dt == DataTypes.ShortType || dt == DataTypes.DateType) {
-        //   return
-        // }
+        // TODO: Add below converters for INT32. Converters work when evolving schema over cuDF
+        //  table read from Parquet file. https://github.com/NVIDIA/spark-rapids/issues/5445
+         if (dt == DataTypes.ByteType || dt == DataTypes.ShortType || dt == DataTypes.DateType) {
+           return
+         }
 
       // TODO: add DayTimeIntervalType
       case PrimitiveTypeName.INT64 =>
