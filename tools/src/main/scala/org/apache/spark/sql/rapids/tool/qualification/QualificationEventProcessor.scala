@@ -132,6 +132,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerJobStart): Unit = {
     logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerJobStart(app, event)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
     ProfileUtils.stringToLong(sqlIDString).foreach { sqlID =>
       event.stageIds.foreach { stageId =>
@@ -145,6 +146,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerJobEnd(app, event)
     app.lastJobEndTime = Some(event.time)
     if (event.jobResult != JobSucceeded) {
       app.jobIdToSqlID.get(event.jobId) match {
