@@ -343,9 +343,11 @@ class QualificationAppInfo(
             // val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
             // val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
             // val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
-            val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
+            val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
+            val averageSpeedupFactors = execsForStage.map(_.speedupFactor)
+            // val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
             val averageSpeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
-            val allFlattenedExecs = execInfos.flatMap { e =>
+            val allFlattenedExecs = execsForStage.flatMap { e =>
               e.children.getOrElse(Seq.empty) :+ e
             }
             val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
@@ -353,6 +355,11 @@ class QualificationAppInfo(
 
             logWarning(s"numUnsupported: ${numUnsupported.mkString(",")}")
             logWarning(s"numSupported: ${numSupported.mkString(",")}")
+
+            // if we have unsupported try to guess at how much time.  For now divide
+            // time by number of execs and give each one equal weight
+            val eachExecTime = stageTaskTime / execsForStage.size
+            logWarning(s"each exec time is: $eachExecTime, num execs: ${execsForStage.size}")
 
             (stageId, averageSpeedup, stageTaskTime)
           }
