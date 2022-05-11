@@ -842,7 +842,8 @@ def test_regexp_hexadecimal_digits():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'rlike(a, "\\\\x7f")',
                 'rlike(a, "\\\\x80")',
-                'regexp_extract(a, "([a-d]+)\\\\xa0([a-d]+)", 1)',
+                'rlike(a, "[\\\\xa0-\\\\xaf]+")',
+                'regexp_extract(a, "([a-d]+)([\\\\xa0-\\\\xb0]+)([a-d]+)", 1)',
                 'regexp_replace(a, "\\\\xff", "")',
             ),
         conf=_regexp_conf)

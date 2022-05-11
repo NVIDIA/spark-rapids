@@ -140,6 +140,23 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
+    def getEscapedComponent(): RegexCharacterClassComponent = {
+      peek() match {
+        case Some('x') => 
+          consumeExpected('x')
+          RegexChar(Integer.parseInt(parseHexDigit.a, 16).toChar)
+        case Some('0') => throw new RegexUnsupportedException(
+          "cuDF does not support octal digits in character classes")
+        case Some(ch) =>
+          // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
+          // within the character class, but could be any escaped character
+          RegexEscaped(consumeExpected(ch))
+        case None =>
+          throw new RegexUnsupportedException(
+                s"Unclosed character class", Some(pos))
+      }
+    }
+
     val start = pos
     val characterClass = RegexCharacterClass(negated = false, characters = ListBuffer())
     // loop until the end of the character class or EOF
@@ -160,44 +177,37 @@ class RegexParser(pattern: String) {
           // Negates the character class, causing it to match a single character not listed in
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
-        case '\n' | '\r' | '\t' | '\b' | '\f' | '\u0007' =>
-          // treat as a literal character and add to the character class
-          characterClass.append(ch)
-        case '\\' =>
-          peek() match {
-            case None =>
-              throw new RegexUnsupportedException(
-                s"Unclosed character class", Some(pos))
-            case Some(ch) =>
-              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
-              // within the character class, but could be any escaped character
-              characterClass.appendEscaped(consumeExpected(ch))
-          }
         case '\u0000' =>
           throw new RegexUnsupportedException(
             "cuDF does not support null characters in regular expressions", Some(pos))
-        case _ =>
-          // check for range
-          val start = ch
+        case ch => 
+          val nextChar: RegexCharacterClassComponent = ch match {
+            case '\\' =>
+              getEscapedComponent()
+            case ch =>
+              RegexChar(ch)
+          }
           peek() match {
             case Some('-') =>
               consumeExpected('-')
               peek() match {
                 case Some(']') =>
                   // '-' at end of class e.g. "[abc-]"
-                  characterClass.append(ch)
+                  characterClass.append(nextChar)
                   characterClass.append('-')
+                case Some('\\') =>
+                  consumeExpected('\\')
+                  characterClass.appendRange(nextChar, getEscapedComponent())
                 case Some(end) =>
                   skip()
-                  characterClass.appendRange(start, end)
+                  characterClass.appendRange(nextChar, RegexChar(end))
                 case _ =>
                   throw new RegexUnsupportedException(
                     "unexpected EOF while parsing character range",
                     Some(pos))
               }
             case _ =>
-              // treat as supported literal character
-              characterClass.append(ch)
+              characterClass.append(nextChar)
           }
       }
     }
@@ -320,6 +330,9 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
+    } else if (value == 0) {
+      throw new RegexUnsupportedException(s"cuDF does not support null characters " +
+        s"in regular expressions", Some(pos))
     }
 
     RegexHexDigit(hexDigit)
@@ -693,16 +706,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[\02] should match the character with code point 2"
             throw new RegexUnsupportedException(
               "cuDF does not support octal digits in character classes")
-          case RegexEscaped(ch) if ch == 'x' =>
-            // examples
-            // - "[\x02] should match the character with code point 2"
-            throw new RegexUnsupportedException(
-              "cuDF does not support hex digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map(x => x match {
-            case RegexChar(ch) if "^$".contains(ch) => x
+            case RegexChar(ch) if "^$".contains(ch) => x      
             case _ => rewrite(x, None).asInstanceOf[RegexCharacterClassComponent]
           })
 
@@ -1065,10 +1073,11 @@ sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
   override def toRegexString: String = s"\\$a"
 }
 
-sealed case class RegexCharacterRange(start: Char, end: Char)
+sealed case class RegexCharacterRange(start: RegexCharacterClassComponent, 
+    end: RegexCharacterClassComponent)
   extends RegexCharacterClassComponent{
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$start-$end"
+  override def toRegexString: String =  s"${start.toRegexString}-${end.toRegexString}"
 }
 
 sealed case class RegexCharacterClass(
@@ -1081,11 +1090,16 @@ sealed case class RegexCharacterClass(
     characters += RegexChar(ch)
   }
 
+  def append(component: RegexCharacterClassComponent): Unit = {
+    characters += component
+  }
+
   def appendEscaped(ch: Char): Unit = {
     characters += RegexEscaped(ch)
   }
 
-  def appendRange(start: Char, end: Char): Unit = {
+  def appendRange(start: RegexCharacterClassComponent, 
+      end: RegexCharacterClassComponent): Unit = {
     characters += RegexCharacterRange(start, end)
   }
 
