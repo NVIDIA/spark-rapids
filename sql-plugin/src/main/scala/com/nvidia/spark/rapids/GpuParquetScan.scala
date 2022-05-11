@@ -20,6 +20,7 @@ import java.io.{EOFException, FileNotFoundException, IOException, OutputStream}
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import java.util
 import java.util.{Collections, Locale}
 import java.util.concurrent._
 
@@ -36,8 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
-import java.util
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -63,8 +63,7 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
-import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
-import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
+import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -117,7 +116,8 @@ case class GpuParquetScan(
     if (rapidsConf.isParquetPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
+        options.asScala.toMap)
     } else {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
@@ -463,13 +463,17 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
   private val pushDownTimestamp = sqlConf.parquetFilterPushDownTimestamp
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
-  private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
+  // From Spark 340, more string predicates are supported as push-down filters, so this
+  // flag is renamed to 'xxxxStringPredicate' and specified by another config. Then shims
+  // are required.
+  private val pushDownStringPredicate = ParquetStringPredShims.pushDown(sqlConf)
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val rebaseMode = SparkShimImpl.parquetRebaseRead(sqlConf)
   private val isCorrectedRebase = "CORRECTED" == rebaseMode
   val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
-
+  private val useFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
+  private val timestampNTZEnabled = ParquetSchemaClipShims.timestampNTZEnabled(sqlConf)
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -647,7 +651,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       val fileSchema = footer.getFileMetaData.getSchema
       val pushedFilters = if (enableParquetFilterPushDown) {
         val parquetFilters = SparkShimImpl.getParquetFilters(fileSchema, pushDownDate,
-          pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
+          pushDownTimestamp, pushDownDecimal, pushDownStringPredicate, pushDownInFilterThreshold,
           isCaseSensitive, footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
         filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
       } else {
@@ -680,13 +684,14 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
       val (clipped, clippedSchema) =
         withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
-          val clippedSchemaTmp = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
-            isCaseSensitive)
+          val clippedSchemaTmp = ParquetSchemaClipShims.clipSchema(fileSchema, readDataSchema,
+            isCaseSensitive, useFieldId, timestampNTZEnabled)
           // Check if the read schema is compatible with the file schema.
           checkSchemaCompat(clippedSchemaTmp, readDataSchema,
             (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath),
             isCaseSensitive)
-          // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
+
+          // ParquetSchemaClipShims.clipSchema does most of what we want, but it includes
           // everything in readDataSchema, even if it is not in fileSchema we want to remove those
           // for our own purposes
           val clippedSchema =
@@ -1002,7 +1007,10 @@ case class GpuParquetPartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Arm with Logging {
+    metrics: Map[String, GpuMetric],
+    @transient params: Map[String, String])
+  extends ShimFilePartitionReaderFactory(params) with Arm with Logging {
+
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows

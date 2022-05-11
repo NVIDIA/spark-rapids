@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 
-object SparkShimImpl extends Spark330PlusShims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+abstract class ShimFilePartitionReaderFactory(
+    @transient private val parameters: Map[String, String])
+  extends FilePartitionReaderFactory {
+
 }

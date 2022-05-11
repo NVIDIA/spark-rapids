@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -218,6 +218,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
+
+    ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)

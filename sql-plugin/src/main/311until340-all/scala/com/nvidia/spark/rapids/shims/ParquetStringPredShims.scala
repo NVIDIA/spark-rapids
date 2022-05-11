@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import org.apache.spark.sql.internal.SQLConf
 
-object SparkShimImpl extends Spark330PlusShims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+object ParquetStringPredShims {
+
+  /** Parquet supports only 'startWith' as a string push-down filter before Spark 3.4.0 */
+  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringStartWith
 }

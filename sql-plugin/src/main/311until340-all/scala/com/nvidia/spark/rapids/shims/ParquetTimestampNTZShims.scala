@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,13 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import org.apache.hadoop.conf.Configuration
 
-object SparkShimImpl extends Spark330PlusShims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+import org.apache.spark.sql.internal.SQLConf
+
+object ParquetTimestampNTZShims {
+  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    // This timestamp_NTZ flag is introduced in Spark 3.4.0.
+    // do nothing
+  }
 }

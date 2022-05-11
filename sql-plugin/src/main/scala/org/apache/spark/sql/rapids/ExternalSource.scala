@@ -124,7 +124,8 @@ object ExternalSource {
             fileScan.requiredSchema,
             fileScan.relation.partitionSchema,
             new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
-            fileScan.allMetrics)
+            fileScan.allMetrics,
+            fileScan.relation.options)
           }
         case _ =>
           // never reach here

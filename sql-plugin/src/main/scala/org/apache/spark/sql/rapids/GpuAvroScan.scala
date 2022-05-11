@@ -28,6 +28,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
@@ -45,7 +46,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
+import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.AvroUtils
@@ -117,7 +118,8 @@ case class GpuAvroScan(
     // We should use `readPartitionSchema` as the partition schema here.
     if (rapidsConf.isAvroPerFileReadEnabled) {
       GpuAvroPartitionReaderFactory(sparkSession.sessionState.conf, rapidsConf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics)
+        dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics,
+        options.asScala.toMap)
     } else {
       val f = GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
@@ -128,7 +130,8 @@ case class GpuAvroScan(
       } else {
         // Fall back to PerFile reading
         GpuAvroPartitionReaderFactory(sparkSession.sessionState.conf, rapidsConf, broadcastedConf,
-          dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics)
+          dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics,
+          options.asScala.toMap)
       }
     }
   }
@@ -160,8 +163,10 @@ case class GpuAvroPartitionReaderFactory(
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,
-    options: AvroOptions,
-    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Logging {
+    avroOptions: AvroOptions,
+    metrics: Map[String, GpuMetric],
+    @transient params: Map[String, String])
+  extends ShimFilePartitionReaderFactory(params) with Logging {
 
   private val debugDumpPrefix = Option(rapidsConf.avroDebugDumpPrefix)
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
@@ -173,7 +178,7 @@ case class GpuAvroPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val blockMeta = AvroFileFilterHandler(conf, options).filterBlocks(partFile)
+    val blockMeta = AvroFileFilterHandler(conf, avroOptions).filterBlocks(partFile)
     val reader = new PartitionReaderWithBytesRead(new GpuAvroPartitionReader(conf, partFile,
       blockMeta, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, metrics))
