@@ -139,7 +139,7 @@ case class BlockInfo(blockStart: Long, blockSize: Long, dataSize: Long, count: L
  */
 case class MutableBlockInfo(var blockSize: Long, var dataSize: Long, var count: Long)
 
-/** The parent of the rapids Avro file readers */
+/** The parent of the Rapids Avro file readers */
 abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
   // Children should update this pointer accordingly.
   protected var curBlockStart = 0L
@@ -201,11 +201,12 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     (curBlockStart >= position + SYNC_SIZE) || (curBlockStart >= sin.length())
   }
 
-  /** (Most is copied from the 'sync' in "DataFileReader" of apache/avro)
+  /**
    * Move to the next synchronization point after a position. To process a range
-   * of file entires, call this with the starting position, then check
+   * of file entries, call this with the starting position, then check
    * "pastSync(long)" with the end position before each call to "peekBlock()" or
    * "readNextRawBlock".
+   * (Based off of the 'sync' in "DataFileReader" of apache/avro)
    */
   def sync(position: Long): Unit = {
     seek(position)
@@ -234,7 +235,7 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     curBlockStart = sin.tell()
   }
 
-  /** (Most is copied from the "DataFileReader" of apache/avro)
+  /**
    * Compute that Knuth-Morris-Pratt partial match table.
    *
    * @param pattern The pattern being searched
@@ -242,6 +243,7 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
    *
    * @see <a href= "https://github.com/williamfiset/Algorithms">William Fiset
    *      Algorithms</a>
+   * (Based off of the 'computePartialMatchTable' in "DataFileReader" of apache/avro)
    */
   private def computePartialMatchTable(pattern: Array[Byte]): Array[Int] = {
     val pm = new Array[Int](pattern.length)
@@ -274,23 +276,22 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
  */
 class AvroMetaFileReader(si: SeekableInput) extends AvroFileReader(si) {
   // store the blocks info
-  private var blocks: Option[Seq[BlockInfo]] = None
+  private var blocks: Seq[BlockInfo] = null
   private var curStop: Long = -1L
 
   /**
    * Collect the metadata of the blocks until the given stop point.
    * The start block can also be specified by calling 'sync(start)' first.
    *
-   * NOTE: This may lead to bad performance if the file is in cloud and has many blocks.
-   * Becasue it will seek and read metadata block by block from the start to the stop.
+   * It is recommended setting start and stop positions to minimize what
+   * is going to be read.
    */
   def getPartialBlocks(stop: Long): Seq[BlockInfo] = {
-    if (curStop != stop || blocks.isEmpty) {
-      val b = parsePartialBlocks(stop)
-      blocks = Some(b)
+    if (curStop != stop || blocks == null) {
+      blocks = parsePartialBlocks(stop)
       curStop = stop
-      b
-    } else blocks.get
+    }
+    blocks
   }
 
   private def parsePartialBlocks(stop: Long): Seq[BlockInfo] = {
@@ -310,10 +311,10 @@ class AvroMetaFileReader(si: SeekableInput) extends AvroFileReader(si) {
       }
 
       // Get how many bytes used to store the value of count and block data size.
-      var longsLen = BinaryData.encodeLong(blockCount, buf, 0)
-      longsLen += BinaryData.encodeLong(blockDataSize, buf, 0)
+      val countLongLen = BinaryData.encodeLong(blockCount, buf, 0)
+      val dataSizeLongLen = BinaryData.encodeLong(blockDataSize, buf, 0)
       // (len of entries) + (len of block size) + (block size) + (sync size)
-      val blockLength = longsLen + blockDataSize + SYNC_SIZE
+      val blockLength = countLongLen + dataSizeLongLen + blockDataSize + SYNC_SIZE
       blocks += BlockInfo(curBlockStart, blockLength, blockDataSize, blockCount)
 
       // Do we need to check the SYNC BUFFER, or just let cudf do it?
@@ -343,9 +344,9 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
   private val syncBuffer = new Array[Byte](SYNC_SIZE)
   private var dataBuffer: Array[Byte] = null
 
-  // the decoded current block count
+  // count of objects in block
   private var curCount: Long = 0L
-  // the decoded current block data size
+  // size in bytes of the serialized objects in block
   private var curDataSize: Long = 0L
   // block size = encoded count long size + encoded data-size long size + data size + 16
   private var curBlockSize: Long = 0L
@@ -364,9 +365,9 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
         throw new IOException(s"Invalid data size: $curDataSize, should be in (0, Int.MaxValue).")
       }
       // Get how many bytes used to store the values of count and block data size.
-      var longsLen = BinaryData.encodeLong(curCount, longsBuffer, 0)
-      longsLen += BinaryData.encodeLong(curDataSize, longsBuffer, longsLen)
-      curBlockSize = longsLen + curDataSize + SYNC_SIZE
+      val countLongLen = BinaryData.encodeLong(curCount, longsBuffer, 0)
+      val dataSizeLongLen = BinaryData.encodeLong(curDataSize, longsBuffer, countLongLen)
+      curBlockSize = countLongLen + dataSizeLongLen + curDataSize + SYNC_SIZE
       curBlockReady = true
       true
     } catch {
