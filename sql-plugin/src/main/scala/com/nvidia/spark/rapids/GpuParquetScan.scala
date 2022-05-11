@@ -522,8 +522,6 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         if (dt == DataTypes.LongType && pt.getOriginalType == OriginalType.UINT_32) {
           return
         }
-        // TODO: Add below converters for INT32. Converters work when evolving schema over cuDF
-        //  table read from Parquet file. https://github.com/NVIDIA/spark-rapids/issues/5445
          if (dt == DataTypes.ByteType || dt == DataTypes.ShortType || dt == DataTypes.DateType) {
            return
          }
