@@ -345,8 +345,11 @@ class QualificationAppInfo(
             // val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
             val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
             val averageSpeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
-            val numUnsupported = execInfos.filterNot(_.isSupported)
-            val numSupported = execInfos.filter(_.isSupported)
+            val allFlattenedExecs = execInfos.flatMap { e =>
+              e.children.getOrElse(Seq.empty) :+ e
+            }
+            val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
+            val numSupported = allFlattenedExecs.filter(_.isSupported)
 
             logWarning(s"numUnsupported: ${numUnsupported.mkString(",")}")
             logWarning(s"numSupported: ${numSupported.mkString(",")}")
@@ -354,7 +357,7 @@ class QualificationAppInfo(
             (stageId, averageSpeedup, stageTaskTime)
           }
           if (unAccounted.nonEmpty) {
-            logInfo(s"stages with average Speedup and stage " +
+            logWarning(s"stages with average Speedup and stage " +
               s"Total Task Time: ${unAccounted.mkString(",")}")
           }
         }

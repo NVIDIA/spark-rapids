@@ -123,7 +123,7 @@ object SQLPlanParser extends Logging {
         case "Expand" =>
           ExpandExecParser(node, checker, sqlID).parse
         case "Filter" =>
-          FilterExecParser(node, checker, sqlID).parse
+          FilterExecParser(node, checker, sqlID, app).parse
         case "Generate" =>
           GenerateExecParser(node, checker, sqlID).parse
         case "GlobalLimit" =>
@@ -152,7 +152,7 @@ object SQLPlanParser extends Logging {
         case "Union" =>
           UnionExecParser(node, checker, sqlID).parse
         case _ =>
-          logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
+          logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
           ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }

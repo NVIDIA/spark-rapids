@@ -141,7 +141,7 @@ abstract class AppBase(
     }
   }
 
-  protected def isDataSetOrRDDPlan(desc: String): Boolean = {
+  def isDataSetOrRDDPlan(desc: String): Boolean = {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => true
       case a if a.endsWith(".apply") => true
