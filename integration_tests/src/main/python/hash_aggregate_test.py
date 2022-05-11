@@ -309,6 +309,11 @@ _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
+_init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_nans + [
+    _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_very_big_neg_scale_decimals]
+
 
 _init_list_full_decimal = [_grpkey_short_full_decimals, 
     _grpkey_short_full_neg_scale_decimals]
@@ -344,7 +349,6 @@ def test_hash_reduction_sum_count_action(data_gen):
 
 # Make sure that we can do computation in the group by columns
 @ignore_order
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/5286")
 def test_computation_in_grpby_columns():
     conf = {'spark.rapids.sql.batchSizeBytes' : '250'}
     data_gen = [
@@ -446,8 +450,8 @@ def test_exceptAll(data_gen):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -455,32 +459,6 @@ def test_hash_grpby_pivot(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c')),
         conf = conf)
-
-@approximate_float
-@ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
-        'NormalizeNaNAndZero')
-@incompat
-@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
-def test_hash_pivot_groupby_nan_fallback(data_gen):
-    # collect values to pivot in previous, to avoid this preparation job being captured
-    def fetch_pivot_values(spark):
-        max_values = spark._jsparkSession.sessionState().conf().dataFramePivotMaxValues()
-        df = gen_df(spark, data_gen, length=100)
-        df = df.select('b').distinct().limit(max_values + 1).sort('b')
-        return [row[0] for row in df.collect()]
-
-    pivot_values = with_cpu_session(fetch_pivot_values)
-
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a')
-            .pivot('b', pivot_values)
-            .agg(f.sum('c')),
-        "PivotFirst",
-        conf=_nans_float_conf)
-
 
 @approximate_float
 @ignore_order(local=True)
@@ -495,12 +473,11 @@ def test_hash_grpby_pivot_without_nans(data_gen, conf):
             .agg(f.sum('c')),
         conf=conf)
 
-
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -508,30 +485,6 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c'), f.max('c')),
         conf=conf)
-
-@approximate_float
-@ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec')
-@incompat
-@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
-def test_hash_pivot_reduction_nan_fallback(data_gen):
-    # collect values to pivot in previous, to avoid this preparation job being captured
-    def fetch_pivot_values(spark):
-        max_values = spark._jsparkSession.sessionState().conf().dataFramePivotMaxValues()
-        df = gen_df(spark, data_gen, length=100)
-        df = df.select('b').distinct().limit(max_values + 1).sort('b')
-        return [row[0] for row in df.collect()]
-
-    pivot_values = with_cpu_session(fetch_pivot_values)
-
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby()
-            .pivot('b', pivot_values)
-            .agg(f.sum('c')),
-        "PivotFirst",
-        conf=_nans_float_conf)
 
 @approximate_float
 @ignore_order(local=True)
@@ -545,6 +498,36 @@ def test_hash_reduction_pivot_without_nans(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c')),
         conf=conf)
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_reduction_pivot_with_nans(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby()
+            .pivot('b')
+            .agg(f.sum('c')),
+        conf=conf)
+
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
+        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
+        'NormalizeNaNAndZero')
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
+def test_hash_pivot_groupby_duplicates_fallback(data_gen):
+    # PivotFirst will not work on the GPU when pivot_values has duplicates
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .pivot('b', ['10.0', '10.0'])
+            .agg(f.sum('c')),
+        "PivotFirst",
+        conf=_nans_float_conf)
 
 _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(BooleanGen(), length=15),

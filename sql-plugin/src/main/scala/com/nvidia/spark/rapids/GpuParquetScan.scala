@@ -24,7 +24,7 @@ import java.util.concurrent._
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
+import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
 import scala.math.max
 
@@ -992,22 +992,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
 // Singleton threadpool that is used across all the tasks.
 // Please note that the TaskContext is not set in these threads and should not be used.
-object ParquetMultiFileThreadPoolFactory {
-  private var threadPool: Option[ThreadPoolExecutor] = None
-
-  private def initThreadPool(
-      threadTag: String,
-      numThreads: Int): ThreadPoolExecutor = synchronized {
-    if (threadPool.isEmpty) {
-      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
-    }
-    threadPool.get
-  }
-
-  def getThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
-    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
-  }
-}
+object ParquetMultiFileThreadPool extends MultiFileReaderThreadPool
 
 // Parquet schema wrapper
 private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase
@@ -1155,19 +1140,17 @@ class MultiFileParquetPartitionReader(
     false
   }
 
-  override def calculateEstimatedBlocksOutputSize(
-      filesAndBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
-      schema: SchemaBase): Long = {
-    val allBlocks = filesAndBlocks.values.flatten.toSeq
+  override def calculateEstimatedBlocksOutputSize(batchContext: BatchContext): Long = {
+    val allBlocks = batchContext.origChunkedBlocks.values.flatten.toSeq
     // Some Parquet versions sanity check the block metadata, and since the blocks could be from
     // multiple files they will not pass the checks as they are.
     val blockStartOffset = ParquetPartitionReader.PARQUET_MAGIC.length
     val updatedBlocks = computeBlockMetaData(allBlocks, blockStartOffset)
-    calculateParquetOutputSize(updatedBlocks, schema, true)
+    calculateParquetOutputSize(updatedBlocks, batchContext.schema, true)
   }
 
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   override def getBatchRunner(
@@ -1175,7 +1158,8 @@ class MultiFileParquetPartitionReader(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long): Callable[(Seq[DataBlockBase], Long)] = {
+      offset: Long,
+      batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)] = {
     new ParquetCopyBlocksRunner(taskContext, file, outhmb, blocks, offset)
   }
 
@@ -1211,7 +1195,7 @@ class MultiFileParquetPartitionReader(
     evolveSchemaIfNeededAndClose(table, splits.mkString(","), clippedSchema)
   }
 
-  override def writeFileHeader(buffer: HostMemoryBuffer): Long = {
+  override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
     withResource(new HostMemoryOutputStream(buffer)) { out =>
       out.write(ParquetPartitionReader.PARQUET_MAGIC)
       out.getPos
@@ -1219,22 +1203,22 @@ class MultiFileParquetPartitionReader(
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], schema: SchemaBase): Long = {
+      blocks: Seq[DataBlockBase], bContext: BatchContext): Long = {
 
-    val actualFooterSize = calculateParquetFooterSize(blocks, schema)
+    val actualFooterSize = calculateParquetFooterSize(blocks, bContext.schema)
     // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
     footerOffset + actualFooterSize + 4 + 4
   }
 
   override def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
-      blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
+      blocks: Seq[DataBlockBase], bContext: BatchContext): (HostMemoryBuffer, Long) = {
 
     val lenLeft = bufferSize - footerOffset
 
     val finalSize = closeOnExcept(buffer) { _ =>
       withResource(buffer.slice(footerOffset, lenLeft)) { finalizehmb =>
         withResource(new HostMemoryOutputStream(finalizehmb)) { footerOut =>
-          writeFooter(footerOut, blocks, clippedSchema)
+          writeFooter(footerOut, blocks, bContext.schema)
           BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
           footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
           footerOffset + footerOut.getPos
@@ -1414,7 +1398,7 @@ class MultiFileCloudParquetPartitionReader(
    * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
+    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**

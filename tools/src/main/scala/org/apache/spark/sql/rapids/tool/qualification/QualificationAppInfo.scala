@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, SQLPlanParser}
 import com.nvidia.spark.rapids.tool.profiling._
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
@@ -27,17 +28,16 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{AppBase, GpuEventLogException, ToolUtils}
 
 class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
     hadoopConf: Option[Configuration] = None,
-    pluginTypeChecker: Option[PluginTypeChecker],
+    pluginTypeChecker: PluginTypeChecker,
     readScorePercent: Int)
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
-  var isPluginEnabled = false
   var lastJobEndTime: Option[Long] = None
   var lastSQLEndTime: Option[Long] = None
   val writeDataFormat: ArrayBuffer[String] = ArrayBuffer[String]()
@@ -50,12 +50,15 @@ class QualificationAppInfo(
 
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
+  val stageIdToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
+    HashMap.empty[Long, StageTaskQualificationSummary]
 
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
+  var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   private lazy val eventProcessor =  new QualificationEventProcessor(this)
 
@@ -171,21 +174,36 @@ class QualificationAppInfo(
   // are supported, the score would be 0.0 and if all formats and datatypes are
   // supported the score would be 1.0.
   private def calculateReadScoreRatio(): Double = {
-    pluginTypeChecker.map { checker =>
-      if (dataSourceInfo.size == 0) {
-        1.0
+    if (dataSourceInfo.size == 0) {
+      1.0
+    } else {
+      val readFormatSum = dataSourceInfo.map { ds =>
+        val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
+        if (nsTypes.nonEmpty) {
+          val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
+          notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
+        }
+        readScore
+      }.sum
+      readFormatSum / dataSourceInfo.size
+    }
+  }
+
+  private def getStageToExec(execInfos: Seq[ExecInfo]): Map[Int, Seq[ExecInfo]] = {
+    execInfos.flatMap { execInfo =>
+      if (execInfo.stages.size > 1) {
+        execInfo.stages.map((_, execInfo))
+      } else if (execInfo.stages.size < 1) {
+        // we don't know what stage its in our its duration
+        logDebug(s"No stage associated with ${execInfo.exec} " +
+          s"so speedup factor isn't applied anywhere.")
+        Seq.empty
       } else {
-        val readFormatSum = dataSourceInfo.map { ds =>
-          val (readScore, nsTypes) = checker.scoreReadDataTypes(ds.format, ds.schema)
-          if (nsTypes.nonEmpty) {
-            val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
-            notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
-          }
-          readScore
-        }.sum
-        readFormatSum / dataSourceInfo.size
+        Seq((execInfo.stages.head, execInfo))
       }
-    }.getOrElse(1.0)
+    }.groupBy(_._1).map { case (k, v) =>
+      (k, v.map(_._2))
+    }
   }
 
   /**
@@ -197,6 +215,7 @@ class QualificationAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframeDuration
+      // wall clock time
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
@@ -216,6 +235,62 @@ class QualificationAppInfo(
       val writeFormat = writeFormatNotSupported(writeDataFormat)
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
+
+      val origPlanInfos = sqlPlans.map { case (id, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, id, pluginTypeChecker, this)
+      }.toSeq
+      // filter out any execs that should be removed
+      val planInfos = origPlanInfos.map { p =>
+        val execFilteredChildren = p.execInfo.map { e =>
+          val filteredChildren = e.children.map { c =>
+            c.filterNot(_.shouldRemove)
+          }
+          e.copy(children = filteredChildren)
+        }
+        val filteredPlanInfos = execFilteredChildren.filterNot(_.shouldRemove)
+        p.copy(execInfo = filteredPlanInfos)
+      }
+
+      planInfos.foreach { pInfo =>
+        val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
+        perSQLId.foreach { case (sqlID, execInfos) =>
+          logDebug(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
+          val speedups = execInfos.map(_.speedupFactor)
+          val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
+          logDebug(s"total sql task time is: " +
+            s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
+            s"all speedsup: " +
+            s"${speedups.mkString(",")} average speedup: $averageSpeedup")
+
+          // there are issues with duration in whole stage code gen where duration of multiple
+          // execs is more than entire stage time, for now ignore the exec duration and just
+          // calculate based on average applied to total task time of each stage
+
+          // intentionally left commented out code:
+          // val (execsWithoutDuration, execsWithDuration) = execInfos.partition(_.duration.isEmpty)
+          // val withOutDur = getStageToExec(execsWithoutDuration)
+          // val withDur = getStageToExec(execsWithDuration)
+          val allStagesToExecs = getStageToExec(execInfos)
+          val allStageIds = execInfos.flatMap(_.stages).toSet
+          val unAccounted = allStageIds.map { stageId =>
+            val stageTaskTime = stageIdToTaskEndSum.get(stageId)
+              .map(_.totalTaskDuration).getOrElse(0)
+            // val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
+            // val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
+            // val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
+            val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
+            val averageSpeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
+            (stageId, averageSpeedup, stageTaskTime)
+          }
+          if (unAccounted.nonEmpty) {
+            logInfo(s"stages with average Speedup and stage " +
+              s"Total Task Time: ${unAccounted.mkString(",")}")
+          }
+        }
+      }
+      // TODO - construct the final outputs - multiple things required now. Also need to
+      // calculate durations, if ops don't have them use stage durations or job durations
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
@@ -249,9 +324,7 @@ class QualificationAppInfo(
 
   private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
-    val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
-      checker.isWriteFormatsupported(writeFormat)
-    }.getOrElse(ArrayBuffer[String]())
+    val unSupportedWriteFormat = pluginTypeChecker.isWriteFormatsupported(writeFormat)
 
     unSupportedWriteFormat.distinct.mkString(";").toUpperCase
   }
@@ -307,7 +380,7 @@ object QualificationAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
       hadoopConf: Configuration,
-      pluginTypeChecker: Option[PluginTypeChecker],
+      pluginTypeChecker: PluginTypeChecker,
       readScorePercent: Int): Option[QualificationAppInfo] = {
     val app = try {
         val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
@@ -315,6 +388,9 @@ object QualificationAppInfo extends Logging {
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
+        case gpuLog: GpuEventLogException =>
+          logWarning(gpuLog.message)
+          None
         case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON: ${path.eventLog.toString}")
           None

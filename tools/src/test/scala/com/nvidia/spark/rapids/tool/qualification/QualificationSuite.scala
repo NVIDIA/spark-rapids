@@ -127,7 +127,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1621955976602"))
+        assert(firstRow.contains("local-1622043423018"))
       } finally {
         inputSource.close()
       }
@@ -233,6 +233,33 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test skip gpu event logs") {
+    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    val logFiles = Array(s"$qualLogDir/gpu_eventlog")
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath())
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.csv"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toSeq
+        // 1 for header, Event log not parsed since it is from GPU run.
+        assert(lines.size == 1)
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
   test("skip malformed json eventlog") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val badEventLog = s"$profileLogDir/malformed_json_eventlog.zstd"
@@ -253,7 +280,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       appName,
       s"$logDir/rdd_only_eventlog",
       s"$logDir/empty_eventlog",
-      s"$logDir/udf_dataset_eventlog"
+      s"$logDir/udf_func_eventlog"
     ))
 
     val (eventLogInfo, _) = EventLogPathProcessor.processAllPaths(
@@ -274,7 +301,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       appName,
       s"$logDir/rdd_only_eventlog",
       s"$logDir/empty_eventlog",
-      s"$logDir/udf_dataset_eventlog"
+      s"$logDir/udf_func_eventlog"
     ))
 
     val (eventLogInfo, _) = EventLogPathProcessor.processAllPaths(

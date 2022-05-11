@@ -287,6 +287,11 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   }
 }
 
+object RapidsReaderType extends Enumeration {
+  type RapidsReaderType = Value
+  val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
+}
+
 object RapidsConf {
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
@@ -737,10 +742,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  object ParquetReaderType extends Enumeration {
-    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
-  }
-
   val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
     .doc("Sets the parquet reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
@@ -765,8 +766,8 @@ object RapidsConf {
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(ParquetReaderType.values.map(_.toString))
-    .createWithDefault(ParquetReaderType.AUTO.toString)
+    .checkValues(RapidsReaderType.values.map(_.toString))
+    .createWithDefault(RapidsReaderType.AUTO.toString)
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
@@ -827,11 +828,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // This will be deleted when COALESCING is implemented for ORC
-  object OrcReaderType extends Enumeration {
-    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
-  }
-
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
     .doc("Sets the orc reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
@@ -856,8 +852,8 @@ object RapidsConf {
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(OrcReaderType.values.map(_.toString))
-    .createWithDefault(OrcReaderType.AUTO.toString)
+    .checkValues(RapidsReaderType.values.map(_.toString))
+    .createWithDefault(RapidsReaderType.AUTO.toString)
 
   val ORC_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.orc.multiThreadedRead.numThreads")
@@ -941,6 +937,33 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val AVRO_READER_TYPE = conf("spark.rapids.sql.format.avro.reader.type")
+    .doc("Sets the avro reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using COALESCING is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.avro.multiThreadedRead.numThreads. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "be COALESCING.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues((RapidsReaderType.values - RapidsReaderType.MULTITHREADED).map(_.toString))
+    .createWithDefault(RapidsReaderType.AUTO.toString)
+
+  val AVRO_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.avro.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on one executor, to use for reading small " +
+        "avro files in parallel. This can not be changed at runtime after the executor has " +
+        "started. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.avro.reader.type.")
+      .integerConf
+      .createWithDefault(20)
+
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1014,6 +1037,12 @@ object RapidsConf {
 
   val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
     .doc("A path prefix where ORC split file data is dumped for debugging.")
+    .internal()
+    .stringConf
+    .createWithDefault(null)
+
+  val AVRO_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.avro.debug.dumpPrefix")
+    .doc("A path prefix where AVRO split file data is dumped for debugging.")
     .internal()
     .stringConf
     .createWithDefault(null)
@@ -1593,6 +1622,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
 
+  lazy val avroDebugDumpPrefix: String = get(AVRO_DEBUG_DUMP_PREFIX)
+
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
@@ -1640,16 +1671,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
 
   lazy val isParquetPerFileReadEnabled: Boolean =
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.PERFILE
 
   lazy val isParquetAutoReaderEnabled: Boolean =
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.AUTO
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.AUTO
 
   lazy val isParquetCoalesceFileReadEnabled: Boolean = isParquetAutoReaderEnabled ||
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.COALESCING
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.MULTITHREADED
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
 
@@ -1666,16 +1697,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.PERFILE
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.PERFILE
 
   lazy val isOrcAutoReaderEnabled: Boolean =
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.AUTO
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.AUTO
 
   lazy val isOrcCoalesceFileReadEnabled: Boolean = isOrcAutoReaderEnabled ||
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.COALESCING
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.MULTITHREADED
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val orcMultiThreadReadNumThreads: Int = get(ORC_MULTITHREAD_READ_NUM_THREADS)
 
@@ -1704,6 +1735,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
   lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
+
+  lazy val isAvroPerFileReadEnabled: Boolean =
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.PERFILE
+
+  lazy val isAvroAutoReaderEnabled: Boolean =
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.AUTO
+
+  lazy val isAvroCoalesceFileReadEnabled: Boolean = isAvroAutoReaderEnabled ||
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.COALESCING
+
+  lazy val avroMultiThreadReadNumThreads: Int = get(AVRO_MULTITHREAD_READ_NUM_THREADS)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
