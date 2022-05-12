@@ -221,7 +221,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("string anchor \\Z fall back to CPU - split") {
     for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("\\Z", mode, "string anchor \\Z is not supported in split or replace mode")
+      assertUnsupported("\\Z", mode, "sequences that only contain '^' or '$' are not supported")
     }
   }
 
@@ -239,7 +239,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("line anchor $ fall back to CPU - split") {
     for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("a$b", mode, "line anchor $ is not supported in split or replace")
+      assertUnsupported("a$b", mode, "line anchor $ is not supported in split")
     }
   }
 
@@ -465,7 +465,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("compare CPU and GPU: regexp replace line anchor supported use cases") {
     val inputs = Seq("a", "b", "c", "cat", "", "^", "$", "^a", "t$")
-    val patterns = Seq("^a", "^a", "(^a|^t)", "^[ac]", "^^^a", "[\\^^]")
+    val patterns = Seq("^a", "^a", "(^a|^t)", "^[ac]", "^^^a", "[\\^^]", "a$", "a$$", "\\$$")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 

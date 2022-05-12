@@ -51,8 +51,8 @@ class RegexParser(pattern: String) {
     ast
   }
 
-  def parseReplacement(): RegexReplacement = {
-    val sequence = RegexReplacement(new ListBuffer())
+  def parseReplacement(numCaptureGroups: Int): RegexReplacement = {
+    val sequence = RegexReplacement(new ListBuffer(), numCaptureGroups)
     while (!eof()) {
       parseReplacementBase(() => eof()) match {
         case RegexSequence(parts) =>
@@ -531,6 +531,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
   // rejected by the transpiler
   private val nothingToRepeat = "nothing to repeat"
 
+  private def countCaptureGroups(regex: RegexAST): Int = {
+    regex match {
+      case RegexSequence(parts) => parts.foldLeft(0)((c, re) => c + countCaptureGroups(re))
+      case RegexGroup(capture, base) => 
+        if (capture) {
+          1 + countCaptureGroups(base)
+        } else {
+          countCaptureGroups(base)
+        }
+      case _ => 0
+    }
+  }
+
   /**
    * Parse Java regular expression and translate into cuDF regular expression.
    *
@@ -543,7 +556,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
     val replacement = repl match {
-      case Some(s) => Some(new RegexParser(s).parseReplacement())
+      case Some(s) => Some(new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
       case None => None
     }
     // repl match {
@@ -663,7 +676,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           terminatorChars ++= lineTerminatorChars.map(RegexChar)
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("line anchor $ is not supported in split or replace")
+          throw new RegexUnsupportedException("line anchor $ is not supported in split")
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
           // terminators in and around the anchor
@@ -676,6 +689,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
               // an empty RegexAST that outputs to empty string
               RegexEmpty()
+            case Some(RegexChar(ch)) if mode == RegexReplaceMode
+                && lineTerminatorChars.contains(ch) =>
+                throw new RegexUnsupportedException("Regex sequences with a line terminator " 
+                    + "character followed by '$' are not supported in replace mode")
             case Some(RegexChar(ch)) if ch == '\r' =>
               // when using the the CR (\r), it prevents the line anchor from handling any other 
               // line terminator sequences, so we just output the anchor and we are finished
@@ -687,7 +704,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
               if (mode == RegexReplaceMode) {
                 replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numBackrefs + 1)
+                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
                   case _ =>
                 }
               }
@@ -699,7 +716,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
                 replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numBackrefs + 1)
+                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
                   case _ =>
                 }
               }
@@ -1260,7 +1277,8 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
   override def toRegexString(): String = s"$$$num"
 }
 
-sealed case class RegexReplacement(parts: ListBuffer[RegexAST]) extends RegexAST {
+sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
+    numCaptureGroups: Int = 0) extends RegexAST {
   override def children(): Seq[RegexAST] = parts
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
@@ -1275,14 +1293,7 @@ sealed case class RegexReplacement(parts: ListBuffer[RegexAST]) extends RegexAST
     }
   }
 
-  def numBackrefs: Int = {
-    parts.count {
-      case RegexBackref(_, _) => true
-      case _ => false
-    }
-  }
-
-  def hasBackrefs: Boolean = numBackrefs > 0
+  def hasBackrefs: Boolean = numCaptureGroups > 0
 }
 
 class RegexUnsupportedException(message: String, index: Option[Int] = None)
