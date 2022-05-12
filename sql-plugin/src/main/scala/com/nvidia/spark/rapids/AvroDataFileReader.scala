@@ -27,7 +27,7 @@ import org.apache.avro.file.SeekableInput
 import org.apache.avro.io.{BinaryData, BinaryDecoder, DecoderFactory}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 
-private[rapids] class SeekableInputStream(in: SeekableInput) extends InputStream
+private[rapids] class AvroSeekableInputStream(in: SeekableInput) extends InputStream
     with SeekableInput {
   var oneByte = new Array[Byte](1)
 
@@ -145,7 +145,7 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
   protected var curBlockStart = 0L
   protected val headerSync: Array[Byte] = new Array[Byte](SYNC_SIZE)
 
-  protected val sin = new SeekableInputStream(si)
+  protected val sin = new AvroSeekableInputStream(si)
   sin.seek(0) // seek to the file start to parse the header
   protected var vin: BinaryDecoder = DecoderFactory.get.binaryDecoder(sin, vin)
 

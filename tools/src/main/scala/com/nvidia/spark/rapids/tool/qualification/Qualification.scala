@@ -73,7 +73,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     val sortedDesc = allAppsSum.sortBy(sum => {
         (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
     })
-    val qWriter = new QualOutputWriter(outputDir, reportReadSchema, printStdout)
+    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     qWriter.writeCSV(sortedDesc)
 
     val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
@@ -118,5 +118,12 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       case e: Exception =>
         logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
+  }
+
+  /**
+   * The outputPath of the current instance of the provider
+   */
+  def getReportOutputPath: String = {
+    s"$outputDir/rapids_4_spark_qualification_output"
   }
 }

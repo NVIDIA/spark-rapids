@@ -221,6 +221,11 @@ class PluginTypeChecker extends Logging {
     score
   }
 
+  def isWriteFormatsupported(writeFormat: String): Boolean = {
+    val format = writeFormat.toLowerCase.trim
+    writeFormats.map(x => x.trim).contains(format)
+  }
+
   def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
       writeFormats.map(x => x.trim).contains(_))
