@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException}
-
 import java.time.ZoneId
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
@@ -27,6 +25,7 @@ import scala.collection.mutable.{Map => MutableMap}
 import scala.util.Try
 import scala.util.matching.Regex
 
+import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
