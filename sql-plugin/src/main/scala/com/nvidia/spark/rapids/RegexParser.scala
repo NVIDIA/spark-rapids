@@ -269,7 +269,7 @@ class RegexParser(pattern: String) {
             // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
-          case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
+          case 's' | 'S' | 'd' | 'D' | 'w' | 'W' | 'h' | 'H' | 'v' | 'V' | 'R' =>
             // meta sequences
             consumeExpected(ch)
             RegexEscaped(ch)
@@ -675,6 +675,28 @@ class CudfRegexTranspiler(mode: RegexMode) {
             RegexChar(' '), RegexChar('\u000b'))
           chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped)
           RegexCharacterClass(negated = ch.isUpper, characters = chars)
+        case 'h' | 'H' =>
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
+            RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
+          )
+          chars += RegexEscaped('t')
+          chars += RegexCharacterRange('\u2000', '\u200a')
+          RegexCharacterClass(negated = ch.isUpper, characters = chars)
+        case 'v' | 'V' =>
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+          )
+          chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
+          RegexCharacterClass(negated = ch.isUpper, characters = chars)
+        case 'R' =>
+          // Unicode linebreak sequence 
+          val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
+          val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
+            RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
+            RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+          ))
+          RegexChoice(l, r)
         case _ =>
           regex
       }
