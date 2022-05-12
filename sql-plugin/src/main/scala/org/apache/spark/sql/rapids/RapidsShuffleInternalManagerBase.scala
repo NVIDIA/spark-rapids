@@ -127,7 +127,10 @@ class RapidsCachingWriter[K, V](
                 bufferId,
                 buffer,
                 tableMeta,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                // we don't need to sync here, because we sync on the cuda
+                // stream after compression.
+                needsSync = false)
             case c => throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
           bytesWritten += partSize

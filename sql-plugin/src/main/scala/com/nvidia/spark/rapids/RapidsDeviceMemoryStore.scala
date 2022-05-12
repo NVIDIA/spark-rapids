@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
-
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -78,7 +77,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
         spillCallback)) { buffer =>
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
-      addBuffer(buffer)
+      addDeviceBuffer(buffer, needsSync = true)
     }
   }
 
@@ -114,7 +113,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
-      addBuffer(buffer)
+      addDeviceBuffer(buffer, needsSync = true)
     }
   }
 
@@ -126,13 +125,16 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
    *                      It should never allocate GPU memory and really just be used for metrics.
+   * @param needsSync whether the spill framework should stream synchronize while adding
+   *                  this device buffer (defaults to true)
    */
   def addBuffer(
       id: RapidsBufferId,
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
+      needsSync: Boolean = true): Unit = {
     freeOnExcept(
       new RapidsDeviceMemoryBuffer(
         id,
@@ -146,7 +148,22 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
           s"uncompressed=${buff.meta.bufferMeta.uncompressedSize}, " +
           s"meta_id=${tableMeta.bufferMeta.id}, " +
           s"meta_size=${tableMeta.bufferMeta.size}]")
-      addBuffer(buff)
+      addDeviceBuffer(buff, needsSync)
+    }
+  }
+
+  /**
+   * Adds a device buffer to the spill framework, stream synchronizing with the producer
+   * stream to ensure that the buffer is fully materialized, and can be safely copied
+   * as part of the spill.
+   * @param needsSync true if we should stream synchronize before adding the buffer
+   */
+  private def addDeviceBuffer(buffer: RapidsDeviceMemoryBuffer, needsSync: Boolean): Unit = {
+    withResource(new NvtxRange("addDeviceBuffer", NvtxColor.YELLOW)) { _ =>
+      if (needsSync) {
+        Cuda.DEFAULT_STREAM.sync()
+      }
+      addBuffer(buffer);
     }
   }
 
