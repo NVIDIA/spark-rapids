@@ -340,17 +340,17 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile $") {
     doTranspileTest("a$", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("$$\r", "\r[\n\u0085\u2028\u2029]?$")
-    doTranspileTest("]$\r", "]\r[\n\u0085\u2028\u2029]?$")
-    doTranspileTest("^$[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
+    doTranspileTest("$$\r", "\r(?:[\n\u0085\u2028\u2029])?$")
+    doTranspileTest("]$\r", "]\r(?:[\n\u0085\u2028\u2029])?$")
+    doTranspileTest("^$[^*A-ZA-Z]", "^(?:[\n\r\u0085\u2028\u2029])$")
     doTranspileTest("^$([^*A-ZA-Z])", "^([\n\r\u0085\u2028\u2029])$")
   }
 
   test("transpile \\Z") {
     doTranspileTest("a\\Z", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("\\Z\\Z\r", "\r[\n\u0085\u2028\u2029]?$")
-    doTranspileTest("]\\Z\r", "]\r[\n\u0085\u2028\u2029]?$")
-    doTranspileTest("^\\Z[^*A-ZA-Z]", "^[\n\r\u0085\u2028\u2029]$")
+    doTranspileTest("\\Z\\Z\r", "\r(?:[\n\u0085\u2028\u2029])?$")
+    doTranspileTest("]\\Z\r", "]\r(?:[\n\u0085\u2028\u2029])?$")
+    doTranspileTest("^\\Z[^*A-ZA-Z]", "^(?:[\n\r\u0085\u2028\u2029])$")
     doTranspileTest("^\\Z([^*A-ZA-Z])", "^([\n\r\u0085\u2028\u2029])$")
     doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
@@ -713,7 +713,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuReplace(cudfPattern.get, replaceString.get, input)
       } catch {
         case e: CudfException =>
-          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern.get)}", e)
+          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern.get)}, " +
+              s"original: ${toReadableString(javaPattern)}, " +
+              s"replacement: ${toReadableString(replaceString.get)}", e)
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
@@ -747,12 +749,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
     val replace = GpuRegExpUtils.unescapeReplaceString(replaceString)
+    val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      withResource(GpuScalar.from(replace, DataTypes.StringType)) { replace =>
-        withResource(cv.replaceRegex(cudfPattern, replace)) { c =>
-          withResource(c.copyToHost()) { hv =>
-            result.indices.foreach(i => result(i) = new String(hv.getUTF8(i)))
-          }
+      val c = if (hasBackrefs) {
+        cv.stringReplaceWithBackrefs(cudfPattern, converted)
+      } else {
+        withResource(GpuScalar.from(converted, DataTypes.StringType)) { replace =>
+          cv.replaceRegex(cudfPattern, replace)
+        }
+      }
+      withResource(c) { c => 
+        withResource(c.copyToHost()) { hv =>
+          result.indices.foreach(i => result(i) = new String(hv.getUTF8(i)))
         }
       }
     }
@@ -764,6 +772,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       case '\r' => "\\r"
       case '\n' => "\\n"
       case '\t' => "\\t"
+      case '\f' => "\\f"
+      case '\u000b' => "\\u000b"
+      case '\u0085' => "\\u0085"
+      case '\u2028' => "\\u2028"
+      case '\u2029' => "\\u2029"
       case other => other
     }.mkString
   }

@@ -51,7 +51,7 @@ class RegexParser(pattern: String) {
     ast
   }
 
-  def parseReplacement(): RegexAST = {
+  def parseReplacement(): RegexReplacement = {
     val sequence = RegexReplacement(new ListBuffer())
     while (!eof()) {
       parseReplacementBase(() => eof()) match {
@@ -631,25 +631,28 @@ class CudfRegexTranspiler(mode: RegexMode) {
   // the end of a line of an input character sequence. 
   // this method produces a RegexAST which outputs a regular expression to match any possible
   // combination of line terminators
-  private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean):RegexAST = {
+  private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean,
+      capture: Boolean): RegexAST = {
     val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
     terminatorChars ++= lineTerminatorChars.filter(!exclude.contains(_)).map(RegexChar)
 
     if (terminatorChars.size == 0 && excludeCRLF) {
       RegexEmpty()
     } else if (terminatorChars.size == 0) {
-      RegexGroup(capture = false, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))))
+      RegexGroup(capture = capture, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))))
     } else if (excludeCRLF) {
-      RegexCharacterClass(negated = false, characters = terminatorChars)
+      RegexGroup(capture = capture,
+        RegexCharacterClass(negated = false, characters = terminatorChars)
+      )
     } else {
-      RegexGroup(capture = false,
+      RegexGroup(capture = capture,
         RegexChoice(
           RegexCharacterClass(negated = false, characters = terminatorChars),
           RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))))
     }
   }
 
-  private def rewrite(regex: RegexAST, replacement: Option[RegexAST],
+  private def rewrite(regex: RegexAST, replacement: Option[RegexReplacement],
       previous: Option[RegexAST]): RegexAST = {
     regex match {
 
@@ -682,13 +685,27 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // when using any other line terminator character, you can match any of the other
               // line terminator characters individually as part of the line anchor match.
               // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
+              if (mode == RegexReplaceMode) {
+                replacement match {
+                  case Some(rr) => rr.appendBackref(rr.numBackrefs + 1)
+                  case _ =>
+                }
+              }
               RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set(ch), true), SimpleQuantifier('?')),
+                RegexRepetition(lineTerminatorMatcher(Set(ch), true,
+                    mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
+              if (mode == RegexReplaceMode) {
+                replacement match {
+                  case Some(rr) => rr.appendBackref(rr.numBackrefs + 1)
+                  case _ =>
+                }
+              }
               RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set.empty, false), SimpleQuantifier('?')),
+                RegexRepetition(lineTerminatorMatcher(Set.empty, false,
+                    mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
@@ -862,6 +879,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
             "sequences that only contain '^' or '$' are not supported")
         }
 
+        def popBackrefIfNecessary(capture: Boolean): Unit = {
+          if (mode == RegexReplaceMode && !capture) {
+            replacement match {
+              case Some(repl) =>
+                repl.popBackref()
+              case _ =>
+            }
+          }
+        }
+
         // Special handling for line anchor ($)
         // This code is implemented here because to make it work in cuDF, we have to reorder 
         // the items in the regex.
@@ -881,16 +908,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case RegexGroup(capture, RegexSequence(
                       ListBuffer(RegexCharacterClass(true, parts))))
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(RegexGroup(capture, RegexSequence(
-                        ListBuffer(lineTerminatorMatcher(Set.empty, true)))), RegexChar('$')))
+                    r(j) = RegexSequence(ListBuffer(lineTerminatorMatcher(Set.empty, true, capture),
+                        RegexChar('$')))
+                    popBackrefIfNecessary(capture)
                   case RegexGroup(capture, RegexCharacterClass(true, parts))
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(RegexGroup(capture, RegexSequence(
-                        ListBuffer(lineTerminatorMatcher(Set.empty, true)))), RegexChar('$')))
+                    r(j) = RegexSequence(ListBuffer(lineTerminatorMatcher(Set.empty, true, capture),
+                        RegexChar('$')))
+                    popBackrefIfNecessary(capture)
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
                     r(j) = RegexSequence(
-                      ListBuffer(lineTerminatorMatcher(Set.empty, true), RegexChar('$')))
+                      ListBuffer(lineTerminatorMatcher(Set.empty, true, false), RegexChar('$')))
+                    popBackrefIfNecessary(false)
                   case RegexChar(ch) if ch == '\n' =>
                     // what's really needed here is negative lookahead, but that is not 
                     // supported by cuDF
@@ -901,8 +931,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                       ListBuffer(
                         rewrite(part, replacement, None),
                         RegexSequence(ListBuffer(
-                          RegexRepetition(lineTerminatorMatcher(Set(ch), true),
+                          RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
+                    popBackrefIfNecessary(false)
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
@@ -1044,7 +1075,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(ll, rr)
 
       case RegexGroup(capture, term) =>
-        RegexGroup(capture, rewrite(term, replacement, None))
+        term match {
+          case RegexSequence(parts) =>
+            if (!parts.forall(!isBeginOrEndLineAnchor(_))) {
+              throw new RegexUnsupportedException(
+                "line and string anchors are not supported in capture groups"
+              )
+            }
+            RegexGroup(capture, rewrite(term, replacement, None))
+          case _ =>
+            RegexGroup(capture, rewrite(term, replacement, None))
+        }
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
@@ -1214,9 +1255,9 @@ sealed case class RegexCharacterClass(
   }
 }
 
-sealed case class RegexBackref(num: Int) extends RegexAST {
+sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAST {
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString(): String = s"$${$num}"
+  override def toRegexString(): String = s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST]) extends RegexAST {
@@ -1224,17 +1265,24 @@ sealed case class RegexReplacement(parts: ListBuffer[RegexAST]) extends RegexAST
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
   def appendBackref(num: Int): Unit = {
-    parts += RegexBackref(num)
+    parts += RegexBackref(num, true)
   }
 
-  def backrefCount: Int = {
+  def popBackref(): Unit = {
+    parts.last match {
+      case RegexBackref(_, true) => parts.trimEnd(1)
+      case _ =>
+    }
+  }
+
+  def numBackrefs: Int = {
     parts.count {
-      case RegexBackref(_) => true
+      case RegexBackref(_, _) => true
       case _ => false
     }
   }
 
-  def hasBackrefs: Boolean = backrefCount > 0
+  def hasBackrefs: Boolean = numBackrefs > 0
 }
 
 class RegexUnsupportedException(message: String, index: Option[Int] = None)
