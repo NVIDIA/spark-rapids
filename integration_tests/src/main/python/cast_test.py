@@ -65,21 +65,49 @@ def test_cast_string_date_valid_format():
             lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(DateType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
+invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
+                                 '1970 T', ' 1970-01T', '1970-01 A',  # not conform to "yyyy-[M]M" after trim
+                                 # not conform to 'yyyy-[M]M-[d]d', "yyyy-[M]M-[d]d *" or "yyyy-[M]M-[d]d T*" after trim
+                                 '1970-01-01A',
+                                 '2022-02-29',  # nonexistent day
+                                 '200-1-1',  # 200 not conform to 'YYYY'
+                                 '2001-13-1',  # nonexistent day
+                                 '2001-1-32',  # nonexistent day
+                                 'not numbers',
+                                 '666666666'
+                                 ]
+valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
+                               '1970-1-01', ' 1970-10-5 ', ' 2001-10-16 ',  # 'yyyy-[M]M-[d]d' after trim
+                               '1970-01-01T', '1970-01-01T-no_impact',  # "yyyy-[M]M-[d]d T*" after trim
+                               ' 1970-01-01 A', '1970-01-01 B '  # "yyyy-[M]M-[d]d *" after trim
+                               ]
+values_string_to_data = invalid_values_string_to_date + valid_values_string_to_date
+
+# test Spark Spark versions < 3.2.0, ANSI mode
+@pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
+def test_cast_string_date_invalid_ansi_before_320():
+    data_rows = [(v,) for v in values_string_to_data]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
+              'spark.sql.ansi.enabled': 'true'}, )
+
+# test Spark versions >= 320, ANSI mode
 @pytest.mark.skipif(is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
-@pytest.mark.parametrize('invalid', ['200', '1970A', '1970 A', '1970T', '1970 T', '1970-01T', '1970-01 A',
-                                     '1970-01-01A',  # 1970-01-01T is OK, 1970-01-01A is NOK
-                                     '2022-02-29',  # nonexistent day
-                                     '200-1-1',
-                                     '2001-13-1',  # nonexistent day
-                                     '2001-1-32',  # nonexistent day
-                                     '2001-1-32'  # nonexistent day
-                                     ])
+@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_cast_string_date_invalid_ansi(invalid):
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'},
         error_message="DateTimeException")
+
+# test all Spark versions, non ANSI mode, invalid value will be converted to NULL
+def test_cast_string_date_non_ansi():
+    data_rows = [(v,) for v in values_string_to_data]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 def test_cast_string_ts_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
