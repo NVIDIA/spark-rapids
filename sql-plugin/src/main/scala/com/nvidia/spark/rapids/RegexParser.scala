@@ -676,6 +676,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
           chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped)
           RegexCharacterClass(negated = ch.isUpper, characters = chars)
         case 'h' | 'H' =>
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+          // under "Predefined character classes"
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
             RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
@@ -684,13 +686,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
           chars += RegexCharacterRange('\u2000', '\u200a')
           RegexCharacterClass(negated = ch.isUpper, characters = chars)
         case 'v' | 'V' =>
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+          // under "Predefined character classes"
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
           )
           chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
           RegexCharacterClass(negated = ch.isUpper, characters = chars)
         case 'R' =>
-          // Unicode linebreak sequence 
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+          // under "Linebreak matcher"
           val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
           val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
             RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
