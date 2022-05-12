@@ -70,14 +70,10 @@ object RapidsPluginImplicits {
      */
     def safeFree(e: Throwable = null): Unit = {
       if (rapidsBuffer != null) {
-        if (e != null) {
-          try {
-            rapidsBuffer.free()
-          } catch {
-            case suppressed: Throwable => e.addSuppressed(suppressed)
-          }
-        } else {
+        try {
           rapidsBuffer.free()
+        } catch {
+          case suppressed: Throwable if e != null => e.addSuppressed(suppressed)
         }
       }
     }
