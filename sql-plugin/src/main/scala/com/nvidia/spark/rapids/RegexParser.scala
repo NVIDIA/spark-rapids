@@ -51,6 +51,31 @@ class RegexParser(pattern: String) {
     ast
   }
 
+  def parseReplacement(): RegexAST = {
+    val sequence = RegexReplacement(new ListBuffer())
+    while (!eof()) {
+      parseReplacementBase(() => eof()) match {
+        case RegexSequence(parts) =>
+          sequence.parts ++= parts
+        case other =>
+          sequence.parts += other
+      }
+    }
+    sequence
+  }
+
+  def parseReplacementBase(until: () => Boolean): RegexAST = {
+      consume() match {
+        case '\\' =>
+          parseBackrefOrEscaped()
+        case '$' =>
+          parseBackrefOrLiteralDollar()
+        case other =>
+          RegexChar(other)
+      }
+  }
+
+
   private def parseUntil(until: () => Boolean): RegexAST = {
     val term = parseTerm(() => until() || peek().contains('|'))
     if (!eof() && peek().contains('|')) {
@@ -256,6 +281,54 @@ class RegexParser(pattern: String) {
         }
       case None =>
         treatAsLiteralBrace()
+    }
+  }
+
+  private def parseBackrefOrEscaped(): RegexAST = {
+    val start = pos 
+
+    consumeInt match {
+      case Some(refNum) =>
+        RegexBackref(refNum)
+      case None =>
+        pos = start
+        RegexChar('\\')
+    }
+  }
+
+  private def parseBackrefOrLiteralDollar(): RegexAST = {
+    val start = pos
+
+    def treatAsLiteralDollar() = {
+      pos = start
+      RegexChar('$')
+    }
+
+    peek() match {
+      case Some('{') =>
+        consumeExpected('{')
+        val num = consumeInt()
+        if (peek().contains('}')) {
+          consumeExpected('}')
+          num match {
+            case Some(n) =>
+              RegexBackref(n)
+            case _ =>
+              treatAsLiteralDollar()
+          }
+        } else {
+          treatAsLiteralDollar()
+        }
+      case Some(ch) if ch >= '1' && ch <= '9' =>
+        val num = consumeInt()
+        num match {
+          case Some(n) =>
+            RegexBackref(n)
+          case _ =>
+            treatAsLiteralDollar()
+        }
+      case _ =>
+        treatAsLiteralDollar()
     }
   }
 
@@ -467,11 +540,27 @@ class CudfRegexTranspiler(mode: RegexMode) {
   def transpile(pattern: String, repl: Option[String]): (Option[String], Option[String]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
+    // if we have a replacement, parse the replacement string using the regex parser to account
+    // for backrefs
+    val replacement = repl match {
+      case Some(s) => Some(new RegexParser(s).parseReplacement())
+      case None => None
+    }
+    // repl match {
+    //   case Some(_) => System.out.println(replacement)
+    //   case _ =>
+    // }
+
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, repl, None)
+    val cudfRegex = rewrite(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
-    (Some(cudfRegex.toRegexString), repl)
+    replacement match {
+      case Some(replaceAST) =>
+        (Some(cudfRegex.toRegexString), Some(replaceAST.toRegexString))
+      case _ =>
+        (Some(cudfRegex.toRegexString), None)
+    }
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
@@ -560,7 +649,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def rewrite(regex: RegexAST, replacement: Option[String], previous: Option[RegexAST]): RegexAST = {
+  private def rewrite(regex: RegexAST, replacement: Option[RegexAST],
+      previous: Option[RegexAST]): RegexAST = {
     regex match {
 
       case RegexChar(ch) => ch match {
@@ -1122,6 +1212,29 @@ sealed case class RegexCharacterClass(
         false
     }
   }
+}
+
+sealed case class RegexBackref(num: Int) extends RegexAST {
+  override def children(): Seq[RegexAST] = Seq.empty
+  override def toRegexString(): String = s"$${$num}"
+}
+
+sealed case class RegexReplacement(parts: ListBuffer[RegexAST]) extends RegexAST {
+  override def children(): Seq[RegexAST] = parts
+  override def toRegexString: String = parts.map(_.toRegexString).mkString
+
+  def appendBackref(num: Int): Unit = {
+    parts += RegexBackref(num)
+  }
+
+  def backrefCount: Int = {
+    parts.count {
+      case RegexBackref(_) => true
+      case _ => false
+    }
+  }
+
+  def hasBackrefs: Boolean = backrefCount > 0
 }
 
 class RegexUnsupportedException(message: String, index: Option[Int] = None)

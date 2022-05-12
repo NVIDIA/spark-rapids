@@ -706,18 +706,19 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       input: Seq[String]) = {
     for (javaPattern <- javaPatterns) {
       val cpu = cpuReplace(javaPattern, input)
-      val cudfPattern =
-          (new CudfRegexTranspiler(RegexReplaceMode)).transpile(javaPattern, None)._1.get
+      val (cudfPattern, replaceString) =
+          (new CudfRegexTranspiler(RegexReplaceMode)).transpile(javaPattern,
+              Some(REPLACE_STRING))
       val gpu = try {
-        gpuReplace(cudfPattern, REPLACE_STRING, input)
+        gpuReplace(cudfPattern.get, replaceString.get, input)
       } catch {
         case e: CudfException =>
-          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}", e)
+          fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern.get)}", e)
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
           fail(s"javaPattern=${toReadableString(javaPattern)}, " +
-            s"cudfPattern=${toReadableString(cudfPattern)}, " +
+            s"cudfPattern=${toReadableString(cudfPattern.get)}, " +
             s"input='${toReadableString(input(i))}', " +
             s"cpu=${toReadableString(cpu(i))}, " +
             s"gpu=${toReadableString(gpu(i))}")
@@ -804,7 +805,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   private def transpile(pattern: String, mode: RegexMode): String = {
-    new CudfRegexTranspiler(mode).transpile(pattern, None)._1.get
+    mode match {
+      case RegexReplaceMode =>
+        new CudfRegexTranspiler(mode).transpile(pattern, Some(REPLACE_STRING))._1.get
+      case _ =>
+        new CudfRegexTranspiler(mode).transpile(pattern, None)._1.get
+      
+    }
   }
 
   private def assertUnsupported(pattern: String, mode: RegexMode, message: String): Unit = {
