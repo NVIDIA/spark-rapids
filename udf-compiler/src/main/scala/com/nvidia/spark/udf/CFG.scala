@@ -108,7 +108,7 @@ case class BB(instructionTable: SortedMap[Int, Instruction]) extends Logging {
         val defaultState = state.copy(cond = simplify(defaultCondition))
         newStates + (defaultSucc -> defaultState.merge(newStates.get(defaultSucc)))
       case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
-           Opcode.ARETURN | Opcode.RETURN => states
+           Opcode.ARETURN | Opcode.RETURN | Opcode.ATHROW => states
       case _ =>
         val (0, successor) :: Nil = cfg.successor(this)
         // The condition, stack and locals from the current BB state need to be
