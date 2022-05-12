@@ -31,6 +31,7 @@ case class ShuffledHashJoinExecParser(
   val fullExecName = node.name + "Exec"
 
   override def parse: ExecInfo = {
+    // TODO - Its partial duration only. We need a way to specify it as partial.
     val accumId = node.metrics.find(_.name == "time to build hash map total").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {

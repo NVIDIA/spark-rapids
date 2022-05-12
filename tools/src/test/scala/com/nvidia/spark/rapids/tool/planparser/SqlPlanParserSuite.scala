@@ -381,16 +381,16 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         import spark.implicits._
-        val df1 =spark.sparkContext.parallelize(List(1,2,3, 4)).toDF
-        val df2 =spark.sparkContext.parallelize(List(4,5,6, 2)).toDF
-        //BroadcastHashJoin
+        val df1 = spark.sparkContext.parallelize(List(1, 2, 3, 4)).toDF
+        val df2 = spark.sparkContext.parallelize(List(4, 5, 6, 2)).toDF
+        // BroadcastHashJoin
         df1.join(broadcast(df2), "value").collect
-        //ShuffledHashJoin
+        // ShuffledHashJoin
         df1.createOrReplaceTempView("t1")
         df2.createOrReplaceTempView("t2")
         spark.sql("SELECT /*+ SHUFFLE_HASH(t1) */ * FROM t1 INNER JOIN t2 ON " +
             "t1.value = t2.value").collect
-        // BroadcastNestedloopJoin
+        // BroadcastNestedLoopJoin
         val nums = spark.range(2)
         val letters = ('a' to 'c').map(_.toString).toDF("letter")
         nums.crossJoin(letters)
