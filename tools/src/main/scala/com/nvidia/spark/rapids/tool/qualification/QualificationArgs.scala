@@ -130,6 +130,10 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val userName: ScallopOption[String] =
     opt[String](required = false,
       descr = "Applications which a particular user has submitted." )
+  val uiEnabled: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Whether to render the report into HTML pages. Default is True",
+      default = Some(QualificationArgs.DEFAULT_UI_ENABLED))
 
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
@@ -165,6 +169,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
 object QualificationArgs {
   val DEFAULT_READ_SCORE_PERCENT = 20
+  val DEFAULT_UI_ENABLED = true
 
   def isOrderAsc(order: String): Boolean = {
     order.toLowerCase.startsWith("asc")

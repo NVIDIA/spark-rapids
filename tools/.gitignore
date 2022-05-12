@@ -5,4 +5,4 @@ event_log_profiling.log
 ## ignore qual-ui static files
 **/ui/assets/
 **/ui-dependencies-cache/
-**/ui/js/mock-data.js
+**/ui/js/data-output.js

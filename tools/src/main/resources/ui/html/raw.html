@@ -123,12 +123,29 @@
     <main class="dash-content">
       <div class="container-fluid">
         <h1 class="dash-title">Full Report</h1>
+        <div class="row">
+          <div class="col-lg-9">
+            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+              <svg width="1.2em" height="1.2em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
+              </svg>
+              <strong>Disclaimer!</strong><ul><li>Projections are based on TPC-DS benchmark queries run using Spark 3.X.</li>
+              <li>Additionally, estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
+              <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="row dash-row">
           <div class="col-lg-12">
             <div class="card spur-card">
               <div class="card-header">
                 <div class="spur-card-icon">
-                  <i class="fas fa-table"></i>
+                  <i><svg width="1.5em" height="1.5em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6.5 13.5V10.5H3.5V13.5H6.5ZM6.5 13.5H9.5M6.5 13.5V8.5H9.5V13.5M9.5 13.5H12.5V6.5H9.5V13.5ZM7.5 2.5L3 7" stroke="black"/>
+                    <path d="M7.5 5V2.5H5" stroke="black"/>
+                  </svg></i>
                 </div>
                 <div class="spur-card-title">Raw Data of all Applications</div>
               </div>
@@ -180,8 +197,8 @@
 </div>
 
 <!-- loading our own Javascripts -->
-<script src="../js/mock-data.js"></script>
-<script src="../js/ui-data.js"></script>
+<script src="../js/data-output.js"></script>
+<script src="../js/ui-config.js"></script>
 <script src="../js/uiutils.js"></script>
 <script src="../js/raw-report.js"></script>
 </body>

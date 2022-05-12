@@ -25,46 +25,55 @@ function resetCollapsableGrps(groupArr, flag) {
  * rows of the GPURecommendationTable.
  */
 function getExpandedAppDetails(rowData) {
-  let content = '<table class=\"display compact style=padding-left:50px;\">' +
-  '  <thead>' +
-  '    <tr>' +
-  '      <th scope=\"col\">#</th>' +
-  '      <th scope=\"col\">Value</th>' +
-  '      <th scope=\"col\">Description</th>' +
-  '    </tr>' +
-  '  </thead>' +
-  '  <tbody>' +
-  '    <tr>' +
-  '      <th scope=\"row\">Total Speed-up</th>' +
-  '      <td> {{totalSpeedup}} </td>' +
-  '      <td> ' + toolTipsValues.gpuRecommendations.details.mathFormatted.totalSpeedup + '</td>' +
-  '    </tr>' +
-  '    <tr>' +
-  '      <th scope=\"row\">App Duration</th>' +
-  '      <td> {{durationCollection.appDuration}} </td>' +
-  '      <td> ' + toolTipsValues.gpuRecommendations["App Duration"] + '</td>' +
-  '    </tr>' +
-  '    <tr>' +
-  '      <th scope=\"row\">SQL Duration</th>' +
-  '      <td> {{durationCollection.sqlDFDuration}} </td>' +
-  '      <td> ' + toolTipsValues.gpuRecommendations.details.sqlDFDuration + '</td>' +
-  '    </tr>' +
-  '    <tr>' +
-  '      <th scope=\"row\">GPU Opportunity</th>' +
-  '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
-  '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuOpportunity + '</td>' +
-  '    </tr>' +
-  '    <tr>' +
-  '      <th scope=\"row\">GPU Estimated Duration</th>' +
-  '      <td> {{durationCollection.estimatedDurationWallClock}} </td>' +
-  '      <td> ' + toolTipsValues.gpuRecommendations.details.estimatedDuration + '</td>' +
-  '    </tr>' +
-  '  </tbody>' +
-  '</table>' +
-  '<div class=\" mt-3\">' +
-  '  <a href=\"{{attemptDetailsURL}}\" target=\"_blank\" class=\"btn btn-secondary btn-lg btn-block mb-1\">Go To Full Details</button>' +
-  '</div>';
-  return content;
+  let fullDetailsContent =
+    '<div class=\" mt-3\">' +
+    '  <a href=\"{{attemptDetailsURL}}\" target=\"_blank\" class=\"btn btn-secondary btn-lg btn-block mb-1\">Go To Full Details</button>' +
+    '</div>';
+  let tableContent =
+    '<table class=\"table table-striped style=padding-left:50px;\">' +
+    '  <col style=\"width:20%\">' +
+    '  <col style=\"width:10%\">' +
+    '  <col style=\"width:70%\">' +
+    '  <thead>' +
+    '    <tr>' +
+    '      <th scope=\"col\">#</th>' +
+    '      <th scope=\"col\">Value</th>' +
+    '      <th scope=\"col\">Description</th>' +
+    '    </tr>' +
+    '  </thead>' +
+    '  <tbody>' +
+    '    <tr>' +
+    '      <th scope=\"row\">Estimated Speed-up</th>' +
+    '      <td> {{totalSpeedup_display}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.mathFormatted.totalSpeedup + '</td>' +
+    '    </tr>' +
+    '    <tr>' +
+    '      <th scope=\"row\">App Duration</th>' +
+    '      <td> {{durationCollection.appDuration}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations["App Duration"] + '</td>' +
+    '    </tr>' +
+    '    <tr>' +
+    '      <th scope=\"row\">SQL Duration</th>' +
+    '      <td> {{durationCollection.sqlDFDuration}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.sqlDFDuration + '</td>' +
+    '    </tr>' +
+    '    <tr>' +
+    '      <th scope=\"row\">GPU Opportunity</th>' +
+    '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuOpportunity + '</td>' +
+    '    </tr>' +
+    '    <tr>' +
+    '      <th scope=\"row\">GPU Estimated Duration</th>' +
+    '      <td> {{durationCollection.estimatedDurationWallClock}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.estimatedDuration + '</td>' +
+    '    </tr>' +
+    '  </tbody>' +
+    '</table>';
+
+  if (UIConfig.fullAppView.enabled) {
+    return tableContent + fullDetailsContent;
+  }
+  return tableContent ;
 }
 
 
@@ -116,7 +125,7 @@ function collapseAllGpuRows(gpuTable) {
 
 $(document).ready(function(){
   // do the required filtering here
-  let attemptArray = processRawData(qualificationRecords, appInfoRecords);
+  let attemptArray = processRawData(qualificationRecords);
   let initGpuRecommendationConf = UIConfig[gpuRecommendationTableID];
   // Start implementation of GPU Recommendations Apps
 
@@ -143,7 +152,9 @@ $(document).ready(function(){
         data: "appId",
         render:  (appId, type, row) => {
           if (type === 'display' || type === 'filter') {
-            return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+            if (UIConfig.fullAppView.enabled) {
+              return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+            }
           }
           return appId;
         }
@@ -331,8 +342,7 @@ $(document).ready(function(){
             label: userName,
             value: function(rowData, rowIdx) {
               // get spark user
-              let infoRec = appInfoMap.get(rowData["appId"])
-              return (infoRec["sparkUser"] === userName);
+              return (rowData["user"] === userName);
             },
           }
           sparkUserOptions.push(currOption);

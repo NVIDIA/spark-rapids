@@ -122,8 +122,23 @@
       </header>
       <main class="dash-content">
         <h1 class="dash-title">Spark Qualification Tool</h1>
-        <div id="qual-report-runtime-information"></div>
         <div class="container-fluid">
+          <!-- place disclaimer at the top of the page, before showing results -->
+          <div class="row">
+            <div class="col-lg-9">
+              <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                <svg width="1.2em" height="1.2em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
+                </svg>
+                <strong>Disclaimer!</strong><ul><li>Projections are based on TPC-DS benchmark queries run using Spark 3.X.</li>
+                <li>Additionally, estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="qual-report-runtime-information"></div>
           <div id="qual-report-summary"></div>
           <div class="row">
             <div class="col-lg-9">
@@ -291,8 +306,8 @@
     </div>
   </script>
 
-  <script src="../js/mock-data.js"></script>
-  <script src="../js/ui-data.js"></script>
+  <script src="../js/data-output.js"></script>
+  <script src="../js/ui-config.js"></script>
   <script src="../js/uiutils.js"></script>
   <script src="../js/qual-report.js"></script>
 </body>

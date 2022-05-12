@@ -17,7 +17,7 @@
 /* global $, Mustache, formatDuration, jQuery, qualificationRecords */
 
 $(document).ready(function() {
-  let attemptArray = processRawData(qualificationRecords, appInfoRecords);
+  let attemptArray = processRawData(qualificationRecords);
   let rawDataTableConf = {
     // TODO: To use horizontal scroll for wide table
     //"scrollX": true,

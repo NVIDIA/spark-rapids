@@ -67,7 +67,6 @@ function formatDuration(milliseconds) {
   return hours.toFixed(1) + " h";
 }
 
-// don't filter on hidden html elements for an sType of title-numeric
 function getColumnIndex(columns, columnName) {
   for (var i = 0; i < columns.length; i++) {
     if (columns[i].name == columnName)
@@ -104,14 +103,13 @@ function totalCPUPercentageColor(cpuPercent) {
 
 /** recommendation icons display */
 function recommendationTableCellStyle(recommendation) {
-
   return "hsla("+ recommendation * 10.0 +",100%,50%)";
 }
 
 /* define recommendation grouping */
 const recommendationRanges = {
-  "A": {low: 3.0, high: 10.0},
-  "B": {low: 1.25, high: 3.0},
+  "A": {low: 2.5, high: 10.0},
+  "B": {low: 1.25, high: 2.5},
   "C": {low: -1000.0, high: 1.25},
 }
 
@@ -168,7 +166,6 @@ function createRecommendationGroups(recommendationsArr) {
 let recommendationsMap = new Map(createRecommendationGroups(recommendationContainer));
 
 let sparkUsers = new Map();
-let appInfoMap = new Map();
 
 
 /* define constants for the tables configurations */
@@ -194,29 +191,9 @@ function setGPURecommendations(appsArray) {
   }
 }
 
-function processAppInfoRecords(appInfoRawRecords) {
-  var map = new Map()
-  appInfoRawRecords.forEach(object => {
-    map.set(object.appId, object);
-  });
-  return map;
-}
-
-function setAppInfoRecord(appRecord, infoRecords) {
+function setAppInfoRecord(appRecord) {
   // set default values
-  let infoRec = infoRecords.get(appRecord.appId);
-  if (!infoRec.hasOwnProperty("endTime")) {
-    infoRec["endTime"] = appRecord["appDuration"] + infoRec["startTime"]
-  }
-  if (!infoRec.hasOwnProperty("duration")) {
-    infoRec["duration"] = appRecord["appDuration"]
-  }
-  infoRec["displayFields"] = {
-    "startTime": formatTimeMillis(infoRec["startTime"]),
-    "endTime": formatTimeMillis(infoRec["endTime"]),
-    "duration": formatDuration(infoRec["duration"])
-  }
-  sparkUsers.set(infoRec["sparkUser"], true);
+  sparkUsers.set(appRecord["user"], true);
 }
 
 // which maps into wallclock time that shows how much of the SQL duration we think we can
@@ -237,13 +214,11 @@ function calculateAccOpportunity(appRec) {
   return (appRec["speedupDuration"] * 100.0) / appRec["appTaskDuration"];
 }
 
-function processRawData(rawRecords, appInfoRawRecords) {
-  var processedRecords = [];
-  var maxOpportunity = 0;
-  appInfoMap = new Map(processAppInfoRecords(appInfoRawRecords));
-  // let infoRecords = processAppInfoRecords(appInfoRawRecords) : Map
-  for (var i in rawRecords) {
-    var appRecord = JSON.parse(JSON.stringify(rawRecords[i]));
+function processRawData(rawRecords) {
+  let processedRecords = [];
+  let maxOpportunity = 0;
+  for (let i in rawRecords) {
+    let appRecord = JSON.parse(JSON.stringify(rawRecords[i]));
     appRecord["estimated"] = appRecord["appDurationEstimated"];
     appRecord["cpuPercent"] = appRecord["executorCPUPercent"];
     // set default longestSqlDuration for backward compatibility
@@ -264,11 +239,18 @@ function processRawData(rawRecords, appInfoRawRecords) {
       "speedupDuration": formatDuration(appRecord["speedupDuration"]),
       "longestSqlDuration": formatDuration(appRecord["longestSqlDuration"]),
     }
-    setAppInfoRecord(appRecord, appInfoMap);
+
+    appRecord["totalSpeedup_display"] = twoDecimalFormatter.format(appRecord["totalSpeedup"])
+    setAppInfoRecord(appRecord);
     maxOpportunity =
         (maxOpportunity < appRecord[appFieldAccCriterion])
             ? appRecord[appFieldAccCriterion] : maxOpportunity;
-    appRecord["attemptDetailsURL"] = "application.html?app_id=" + appRecord.appId;
+    if (UIConfig.fullAppView.enabled) {
+      appRecord["attemptDetailsURL"] = "application.html?app_id=" + appRecord.appId;
+    } else {
+      appRecord["attemptDetailsURL"] = "#!"
+    }
+
     setAppTaskDuration(appRecord);
     appRecord["accelerationOpportunity"] = calculateAccOpportunity(appRecord);
     processedRecords.push(appRecord)
@@ -293,12 +275,6 @@ function processReadFormatSchema(rawDSInfoRecords) {
   }
   return rawDSInfoRecordsContainer;
 }
-
-function getDataSourceInfoForApp(dsInfoRecords, appID) {
-  let appDSRecord = dsInfoRecords.find(dsInfo => dsInfo.appId == appID);
-  return appDSRecord;
-}
-
 
 function setGlobalReportSummary(processedApps) {
   let totalEstimatedApps = 0;

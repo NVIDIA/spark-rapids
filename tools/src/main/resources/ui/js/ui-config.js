@@ -57,7 +57,7 @@ let toolTipsValues = {
           "Applications in YARN cluster mode can be identified by their \<em\>attempt-id\<\/em\>.",
         "App Duration": "Wall-Clock time measured since the application starts till it is completed. " +
           "If an app is not completed an estimated completion time would be computed.",
-        "GPU Opportunity": "Expected percentage of Sql Task Duration that could be sped-up by the GPU ",
+        "GPU Opportunity": "Expected percentage of Sql Task Duration that could be accelerated by the GPU ",
         "Recommendation": "On a scale from 1 to 5, is it recommended to use RAPIDS",
         "details": {
             "mathFormatted": {
@@ -119,5 +119,8 @@ let UIConfig = {
                 }
             ],
         }
+    },
+    "fullAppView": {
+        enabled: false
     }
-}
+};
