@@ -140,6 +140,7 @@ object RapidsPluginImplicits {
       in.toSeq.safeClose(e)
     }
   }
+
   implicit class RapidsBufferArray[A <: RapidsBuffer](val in: Array[A]) {
     def safeFree(e: Throwable = null): Unit = if (in != null) {
       in.toSeq.safeFree(e)
