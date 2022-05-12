@@ -28,8 +28,8 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.avro.mapred.FsInput
