@@ -50,7 +50,7 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.io.{InputFile, SeekableInputStream}
-import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
+import org.apache.parquet.schema.{DecimalMetadata, GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
 import org.apache.spark.TaskContext
@@ -62,7 +62,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -682,6 +682,10 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
           val clippedSchemaTmp = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
             isCaseSensitive)
+          // Check if the read schema is compatible with the file schema.
+          checkSchemaCompat(clippedSchemaTmp, readDataSchema,
+            (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath),
+            isCaseSensitive)
           // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
           // everything in readDataSchema, even if it is not in fileSchema we want to remove those
           // for our own purposes
@@ -697,6 +701,190 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetFileInfoWithBlockMeta(filePath, clipped, file.partitionValues,
         clippedSchema, isCorrectedInt96RebaseForThisFile, isCorrectedRebaseForThisFile,
         hasInt96Timestamps)
+    }
+  }
+
+  /**
+   * Recursively check if the read schema is compatible with the file schema. The errorCallback
+   * will be invoked to throw an exception once any incompatible type pairs are found.
+   *
+   * The function assumes all elements in read schema are included in file schema, so please
+   * run this check after clipping read schema upon file schema.
+   *
+   * The function only accepts top-level schemas, which means structures of root columns. Based
+   * on this assumption, it can infer root types from input schemas.
+   *
+   * @param fileType input file's Parquet schema
+   * @param readType spark type read from Parquet file
+   * @param errorCallback call back function to throw exception if type mismatch
+   * @param rootFileType file type of each root column
+   * @param rootReadType read type of each root column
+   */
+  private def checkSchemaCompat(fileType: Type,
+                                readType: DataType,
+                                errorCallback: (Type, DataType) => Unit,
+                                isCaseSensitive: Boolean,
+                                rootFileType: Option[Type] = None,
+                                rootReadType: Option[DataType] = None): Unit = {
+    readType match {
+      case struct: StructType =>
+        val fileFieldMap = fileType.asGroupType().getFields.asScala
+          .map { f =>
+            (if (isCaseSensitive) f.getName else f.getName.toLowerCase(Locale.ROOT)) -> f
+          }.toMap
+        struct.fields.foreach { f =>
+          val curFile = fileFieldMap(
+            if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT))
+          checkSchemaCompat(curFile,
+            f.dataType,
+            errorCallback,
+            isCaseSensitive,
+            // Record root types for each column, so as to throw a readable exception
+            // over nested types.
+            Some(rootFileType.getOrElse(curFile)),
+            Some(rootReadType.getOrElse(f.dataType)))
+        }
+
+      case array: ArrayType =>
+        val fileChild = fileType.asGroupType().getType(0)
+          .asGroupType().getType(0)
+        checkSchemaCompat(fileChild, array.elementType, errorCallback, isCaseSensitive,
+          rootFileType, rootReadType)
+
+      case map: MapType =>
+        val parquetMap = fileType.asGroupType().getType(0).asGroupType()
+        val parquetMapKey = parquetMap.getType(0)
+        val parquetMapValue = parquetMap.getType(1)
+        checkSchemaCompat(parquetMapKey, map.keyType, errorCallback, isCaseSensitive,
+          rootFileType, rootReadType)
+        checkSchemaCompat(parquetMapValue, map.valueType, errorCallback, isCaseSensitive,
+          rootFileType, rootReadType)
+
+      case dt =>
+        checkPrimitiveCompat(fileType.asPrimitiveType(),
+          dt,
+          () => errorCallback(rootFileType.get, rootReadType.get))
+    }
+  }
+
+  /**
+   * Check the compatibility over primitive types. This function refers to the `getUpdater` method
+   * of [[org.apache.spark.sql.execution.datasources.parquet.ParquetVectorUpdaterFactory]].
+   *
+   * To avoid unnecessary pattern matching, this function is designed to return or throw ASAP.
+   *
+   * This function uses some deprecated Parquet APIs, because Spark 3.1 is relied on parquet-mr
+   * of an older version.
+   */
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def checkPrimitiveCompat(pt: PrimitiveType,
+                                   dt: DataType,
+                                   errorCallback: () => Unit): Unit = {
+    pt.getPrimitiveTypeName match {
+      case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
+        return
+
+      // TODO: add YearMonthIntervalType
+      case PrimitiveTypeName.INT32 =>
+        if (dt == DataTypes.IntegerType || canReadAsIntDecimal(pt, dt)) {
+          return
+        }
+        // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
+        if (dt == DataTypes.LongType && pt.getOriginalType == OriginalType.UINT_32) {
+          return
+        }
+         if (dt == DataTypes.ByteType || dt == DataTypes.ShortType || dt == DataTypes.DateType) {
+           return
+         }
+
+      // TODO: add DayTimeIntervalType
+      case PrimitiveTypeName.INT64 =>
+        if (dt == DataTypes.LongType || canReadAsLongDecimal(pt, dt)) {
+          return
+        }
+        // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
+        if (isLongDecimal(dt) && pt.getOriginalType == OriginalType.UINT_64) {
+          return
+        }
+        if (pt.getOriginalType == OriginalType.TIMESTAMP_MICROS ||
+          pt.getOriginalType == OriginalType.TIMESTAMP_MILLIS) {
+          return
+        }
+
+      case PrimitiveTypeName.FLOAT if dt == DataTypes.FloatType =>
+        return
+
+      case PrimitiveTypeName.DOUBLE if dt == DataTypes.DoubleType =>
+        return
+
+      case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
+        return
+
+      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType ||
+        dt == DataTypes.BinaryType || canReadAsBinaryDecimal(pt, dt) =>
+        return
+
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if canReadAsIntDecimal(pt, dt) ||
+        canReadAsLongDecimal(pt, dt) || canReadAsBinaryDecimal(pt, dt) =>
+        return
+
+      case _ =>
+    }
+
+    // If we get here, it means the combination of Spark and Parquet type is invalid or not
+    // supported.
+    errorCallback()
+  }
+
+  private def throwTypeIncompatibleError(parquetType: Type,
+                                         sparkType: DataType,
+                                         filePath: String): Unit = {
+    val exception = new SchemaColumnConvertNotSupportedException(
+      parquetType.getName,
+      parquetType.toString,
+      sparkType.catalogString)
+
+    // A copy of QueryExecutionErrors.unsupportedSchemaColumnConvertError introduced in 3.2+
+    // TODO: replace with unsupportedSchemaColumnConvertError after we deprecate Spark 3.1
+    val message = "Parquet column cannot be converted in " +
+      s"file $filePath. Column: ${parquetType.getName}, " +
+      s"Expected: ${sparkType.catalogString}, Found: $parquetType"
+    throw new QueryExecutionException(message, exception)
+  }
+
+  private def isLongDecimal(dt: DataType): Boolean =
+    dt match {
+      case d: DecimalType => d.precision == 20 && d.scale == 0
+      case _ => false
+    }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def canReadAsIntDecimal(pt: PrimitiveType, dt: DataType) = {
+    DecimalType.is32BitDecimalType(dt) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+  }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def canReadAsLongDecimal(pt: PrimitiveType, dt: DataType): Boolean = {
+    DecimalType.is64BitDecimalType(dt) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+  }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
+  private def canReadAsBinaryDecimal(pt: PrimitiveType, dt: DataType): Boolean = {
+    DecimalType.isByteArrayDecimalType(dt) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+  }
+
+  // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
+  @scala.annotation.nowarn("msg=class DecimalMetadata in package schema is deprecated")
+  private def isDecimalTypeMatched(metadata: DecimalMetadata,
+                                   sparkType: DataType): Boolean = {
+    if (metadata == null) {
+      false
+    } else {
+      val dt = sparkType.asInstanceOf[DecimalType]
+      metadata.getPrecision <= dt.precision && metadata.getScale == dt.scale
     }
   }
 }
@@ -1076,8 +1264,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     // check if there are cols with precision that can be stored in an int
     val hasDecimalAsInt = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
     val hasUnsignedType = existsUnsignedType(clippedSchema.asGroupType())
-    if (readDataSchema.length > inputTable.getNumberOfColumns
-        || hasDecimalAsInt || hasUnsignedType) {
+    val hasInt32Downcast = existsInt32Downcast(readDataSchema)
+    val needExtraCast = hasDecimalAsInt || hasUnsignedType || hasInt32Downcast
+
+    if (readDataSchema.length > inputTable.getNumberOfColumns || needExtraCast) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anything like that
       val clippedGroups = clippedSchema.asGroupType()
@@ -1089,10 +1279,11 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-              val col: ColumnVector = if (hasDecimalAsInt || hasUnsignedType) {
+              val col: ColumnVector = if (needExtraCast) {
                 ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
-                  (dt, cv) => needDecimalCast(cv, dt) || needUnsignedToSignedCast(cv, dt),
-                  (dt, cv) => decimalCastOrUnsignedCast(cv, dt))
+                  (dt, cv) => needDecimalCast(cv, dt) || needUnsignedToSignedCast(cv, dt) ||
+                    needInt32Downcast(cv, dt),
+                  (dt, cv) => evolveSchemaCasts(cv, dt))
               } else {
                 origCol.incRefCount()
               }
@@ -1139,6 +1330,24 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     )
   }
 
+  /**
+   * ByteType/ShortType/DateType are physically stored as INT32 in parquet files. We need to do
+   * extra conversion on these types, since cuDF reads these columns as INT32.
+   */
+  def existsInt32Downcast(dt: DataType): Boolean =
+    dt match {
+      case struct: StructType =>
+        struct.fields.exists(f => existsInt32Downcast(f.dataType))
+      case array: ArrayType =>
+        existsInt32Downcast(array.elementType)
+      case map: MapType =>
+        existsInt32Downcast(map.keyType) || existsInt32Downcast(map.valueType)
+      case ByteType | ShortType | DateType =>
+        true
+      case _ =>
+        false
+    }
+
   def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
     // UINT64 is casted to Decimal(20,0) by Spark to accommodate
     // the largest possible values this type can take. Other Unsigned data types are converted to
@@ -1154,20 +1363,25 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       (cv.getType.equals(DType.UINT32) && dt.isInstanceOf[LongType])
   }
 
-  // Will do cast if needDecimalCast or needUnsignedToSignedCast test is true
-  // in ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB.
+  def needInt32Downcast(cv: ColumnView, dt: DataType): Boolean = {
+    cv.getType.equals(DType.INT32) && Seq(ByteType, ShortType, DateType).contains(dt)
+  }
+
+  // Wrap up all required casts for Parquet schema evolution
+  //
   // Note: The behavior of unsigned to signed is decided by the Spark,
   // this means the parameter dt is from Spark meta module.
   // This implements the requested type behavior accordingly for GPU.
   // This is suitable for all Spark versions, no need to add to shim layer.
-  private def decimalCastOrUnsignedCast(cv: ColumnView, dt: DataType): ColumnView = {
+  private def evolveSchemaCasts(cv: ColumnView, dt: DataType): ColumnView = {
     if (needDecimalCast(cv, dt)) {
       cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
     } else if (needUnsignedToSignedCast(cv, dt)) {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
+    } else if (needInt32Downcast(cv, dt)) {
+      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
     } else {
-      throw new IllegalStateException("Logical error: should only be " +
-        "decimal cast or unsigned to signed cast")
+      throw new IllegalStateException("Logical error: no valid casts are found")
     }
   }
 
