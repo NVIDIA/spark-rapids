@@ -23,7 +23,8 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
-import org.apache.spark.sql.functions.{col, explode}
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.functions.{broadcast, col, collect_list, explode, sum}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -90,7 +91,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("WholeStage with Filter, Project and Sort") {
+  test("WholeStage with Filter, Project, Sort and SortMergeJoin") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
         "WholeStageFilterProject") { spark =>
@@ -110,9 +111,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(planInfo.execInfo.size == 11)
         val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
         assert(wholeStages.size == 6)
-        // only 2 in the above example have projects and filters and other 3 have sort
+        // only 2 in the above example have projects and filters, 3 have sort and 1 has SMJ
         val numSupported = wholeStages.filter(_.isSupported).size
-        assert(numSupported == 5)
+        assert(numSupported == 6)
         assert(wholeStages.forall(_.duration.nonEmpty))
         val allChildren = wholeStages.flatMap(_.children).flatten
         assert(allChildren.size == 10)
@@ -122,6 +123,33 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assertSizeAndSupported(2, projects)
         val sorts = allChildren.filter(_.exec == "Sort")
         assertSizeAndSupported(3, sorts)
+        val smj = allChildren.filter(_.exec == "SortMergeJoin")
+        assertSizeAndSupported(1, smj)
+      }
+    }
+  }
+
+  test("HashAggregate") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "sqlMetric") { spark =>
+        import spark.implicits._
+        spark.range(10).
+            groupBy('id % 3 as "group").agg(sum("id") as "sum")
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+        val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.size == 2)
+        val numSupported = wholeStages.filter(_.isSupported).size
+        assert(numSupported == 2)
+        assert(wholeStages.forall(_.duration.nonEmpty))
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        val hashAggregate = allChildren.filter(_.exec == "HashAggregate")
+        assertSizeAndSupported(2, hashAggregate)
       }
     }
   }
@@ -347,6 +375,125 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assertSizeAndSupported(1, supportedExec.toSeq)
       }
     }
+  }
+
+  test("Parse Execs - BroadcastHashJoin, BroadcastNestedLoopJoin and ShuffledHashJoin") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val df1 = spark.sparkContext.parallelize(List(1, 2, 3, 4)).toDF
+        val df2 = spark.sparkContext.parallelize(List(4, 5, 6, 2)).toDF
+        // BroadcastHashJoin
+        df1.join(broadcast(df2), "value").collect
+        // ShuffledHashJoin
+        df1.createOrReplaceTempView("t1")
+        df2.createOrReplaceTempView("t2")
+        spark.sql("SELECT /*+ SHUFFLE_HASH(t1) */ * FROM t1 INNER JOIN t2 ON " +
+            "t1.value = t2.value").collect
+        // BroadcastNestedLoopJoin
+        val nums = spark.range(2)
+        val letters = ('a' to 'c').map(_.toString).toDF("letter")
+        nums.crossJoin(letters)
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 5)
+      val supportedExecs = Array("BroadcastHashJoin", "BroadcastNestedLoopJoin", "ShuffledHashJoin")
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      }
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      for (execName <- supportedExecs) {
+        val supportedExec = allExecInfo.filter(_.exec == execName)
+        assertSizeAndSupported(1, supportedExec)
+      }
+    }
+  }
+
+  test("Parse Exec - SortAggregate") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        spark.conf.set("spark.sql.execution.useObjectHashAggregateExec", "false")
+        val df1 = Seq((1, "a"), (1, "aa"), (1, "a"), (2, "b"),
+                         (2, "b"), (3, "c"), (3, "c")).toDF("num", "letter")
+        df1.groupBy("num").agg(collect_list("letter").as("collected_letters"))
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val sortAggregate = execInfo.filter(_.exec == "SortAggregate")
+      assertSizeAndSupported(2, sortAggregate)
+    }
+  }
+
+  test("Parse Exec - ObjectHashAggregate") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val df1 = Seq((1, "a"), (1, "aa"), (1, "a"), (2, "b"),
+          (2, "b"), (3, "c"), (3, "c")).toDF("num", "letter")
+        df1.groupBy("num").agg(collect_list("letter").as("collected_letters"))
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val objectHashAggregate = execInfo.filter(_.exec == "ObjectHashAggregate")
+      assertSizeAndSupported(2, objectHashAggregate)
+    }
+  }
+
+  test("WindowExec") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val metrics = Seq(
+          (0, 0, 0), (1, 0, 1), (2, 5, 2), (3, 0, 3), (4, 0, 1), (5, 5, 3), (6, 5, 0)
+        ).toDF("id", "device", "level")
+        val rangeWithTwoDevicesById = Window.partitionBy('device).orderBy('id).
+            rangeBetween(start = -1, end = Window.currentRow)
+        metrics.withColumn("sum", sum('level) over rangeWithTwoDevicesById)
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val windowExecs = execInfo.filter(_.exec == "Window")
+      assertSizeAndSupported(1, windowExecs)
+    }
+  }
+
+  test("Parse Pandas execs - AggregateInPandas, ArrowEvalPython, " +
+      "FlatMapGroupsInPandas, MapInPandas, WindowInPandas") {
+    val eventLog = s"$qualLogDir/pandas_execs_eventlog.zstd"
+    val pluginTypeChecker = new PluginTypeChecker()
+    val app = createAppFromEventlog(eventLog)
+    assert(app.sqlPlans.size > 0)
+    val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+    }
+    val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+    val flatMapGroups = allExecInfo.filter(_.exec == "FlatMapGroupsInPandas")
+    assertSizeAndSupported(1, flatMapGroups)
+    val aggregateInPandas = allExecInfo.filter(_.exec == "AggregateInPandas")
+    assertSizeAndSupported(1, aggregateInPandas)
+    val arrowEvalPython = allExecInfo.filter(_.exec == "ArrowEvalPython")
+    assertSizeAndSupported(1, arrowEvalPython)
+    val mapInPandas = allExecInfo.filter(_.exec == "MapInPandas")
+    assertSizeAndSupported(1, mapInPandas)
+    val windowInPandas = allExecInfo.filter(_.exec == "WindowInPandas")
+    assertSizeAndNotSupported(1, windowInPandas)
   }
 
   // GlobalLimit and LocalLimit is not in physical plan when collect is called on the dataframe.

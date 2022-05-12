@@ -620,12 +620,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else  {
           digits
         }
-        if (Integer.parseInt(octal, 8) >= 128) {
-          // see https://github.com/NVIDIA/spark-rapids/issues/4746
-          throw new RegexUnsupportedException(
-            "cuDF does not support octal digits 0o177 < n <= 0o377")
+        val codePoint = Integer.parseInt(octal, 8)
+        if (codePoint >= 128) {
+          RegexChar(codePoint.toChar)
+        } else {
+          RegexOctalChar(octal)
         }
-        RegexOctalChar(octal)
 
       case RegexHexDigit(digits) =>
         val codePoint = Integer.parseInt(digits, 16)
