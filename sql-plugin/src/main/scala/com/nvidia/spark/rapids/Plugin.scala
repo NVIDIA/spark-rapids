@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException}
+
 import java.time.ZoneId
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
@@ -325,32 +327,29 @@ object RapidsExecutorPlugin {
     }
   }
 
-  private val CUDA_EXCEPTION: String = classOf[ai.rapids.cudf.CudaException].getName
-  private val CUDA_FATAL_EXCEPTION: String = classOf[ai.rapids.cudf.CudaFatalException].getName
-  private val CUDF_EXCEPTION: String = classOf[ai.rapids.cudf.CudfException].getName
-
   def isCudaException(ef: ExceptionFailure): Boolean = ef.exception match {
-    case Some(ex) =>
-      ex.isInstanceOf[ai.rapids.cudf.CudaException]
-    case None =>
-      ef.description.contains(CUDA_EXCEPTION) ||
-        ef.toErrorString.contains(CUDA_EXCEPTION)
+    case Some(_: CudaException) => true
+    // This branch is for RMM errors caused by CUDA errors
+    case Some(ex: CudfException) if ex.getMessage.contains("CUDA error") => true
+    case _ => false
   }
 
   def isCudaFatalException(ef: ExceptionFailure): Boolean = ef.exception match {
-    case Some(ex) =>
-      ex.isInstanceOf[ai.rapids.cudf.CudaFatalException]
-    case None =>
-      ef.description.contains(CUDA_FATAL_EXCEPTION) ||
-        ef.toErrorString.contains(CUDA_FATAL_EXCEPTION)
+    case Some(_: CudaFatalException) => true
+    // Double check via message scraping, to ensure that we don't miss any fatal CUDA errors.
+    case Some(ex: RuntimeException) if isCudaException(ef) =>
+      val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
+        "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
+        "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
+        "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
+        "cudaErrorECCUncorrectable")
+      unrecoverableErrors.exists(ex.getMessage.contains(_))
+    case _ => false
   }
 
   def isCudfException(ef: ExceptionFailure): Boolean = ef.exception match {
-    case Some(ex) =>
-      ex.isInstanceOf[ai.rapids.cudf.CudfException]
-    case None =>
-      ef.description.contains(CUDF_EXCEPTION) ||
-        ef.toErrorString.contains(CUDF_EXCEPTION)
+    case Some(_: CudfException) => true
+    case _ => false
   }
 }
 
