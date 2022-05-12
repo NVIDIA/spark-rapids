@@ -141,7 +141,7 @@ def test_orderby_array_of_structs(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      FloatGen(no_nans=True), DoubleGen(no_nans=True),
+                                      float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
@@ -153,22 +153,17 @@ def test_array_contains(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: get_input(spark).select(
                                             array_contains(col('a'), lit.cast(data_gen.data_type)),
                                             array_contains(col('a'), col('b')),
-                                            array_contains(col('a'), col('a')[5])
-                                         ), no_nans_conf)
+                                            array_contains(col('a'), col('a')[5])))
 
 
-# Test array_contains() with a literal key that is extracted from the input array of doubles
-# that does contain NaNs. Note that the config is still set to indicate that the input has NaNs
-# but we verify that the plan is on the GPU despite that if the value being looked up is not a NaN.
-@pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [FloatGen(special_cases=[(float('nan'), 20)]),
+                          DoubleGen(special_cases=[(float('nan'), 20)])], ids=idfn)
 def test_array_contains_for_nans(data_gen):
-    arr_gen = ArrayGen(data_gen)
-
-    def main_df(spark):
-        df = three_col_df(spark, arr_gen, data_gen, arr_gen)
-        chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
-        return df.select(array_contains(col('a'), chk_val))
-    assert_gpu_and_cpu_are_equal_collect(main_df)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, ArrayGen(data_gen), data_gen).selectExpr(
+            'array_contains(a, b)',
+            'array_contains(a, nan)'))
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
