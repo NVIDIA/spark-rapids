@@ -67,7 +67,20 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
 multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
+native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+
+# For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files
+# for nested types
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
+                    coalesce_parquet_file_reader_conf, native_parquet_file_reader_conf,
+                    native_multithreaded_parquet_file_reader_conf, native_coalesce_parquet_file_reader_conf]
+
+reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
@@ -223,7 +236,7 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
                                           [ArrayGen(decimal_gen_32bit, max_length=10)],
                                           [StructGen([['child0', decimal_gen_32bit]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
