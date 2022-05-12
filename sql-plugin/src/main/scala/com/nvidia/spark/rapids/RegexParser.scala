@@ -643,9 +643,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'W' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4475
           throw new RegexUnsupportedException("non-word class \\W is not supported")
-        case 'b' | 'B' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4517
-          throw new RegexUnsupportedException("word boundaries are not supported")
+        case 'b' | 'B' if mode == RegexSplitMode =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/5478
+          throw new RegexUnsupportedException("word boundaries are not supported in split mode")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
         case 'Z' if mode == RegexSplitMode || mode == RegexReplaceMode =>
