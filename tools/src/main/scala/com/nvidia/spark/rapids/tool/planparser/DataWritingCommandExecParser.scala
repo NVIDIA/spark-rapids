@@ -20,22 +20,24 @@ import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 
-case class GenerateExecParser(
+case class DataWritingCommandExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
     sqlID: Long) extends ExecParser {
 
-  val fullExecName = node.name + "Exec"
+  // hardcode because InsertIntoHadoopFsRelationCommand uses this same exec
+  // and InsertIntoHadoopFsRelationCommand doesn't have an entry in the
+  // supported execs file
+  val fullExecName = "DataWritingCommandExec"
 
   override def parse: ExecInfo = {
-    // Generate doesn't have duration
+    val writeFormat = node.desc.split(",")(2)
+    val writeSupported = checker.isWriteFormatsupported(writeFormat)
     val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
-      (checker.getSpeedupFactor(fullExecName), true)
-    } else {
-      (1, false)
-    }
+    val speedupFactor = checker.getSpeedupFactor(fullExecName)
+    val finalSpeedup = if (writeSupported) speedupFactor else 1
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    ExecInfo(sqlID, s"${node.name.trim} ${writeFormat.toLowerCase.trim}", "", finalSpeedup,
+      duration, node.id, writeSupported, None)
   }
 }

@@ -18,24 +18,30 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
+import org.apache.spark.sql.rapids.tool.AppBase
 
-case class GenerateExecParser(
+case class FileSourceScanExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
-    sqlID: Long) extends ExecParser {
+    sqlID: Long,
+    app: AppBase) extends ExecParser with Logging {
 
-  val fullExecName = node.name + "Exec"
+  // The node name for Scans is Scan <format> so here we hardcode
+  val fullExecName = "FileSourceScanExec"
 
   override def parse: ExecInfo = {
-    // Generate doesn't have duration
-    val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
-      (checker.getSpeedupFactor(fullExecName), true)
-    } else {
-      (1, false)
-    }
+    val accumId = node.metrics.find(_.name == "scan time").map(_.accumulatorId)
+    val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
+
+    val readInfo = ReadParser.parseReadNode(node)
+    // don't use the isExecSupported because we have finer grain.
+    val score = ReadParser.calculateReadScoreRatio(readInfo, checker)
+    val speedupFactor = checker.getSpeedupFactor(fullExecName)
+    val overallSpeedup = Math.max((speedupFactor * score).toInt, 1)
+
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    ExecInfo(sqlID, node.name, "", overallSpeedup, maxDuration, node.id, score > 0, None)
   }
 }

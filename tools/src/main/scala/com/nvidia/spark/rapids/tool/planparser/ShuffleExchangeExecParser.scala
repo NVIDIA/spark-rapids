@@ -16,26 +16,35 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
+import java.util.concurrent.TimeUnit.NANOSECONDS
+
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
+import org.apache.spark.sql.rapids.tool.AppBase
 
-case class GenerateExecParser(
+case class ShuffleExchangeExecParser(
     node: SparkPlanGraphNode,
     checker: PluginTypeChecker,
-    sqlID: Long) extends ExecParser {
+    sqlID: Long,
+    app: AppBase) extends ExecParser with Logging {
 
-  val fullExecName = node.name + "Exec"
+  val fullExecName = "ShuffleExchangeExec"
 
   override def parse: ExecInfo = {
-    // Generate doesn't have duration
-    val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val writeId = node.metrics.find(_.name == "shuffle write time").map(_.accumulatorId)
+    // shuffle write time is in nanoseconds
+    val maxWriteTime = SQLPlanParser.getTotalDuration(writeId, app).map(NANOSECONDS.toMillis(_))
+    val fetchId = node.metrics.find(_.name == "fetch wait time").map(_.accumulatorId)
+    val maxFetchTime = SQLPlanParser.getTotalDuration(fetchId, app)
+    val duration = (maxWriteTime ++ maxFetchTime).reduceOption(_ + _)
+    val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
   }
 }
