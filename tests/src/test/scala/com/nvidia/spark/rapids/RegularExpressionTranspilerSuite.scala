@@ -175,7 +175,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
   }
-  
+
   test("string anchors - find") {
     val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
         "(\\A)+test", "(\\A){1}test", "(\\A){1,}test", "test\\z")
@@ -243,6 +243,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test ("word boundaries will fall back to CPU - split") {
+    val patterns = Seq("\\b", "\\B")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode, "word boundaries are not supported in split mode")
+    )
   }
 
   test("whitespace boundaries - replace") {
