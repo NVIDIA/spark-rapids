@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
@@ -37,4 +38,13 @@ object RapidsErrorUtils {
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
+
+  def divByZeroError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.divideByZeroError()
+  }
+
+  def divOverflowError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.overflowInIntegralDivideError()
+  }
 }
+
