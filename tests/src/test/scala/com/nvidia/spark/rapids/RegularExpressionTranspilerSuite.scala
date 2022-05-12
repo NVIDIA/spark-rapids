@@ -251,24 +251,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       Seq("\u001eTEST"))
   }
 
-  test("horizonal whitespace - find") {
-    val patterns = Seq("\\h", "\\H")
-    val inputs = Seq("abcd", "te\r\nst", raw"\xA0", "\u2025f \u0042", "\t\u2001", "\u2001- a\u200a")
-    assertCpuGpuMatchesRegexpFind(patterns, inputs)
-  }
-
-  test("vertical whitespace - find") {
-    val patterns = Seq("\\v", "\\V")
-    val inputs = Seq("abcd", "te \tst", "\n", "\r\n", raw"\x85", "\u2028 \u2029")
-    assertCpuGpuMatchesRegexpFind(patterns, inputs)
-  }
-
-  test("linebreak matcher - find") {
-    val inputs = Seq("abcd", "te\r\nst", "1\u000D\u000A2", "\u000C\u000D", 
-      "\u000A\u000D", "\u0085\u2029", "\u000C test \u2028")
-    assertCpuGpuMatchesRegexpFind(Seq("\\R"), inputs)
-  }
-
   test("match literal $ - find") {
     assertCpuGpuMatchesRegexpFind(
       Seq("\\$", "\\$[0-9]"),
