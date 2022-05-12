@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2022, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project name="RAPIDS-Qual-UI" default="extract">
+    <description>
+        Ant task to download dependency files from internet and extract during maven package.
+        Those files are used to render the Qualification UI report file.
+    </description>
+    <target name="env">
+        <echo level="info"
+              message="Project path             : ${project.basedir}"/>
+        <echo level="info"
+              message="Project build directory  : ${project.build.directory}"/>
+        <echo level="info"
+              message="UI Resources Location    : ${project.ui.output}"/>
+        <echo level="info"
+              message="Output location          : ${project.ui.output}"/>
+        <echo level="info"
+              message="Cache location           : ${project.cache.dir}"/>
+        <mkdir dir="${project.cache.dir}"/>
+        <mkdir dir="${project.cache.dir}/${lib.datatables.dir}"/>
+        <mkdir dir="${project.ui.output}"/>
+    </target>
+    <target name="download" depends="env"
+            description="Download UI dependencies from perspective resources">
+        <echo level="info"
+              message="Downloading BoostStrap file ..." />
+        <get src="${lib.bootstrap.url}"
+             skipexisting="true"
+             dest="${project.cache.dir}/${lib.bootstrap.dir}.zip" />
+        <available property="download.bootstrap.file" file="${project.cache.dir}/${lib.bootstrap.dir}.zip"/>
+        <echo level="info"
+              message="Downloading SpurAdmin files ..." />
+        <get src="${lib.spur.url}"
+             skipexisting="true"
+             dest="${project.cache.dir}/${lib.spur.dir}.zip" />
+        <available property="download.spur.file" file="${project.cache.dir}/${lib.spur.dir}.zip"/>
+        <echo level="info"
+              message="Downloading jQuery files ..." />
+        <get src="${lib.jquery.url}"
+             skipexisting="true"
+             dest="${project.cache.dir}/${lib.jquery.dir}.zip" />
+        <available property="download.jquery.file" file="${project.cache.dir}/${lib.jquery.dir}.zip"/>
+        <echo level="info"
+              message="Downloading mustache files ..." />
+        <get src="${lib.mustache.url}"
+             skipexisting="true"
+             dest="${project.cache.dir}/${lib.mustache.dir}.zip" />
+        <available property="download.jquery.file" file="${project.cache.dir}/${lib.mustache.dir}.zip"/>
+        <!-- get Datatables files -->
+
+        <mkdir dir="${project.ui.output}/${lib.datatables.dir}"/>
+        <!-- fetch css files -->
+        <get src="${lib.datatables.url.domain}/1.12.0/css/dataTables.bootstrap4.min.css"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/buttons/2.2.3/css/buttons.bootstrap4.min.css"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/responsive/2.3.0/css/responsive.bootstrap4.min.css"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/searchpanes/2.0.1/css/searchPanes.bootstrap4.min.css"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/select/1.4.0/css/select.bootstrap4.min.css"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <!-- fetch js files -->
+        <get src="${lib.datatables.url.domain}/1.12.0/js/jquery.dataTables.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/1.12.0/js/dataTables.bootstrap4.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/buttons/2.2.3/js/dataTables.buttons.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/buttons/2.2.3/js/buttons.bootstrap4.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/buttons/2.2.3/js/buttons.html5.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/responsive/2.3.0/js/dataTables.responsive.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/responsive/2.3.0/js/responsive.bootstrap4.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/searchpanes/2.0.1/js/dataTables.searchPanes.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/searchpanes/2.0.1/js/searchPanes.bootstrap4.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+        <get src="${lib.datatables.url.domain}/select/1.4.0/js/dataTables.select.min.js"
+             dest="${project.cache.dir}/${lib.datatables.dir}/"
+             skipexisting="true"/>
+    </target>
+    <target name="extract" depends="env,download" description="Extract project files">
+        <echo level="info"
+              message="Extracting bootstrap .zip file" />
+        <unzip src="${project.cache.dir}/${lib.bootstrap.dir}.zip"
+               dest="${project.ui.output}/${lib.bootstrap.dir}">
+            <mapper type="flatten"/>
+            <patternset>
+                <include name="**/bootstrap.min.css*"/>
+                <include name="**/bootstrap.bundle.min.js*"/>
+                <include name="**/LICENSE*"/>
+            </patternset>
+        </unzip>
+        <echo level="info"
+              message="Extracting spur .zip file" />
+        <unzip src="${project.cache.dir}/${lib.spur.dir}.zip"
+               dest="${project.ui.output}/${lib.spur.dir}">
+            <mapper type="flatten"/>
+            <patternset>
+                <include name="**/spur.min.css"/>
+                <include name="**/LICENSE*"/>
+            </patternset>
+        </unzip>
+        <echo level="info"
+              message="Extracting jQuery .zip file" />
+        <unzip src="${project.cache.dir}/${lib.jquery.dir}.zip"
+               dest="${project.ui.output}/${lib.jquery.dir}">
+            <mapper type="flatten"/>
+            <patternset>
+                <include name="**/jquery.min.*"/>
+                <include name="**/LICENSE*"/>
+            </patternset>
+        </unzip>
+        <echo level="info"
+              message="Extracting mustache .zip file" />
+        <unzip src="${project.cache.dir}/${lib.mustache.dir}.zip"
+               dest="${project.ui.output}/${lib.mustache.dir}">
+            <mapper type="flatten"/>
+            <patternset>
+                <include name="**/mustache.min.*"/>
+                <include name="**/LICENSE*"/>
+            </patternset>
+        </unzip>
+        <!-- copying datatables files -->
+        <echo level="info"
+              message="Copying datatables files ..." />
+        <copy todir="${project.ui.output}/${lib.datatables.dir}">
+            <fileset dir="${project.cache.dir}/${lib.datatables.dir}">
+                <include name="*"/>
+            </fileset>
+        </copy>
+    </target>
+</project>

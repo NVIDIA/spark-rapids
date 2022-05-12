@@ -1,7 +1,7 @@
 RAPIDS plugin for Apache Spark
 Copyright (c) 2022, NVIDIA CORPORATION
 
-This product includes software that depends on 3rd library available under MIT License
+This product includes software that depends on 3rd party libraries available under MIT License
 Attribution Statements: Nvidia actively chooses the MIT license to apply to files with this
 copyright and license.
 
@@ -20,7 +20,7 @@ jQuery V3.6.0 - The MIT License (MIT)
     License Text ( https://jquery.org/license/ )
     Copyright OpenJS Foundation and other contributors, https://openjsf.org/
 
-Mustache.js V4.20 - The MIT License (MIT)
+Mustache.js V4.10 - The MIT License (MIT)
     License Text ( https://github.com/janl/mustache.js/blob/master/LICENSE )
     Copyright (c) 2009 Chris Wanstrath (Ruby)
     Copyright (c) 2010-2014 Jan Lehnardt (JavaScript)
