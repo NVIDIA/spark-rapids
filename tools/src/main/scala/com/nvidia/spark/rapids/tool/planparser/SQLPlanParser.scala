@@ -158,8 +158,10 @@ object SQLPlanParser extends Logging {
       }
       // check is the node has a dataset operations and if so change to not supported
       val ds = app.isDataSetOrRDDPlan(node.desc)
+      val containsUDF = app.containsUDF(node.desc)
       val stagesInNode = getStagesInSQLNode(node, app)
-      Seq(execInfos.copy(stages = stagesInNode, isSupported = execInfos.isSupported && !ds))
+      val supported = execInfos.isSupported && !ds && !containsUDF
+      Seq(execInfos.copy(stages = stagesInNode, isSupported = supported))
     }
   }
 

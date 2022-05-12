@@ -339,7 +339,7 @@ class QualificationAppInfo(
           val allStageIds = execInfos.flatMap(_.stages).toSet
           val unAccounted = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
-              .map(_.totalTaskDuration).getOrElse(0)
+              .map(_.totalTaskDuration).getOrElse(0L)
             // val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
             // val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
             // val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
@@ -358,7 +358,7 @@ class QualificationAppInfo(
 
             // if we have unsupported try to guess at how much time.  For now divide
             // time by number of execs and give each one equal weight
-            val eachExecTime = stageTaskTime / execsForStage.size
+            val eachExecTime = stageTaskTime / allFlattenedExecs.size
             logWarning(s"each exec time is: $eachExecTime, num execs: ${execsForStage.size}")
 
             (stageId, averageSpeedup, stageTaskTime)
@@ -375,7 +375,7 @@ class QualificationAppInfo(
       val speedupDuration = sqlDataframeTaskDuration - unsupportedDuration
       val speedupFactor = calculateSpeedupFactor()
       val estimatedDurationRaw =
-        (speedupDuration/speedupFactor) + unsupportedDuration + nonSQLDuration
+        (speedupDuration / speedupFactor) + unsupportedDuration + nonSQLDuration
       val estimatedDuration = f"${estimatedDurationRaw}%1.2f".toDouble
       val appTaskDuration = nonSQLDuration + sqlDataframeTaskDuration
       val totalSpeedup = (math floor appTaskDuration / estimatedDuration * 1000) / 1000

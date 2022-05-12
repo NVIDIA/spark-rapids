@@ -150,7 +150,12 @@ abstract class AppBase(
     }
   }
 
-  private val UDFKeywords = Map(".*UDF.*" -> "UDF")
+  private val UDFRegex = ".*UDF.*"
+  private val UDFKeywords = Map(UDFRegex -> "UDF")
+
+  def containsUDF(desc: String): Boolean = {
+    desc.matches(UDFRegex)
+  }
 
   protected def findPotentialIssues(desc: String): Set[String] =  {
     val potentialIssuesRegexs = UDFKeywords
