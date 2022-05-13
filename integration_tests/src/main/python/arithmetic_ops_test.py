@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later, is_spark_330_or_later
 import pyspark.sql.functions as f
 from datetime import timedelta
 
@@ -283,11 +283,17 @@ def test_mod_pmod_long_min_value():
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
+    # spark 31X: throws java.lang.ArithmeticException
+    # spark 32X: throws either java.lang.ArithmeticException or org.apache.spark.SparkArithmeticException
+    # spark 33X: throws org.apache.spark.SparkArithmeticException
+    exception_str = "java.lang.ArithmeticException" if is_before_spark_320() else \
+        "org.apache.spark.SparkArithmeticException" if is_spark_330_or_later() else \
+        "ArithmeticException"
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             overflow_exp.format(string_type, string_type)).collect(),
         ansi_enabled_conf,
-        "java.lang.ArithmeticException" if is_before_spark_320() else "org.apache.spark.SparkArithmeticException")
+        exception_str)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
