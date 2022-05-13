@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids.tool.profiling
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
@@ -266,75 +265,6 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     app.sqlIdToInfo.get(event.executionId).foreach { sql =>
       sql.endTime = Some(event.time)
       sql.duration = ProfileUtils.OptionLongMinusLong(sql.endTime, sql.startTime)
-    }
-  }
-
-  override def doSparkListenerJobStart(
-      app: ApplicationInfo,
-      event: SparkListenerJobStart): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
-    val sqlID = ProfileUtils.stringToLong(sqlIDString)
-    val thisJob = new JobInfoClass(
-      event.jobId,
-      event.stageIds,
-      sqlID,
-      event.properties.asScala,
-      event.time,
-      None,
-      None,
-      None,
-      None,
-      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
-    )
-    app.jobIdToInfo.put(event.jobId, thisJob)
-  }
-
-  override def doSparkListenerJobEnd(
-      app: ApplicationInfo,
-      event: SparkListenerJobEnd): Unit = {
-    logDebug("Processing event: " + event.getClass)
-
-    def jobResult(res: JobResult): String = {
-      res match {
-        case JobSucceeded => "JobSucceeded"
-        case _: JobFailed => "JobFailed"
-        case _ => "Unknown"
-      }
-    }
-
-    def failedReason(res: JobResult): String = {
-      res match {
-        case JobSucceeded => ""
-        case jobFailed: JobFailed => jobFailed.exception.toString
-        case _ => ""
-      }
-    }
-
-    app.jobIdToInfo.get(event.jobId) match {
-      case Some(j) =>
-        j.endTime = Some(event.time)
-        j.duration = ProfileUtils.OptionLongMinusLong(j.endTime, j.startTime)
-        val thisJobResult = jobResult(event.jobResult)
-        j.jobResult = Some(thisJobResult)
-        val thisFailedReason = failedReason(event.jobResult)
-        j.failedReason = Some(thisFailedReason)
-      case None =>
-        val thisJobResult = jobResult(event.jobResult)
-        val thisFailedReason = failedReason(event.jobResult)
-        val thisJob = new JobInfoClass(
-          event.jobId,
-          Seq.empty,
-          None,
-          Map.empty,
-          event.time,  // put end time as start time
-          Some(event.time),
-          Some(thisJobResult),
-          Some(thisFailedReason),
-          None,
-          app.gpuMode
-        )
-        app.jobIdToInfo.put(event.jobId, thisJob)
     }
   }
 

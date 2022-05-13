@@ -41,4 +41,12 @@ object RapidsErrorUtils {
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
+
+  def divByZeroError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.divideByZeroError()
+  }
+
+  def divOverflowError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.overflowInIntegralDivideError()
+  }
 }

@@ -45,6 +45,8 @@ function print_usage() {
   echo "        E.g., --module=integration_tests"
   echo "   -P=N, --parallel=N"
   echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
+  echo "   --install"
+  echo "        Intall the resulting jar instead of just building it"
 }
 
 function bloopInstall() {
@@ -85,6 +87,8 @@ function bloopInstall() {
   )
 }
 
+FINAL_OP="package"
+
 while [[ "$1" != "" ]] ; do
 
 case "$1" in
@@ -116,6 +120,10 @@ case "$1" in
 
 --clean)
   SKIP_CLEAN="0"
+  ;;
+
+--install)
+  FINAL_OP="install"
   ;;
 
 *)
@@ -262,7 +270,7 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  mvn package -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+  mvn $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dskip -Dmaven.javadoc.skip
 )

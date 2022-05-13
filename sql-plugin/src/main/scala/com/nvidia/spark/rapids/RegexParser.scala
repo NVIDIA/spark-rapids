@@ -744,21 +744,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else  {
           digits
         }
-        if (Integer.parseInt(octal, 8) >= 128) {
-          // see https://github.com/NVIDIA/spark-rapids/issues/4746
-          throw new RegexUnsupportedException(
-            "cuDF does not support octal digits 0o177 < n <= 0o377")
+        val codePoint = Integer.parseInt(octal, 8)
+        if (codePoint >= 128) {
+          RegexChar(codePoint.toChar)
+        } else {
+          RegexOctalChar(octal)
         }
-        RegexOctalChar(octal)
 
       case RegexHexDigit(digits) =>
         val codePoint = Integer.parseInt(digits, 16)
         if (codePoint >= 128) {
-          // see https://github.com/NVIDIA/spark-rapids/issues/4866
-          throw new RegexUnsupportedException(
-            "cuDF does not support hex digits > 0x7F")
+          // cuDF only supports 0x00 to 0x7f hexidecimal chars
+          RegexChar(codePoint.toChar)
+        } else {
+          RegexHexDigit(String.format("%02x", Int.box(codePoint)))
         }
-        RegexHexDigit(String.format("%02x", Int.box(codePoint)))
 
       case RegexEscaped(ch) => ch match {
         case 'D' =>

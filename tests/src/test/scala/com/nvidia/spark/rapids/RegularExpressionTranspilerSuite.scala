@@ -142,22 +142,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support null characters in regular expressions"))
   }
 
-  test("cuDF does not support octal digits 0o177 < n <= 0o377") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4746
-    val patterns = Seq(raw"\0200", raw"\0377")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support octal digits 0o177 < n <= 0o377"))
-  }
-
-  test("cuDF does not support hex digits > 0x7F") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4866
-    val patterns = Seq(raw"\x80", raw"\xff", raw"\xFF", raw"\x{ABC}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support hex digits > 0x7F"))
-  }
-
   test("cuDF does not support octal digits in character classes") {
     // see https://github.com/NVIDIA/spark-rapids/issues/4862
     val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
@@ -178,16 +162,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("octal digits < 0o177 - find") {
-    val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772")
-    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
-        "\u0007\u003f\u007f", "\u007f", "\u007f2"))
+  test("octal digits - find") {
+    val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772", raw"\0200", 
+      raw"\0376", raw"\0377", raw"\02002")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", "a\u007fb",
+        "\u0007\u003f\u007f", "\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
   }
 
-  test("hex digits < 0x7F - find") {
-    val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}")
+  test("hex digits - find") {
+    val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}",
+      raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
-        "\u0007\u003f\u007f", "\u007f", "\u007f2"))
+        "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
   }
   
   test("string anchors - find") {
