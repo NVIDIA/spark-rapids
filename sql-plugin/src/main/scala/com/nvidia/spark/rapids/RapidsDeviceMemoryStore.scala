@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
+
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -159,12 +160,10 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param needsSync true if we should stream synchronize before adding the buffer
    */
   private def addDeviceBuffer(buffer: RapidsDeviceMemoryBuffer, needsSync: Boolean): Unit = {
-    withResource(new NvtxRange("addDeviceBuffer", NvtxColor.YELLOW)) { _ =>
-      if (needsSync) {
-        Cuda.DEFAULT_STREAM.sync()
-      }
-      addBuffer(buffer);
+    if (needsSync) {
+      Cuda.DEFAULT_STREAM.sync()
     }
+    addBuffer(buffer);
   }
 
   class RapidsDeviceMemoryBuffer(
