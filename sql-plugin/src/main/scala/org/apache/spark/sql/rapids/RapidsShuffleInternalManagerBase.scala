@@ -114,7 +114,10 @@ class RapidsCachingWriter[K, V](
               shuffleStorage.addContiguousTable(
                 bufferId,
                 contigTable,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                // we don't need to sync here, because we sync on the cuda
+                // stream after sliceInternalOnGpu (contiguous_split)
+                needsSync = false)
             case c: GpuCompressedColumnVector =>
               val buffer = c.getTableBuffer
               buffer.incRefCount()

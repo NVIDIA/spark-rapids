@@ -92,12 +92,15 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
    *                      It should never allocate GPU memory and really just be used for metrics.
+   * @param needsSync whether the spill framework should stream synchronize while adding
+   *                  this device buffer (defaults to true)
    */
   def addContiguousTable(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
+      needsSync: Boolean = true): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -114,7 +117,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
-      addDeviceBuffer(buffer, needsSync = true)
+      addDeviceBuffer(buffer, needsSync)
     }
   }
 
