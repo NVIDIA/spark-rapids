@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
@@ -36,21 +37,39 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  private def writeCSVHeader(writer: ToolTextFileWriter,
-      appInfos: Seq[QualificationSummaryInfo],
-      headersAndSizes: LinkedHashMap[String, Int]): Unit = {
-    writer.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-  }
-
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
       val headersAndSizes = QualOutputWriter
         .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
-      writeCSVHeader(csvFileWriter, sums, headersAndSizes)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
       sums.foreach { appSum =>
         csvFileWriter.write(QualOutputWriter.constructAppDetailedInfo(appSum, headersAndSizes,
           ",", false, reportReadSchema))
+      }
+    } finally {
+      csvFileWriter.close()
+    }
+  }
+
+  private def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
+    val topExecInfo = plans.flatMap(_.execInfo)
+    topExecInfo.flatMap { e =>
+      e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
+  def writeExecReport(plans: Seq[PlanInfo], numOutputRows: Int) : Unit = {
+    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
+      "Plan Exec Info")
+    try {
+      val allExecs = getAllExecsFromPlan(plans)
+      val headersAndSizes = QualOutputWriter
+        .getDetailedExecsHeaderStringsAndSizes(allExecs, reportReadSchema)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      plans.foreach { plan =>
+        val rows = QualOutputWriter.constructExecsInfo(plan, headersAndSizes, ",", false)
+        rows.foreach(csvFileWriter.write(_))
       }
     } finally {
       csvFileWriter.close()
@@ -121,6 +140,15 @@ object QualOutputWriter {
   val TOTAL_SPEEDUP_STR = "Total Speedup"
   val SPEEDUP_BUCKET_STR = "Recommendation"
   val LONGEST_SQL_DURATION_STR = "Longest SQL Duration"
+  val EXEC_STR = "Exec Name"
+  val EXPR_STR = "Expression Name"
+  val EXEC_DURATION = "Exec Duration"
+  val EXEC_NODEID = "SQL Node Id"
+  val EXEC_IS_SUPPORTED = "Exec Is Supported"
+  val EXEC_STAGES = "Exec Stages"
+  val EXEC_SHOULD_REMOVE = "Exec Should Remove"
+  val EXEC_CHILDREN = "Exec Children"
+
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
   val PROBLEM_DUR_SIZE: Int = PROBLEM_DUR_STR.size
@@ -192,6 +220,25 @@ object QualOutputWriter {
     if (str.isEmpty) "\"\"" else str
   }
 
+  private def getChildrenSize(execInfos: Seq[ExecInfo]): Seq[Int] = {
+    execInfos.map(_.children.getOrElse(Seq.empty).mkString(",").size)
+  }
+
+  def getDetailedExecsHeaderStringsAndSizes(execInfos: Seq[ExecInfo],
+      reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
+    val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
+      EXPR_STR -> getMaxSizeForHeader(execInfos.map(_.expr.size), EXPR_STR),
+      EXEC_DURATION -> EXEC_DURATION.size,
+      EXEC_NODEID -> EXEC_NODEID.size,
+      EXEC_IS_SUPPORTED -> EXEC_IS_SUPPORTED.size,
+      EXEC_STAGES -> getMaxSizeForHeader(execInfos.map(_.stages.mkString(",").size), EXEC_STAGES),
+      EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size,
+      EXEC_CHILDREN -> getMaxSizeForHeader(getChildrenSize(execInfos), EXEC_CHILDREN),
+    )
+    detailedHeadersAndFields
+  }
+
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
@@ -259,6 +306,34 @@ object QualOutputWriter {
       delimiter: String,
       prettyPrint: Boolean): String = {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
+  }
+
+  private def constructExecInfoBuffer(info: ExecInfo, delimiter: String = "|",
+      prettyPrint: Boolean): String = {
+    val data = ListBuffer[(String, Int)](
+      info.sqlID.toString -> 1,
+      stringIfempty(info.exec) -> 1,
+      stringIfempty(info.expr) -> 1,
+      info.speedupFactor.toString -> 1,
+      info.duration.toString -> 1,
+      info.nodeId.toString -> 1,
+      info.isSupported.toString -> 1,
+      info.stages.mkString(",") -> 1,
+      info.children.getOrElse(Seq.empty).map(_.exec).mkString(",") -> 1,
+      info.shouldRemove.toString -> 1)
+    constructOutputRow(data, delimiter, prettyPrint)
+  }
+
+  def constructExecsInfo(
+      planInfo: PlanInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String = "|",
+      prettyPrint: Boolean): Seq[String] = {
+    planInfo.execInfo.flatMap { info =>
+      val children = info.children.map(_.map(constructExecInfoBuffer(_, delimiter, prettyPrint)))
+        .getOrElse(Seq.empty)
+      children :+ constructExecInfoBuffer(info, delimiter, prettyPrint)
+    }
   }
 
   def constructAppDetailedInfo(

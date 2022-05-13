@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.planparser.PlanInfo
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
@@ -37,6 +38,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     reportReadSchema: Boolean, printStdout: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
+  private val allPlans = new ConcurrentLinkedQueue[Seq[PlanInfo]]()
+
   // default is 24 hours
   private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
@@ -84,6 +87,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       sortedDesc
     }
     qWriter.writeReport(sortedForReport, numRows)
+    qWriter.writeExecReport(allPlans.asScala.toSeq)
     sortedDesc
   }
 
@@ -100,7 +104,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       } else {
         val qualSumInfo = app.get.aggregateStats()
         if (qualSumInfo.isDefined) {
-          allApps.add(qualSumInfo.get)
+          allApps.add(qualSumInfo.get._1)
+          allPlans.add(qualSumInfo.get._2)
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         } else {

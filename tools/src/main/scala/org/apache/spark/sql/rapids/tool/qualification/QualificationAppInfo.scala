@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
-import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, SQLPlanParser}
+import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo, SQLPlanParser}
 import com.nvidia.spark.rapids.tool.profiling._
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
@@ -263,7 +263,7 @@ class QualificationAppInfo(
         // we don't know what stage its in our its duration
         logDebug(s"No stage associated with ${execInfo.exec} " +
           s"so speedup factor isn't applied anywhere.")
-        Seq((-1, execInfo))
+        Seq.empty
       } else {
         Seq((execInfo.stages.head, execInfo))
       }
@@ -277,7 +277,7 @@ class QualificationAppInfo(
    * @return Option of QualificationSummaryInfo, Some if we were able to process the application
    *         otherwise None.
    */
-  def aggregateStats(): Option[QualificationSummaryInfo] = {
+  def aggregateStats(): Option[(QualificationSummaryInfo, Seq[PlanInfo])]= {
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframeDuration
@@ -342,7 +342,7 @@ class QualificationAppInfo(
           // val withOutDur = getStageToExec(execsWithoutDuration)
           // val withDur = getStageToExec(execsWithDuration)
           val allStagesToExecs = getStageToExec(execInfos)
-          val allStageIds = execInfos.flatMap(_.stages).toSet
+          val allStageIds = allStagesToExecs.keys.toSet
           // if it doesn't have a stage id associated we can't calculate the time spent in that
           // SQL so we just drop it
           val unAccounted = allStageIds.map { stageId =>
@@ -405,13 +405,14 @@ class QualificationAppInfo(
 
       val nonSQLWallClockDuration = calculateNonSqlDataframeDuration
 
-      new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
+      val summaryInfo = new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
         nonSQLWallClockDuration, nonSQLTaskDuration, estimatedDuration, unsupportedSQLDuration,
         speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
+      (summaryInfo, planInfos)
     }
   }
 
