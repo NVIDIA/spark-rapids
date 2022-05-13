@@ -138,8 +138,7 @@ abstract class RapidsBufferStore(
   def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
   : RapidsBufferBase = {
     freeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
-      buffers.add(newBuffer)
-      catalog.registerNewBuffer(newBuffer)
+      addBuffer(newBuffer)
       newBuffer
     }
   }
@@ -208,6 +207,7 @@ abstract class RapidsBufferStore(
    * If the data transfer will be performed asynchronously, this method is responsible for
    * adding a reference to the existing buffer and later closing it when the transfer completes.
    * @note DO NOT close the buffer unless adding a reference!
+   * @note `createBuffer` impls should synchronize against `stream` before returning, if needed.
    * @param buffer data from another store
    * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. The ownership
    *                     for `memoryBuffer` is transferred to this store. The store may close
