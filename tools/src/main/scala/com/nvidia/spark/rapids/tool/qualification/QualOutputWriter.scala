@@ -233,22 +233,6 @@ object QualOutputWriter {
     execInfos.map(_.children.getOrElse(Seq.empty).mkString(",").size)
   }
 
-  def getDetailedExecsHeaderStringsAndSizes(execInfos: Seq[ExecInfo],
-      reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
-    val detailedHeadersAndFields = LinkedHashMap[String, Int](
-      SQL_ID_STR -> SQL_ID_STR.size,
-      EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
-      EXPR_STR -> getMaxSizeForHeader(execInfos.map(_.expr.size), EXPR_STR),
-      EXEC_DURATION -> EXEC_DURATION.size,
-      EXEC_NODEID -> EXEC_NODEID.size,
-      EXEC_IS_SUPPORTED -> EXEC_IS_SUPPORTED.size,
-      EXEC_STAGES -> getMaxSizeForHeader(execInfos.map(_.stages.mkString(",").size), EXEC_STAGES),
-      EXEC_CHILDREN -> getMaxSizeForHeader(getChildrenSize(execInfos), EXEC_CHILDREN),
-      EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size
-    )
-    detailedHeadersAndFields
-  }
-
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
@@ -318,19 +302,37 @@ object QualOutputWriter {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
   }
 
+  def getDetailedExecsHeaderStringsAndSizes(execInfos: Seq[ExecInfo],
+      reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
+    val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      SQL_ID_STR -> SQL_ID_STR.size,
+      EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
+      EXPR_STR -> getMaxSizeForHeader(execInfos.map(_.expr.size), EXPR_STR),
+      SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
+      EXEC_DURATION -> EXEC_DURATION.size,
+      EXEC_NODEID -> EXEC_NODEID.size,
+      EXEC_IS_SUPPORTED -> EXEC_IS_SUPPORTED.size,
+      EXEC_STAGES -> getMaxSizeForHeader(execInfos.map(_.stages.mkString(",").size), EXEC_STAGES),
+      EXEC_CHILDREN -> getMaxSizeForHeader(getChildrenSize(execInfos), EXEC_CHILDREN),
+      EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size
+    )
+    detailedHeadersAndFields
+  }
+
   private def constructExecInfoBuffer(info: ExecInfo, delimiter: String = "|",
-      prettyPrint: Boolean): String = {
+      prettyPrint: Boolean, headersAndSizes: LinkedHashMap[String, Int],): String = {
     val data = ListBuffer[(String, Int)](
-      info.sqlID.toString -> 1,
-      stringIfempty(info.exec) -> 1,
-      stringIfempty(info.expr) -> 1,
-      info.speedupFactor.toString -> 1,
-      info.duration.toString -> 1,
-      info.nodeId.toString -> 1,
-      info.isSupported.toString -> 1,
-      info.stages.mkString(":") -> 1,
-      info.children.getOrElse(Seq.empty).map(_.exec).mkString(":") -> 1,
-      info.shouldRemove.toString -> 1)
+      info.sqlID.toString -> headersAndSizes(SQL_ID_STR),
+      stringIfempty(info.exec) -> headersAndSizes(EXEC_STR),
+      stringIfempty(info.expr) -> headersAndSizes(EXEC_STR),
+      info.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      info.duration.toString -> headersAndSizes(EXEC_DURATION),
+      info.nodeId.toString -> headersAndSizes(EXEC_NODEID),
+      info.isSupported.toString -> headersAndSizes(EXEC_IS_SUPPORTED),
+      info.stages.mkString(":") -> headersAndSizes(EXEC_STAGES),
+      info.children.getOrElse(Seq.empty).map(_.exec).mkString(":") ->
+        headersAndSizes(EXEC_CHILDREN),
+      info.shouldRemove.toString -> headersAndSizes(EXEC_SHOULD_REMOVE))
     constructOutputRow(data, delimiter, prettyPrint)
   }
 
@@ -340,9 +342,10 @@ object QualOutputWriter {
       delimiter: String = "|",
       prettyPrint: Boolean): Seq[String] = {
     execInfos.flatMap { info =>
-      val children = info.children.map(_.map(constructExecInfoBuffer(_, delimiter, prettyPrint)))
+      val children = info.children
+        .map(_.map(constructExecInfoBuffer(_, delimiter, prettyPrint, headersAndSizes)))
         .getOrElse(Seq.empty)
-      children :+ constructExecInfoBuffer(info, delimiter, prettyPrint)
+      children :+ constructExecInfoBuffer(info, delimiter, prettyPrint, headersAndSizes)
     }
   }
 
