@@ -226,7 +226,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchors - replace") {
-    val patterns = Seq("^test", "test$", "^test$")
+    val patterns = Seq("^test", "test$", "^test$", "test\\Z", "test\\z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }

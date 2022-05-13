@@ -34,14 +34,9 @@ class GpuRegExpReplaceMeta(
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
-    expr.rep match {
-      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        GpuRegExpUtils.backrefConversion(s.toString) match {
-          case (hasBackref, convertedRep) =>
-            containsBackref = hasBackref
-            replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
-        }
-      case _ =>
+    replacement = expr.rep match {
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null => Some(s.toString)
+      case _ => None
     }
 
     expr.regexp match {
@@ -53,7 +48,15 @@ class GpuRegExpReplaceMeta(
             val (pat, repl) = 
                 new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
             pattern = pat
-            replacement = repl
+            repl match {
+              case Some(rep) =>
+                GpuRegExpUtils.backrefConversion(rep) match {
+                  case (hasBackref, convertedRep) =>
+                    containsBackref = hasBackref
+                    replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
+                }
+              case _ =>
+            }
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
