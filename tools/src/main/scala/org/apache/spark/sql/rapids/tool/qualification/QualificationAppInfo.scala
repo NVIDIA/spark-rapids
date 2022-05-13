@@ -315,9 +315,9 @@ class QualificationAppInfo(
         p.copy(execInfo = filteredPlanInfos)
       }
 
-      planInfos.foreach { pInfo =>
+      val perSqlSummary = planInfos.flatMap { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
-        perSQLId.foreach { case (sqlID, execInfos) =>
+        perSQLId.map { case (sqlID, execInfos) =>
           logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
           val speedups = execInfos.map(_.speedupFactor)
@@ -375,18 +375,22 @@ class QualificationAppInfo(
           // TODO - need to deal with attempts
           val allStages = stageIdToInfo.map(_._1._1)
           val nonSqlStages = allStages.filterNot(allSQLStageIds.contains(_))
-          val stageTaskTime = nonSqlStages.map { stageId =>
+          val nonSqlStageTaskTime = nonSqlStages.map { stageId =>
             stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0L)
           }.sum
-          logWarning(s"non sql stage task durations  is: $stageTaskTime")
-
-          if (unAccounted.nonEmpty) {
-            logWarning(s"stages with average Speedup and stage " +
-              s"Total Task Time, unsupportedDur: ${unAccounted.mkString(",")}")
-          }
+          (unAccounted, nonSqlStageTaskTime)
         }
       }
+      perSqlSummary.foreach { case (unAccounted, nonSqlStageTaskTime) =>
+        if (unAccounted.nonEmpty) {
+          logWarning(s"stages with average Speedup and stage " +
+            s"Total Task Time, unsupportedDur: ${unAccounted.mkString(",")}")
+          logWarning(s"non sql stage task durations  is: $nonSqlStageTaskTime")
+
+        }
+      }
+
       // TODO - construct the final outputs - multiple things required now. Also need to
       // calculate durations, if ops don't have them use stage durations or job durations
       val unsupportedDuration = calculateUnsupportedDuration(sqlDataframeTaskDuration)
