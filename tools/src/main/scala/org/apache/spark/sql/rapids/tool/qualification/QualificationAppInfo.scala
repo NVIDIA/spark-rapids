@@ -365,12 +365,13 @@ class QualificationAppInfo(
             // time by number of execs and give each one equal weight
             val eachExecTime = stageTaskTime / allFlattenedExecs.size
             logWarning(s"each exec time is: $eachExecTime, num execs: ${execsForStage.size}")
+            val unsupportedDur = eachExecTime * numUnsupported.size
 
-            (stageId, averageSpeedup, stageTaskTime)
+            (stageId, averageSpeedup, stageTaskTime, unsupportedDur)
           }
           if (unAccounted.nonEmpty) {
             logWarning(s"stages with average Speedup and stage " +
-              s"Total Task Time: ${unAccounted.mkString(",")}")
+              s"Total Task Time, unsupportedDur: ${unAccounted.mkString(",")}")
           }
         }
       }
