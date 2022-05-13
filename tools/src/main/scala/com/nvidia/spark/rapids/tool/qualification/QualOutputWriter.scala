@@ -243,8 +243,8 @@ object QualOutputWriter {
       EXEC_NODEID -> EXEC_NODEID.size,
       EXEC_IS_SUPPORTED -> EXEC_IS_SUPPORTED.size,
       EXEC_STAGES -> getMaxSizeForHeader(execInfos.map(_.stages.mkString(",").size), EXEC_STAGES),
-      EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size,
       EXEC_CHILDREN -> getMaxSizeForHeader(getChildrenSize(execInfos), EXEC_CHILDREN),
+      EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size
     )
     detailedHeadersAndFields
   }
@@ -328,8 +328,8 @@ object QualOutputWriter {
       info.duration.toString -> 1,
       info.nodeId.toString -> 1,
       info.isSupported.toString -> 1,
-      info.stages.mkString(",") -> 1,
-      info.children.getOrElse(Seq.empty).map(_.exec).mkString(",") -> 1,
+      info.stages.mkString(":") -> 1,
+      info.children.getOrElse(Seq.empty).map(_.exec).mkString(":") -> 1,
       info.shouldRemove.toString -> 1)
     constructOutputRow(data, delimiter, prettyPrint)
   }
