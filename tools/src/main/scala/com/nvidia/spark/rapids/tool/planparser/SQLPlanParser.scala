@@ -98,10 +98,18 @@ object SQLPlanParser extends Logging {
       WholeStageExecParser(node.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
     } else {
       val execInfos = node.name match {
+        case "AggregateInPandas" =>
+          AggregateInPandasExecParser(node, checker, sqlID).parse
+        case "ArrowEvalPython" =>
+          ArrowEvalPythonExecParser(node, checker, sqlID).parse
         case "BatchScan" =>
           BatchScanExecParser(node, checker, sqlID, app).parse
         case "BroadcastExchange" =>
           BroadcastExchangeExecParser(node, checker, sqlID, app).parse
+        case "BroadcastHashJoin" =>
+          BroadcastHashJoinExecParser(node, checker, sqlID).parse
+        case "BroadcastNestedLoopJoin" =>
+          BroadcastNestedLoopJoinExecParser(node, checker, sqlID).parse
         case "CartesianProduct" =>
           CartesianProductExecParser(node, checker, sqlID).parse
         case "Coalesce" =>
@@ -125,10 +133,14 @@ object SQLPlanParser extends Logging {
           ExpandExecParser(node, checker, sqlID).parse
         case "Filter" =>
           FilterExecParser(node, checker, sqlID).parse
+        case "FlatMapGroupsInPandas" =>
+          FlatMapGroupsInPandasExecParser(node, checker, sqlID).parse
         case "Generate" =>
           GenerateExecParser(node, checker, sqlID).parse
         case "GlobalLimit" =>
           GlobalLimitExecParser(node, checker, sqlID).parse
+        case "HashAggregate" =>
+          HashAggregateExecParser(node, checker, sqlID, app).parse
         case "LocalLimit" =>
           LocalLimitExecParser(node, checker, sqlID).parse
         case "InMemoryTableScan" =>
@@ -136,22 +148,36 @@ object SQLPlanParser extends Logging {
         case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
           i == "DataWritingCommandExec") =>
           DataWritingCommandExecParser(node, checker, sqlID).parse
+        case "MapInPandas" =>
+          MapInPandasExecParser(node, checker, sqlID).parse
+        case "ObjectHashAggregate" =>
+          ObjectHashAggregateExecParser(node, checker, sqlID, app).parse
         case "Project" =>
           ProjectExecParser(node, checker, sqlID).parse
         case "Range" =>
           RangeExecParser(node, checker, sqlID).parse
         case "Sample" =>
           SampleExecParser(node, checker, sqlID).parse
+        case "ShuffledHashJoin" =>
+          ShuffledHashJoinExecParser(node, checker, sqlID, app).parse
         case "Sort" =>
           SortExecParser(node, checker, sqlID).parse
         case s if (s.startsWith("Scan")) =>
           FileSourceScanExecParser(node, checker, sqlID, app).parse
+        case "SortAggregate" =>
+          SortAggregateExecParser(node, checker, sqlID).parse
+        case "SortMergeJoin" =>
+          SortMergeJoinExecParser(node, checker, sqlID).parse
         case "SubqueryBroadcast" =>
           SubqueryBroadcastExecParser(node, checker, sqlID, app).parse
         case "TakeOrderedAndProject" =>
           TakeOrderedAndProjectExecParser(node, checker, sqlID).parse
         case "Union" =>
           UnionExecParser(node, checker, sqlID).parse
+        case "Window" =>
+          WindowExecParser(node, checker, sqlID).parse
+        case "WindowInPandas" =>
+          WindowInPandasExecParser(node, checker, sqlID).parse
         case _ =>
           // logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
           ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
