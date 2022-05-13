@@ -322,7 +322,7 @@ class QualificationAppInfo(
           val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
           val speedups = execInfos.map(_.speedupFactor)
           val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
-          logDebug(s"total sql task time is: " +
+          logWarning(s"total sql task time is: " +
             s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
             s"all speedsup: " +
             s"${speedups.mkString(",")} average speedup: $averageSpeedup")
