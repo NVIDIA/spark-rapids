@@ -151,7 +151,7 @@ class QualificationAppInfo(
   }
 
   // Assume that overhead is the all time windows that do not overlap with a running job.
-  private def calculateOverHeadTime(startTime: Long): Long = {
+  private def calculateJobOverHeadTime(startTime: Long): Long = {
     // Simple algorithm:
     // 1- sort all jobs by start/endtime.
     // 2- Initialize Time(p) = app.StartTime
@@ -208,17 +208,17 @@ class QualificationAppInfo(
     ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime)
   }
 
-  // TODO calculate the unsupported operator task duration, going to very hard
-  // for now it is a helper to generate random values for the POC. The values have to be
-  // [0, sqlDataframeTaskDuration[
-  private def calculateUnsupportedDuration(upperBound: Long = 0): Long = {
-    (upperBound * 0.5).toLong
+  private def calculateSQLUnsupportedDuration(all: Seq[(Set[stageQualInfo], Long)]): Long = {
+    val totalSqlUnSupported = all.flatMap(_._1.map(_.unsupportedDur)).sum
+    // val totalNonSqlUnSupported = all.map(_._2).sum
+    totalSqlUnSupported // + totalNonSqlUnSupported
   }
 
   // TODO calculate speedup_factor - which is average of operator factors???
   // For now it is a helper to generate random values for the POC. Returns rounded value
-  private def calculateSpeedupFactor(bounds: (Double, Double) = (1.0, 10.0)): Double = {
-    bounds._1 + (bounds._2 - bounds._1) *  0.5
+  private def calculateSpeedupFactor(all: Seq[(Set[stageQualInfo], Long)]): Int = {
+    val allSpeedupFactors = all.flatMap(_._1.map(_.averageSpeedup))
+    SQLPlanParser.averageSpeedup(allSpeedupFactors)
   }
 
   private def getAllReadFileFormats: String = {
@@ -283,8 +283,8 @@ class QualificationAppInfo(
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
       val noSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
-      val overheadTime = calculateOverHeadTime(info.startTime)
-      val nonSQLDuration = noSQLDataframeTaskDuration + overheadTime
+      val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
+      val nonSQLDuration = noSQLDataframeTaskDuration + jobOverheadTime
       val readScoreHumanPercent = 100 * readScoreRatio
       val readScoreHumanPercentRounded = f"${readScoreHumanPercent}%1.2f".toDouble
       val score = calculateScore(readScoreRatio, sqlDataframeTaskDuration)
@@ -346,7 +346,7 @@ class QualificationAppInfo(
             val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
             val averageSpeedupFactors = execsForStage.map(_.speedupFactor)
             // val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
-            val averageSpeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
+            val averageSpeedupFactor = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
             val allFlattenedExecs = execsForStage.flatMap { e =>
               if (e.exec.contains("WholeStageCodegen")) {
                 e.children.getOrElse(Seq.empty)
@@ -367,14 +367,16 @@ class QualificationAppInfo(
             logWarning(s"each exec time is: $eachExecTime, num execs: ${execsForStage.size}")
             val unsupportedDur = eachExecTime * numUnsupported.size
 
-            (stageId, averageSpeedup, stageTaskTime, unsupportedDur)
+            stageQualInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
           }
 
-          val allSQLStageIds = unAccounted.map(_._1)
-          // Need to include stages that were associated with any SQL
+          val allSQLStageIds = unAccounted.map(_.stageId)
+          // Need to include stages that weren't associated with any SQL
           // TODO - need to deal with attempts
           val allStages = stageIdToInfo.map(_._1._1)
           val nonSqlStages = allStages.filterNot(allSQLStageIds.contains(_))
+          // TODO - how does this compare with
+          //  nonSQLDuration -> calculateNonSQLTaskDataframeDuration
           val nonSqlStageTaskTime = nonSqlStages.map { stageId =>
             stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0L)
@@ -386,21 +388,22 @@ class QualificationAppInfo(
         if (unAccounted.nonEmpty) {
           logWarning(s"stages with average Speedup and stage " +
             s"Total Task Time, unsupportedDur: ${unAccounted.mkString(",")}")
-          logWarning(s"non sql stage task durations  is: $nonSqlStageTaskTime")
-
+          logWarning(s"non sql stage task durations  is: $nonSqlStageTaskTime and the " +
+            s"overall calculateNonSQLTaskDataframeDuration is $nonSQLDuration")
         }
       }
 
       // TODO - construct the final outputs - multiple things required now. Also need to
       // calculate durations, if ops don't have them use stage durations or job durations
-      val unsupportedDuration = calculateUnsupportedDuration(sqlDataframeTaskDuration)
-      val speedupDuration = sqlDataframeTaskDuration - unsupportedDuration
-      val speedupFactor = calculateSpeedupFactor()
-      val estimatedDurationRaw =
-        (speedupDuration / speedupFactor) + unsupportedDuration + nonSQLDuration
-      val estimatedDuration = f"${estimatedDurationRaw}%1.2f".toDouble
+      val unsupportedSQLDuration = calculateSQLUnsupportedDuration(perSqlSummary)
+      val speedupDuration = sqlDataframeTaskDuration - unsupportedSQLDuration
+      val speedupFactor = calculateSpeedupFactor(perSqlSummary)
+      // TODO compare nonSQLDuration below to unsupportedDuration
+      val estimatedDuration =
+        (speedupDuration / speedupFactor) + unsupportedSQLDuration + nonSQLDuration
+      // val estimatedDuration = f"${estimatedDurationRaw}%1.2f".toDouble
       val appTaskDuration = nonSQLDuration + sqlDataframeTaskDuration
-      val totalSpeedup = (math floor appTaskDuration / estimatedDuration * 1000) / 1000
+      val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
       // recommendation
       val speedupBucket = if (totalSpeedup > 3) {
         "GREEN"
@@ -415,10 +418,13 @@ class QualificationAppInfo(
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
-        nonSQLDuration, estimatedDuration, unsupportedDuration,
+        nonSQLDuration, estimatedDuration, unsupportedSQLDuration,
         speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
     }
   }
+
+  case class stageQualInfo(stageId: Int, averageSpeedup: Int, stageTaskTime: Long,
+      unsupportedDur: Long)
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
