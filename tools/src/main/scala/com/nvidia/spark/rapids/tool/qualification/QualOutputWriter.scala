@@ -59,18 +59,26 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  def writeExecReport(plans: Seq[PlanInfo], numOutputRows: Int) : Unit = {
+  def writeExecReport(plans: Seq[PlanInfo], numOutputRows: Int, order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
       "Plan Exec Info")
     try {
       val allExecs = getAllExecsFromPlan(plans)
-      val headersAndSizes = QualOutputWriter
-        .getDetailedExecsHeaderStringsAndSizes(allExecs, reportReadSchema)
-      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-      plans.foreach { plan =>
-        val rows = QualOutputWriter.constructExecsInfo(plan, headersAndSizes, ",", false)
-        rows.foreach(csvFileWriter.write(_))
+      val sortedDesc = allExecs.sortBy(sum => {
+        (-sum.sqlID, sum.exec)
+      })
+      val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+        allExecs.sortBy(sum => {
+          (sum.sqlID, sum.exec)
+        })
+      } else {
+        sortedDesc
       }
+      val headersAndSizes = QualOutputWriter
+        .getDetailedExecsHeaderStringsAndSizes(sortedForReport, reportReadSchema)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, ",", false)
+      rows.foreach(csvFileWriter.write(_))
     } finally {
       csvFileWriter.close()
     }
@@ -327,11 +335,11 @@ object QualOutputWriter {
   }
 
   def constructExecsInfo(
-      planInfo: PlanInfo,
+      execInfos: Seq[ExecInfo],
       headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean): Seq[String] = {
-    planInfo.execInfo.flatMap { info =>
+    execInfos.flatMap { info =>
       val children = info.children.map(_.map(constructExecInfoBuffer(_, delimiter, prettyPrint)))
         .getOrElse(Seq.empty)
       children :+ constructExecInfoBuffer(info, delimiter, prettyPrint)
