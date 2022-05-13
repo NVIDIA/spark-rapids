@@ -141,7 +141,7 @@ class QualificationAppInfo(
     sum
   }
 
-  private def calculateNonSqlDataframeDuration: Long = {
+  private def calculateNonSqlDataframeWallClockDuration: Long = {
     sqlDurationTime.filter { case (sqlID, dur) =>
       sqlIDToDataSetOrRDDCase.contains(sqlID) || dur == -1
     }.values.sum
@@ -212,15 +212,13 @@ class QualificationAppInfo(
     ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime)
   }
 
-  private def calculateSQLUnsupportedDuration(all: Seq[Set[stageQualInfo]]): Long = {
-    val totalSqlUnSupported = all.flatMap(_.map(_.unsupportedDur)).sum
-    // val totalNonSqlUnSupported = all.map(_._2).sum
-    totalSqlUnSupported // + totalNonSqlUnSupported
+  private def calculateSQLUnsupportedDuration(all: Seq[Set[StageQualSummaryInfo]]): Long = {
+    all.flatMap(_.map(_.unsupportedDur)).sum
   }
 
   // TODO calculate speedup_factor - which is average of operator factors???
   // For now it is a helper to generate random values for the POC. Returns rounded value
-  private def calculateSpeedupFactor(all: Seq[Set[stageQualInfo]]): Int = {
+  private def calculateSpeedupFactor(all: Seq[Set[StageQualSummaryInfo]]): Int = {
     val allSpeedupFactors = all.flatMap(_.map(_.averageSpeedup))
     val res = SQLPlanParser.averageSpeedup(allSpeedupFactors)
     logWarning(s"average speedup factor is: $res from: ${allSpeedupFactors.mkString(",")}")
@@ -277,7 +275,8 @@ class QualificationAppInfo(
    * @return Option of QualificationSummaryInfo, Some if we were able to process the application
    *         otherwise None.
    */
-  def aggregateStats(): Option[(QualificationSummaryInfo, Seq[PlanInfo])]= {
+  def aggregateStats():
+      Option[(QualificationSummaryInfo, Seq[PlanInfo], Seq[StageQualSummaryInfo])] = {
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframeDuration
@@ -324,37 +323,20 @@ class QualificationAppInfo(
       val perSqlSummary = planInfos.flatMap { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.map { case (sqlID, execInfos) =>
-          logDebug(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
-          val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
-          val speedups = execInfos.map(_.speedupFactor)
-          val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
-          logDebug(s"total sql task time is: " +
-            s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
-            s"all speedsup: " +
-            s"${speedups.mkString(",")} average speedup: $averageSpeedup")
-
           // there are issues with duration in whole stage code gen where duration of multiple
           // execs is more than entire stage time, for now ignore the exec duration and just
           // calculate based on average applied to total task time of each stage
-
-          // intentionally left commented out code:
-          // val (execsWithoutDuration, execsWithDuration) = execInfos.partition(_.duration.isEmpty)
-          // val withOutDur = getStageToExec(execsWithoutDuration)
-          // val withDur = getStageToExec(execsWithDuration)
           val allStagesToExecs = getStageToExec(execInfos)
-          val allStageIds = allStagesToExecs.keys.toSet
           // if it doesn't have a stage id associated we can't calculate the time spent in that
           // SQL so we just drop it
-          val unAccounted = allStageIds.map { stageId =>
+          val stageSum = allStagesToExecs.keys.toSet.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0L)
-            // val taskTimeExecWithDur = withDur.flatMap(_._2.map(_.duration.getOrElse(0))).sum
-            // val taskTimeNotAccountedFor = stageTaskTime - taskTimeExecWithDur
-            // val averageSpeedupFactors = withOutDur.flatMap(_._2.map(_.speedupFactor)).toSeq
             val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
-            val averageSpeedupFactors = execsForStage.map(_.speedupFactor)
-            // val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
-            val averageSpeedupFactor = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
+            val speedupFactors = execsForStage.map(_.speedupFactor)
+            val averageSpeedupFactor = SQLPlanParser.averageSpeedup(speedupFactors)
+            // need to remove the WholeStageCodegen wrappers since they aren't actual
+            // execs that we want to get timings of
             val allFlattenedExecs = execsForStage.flatMap { e =>
               if (e.exec.contains("WholeStageCodegen")) {
                 e.children.getOrElse(Seq.empty)
@@ -362,27 +344,22 @@ class QualificationAppInfo(
                 e.children.getOrElse(Seq.empty) :+ e
               }
             }
-            // need to remove the WholeStageCodegen wrappers
             val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
-            val numSupported = allFlattenedExecs.filter(_.isSupported)
-
             logWarning(s"numUnsupported: ${numUnsupported.mkString(",")}")
-            logWarning(s"numSupported: ${numSupported.mkString(",")}")
-
             // if we have unsupported try to guess at how much time.  For now divide
             // time by number of execs and give each one equal weight
             val eachExecTime = stageTaskTime / allFlattenedExecs.size
             val unsupportedDur = eachExecTime * numUnsupported.size
 
-            stageQualInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
+            StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
           }
-          unAccounted
+          stageSum
         }
       }
-      perSqlSummary.foreach { case unAccounted =>
-        if (unAccounted.nonEmpty) {
+      perSqlSummary.foreach { stageSum =>
+        if (stageSum.nonEmpty) {
           logWarning(s"stages with average Speedup and stage " +
-            s"Total Task Time, unsupportedDur: ${unAccounted.mkString(",")}")
+            s"Total Task Time, unsupportedDur: ${stageSum.mkString(",")}")
         }
       }
 
@@ -391,10 +368,8 @@ class QualificationAppInfo(
       val speedupFactor = calculateSpeedupFactor(perSqlSummary)
       val estimatedDuration =
         (speedupDuration / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
-      // val estimatedDuration = f"${estimatedDurationRaw}%1.2f".toDouble
       val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
       val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
-      // recommendation
       val speedupBucket = if (totalSpeedup > 3) {
         "GREEN"
       } else if (totalSpeedup > 1.25) {
@@ -403,21 +378,16 @@ class QualificationAppInfo(
         "RED"
       }
 
-      val nonSQLWallClockDuration = calculateNonSqlDataframeDuration
-
       val summaryInfo = new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
-        nonSQLWallClockDuration, nonSQLTaskDuration, estimatedDuration, unsupportedSQLDuration,
-        speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
-      (summaryInfo, origPlanInfos)
+        calculateNonSqlDataframeWallClockDuration, nonSQLTaskDuration, estimatedDuration,
+        unsupportedSQLDuration, speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
+      (summaryInfo, origPlanInfos, perSqlSummary.flatten)
     }
   }
-
-  case class stageQualInfo(stageId: Int, averageSpeedup: Int, stageTaskTime: Long,
-      unsupportedDur: Long)
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
@@ -503,6 +473,12 @@ case class QualificationSummaryInfo(
     speedupFactor: Double,
     totalSpeedup: Double,
     speedupBucket: String)
+
+case class StageQualSummaryInfo(
+    stageId: Int,
+    averageSpeedup: Int,
+    stageTaskTime: Long,
+    unsupportedDur: Long)
 
 object QualificationAppInfo extends Logging {
   def createApp(

@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
+import org.apache.spark.sql.rapids.tool.qualification.{QualificationSummaryInfo, StageQualSummaryInfo}
 
 /**
  * This class handles the output files for qualification.
@@ -59,6 +59,30 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
+  def writeStageReport(stagesInfo: Seq[StageQualSummaryInfo], order: String) : Unit = {
+    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_stages.csv",
+      "Stage Exec Info")
+    try {
+      val sortedDesc = stagesInfo.sortBy(sum => {
+        (-sum.stageId)
+      })
+      val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+        stagesInfo.sortBy(sum => {
+          (sum.stageId)
+        })
+      } else {
+        sortedDesc
+      }
+      val headersAndSizes = QualOutputWriter
+        .getDetailedStagesHeaderStringsAndSizes()
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      val rows = QualOutputWriter.constructStagesInfo(sortedForReport, headersAndSizes, ",", false)
+      rows.foreach(csvFileWriter.write(_))
+    } finally {
+      csvFileWriter.close()
+    }
+  }
+
   def writeExecReport(plans: Seq[PlanInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
       "Plan Exec Info")
@@ -75,9 +99,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
         sortedDesc
       }
       val headersAndSizes = QualOutputWriter
-        .getDetailedExecsHeaderStringsAndSizes(sortedForReport, reportReadSchema)
-      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, "|", true))
-      val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, "|", true)
+        .getDetailedExecsHeaderStringsAndSizes(sortedForReport)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, ",", false)
       rows.foreach(csvFileWriter.write(_))
     } finally {
       csvFileWriter.close()
@@ -123,6 +147,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 object QualOutputWriter {
   val PROBLEM_DUR_STR = "Problematic Duration"
   val SQL_ID_STR = "SQL ID"
+  val STAGE_ID_STR = "Stage ID"
   val APP_ID_STR = "App ID"
   val APP_NAME_STR = "App Name"
   val APP_DUR_STR = "App Duration"
@@ -146,6 +171,7 @@ object QualOutputWriter {
   val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
   val SPEEDUP_DURATION_STR = "Speedup Duration"
   val SPEEDUP_FACTOR_STR = "Speedup Factor"
+  val AVERAGE_SPEEDUP_STR = "Average Speedup Factor"
   val TOTAL_SPEEDUP_STR = "Total Speedup"
   val SPEEDUP_BUCKET_STR = "Recommendation"
   val LONGEST_SQL_DURATION_STR = "Longest SQL Duration"
@@ -307,9 +333,18 @@ object QualOutputWriter {
     execInfos.map(_.children.getOrElse(Seq.empty).map(_.nodeId).mkString(",").size)
   }
 
+  def getDetailedStagesHeaderStringsAndSizes(): LinkedHashMap[String, Int] = {
+    val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      STAGE_ID_STR -> STAGE_ID_STR.size,
+      AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
+      TASK_DUR_STR -> TASK_DUR_STR.size,
+      UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size
+    )
+    detailedHeadersAndFields
+  }
 
-  def getDetailedExecsHeaderStringsAndSizes(execInfos: Seq[ExecInfo],
-      reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
+  def getDetailedExecsHeaderStringsAndSizes(
+      execInfos: Seq[ExecInfo]): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       SQL_ID_STR -> SQL_ID_STR.size,
       EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
@@ -344,6 +379,21 @@ object QualOutputWriter {
         headersAndSizes(EXEC_CHILDREN_NODE_IDS),
       info.shouldRemove.toString -> headersAndSizes(EXEC_SHOULD_REMOVE))
     constructOutputRow(data, delimiter, prettyPrint)
+  }
+
+  def constructStagesInfo(
+      stagesInfo: Seq[StageQualSummaryInfo],
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String = "|",
+      prettyPrint: Boolean): Seq[String] = {
+    stagesInfo.map { info =>
+      val data = ListBuffer[(String, Int)](
+        info.stageId.toString -> headersAndSizes(SQL_ID_STR),
+        info.averageSpeedup.toString -> headersAndSizes(AVERAGE_SPEEDUP_STR),
+        info.stageTaskTime.toString -> headersAndSizes(TASK_DUR_STR),
+        info.unsupportedDur.toString -> headersAndSizes(UNSUPPORTED_DURATION_STR))
+      constructOutputRow(data, delimiter, prettyPrint)
+    }
   }
 
   def constructExecsInfo(

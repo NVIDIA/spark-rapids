@@ -39,6 +39,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
   private val allPlans = new ConcurrentLinkedQueue[Seq[PlanInfo]]()
+  private val allStages = new ConcurrentLinkedQueue[Seq[StageQualSummaryInfo]]()
 
   // default is 24 hours
   private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
@@ -88,6 +89,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     }
     qWriter.writeReport(sortedForReport, numRows)
     qWriter.writeExecReport(allPlans.asScala.toSeq.flatten, order)
+    qWriter.writeStageReport(allStages.asScala.toSeq.flatten, order)
     sortedDesc
   }
 
@@ -106,6 +108,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         if (qualSumInfo.isDefined) {
           allApps.add(qualSumInfo.get._1)
           allPlans.add(qualSumInfo.get._2)
+          allStages.add(qualSumInfo.get._3)
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         } else {
