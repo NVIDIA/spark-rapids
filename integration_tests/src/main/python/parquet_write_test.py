@@ -280,6 +280,19 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
             conf=all_confs)
 
 @allow_non_gpu('DataWritingCommandExec')
+def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write
+            .option("parquet.encryption.footer.key" , "k1")
+            .option("parquet.encryption.column.keys" , "k2:a")
+            .format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        'DataWritingCommandExec')
+
+@allow_non_gpu('DataWritingCommandExec')
 # note that others should fail as well but requires you to load the libraries for them
 # 'lzo', 'brotli', 'lz4', 'zstd' should all fallback
 @pytest.mark.parametrize('codec', ['gzip'])

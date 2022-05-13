@@ -49,6 +49,15 @@ object GpuParquetFileFormat {
 
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
+    val columnEncryption = options.getOrElse("parquet.encryption.column.keys", "")
+    val footerEncryption = options.getOrElse("parquet.encryption.footer.key", "")
+
+    if (!columnEncryption.isEmpty || !footerEncryption.isEmpty) {
+      meta.willNotWorkOnGpu("Encryption is not yet supported on GPU. To enable unset the " +
+          "\"parquet.encryption.column.keys\" and \"parquet.encryption.footer.key\" in " +
+          "parquet options")
+    }
+
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET} to true")
