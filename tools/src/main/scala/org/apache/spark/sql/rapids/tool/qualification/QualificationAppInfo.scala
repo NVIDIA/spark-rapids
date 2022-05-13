@@ -373,12 +373,13 @@ class QualificationAppInfo(
           val allSQLStageIds = unAccounted.map(_._1)
           // Need to include stages that were associated with any SQL
           // TODO - need to deal with attempts
-          val allStagesAndDur = stageIdToInfo.map( sInfo => (sInfo._1._1, sInfo._2.duration.getOrElse(0)))
-          val nonSqlStages = allStagesAndDur.filterNot { case (s, _) =>
-            allSQLStageIds.contains(s)
-          }
-          val nonSqlDur = nonSqlStages.values.sum
-          logWarning(s"non sql stage durations is: $nonSqlDur")
+          val allStages = stageIdToInfo.map(_._1._1)
+          val nonSqlStages = allStages.filterNot(allSQLStageIds.contains(_))
+          val stageTaskTime = nonSqlStages.map { stageId =>
+            stageIdToTaskEndSum.get(stageId)
+              .map(_.totalTaskDuration).getOrElse(0L)
+          }.sum
+          logWarning(s"non sql stage task durations  is: $stageTaskTime")
 
           if (unAccounted.nonEmpty) {
             logWarning(s"stages with average Speedup and stage " +
