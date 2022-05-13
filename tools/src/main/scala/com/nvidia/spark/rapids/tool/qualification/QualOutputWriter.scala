@@ -77,6 +77,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       val headersAndSizes = QualOutputWriter
         .getDetailedExecsHeaderStringsAndSizes(sortedForReport, reportReadSchema)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      // TODO - we already dropped things shouldRemove like ColumnarToRow
       val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, ",", false)
       rows.foreach(csvFileWriter.write(_))
     } finally {
@@ -320,7 +321,7 @@ object QualOutputWriter {
   }
 
   private def constructExecInfoBuffer(info: ExecInfo, delimiter: String = "|",
-      prettyPrint: Boolean, headersAndSizes: LinkedHashMap[String, Int],): String = {
+      prettyPrint: Boolean, headersAndSizes: LinkedHashMap[String, Int]): String = {
     val data = ListBuffer[(String, Int)](
       info.sqlID.toString -> headersAndSizes(SQL_ID_STR),
       stringIfempty(info.exec) -> headersAndSizes(EXEC_STR),

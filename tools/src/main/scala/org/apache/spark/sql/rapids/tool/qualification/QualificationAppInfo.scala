@@ -412,7 +412,7 @@ class QualificationAppInfo(
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
         nonSQLWallClockDuration, nonSQLTaskDuration, estimatedDuration, unsupportedSQLDuration,
         speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
-      (summaryInfo, planInfos)
+      (summaryInfo, origPlanInfos)
     }
   }
 
