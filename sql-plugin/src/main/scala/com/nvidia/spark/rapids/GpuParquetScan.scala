@@ -464,8 +464,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownTimestamp = sqlConf.parquetFilterPushDownTimestamp
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
   // From Spark 340, more string predicates are supported as push-down filters, so this
-  // flag is renamed to 'xxxxStringPredicate' and specified by another config. Then shims
-  // are required.
+  // flag is renamed to 'xxxxStringPredicate' and specified by another config.
   private val pushDownStringPredicate = ParquetStringPredShims.pushDown(sqlConf)
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val rebaseMode = SparkShimImpl.parquetRebaseRead(sqlConf)
