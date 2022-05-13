@@ -263,7 +263,7 @@ class QualificationAppInfo(
         // we don't know what stage its in our its duration
         logDebug(s"No stage associated with ${execInfo.exec} " +
           s"so speedup factor isn't applied anywhere.")
-        Seq.empty
+        Seq((-1, execInfo))
       } else {
         Seq((execInfo.stages.head, execInfo))
       }
