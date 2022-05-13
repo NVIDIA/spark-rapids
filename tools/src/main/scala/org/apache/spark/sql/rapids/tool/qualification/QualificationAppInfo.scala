@@ -141,6 +141,12 @@ class QualificationAppInfo(
     sum
   }
 
+  private def calculateNonSqlDataframeDuration: Long = {
+    sqlDurationTime.filter { case (sqlID, dur) =>
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || dur == -1
+    }.values.sum
+  }
+
   // The total task time for all tasks that ran during SQL dataframe
   // operations.  if the SQL contains a dataset, it isn't counted.
   private def calculateTaskDataframeDuration: Long = {
@@ -218,7 +224,9 @@ class QualificationAppInfo(
   // For now it is a helper to generate random values for the POC. Returns rounded value
   private def calculateSpeedupFactor(all: Seq[Set[stageQualInfo]]): Int = {
     val allSpeedupFactors = all.flatMap(_.map(_.averageSpeedup))
-    SQLPlanParser.averageSpeedup(allSpeedupFactors)
+    val res = SQLPlanParser.averageSpeedup(allSpeedupFactors)
+    logWarning(s"average speedup factor is: $res from: ${allSpeedupFactors.mkString(",")}")
+    res
   }
 
   private def getAllReadFileFormats: String = {
@@ -284,7 +292,7 @@ class QualificationAppInfo(
       val noSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
       val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
-      val nonSQLDuration = noSQLDataframeTaskDuration + jobOverheadTime
+      val nonSQLTaskDuration = noSQLDataframeTaskDuration + jobOverheadTime
       val readScoreHumanPercent = 100 * readScoreRatio
       val readScoreHumanPercentRounded = f"${readScoreHumanPercent}%1.2f".toDouble
       val score = calculateScore(readScoreRatio, sqlDataframeTaskDuration)
@@ -337,6 +345,8 @@ class QualificationAppInfo(
           // val withDur = getStageToExec(execsWithDuration)
           val allStagesToExecs = getStageToExec(execInfos)
           val allStageIds = execInfos.flatMap(_.stages).toSet
+          // if it doesn't have a stage id associated we can't calculate the time spent in that
+          // SQL so we just drop it
           val unAccounted = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0L)
@@ -369,7 +379,6 @@ class QualificationAppInfo(
 
             stageQualInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
           }
-
           unAccounted
         }
       }
@@ -380,16 +389,13 @@ class QualificationAppInfo(
         }
       }
 
-      // TODO - construct the final outputs - multiple things required now. Also need to
-      // calculate durations, if ops don't have them use stage durations or job durations
       val unsupportedSQLDuration = calculateSQLUnsupportedDuration(perSqlSummary)
       val speedupDuration = sqlDataframeTaskDuration - unsupportedSQLDuration
       val speedupFactor = calculateSpeedupFactor(perSqlSummary)
-      // TODO compare nonSQLDuration below to unsupportedDuration
       val estimatedDuration =
-        (speedupDuration / speedupFactor) + unsupportedSQLDuration + nonSQLDuration
+        (speedupDuration / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
       // val estimatedDuration = f"${estimatedDurationRaw}%1.2f".toDouble
-      val appTaskDuration = nonSQLDuration + sqlDataframeTaskDuration
+      val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
       val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
       // recommendation
       val speedupBucket = if (totalSpeedup > 3) {
@@ -400,12 +406,14 @@ class QualificationAppInfo(
         "RED"
       }
 
+      val nonSQLWallClockDuration = calculateNonSqlDataframeDuration
+
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
-        nonSQLDuration, estimatedDuration, unsupportedSQLDuration,
+        nonSQLWallClockDuration, nonSQLTaskDuration, estimatedDuration, unsupportedSQLDuration,
         speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
     }
   }
@@ -489,6 +497,7 @@ case class QualificationSummaryInfo(
     complexTypes: String,
     nestedComplexTypes: String,
     longestSqlDuration: Long,
+    nonSqlWallClockDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
     estimatedDuration: Double,
     unsupportedDuration: Long,
