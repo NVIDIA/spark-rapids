@@ -278,30 +278,6 @@ from the main [columnar batch size](#columnar-batch-size) setting.  Some transco
 load CSV files then write Parquet files) need to lower this setting when using large task input
 partition sizes to avoid GPU out of memory errors.
 
-## Enable Incompatible Operations
-Configuration key: 
-[`spark.rapids.sql.incompatibleOps.enabled`](configs.md#sql.incompatibleOps.enabled)
-
-Default value: `false`
-
-There are several operators/expressions that are not 100% compatible with the CPU version. These
-incompatibilities are documented [here](compatibility.md) and in the 
-[configuration documentation](./configs.md). Many of these incompatibilities are around corner
-cases that most queries do not encounter, or that would not result in any meaningful difference
-to the resulting output.  By enabling these operations either individually or with the 
-`spark.rapids.sql.incompatibleOps.enabled` config it can greatly improve performance of your
-queries. Over time, we expect the number of incompatible operators to reduce.
-
-If you want to understand if an operation is or is not on the GPU and why see second on
-[explain in the FAQ](FAQ.md#explain)
-
-The following configs all enable different types of incompatible operations that can improve
-performance.
-- [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled) 
-- [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans)
-- [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
-- [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)
-
 ## Metrics
 
 Custom Spark SQL Metrics are available which can help identify performance bottlenecks in a query.
