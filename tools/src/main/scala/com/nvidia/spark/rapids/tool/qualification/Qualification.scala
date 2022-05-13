@@ -87,7 +87,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       sortedDesc
     }
     qWriter.writeReport(sortedForReport, numRows)
-    qWriter.writeExecReport(allPlans.asScala.toSeq)
+    qWriter.writeExecReport(allPlans.asScala.toSeq.flatten, numRows)
     sortedDesc
   }
 

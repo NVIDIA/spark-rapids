@@ -114,6 +114,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 
 object QualOutputWriter {
   val PROBLEM_DUR_STR = "Problematic Duration"
+  val SQL_ID_STR = "SQL ID"
   val APP_ID_STR = "App ID"
   val APP_NAME_STR = "App Name"
   val APP_DUR_STR = "App Duration"
@@ -227,6 +228,7 @@ object QualOutputWriter {
   def getDetailedExecsHeaderStringsAndSizes(execInfos: Seq[ExecInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      SQL_ID_STR -> SQL_ID_STR.size,
       EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
       EXPR_STR -> getMaxSizeForHeader(execInfos.map(_.expr.size), EXPR_STR),
       EXEC_DURATION -> EXEC_DURATION.size,
