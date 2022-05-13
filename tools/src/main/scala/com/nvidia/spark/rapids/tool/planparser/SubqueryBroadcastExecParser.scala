@@ -35,7 +35,7 @@ case class SubqueryBroadcastExecParser(
     val (filterSpeedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
-      (1, false)
+      (1.0, false)
     }
     // TODO - check is broadcast associated can be replaced
     // TODO - add in parsing expressions - average speedup across?
