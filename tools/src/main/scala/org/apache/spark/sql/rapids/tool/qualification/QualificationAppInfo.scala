@@ -191,13 +191,11 @@ class QualificationAppInfo(
   private def calculateNonSQLTaskDataframeDuration(taskDFDuration: Long): Long = {
     val allTaskTime = stageIdToTaskEndSum.values.map(_.totalTaskDuration).sum
 
-    val validSums = sqlIDToTaskEndSum.filter { case (sqlID, _) =>
-      sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
-    }
-    val taskTimeDataSetOrRDD = validSums.values.map(dur => dur.totalTaskDuration).sum
     // TODO make more efficient
-    val res = allTaskTime - taskTimeDataSetOrRDD - taskDFDuration
+    val res = allTaskTime - taskDFDuration
     assert(res >= 0)
+    logWarning(s"non sql task duration is: $res task df duraton is $taskDFDuration all " +
+      s"is $allTaskTime")
     res
   }
 
@@ -498,7 +496,7 @@ case class QualificationSummaryInfo(
     longestSqlDuration: Long,
     nonSqlWallClockDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
-    estimatedDuration: Double,
+    estimatedDuration: Long,
     unsupportedDuration: Long,
     speedupDuration: Long,
     speedupFactor: Double,
