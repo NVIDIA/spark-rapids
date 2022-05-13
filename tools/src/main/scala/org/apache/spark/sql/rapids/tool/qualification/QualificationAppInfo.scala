@@ -326,11 +326,11 @@ class QualificationAppInfo(
       val perSqlSummary = planInfos.flatMap { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.map { case (sqlID, execInfos) =>
-          logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          logDebug(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
           val speedups = execInfos.map(_.speedupFactor)
           val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)
-          logWarning(s"total sql task time is: " +
+          logDebug(s"total sql task time is: " +
             s"${totalTaskTimeSQL.map(_.totalTaskDuration).getOrElse(0)} " +
             s"all speedsup: " +
             s"${speedups.mkString(",")} average speedup: $averageSpeedup")
@@ -374,7 +374,6 @@ class QualificationAppInfo(
             // if we have unsupported try to guess at how much time.  For now divide
             // time by number of execs and give each one equal weight
             val eachExecTime = stageTaskTime / allFlattenedExecs.size
-            logWarning(s"each exec time is: $eachExecTime, num execs: ${execsForStage.size}")
             val unsupportedDur = eachExecTime * numUnsupported.size
 
             stageQualInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
