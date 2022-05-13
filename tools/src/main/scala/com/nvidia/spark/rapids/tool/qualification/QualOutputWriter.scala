@@ -59,7 +59,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  def writeExecReport(plans: Seq[PlanInfo], numOutputRows: Int, order: String) : Unit = {
+  def writeExecReport(plans: Seq[PlanInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
       "Plan Exec Info")
     try {
@@ -76,9 +76,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       }
       val headersAndSizes = QualOutputWriter
         .getDetailedExecsHeaderStringsAndSizes(sortedForReport, reportReadSchema)
-      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-      // TODO - we already dropped things shouldRemove like ColumnarToRow
-      val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, ",", false)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, "|", true))
+      val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, "|", true)
       rows.foreach(csvFileWriter.write(_))
     } finally {
       csvFileWriter.close()
@@ -158,6 +157,7 @@ object QualOutputWriter {
   val EXEC_STAGES = "Exec Stages"
   val EXEC_SHOULD_REMOVE = "Exec Should Remove"
   val EXEC_CHILDREN = "Exec Children"
+  val EXEC_CHILDREN_NODE_IDS = "Exec Children Node Ids"
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -230,10 +230,6 @@ object QualOutputWriter {
     if (str.isEmpty) "\"\"" else str
   }
 
-  private def getChildrenSize(execInfos: Seq[ExecInfo]): Seq[Int] = {
-    execInfos.map(_.children.getOrElse(Seq.empty).mkString(",").size)
-  }
-
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
@@ -303,6 +299,15 @@ object QualOutputWriter {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
   }
 
+  private def getChildrenSize(execInfos: Seq[ExecInfo]): Seq[Int] = {
+    execInfos.map(_.children.getOrElse(Seq.empty).mkString(",").size)
+  }
+
+  private def getChildrenNodeIdsSize(execInfos: Seq[ExecInfo]): Seq[Int] = {
+    execInfos.map(_.children.getOrElse(Seq.empty).map(_.nodeId).mkString(",").size)
+  }
+
+
   def getDetailedExecsHeaderStringsAndSizes(execInfos: Seq[ExecInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
@@ -315,6 +320,8 @@ object QualOutputWriter {
       EXEC_IS_SUPPORTED -> EXEC_IS_SUPPORTED.size,
       EXEC_STAGES -> getMaxSizeForHeader(execInfos.map(_.stages.mkString(",").size), EXEC_STAGES),
       EXEC_CHILDREN -> getMaxSizeForHeader(getChildrenSize(execInfos), EXEC_CHILDREN),
+      EXEC_CHILDREN_NODE_IDS -> getMaxSizeForHeader(getChildrenNodeIdsSize(execInfos),
+        EXEC_CHILDREN_NODE_IDS),
       EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size
     )
     detailedHeadersAndFields
@@ -333,6 +340,8 @@ object QualOutputWriter {
       info.stages.mkString(":") -> headersAndSizes(EXEC_STAGES),
       info.children.getOrElse(Seq.empty).map(_.exec).mkString(":") ->
         headersAndSizes(EXEC_CHILDREN),
+      info.children.getOrElse(Seq.empty).map(_.nodeId).mkString(":") ->
+        headersAndSizes(EXEC_CHILDREN_NODE_IDS),
       info.shouldRemove.toString -> headersAndSizes(EXEC_SHOULD_REMOVE))
     constructOutputRow(data, delimiter, prettyPrint)
   }
