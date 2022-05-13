@@ -208,16 +208,16 @@ class QualificationAppInfo(
     ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime)
   }
 
-  private def calculateSQLUnsupportedDuration(all: Seq[(Set[stageQualInfo], Long)]): Long = {
-    val totalSqlUnSupported = all.flatMap(_._1.map(_.unsupportedDur)).sum
+  private def calculateSQLUnsupportedDuration(all: Seq[Set[stageQualInfo]]): Long = {
+    val totalSqlUnSupported = all.flatMap(_.map(_.unsupportedDur)).sum
     // val totalNonSqlUnSupported = all.map(_._2).sum
     totalSqlUnSupported // + totalNonSqlUnSupported
   }
 
   // TODO calculate speedup_factor - which is average of operator factors???
   // For now it is a helper to generate random values for the POC. Returns rounded value
-  private def calculateSpeedupFactor(all: Seq[(Set[stageQualInfo], Long)]): Int = {
-    val allSpeedupFactors = all.flatMap(_._1.map(_.averageSpeedup))
+  private def calculateSpeedupFactor(all: Seq[Set[stageQualInfo]]): Int = {
+    val allSpeedupFactors = all.flatMap(_.map(_.averageSpeedup))
     SQLPlanParser.averageSpeedup(allSpeedupFactors)
   }
 
@@ -370,26 +370,13 @@ class QualificationAppInfo(
             stageQualInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
           }
 
-          val allSQLStageIds = unAccounted.map(_.stageId)
-          // Need to include stages that weren't associated with any SQL
-          // TODO - need to deal with attempts
-          val allStages = stageIdToInfo.map(_._1._1)
-          val nonSqlStages = allStages.filterNot(allSQLStageIds.contains(_))
-          // TODO - how does this compare with
-          //  nonSQLDuration -> calculateNonSQLTaskDataframeDuration
-          val nonSqlStageTaskTime = nonSqlStages.map { stageId =>
-            stageIdToTaskEndSum.get(stageId)
-              .map(_.totalTaskDuration).getOrElse(0L)
-          }.sum
-          (unAccounted, nonSqlStageTaskTime)
+          unAccounted
         }
       }
-      perSqlSummary.foreach { case (unAccounted, nonSqlStageTaskTime) =>
+      perSqlSummary.foreach { case unAccounted =>
         if (unAccounted.nonEmpty) {
           logWarning(s"stages with average Speedup and stage " +
             s"Total Task Time, unsupportedDur: ${unAccounted.mkString(",")}")
-          logWarning(s"non sql stage task durations  is: $nonSqlStageTaskTime and the " +
-            s"overall calculateNonSQLTaskDataframeDuration is $nonSQLDuration")
         }
       }
 
