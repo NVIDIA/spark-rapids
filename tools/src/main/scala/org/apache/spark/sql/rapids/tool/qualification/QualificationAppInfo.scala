@@ -318,7 +318,7 @@ class QualificationAppInfo(
       planInfos.foreach { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.foreach { case (sqlID, execInfos) =>
-          logDebug(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
+          logWarning(s"sqlID: ${sqlID}, exec: ${execInfos.map(_.toString).mkString("\n")}")
           val totalTaskTimeSQL = sqlIDToTaskEndSum.get(sqlID)
           val speedups = execInfos.map(_.speedupFactor)
           val averageSpeedup = SQLPlanParser.averageSpeedup(speedups)

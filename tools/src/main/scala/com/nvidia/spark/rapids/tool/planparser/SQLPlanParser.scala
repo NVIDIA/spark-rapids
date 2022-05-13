@@ -50,7 +50,8 @@ case class ExecInfo(
     s"exec: $exec, expr: $expr, sqlID: $sqlID , speedupFactor: $speedupFactor, " +
       s"duration: $duration, nodeId: $nodeId, " +
       s"isSupported: $isSupported, children: " +
-      s"${childrenToString}"
+      s"${childrenToString}, stages: ${stages.mkString(",")}, " +
+      s"shouldRemove: $shouldRemove"
   }
 }
 
