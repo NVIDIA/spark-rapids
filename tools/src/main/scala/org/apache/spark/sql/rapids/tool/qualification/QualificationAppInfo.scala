@@ -348,8 +348,13 @@ class QualificationAppInfo(
             // val averageSpeedupFactors = allStagesToExecs.flatMap(_._2.map(_.speedupFactor)).toSeq
             val averageSpeedup = SQLPlanParser.averageSpeedup(averageSpeedupFactors)
             val allFlattenedExecs = execsForStage.flatMap { e =>
-              e.children.getOrElse(Seq.empty) :+ e
+              if (e.exec.contains("WholeStageCodegen")) {
+                e.children.getOrElse(Seq.empty)
+              } else {
+                e.children.getOrElse(Seq.empty) :+ e
+              }
             }
+            // need to remove the WholeStageCodegen wrappers
             val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
             val numSupported = allFlattenedExecs.filter(_.isSupported)
 

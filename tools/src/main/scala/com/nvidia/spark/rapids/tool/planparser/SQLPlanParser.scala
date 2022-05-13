@@ -124,7 +124,7 @@ object SQLPlanParser extends Logging {
         case "Expand" =>
           ExpandExecParser(node, checker, sqlID).parse
         case "Filter" =>
-          FilterExecParser(node, checker, sqlID, app).parse
+          FilterExecParser(node, checker, sqlID).parse
         case "Generate" =>
           GenerateExecParser(node, checker, sqlID).parse
         case "GlobalLimit" =>
