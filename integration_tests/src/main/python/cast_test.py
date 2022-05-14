@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_databricks91_or_later, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -83,14 +83,35 @@ valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                ]
 values_string_to_data = invalid_values_string_to_date + valid_values_string_to_date
 
-# test Spark Spark versions < 3.2.0, ANSI mode
-@pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
+# Spark 320+ and db312+ support Ansi mode when casting string to date
+# This means an exception will be thrown when casting invalid string to date on Spark 320+ or db312+
+# test Spark versions < 3.2.0 and non db, ANSI mode
+@pytest.mark.skipif((not is_before_spark_320()) or is_databricks91_or_later(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
 def test_cast_string_date_invalid_ansi_before_320():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'}, )
+
+# test db312+, ANSI mode, all db versions supports Ansi mode when casting string to date
+@pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
+@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
+def test_cast_string_date_invalid_ansi_dbs(invalid):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
+              'spark.sql.ansi.enabled': 'true'},
+        error_message="DateTimeException")
+
+# test db312+, ANSI mode, valid values
+@pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
+def test_cast_string_date_valid_ansi_dbs():
+    data_rows = [(v,) for v in valid_values_string_to_date]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
+              'spark.sql.ansi.enabled': 'true'})
 
 # test Spark versions >= 320, ANSI mode
 @pytest.mark.skipif(is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
