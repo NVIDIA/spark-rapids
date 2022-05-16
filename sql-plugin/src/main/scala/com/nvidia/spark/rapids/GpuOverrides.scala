@@ -2928,7 +2928,7 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
-            case "EXCEPTION" => // Good we can support this
+            case "EXCEPTION"| "LAST_WIN" => // Good we can support this
             case other =>
               willNotWorkOnGpu(s"$other is not supported for config setting" +
                   s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")

@@ -23,6 +23,7 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -487,10 +488,24 @@ case class GpuTransformKeys(
       }
       withResource(newKeysCol) { newKeysCol =>
         withResource(GpuMapUtils.replaceExplodedKeyAsView(arg.getBase, newKeysCol.getBase)) {
-          updatedMapView =>
+          updatedMapView => {
             GpuMapUtils.assertNoNullKeys(updatedMapView)
-            GpuMapUtils.assertNoDuplicateKeys(updatedMapView)
-            GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+            withResource(updatedMapView.dropListDuplicatesWithKeysValues()) { deduped =>
+              if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+                SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
+                // Compare child data row count before and after removing duplicates to determine
+                // if there were duplicates.
+                withResource(deduped.getChildColumnView(0)) { a =>
+                  withResource(updatedMapView.getChildColumnView(0)) { b =>
+                    if (a.getRowCount != b.getRowCount) {
+                      throw GpuMapUtils.duplicateMapKeyFoundError
+                    }
+                  }
+                }
+              }
+              GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+            }
+          }
         }
       }
     }
