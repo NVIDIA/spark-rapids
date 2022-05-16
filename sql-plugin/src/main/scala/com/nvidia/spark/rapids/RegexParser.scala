@@ -778,11 +778,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\z is not supported in split mode")
         case 'z' =>
-          // if (mode == RegexReplaceMode) {
-          //   // see https://github.com/NVIDIA/spark-rapids/issues/4425
-          //   throw new RegexUnsupportedException(
-          //     "string anchor \\z is not supported in replace mode")
-          // }
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
         case 'Z' =>

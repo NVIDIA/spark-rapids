@@ -562,7 +562,11 @@ def test_re_replace_backrefs():
         conf=_regexp_conf)
 
 def test_re_replace_anchors():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?')
+    gen = mk_str_gen('.{0,2}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?') \
+        .with_special_case("TEST") \
+        .with_special_case("TEST\n") \
+        .with_special_case("TEST\r\n") \
+        .with_special_case("TEST\r")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, "TEST$", "")',
