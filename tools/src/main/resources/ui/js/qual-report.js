@@ -131,7 +131,6 @@ $(document).ready(function(){
 
   let recommendGPUColName = "gpuRecommendation"
   let totalSpeedupColumnName = "totalSpeedup"
-  let opportunityColName = "accelerationOpportunity"
   let sortColumnForGPURecommend = totalSpeedupColumnName
   let gpuRecommendationConf = {
     responsive: true,
@@ -183,28 +182,6 @@ $(document).ready(function(){
         searchable: false,
         type: 'numeric',
       },
-      // {
-      //   name: opportunityColName,
-      //   data: 'accelerationOpportunity',
-      //   render: function (data, type, row) {
-      //     if (type === 'display') {
-      //       return '<progress title="'
-      //         + twoDecimalFormatter.format(data)
-      //         + '% '
-      //         + toolTipsValues["gpuRecommendations"]["GPU Opportunity"]
-      //         + '" value="' + data + '" max="100.0"></progress>';
-      //     }
-      //     return data;
-      //   },
-      //   // fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-      //   //   let toolTipVal = toolTipsValues['gpuRecommendations']['GPU Opportunity'];
-      //   //   $(nTd).attr('data-toggle', "tooltip");
-      //   //   $(nTd).attr('data-placement', "top");
-      //   //   $(nTd).attr('html', "true");
-      //   //   $(nTd).attr('data-html', "true");
-      //   //   $(nTd).attr('title', toolTipVal);
-      //   // }
-      // },
       {
         name: recommendGPUColName,
         data: 'gpuCategory',
