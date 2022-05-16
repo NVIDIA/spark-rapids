@@ -394,6 +394,7 @@ def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, re
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs_native)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@allow_non_gpu('ColumnarToRowExec')
 def test_parquet_read_merge_schema_native_fallback(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -414,6 +415,7 @@ def test_parquet_read_merge_schema_native_fallback(spark_tmp_path, v1_enabled_li
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_fallback_collect(
         lambda spark: spark.read.option('mergeSchema', 'true').parquet(data_path),
+        cpu_fallback_class_name='FileSourceScanExec' if v1_enabled_list == 'parquet' else 'BatchScanExec',
         conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
