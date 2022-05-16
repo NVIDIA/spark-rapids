@@ -327,10 +327,10 @@ class QualificationAppInfo(
           // execs is more than entire stage time, for now ignore the exec duration and just
           // calculate based on average applied to total task time of each stage
           val allStagesToExecs = getStageToExec(execInfos)
-          val allStagesIds = allStagesToExecs.keys.toSet
+          val allStageIds = allStagesToExecs.keys.toSet
           // if it doesn't have a stage id associated we can't calculate the time spent in that
           // SQL so we just drop it
-          val stageSum = allStagesIds.map { stageId =>
+          val stageSum = allStageIds.map { stageId =>
             val stageTaskTime = stageIdToTaskEndSum.get(stageId)
               .map(_.totalTaskDuration).getOrElse(0L)
             val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
