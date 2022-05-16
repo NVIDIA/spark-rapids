@@ -874,18 +874,18 @@ def test_regexp_horizontal_vertical_whitespace():
         ''')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'rlike(a, "\\h{2}")',
-                'rlike(a, "\\v{3}")',
-                'rlike(a, "[abcd]+\\h+[0-9]+")',
-                'rlike(a, "[abcd]+\\v+[0-9]+")',
-                'rlike(a, "\\H{3}")',
-                'rlike(a, "\\V{3}")',
-                'rlike(a, "[abcd]+\\h+\\V{2,3}")',
-                'regexp_extract(a, "([a-d]+)([0-9\\v]+)([a-d]+)", 2)',
-                'regexp_extract(a, "([a-d]+)(\\H+)([0-9]+)", 2)',
-                'regexp_extract(a, "([a-d]+)(\\V+)([0-9]+)", 3)',
-                'regexp_replace(a, "(\\v+)", "@")',
-                'regexp_replace(a, "(\\H+)", "#")',
+                'rlike(a, "\\\\h{2}")',
+                'rlike(a, "\\\\v{3}")',
+                'rlike(a, "[abcd]+\\\\h+[0-9]+")',
+                'rlike(a, "[abcd]+\\\\v+[0-9]+")',
+                'rlike(a, "\\\\H")',
+                'rlike(a, "\\\\V")',
+                'rlike(a, "[abcd]+\\\\h+\\\\V{2,3}")',
+                'regexp_extract(a, "([a-d]+)([0-9]+\\\\v)([a-d]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\\\H+)([0-9]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\\\V+)([0-9]+)", 3)',
+                'regexp_replace(a, "(\\\\v+)", "@")',
+                'regexp_replace(a, "(\\\\H+)", "#")',
             ),
         conf=_regexp_conf)
 
@@ -894,10 +894,9 @@ def test_regexp_linebreak():
         '[abc]{1,3}\u000D\u000A[def]{1,3}[\u000A\u000B\u000C\u000D\u0085\u2028\u2029]{0,5}[123]')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'rlike(a, "\\R")',
-                'rlike(a, "\\R{2}")',
-                'regexp_extract(a, "([a-d]+)\\R([a-d]+)", 1)',
-                'regexp_replace(a, "\\R", "")',
+                'rlike(a, "\\\\R")',
+                'regexp_extract(a, "([a-d]+)(\\\\R)([a-d]+)", 1)',
+                'regexp_replace(a, "\\\\R", "")',
             ),
         conf=_regexp_conf)
 
