@@ -180,12 +180,32 @@
                             </target>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>copy-notice</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <phase>process-resources</phase>
+                        <configuration>
+                            <target>
+                                <!-- copy NOTICE-binary to NOTICE -->
+                                <copy
+                                        todir="${project.build.directory}/classes/META-INF/"
+                                        verbose="true">
+                                    <fileset dir="${project.basedir}/..">
+                                        <include name="NOTICE-binary"/>
+                                    </fileset>
+                                    <mapper type="glob" from="*-binary" to="*"/>
+                                </copy>
+                            </target>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
                 <!-- clean up the qual-ui dependencies from the resources -->
                 <artifactId>maven-clean-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>${maven.clean.plugin.version}</version>
                 <executions>
                     <execution>
                         <id>clean-qual-ui-dependencies</id>

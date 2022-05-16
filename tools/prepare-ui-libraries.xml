@@ -27,8 +27,6 @@
         <echo level="info"
               message="UI Resources Location    : ${project.ui.output}"/>
         <echo level="info"
-              message="Output location          : ${project.ui.output}"/>
-        <echo level="info"
               message="Cache location           : ${project.cache.dir}"/>
         <mkdir dir="${project.cache.dir}"/>
         <mkdir dir="${project.cache.dir}/${lib.datatables.dir}"/>

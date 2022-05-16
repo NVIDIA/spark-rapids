@@ -240,7 +240,8 @@ function processRawData(rawRecords) {
       "longestSqlDuration": formatDuration(appRecord["longestSqlDuration"]),
     }
 
-    appRecord["totalSpeedup_display"] = twoDecimalFormatter.format(appRecord["totalSpeedup"])
+    appRecord["totalSpeedup_display"] =
+      parseFloat(appRecord["totalSpeedup"]).toFixed(1);
     setAppInfoRecord(appRecord);
     maxOpportunity =
         (maxOpportunity < appRecord[appFieldAccCriterion])

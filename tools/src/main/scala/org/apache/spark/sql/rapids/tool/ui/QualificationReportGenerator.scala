@@ -38,7 +38,6 @@ class QualificationReportGenerator(outputDir: String,
 
   val outputWorkPath = new Path(outputDir)
   val fs = Some(FileSystem.get(outputWorkPath.toUri, new Configuration()))
-  val sums = Some(sumArr)
 
   def launch(): Unit = {
     val uiRootPath = getPathForResource(RAPIDS_UI_ASSETS_DIR)
@@ -47,7 +46,7 @@ class QualificationReportGenerator(outputDir: String,
   }
 
   def copyAssetFolderRecursively(srcFolderPath: java.nio.file.Path, dstPath: Path): Unit = {
-    logInfo(s"UI code generator: Copying ... ${srcFolderPath.toUri}")
+    logDebug(s"UI code generator: Copying ... ${srcFolderPath.toUri}")
     if (Files.isDirectory(srcFolderPath)) {
       val destinationPath = new Path(dstPath, srcFolderPath.getFileName.toString)
       fs.map { dstFileSys =>
@@ -67,7 +66,8 @@ class QualificationReportGenerator(outputDir: String,
     // Serializing the entire list of sums may stress the memory.
     // Serializing one record at a time is slower but it would reduce the memory peak consumption.
     val outputPath = new Path(outputWorkPath, RAPIDS_UI_JS_DATA)
-    logInfo(s"Generating UI data in ${outputPath.toUri.toString}")
+    val mainIndexPath =new Path(outputWorkPath,  RAPIDS_UI_INDEX_PATH)
+    logInfo(s"Generating UI data in ${mainIndexPath.toUri}")
     val fileHeader =
       s"""
         |let qualificationRecords = [
@@ -76,25 +76,21 @@ class QualificationReportGenerator(outputDir: String,
       s"""|];
        """.stripMargin
     fs.foreach { dfs =>
-      val outputPutFile = Some(dfs.create(outputPath))
-      outputPutFile.foreach { outFile =>
-        Utils.tryWithSafeFinally {
-          outFile.writeBytes(fileHeader)
-          sums.foreach { records =>
-            if (records.nonEmpty) {
-              if (records.size > 1) {
-                for (ind <- 0.until(records.size - 1)) {
-                  writeAppRecord(records(ind), outFile)
-                }
-              }
-              writeAppRecord(records.last, outFile, "")
+      val outFile = dfs.create(outputPath)
+      Utils.tryWithSafeFinally {
+        outFile.writeBytes(fileHeader)
+        if (sumArr.nonEmpty) {
+          if (sumArr.size > 1) {
+            for (ind <- 0.until(sumArr.size - 1)) {
+              writeAppRecord(sumArr(ind), outFile)
             }
           }
-          outFile.writeBytes(fileFooter)
-        } {
-          outFile.flush()
-          outFile.close()
+          writeAppRecord(sumArr.last, outFile, "")
         }
+        outFile.writeBytes(fileFooter)
+      } {
+        outFile.flush()
+        outFile.close()
       }
     }
   }
@@ -135,6 +131,7 @@ class QualificationReportGenerator(outputDir: String,
 object QualificationReportGenerator extends Logging {
   val RAPIDS_UI_ASSETS_DIR = "/ui"
   val RAPIDS_UI_JS_DATA = s"ui/js/data-output.js"
+  val RAPIDS_UI_INDEX_PATH = s"ui/html/index.html"
   var jarFS : Option[file.FileSystem] = None
 
   private def getPathForResource(filename: String): java.nio.file.Path = {
@@ -156,12 +153,16 @@ object QualificationReportGenerator extends Logging {
 
   def generateDashBoard(outDir: String, sumArr: Seq[QualificationSummaryInfo]) : Unit = {
     val generatorOp = Some(new QualificationReportGenerator(outDir, sumArr))
+    var startTime = 0L;
     generatorOp.foreach { generator =>
       Utils.tryWithSafeFinally {
+        startTime = System.currentTimeMillis()
         generator.launch()
         generator.generateJSFiles()
       } {
         generator.close()
+        val endTime = System.currentTimeMillis()
+        logInfo(s"Took ${endTime - startTime}ms to process ")
       }
     }
   }

@@ -132,7 +132,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Applications which a particular user has submitted." )
   val uiEnabled: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Whether to render the report into HTML pages. Default is True",
+      descr = "Whether to render the report into HTML pages. Default is false",
       default = Some(QualificationArgs.DEFAULT_UI_ENABLED))
 
   validate(order) {
@@ -169,7 +169,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
 object QualificationArgs {
   val DEFAULT_READ_SCORE_PERCENT = 20
-  val DEFAULT_UI_ENABLED = true
+  val DEFAULT_UI_ENABLED = false
 
   def isOrderAsc(order: String): Boolean = {
     order.toLowerCase.startsWith("asc")

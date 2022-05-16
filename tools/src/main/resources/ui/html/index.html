@@ -69,14 +69,14 @@
   <!-- Dynamic code replacement using Mustache -->
   <script src="../assets/mustache-js/mustache.min.js"></script>
 
-  <title>Spark Qualification tool - Is RAPIDS good fit for GPU Acceleration?</title>
+  <title>Qualification tool - Is RAPIDS good fit for GPU Acceleration?</title>
 </head>
 
 <body>
   <div class="dash">
     <div class="dash-nav dash-nav-dark">
       <header>
-        <a href="index.html" class="spur-logo"><span>Spark RAPIDS</span></a>
+        <a href="index.html" class="spur-logo"><span>Qualification Tool</span></a>
       </header>
       <nav class="dash-nav-list">
         <a href="index.html" class="dash-nav-item">
@@ -121,7 +121,7 @@
         </div>
       </header>
       <main class="dash-content">
-        <h1 class="dash-title">Spark Qualification Tool</h1>
+        <h1 class="dash-title">Qualification Tool</h1>
         <div class="container-fluid">
           <!-- place disclaimer at the top of the page, before showing results -->
           <div class="row">
@@ -130,8 +130,8 @@
                 <svg width="1.2em" height="1.2em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
                 </svg>
-                <strong>Disclaimer!</strong><ul><li>Projections are based on TPC-DS benchmark queries run using Spark 3.X.</li>
-                <li>Additionally, estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
+                <strong>Disclaimer!</strong><ul>
+                <li>Estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                   <span aria-hidden="true">&times;</span>
                 </button>
@@ -182,7 +182,7 @@
                           App Duration
                         </th>
                         <th>
-                          GPU Opportunity
+                          Estimated Speed-up
                         </th>
                         <th>
                           Recommendation
@@ -200,7 +200,6 @@
     </div>
   </div>
 
-
   <script id="qual-report-summary-template" type="text/template">
     <div class="row dash-row">
       <div class="col-xl-3">
@@ -217,10 +216,6 @@
               <div class="stats-change">
                 <span class="stats-percentage"> {{totalApps.totalAppsDurations}} </span>
                 <span class="stats-timeframe"> {{totalApps.totalAppsDurationLabel}} </span>
-              </div>
-              <div class="stats-change">
-                <span class="stats-percentage"> {{totalApps.statsPercentage}} </span>
-                <span class="stats-timeframe"> {{totalApps.statsTimeFrame}} </span>
               </div>
             </div>
           </div>

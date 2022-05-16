@@ -59,6 +59,7 @@ let toolTipsValues = {
           "If an app is not completed an estimated completion time would be computed.",
         "GPU Opportunity": "Expected percentage of Sql Task Duration that could be accelerated by the GPU ",
         "Recommendation": "On a scale from 1 to 5, is it recommended to use RAPIDS",
+        "Estimated Speed-up": "speedup factor estimated for the app. Calculated as the ratio between App-Duration and GPU-Estimated-Duration",
         "details": {
             "mathFormatted": {
                 "totalSpeedup":
