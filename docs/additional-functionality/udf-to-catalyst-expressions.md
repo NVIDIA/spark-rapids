@@ -109,6 +109,8 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | lhs += rhs                                               |
 |                          | lhs :+ rhs                                               |
 | Method call              | Only if the method being called 1. Consists of operations supported by the UDF compiler, and 2. is one of the folllowing: a final method, a method in a final class, or a method in a final object |
+| Captured variables       | Only primitive type variables captured from a method |
+| Throwing exception       | Only if the exception thrown is a SparkException.  The exception is then convered to a RuntimeException at runtime |
 
 All other expressions, including but not limited to `try` and `catch`, are unsupported and UDFs
 with such expressions cannot be compiled.
