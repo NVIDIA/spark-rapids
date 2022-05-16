@@ -53,9 +53,9 @@ object GpuParquetFileFormat {
     val footerEncryption = options.getOrElse("parquet.encryption.footer.key", "")
 
     if (!columnEncryption.isEmpty || !footerEncryption.isEmpty) {
-      meta.willNotWorkOnGpu("Encryption is not yet supported on GPU. To enable unset the " +
-          "\"parquet.encryption.column.keys\" and \"parquet.encryption.footer.key\" in " +
-          "parquet options")
+      meta.willNotWorkOnGpu("Encryption is not yet supported on GPU. If encrypted Parquet" +
+          "reads or writes are not required unset the \"parquet.encryption.column.keys\" and " +
+          "\"parquet.encryption.footer.key\" in Parquet options")
     }
 
     if (!meta.conf.isParquetEnabled) {
