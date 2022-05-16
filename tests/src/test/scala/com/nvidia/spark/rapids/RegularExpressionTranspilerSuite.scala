@@ -291,6 +291,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   }
 
+  test("issue 5450 ci failure") {
+    val pattern = Seq("D?")
+    val inputs = Seq("\"\u000E\u0011\u0006h?TEST?AA\"")
+    assertCpuGpuMatchesRegexpFind(pattern, inputs)
+  }
+
   test("replace_replace - ?, *, +, and {0, n} repetitions") {
     val patterns = Seq("D?", "D*", "D+", "D{0,}", "D{0,1}", "D{0,5}", "[1a-zA-Z]{0,}",
         "[1a-zA-Z]{0,2}", "A+")
