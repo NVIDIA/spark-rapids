@@ -122,7 +122,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   private def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-    val entireHeader = QualOutputWriter.constructSummaryHeader(appIdMaxSize, "|", true)
+    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
+    val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes, "|", true)
     val sep = "=" * (entireHeader.size - 1)
     writer.write(s"$sep\n")
     writer.write(entireHeader)
@@ -135,7 +136,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
     val finalSums = sums.take(numOutputRows)
     finalSums.foreach { sumInfo =>
-      val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, appIdMaxSize, "|", true)
+      val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
+        appIdMaxSize, "|", true)
       writer.write(wStr)
       if (printStdout) print(wStr)
     }
@@ -145,7 +147,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 }
 
 object QualOutputWriter {
-  val PROBLEM_DUR_STR = "Problematic Duration"
+  val NON_SQL_DURATION_STR = "NonSQL Duration"
   val SQL_ID_STR = "SQL ID"
   val STAGE_ID_STR = "Stage ID"
   val APP_ID_STR = "App ID"
@@ -187,7 +189,7 @@ object QualOutputWriter {
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
-  val PROBLEM_DUR_SIZE: Int = PROBLEM_DUR_STR.size
+  val PROBLEM_DUR_SIZE: Int = NON_SQL_DURATION_STR.size
   val SPEEDUP_BUCKET_STR_SIZE: Int = SPEEDUP_BUCKET_STR.size
   val TOTAL_SPEEDUP_STR_SIZE: Int = TOTAL_SPEEDUP_STR.size
   val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
@@ -206,7 +208,7 @@ object QualOutputWriter {
   }
 
   // ordered hashmap contains each header string and the size to use
-  private def constructOutputRowFromMap(
+  def constructOutputRowFromMap(
       strAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean = false): String = {
@@ -246,7 +248,7 @@ object QualOutputWriter {
       APP_ID_STR -> appIdMaxSize,
       APP_DUR_STR -> APP_DUR_STR_SIZE,
       SQL_DUR_STR -> SQL_DUR_STR_SIZE,
-      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE,
+      NON_SQL_DURATION_STR -> PROBLEM_DUR_SIZE,
       TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR_SIZE,
       SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
     )
@@ -299,19 +301,18 @@ object QualOutputWriter {
     detailedHeadersAndFields
   }
 
-  def constructSummaryHeader(appIdMaxSize: Int, delimiter: String,
+  def constructAppSummaryInfo(
+      sumInfo: QualificationSummaryInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      appIdMaxSize: Int,
+      delimiter: String,
       prettyPrint: Boolean): String = {
-    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
-    QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
-  }
-
-  def constructAppSummaryInfo(sumInfo: QualificationSummaryInfo,
-      appIdMaxSize: Int, delimiter: String, prettyPrint: Boolean): String = {
     val data = ListBuffer[(String, Int)](
+      sumInfo.appName -> headersAndSizes(APP_NAME_STR),
       sumInfo.appId -> appIdMaxSize,
       sumInfo.appDuration.toString -> APP_DUR_STR_SIZE,
       sumInfo.sqlDataFrameDuration.toString -> SQL_DUR_STR_SIZE,
-      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE,
+      sumInfo.nonSqlWallClockDuration.toString -> PROBLEM_DUR_SIZE,
       sumInfo.totalSpeedup.toString -> TOTAL_SPEEDUP_STR_SIZE,
       sumInfo.speedupBucket -> SPEEDUP_BUCKET_STR_SIZE
     )

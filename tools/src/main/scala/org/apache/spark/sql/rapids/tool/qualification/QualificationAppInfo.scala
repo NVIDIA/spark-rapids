@@ -33,8 +33,7 @@ import org.apache.spark.sql.rapids.tool.{AppBase, GpuEventLogException, ToolUtil
 class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
     hadoopConf: Option[Configuration] = None,
-    pluginTypeChecker: PluginTypeChecker,
-    readScorePercent: Int)
+    pluginTypeChecker: PluginTypeChecker)
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
@@ -106,24 +105,6 @@ class QualificationAppInfo(
     } else {
       None
     }
-  }
-
-  /**
-   * The score starts out based on the over all task time spent in SQL dataframe
-   * operations and then can only decrease from there based on if it has operations not
-   * supported by the plugin.
-   */
-  private def calculateScore(readScoreRatio: Double, sqlDataframeTaskDuration: Long): Double = {
-    // the readScorePercent is an integer representation of percent
-    val ratioForReadScore = readScorePercent / 100.0
-    val ratioForRestOfScore = 1.0 - ratioForReadScore
-    // get the part of the duration that will apply to the read score
-    val partForReadScore = sqlDataframeTaskDuration * ratioForReadScore
-    // calculate the score for the read part based on the read format score
-    val readScore = partForReadScore * readScoreRatio
-    // get the rest of the duration that doesn't apply to the read score
-    val scoreRestPart = sqlDataframeTaskDuration * ratioForRestOfScore
-    scoreRestPart + readScore
   }
 
   // if the SQL contains a dataset, then duration for it is 0
@@ -231,28 +212,6 @@ class QualificationAppInfo(
     }.mkString(":")
   }
 
-  // For the read score we look at all the read formats and datatypes for each
-  // format and for each read give it a value 0.0 - 1.0 depending on whether
-  // the format is supported and if the data types are supported. We then sum
-  // those together and divide by the total number.  So if none of the data types
-  // are supported, the score would be 0.0 and if all formats and datatypes are
-  // supported the score would be 1.0.
-  private def calculateReadScoreRatio(): Double = {
-    if (dataSourceInfo.size == 0) {
-      1.0
-    } else {
-      val readFormatSum = dataSourceInfo.map { ds =>
-        val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
-        if (nsTypes.nonEmpty) {
-          val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
-          notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
-        }
-        readScore
-      }.sum
-      readFormatSum / dataSourceInfo.size
-    }
-  }
-
   private def getStageToExec(execInfos: Seq[ExecInfo]): Map[Int, Seq[ExecInfo]] = {
     execInfos.flatMap { execInfo =>
       if (execInfo.stages.size > 1) {
@@ -284,16 +243,11 @@ class QualificationAppInfo(
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
-      val readScoreRatio = calculateReadScoreRatio
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
       val noSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
       val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
       val nonSQLTaskDuration = noSQLDataframeTaskDuration + jobOverheadTime
-      val readScoreHumanPercent = 100 * readScoreRatio
-      val readScoreHumanPercentRounded = f"${readScoreHumanPercent}%1.2f".toDouble
-      val score = calculateScore(readScoreRatio, sqlDataframeTaskDuration)
-      val scoreRounded = f"${score}%1.2f".toDouble
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
@@ -320,7 +274,7 @@ class QualificationAppInfo(
         p.copy(execInfo = filteredPlanInfos)
       }
 
-      val perSqlSummary = planInfos.flatMap { pInfo =>
+      val perSqlStageSummary = planInfos.flatMap { pInfo =>
         val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
         perSQLId.map { case (_, execInfos) =>
           // there are issues with duration in whole stage code gen where duration of multiple
@@ -357,16 +311,10 @@ class QualificationAppInfo(
           stageSum
         }
       }
-      perSqlSummary.foreach { stageSum =>
-        if (stageSum.nonEmpty) {
-          logWarning(s"stages with average Speedup and stage " +
-            s"Total Task Time, unsupportedDur: ${stageSum.mkString(",")}")
-        }
-      }
 
-      val unsupportedSQLDuration = calculateSQLUnsupportedDuration(perSqlSummary)
+      val unsupportedSQLDuration = calculateSQLUnsupportedDuration(perSqlStageSummary)
       val speedupDuration = sqlDataframeTaskDuration - unsupportedSQLDuration
-      val speedupFactor = calculateSpeedupFactor(perSqlSummary)
+      val speedupFactor = calculateSpeedupFactor(perSqlStageSummary)
       val estimatedDuration =
         (speedupDuration / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
       val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
@@ -379,14 +327,13 @@ class QualificationAppInfo(
         "RED"
       }
 
-      val summaryInfo = new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
+      val summaryInfo = QualificationSummaryInfo(info.appName, appId, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
-        endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
-        readScoreHumanPercentRounded, notSupportFormatAndTypesString,
+        endDurationEstimated, sqlDurProblem, failedIds, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
         calculateNonSqlDataframeWallClockDuration, nonSQLTaskDuration, estimatedDuration,
         unsupportedSQLDuration, speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
-      (summaryInfo, origPlanInfos, perSqlSummary.flatten)
+      (summaryInfo, origPlanInfos, perSqlStageSummary.flatten)
     }
   }
 
@@ -449,7 +396,6 @@ case class QualSQLExecutionInfo(
 case class QualificationSummaryInfo(
     appName: String,
     appId: String,
-    score: Double,
     potentialProblems: String,
     sqlDataFrameDuration: Long,
     sqlDataframeTaskDuration: Long,
@@ -458,8 +404,6 @@ case class QualificationSummaryInfo(
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long,
     failedSQLIds: String,
-    readScorePercent: Int,
-    readFileFormatScore: Double,
     readFileFormatAndTypesNotSupported: String,
     readFileFormats: String,
     writeDataFormat: String,
@@ -485,11 +429,9 @@ object QualificationAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
       hadoopConf: Configuration,
-      pluginTypeChecker: PluginTypeChecker,
-      readScorePercent: Int): Option[QualificationAppInfo] = {
+      pluginTypeChecker: PluginTypeChecker): Option[QualificationAppInfo] = {
     val app = try {
-        val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
-          readScorePercent)
+        val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {

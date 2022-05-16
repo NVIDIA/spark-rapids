@@ -89,9 +89,11 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     appInfo match {
       case Some((info, _, _)) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val headerStr = QualOutputWriter.constructSummaryHeader(appIdMaxSize, delimiter,
-          prettyPrint)
-        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info, appIdMaxSize,
+        val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
+        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+          delimiter, prettyPrint)
+        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info,
+          headersAndSizes, appIdMaxSize,
           delimiter, prettyPrint)
         headerStr + appInfoStr
       case None =>
