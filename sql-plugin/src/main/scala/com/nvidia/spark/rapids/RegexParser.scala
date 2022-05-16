@@ -704,10 +704,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map {
-            case x @ RegexChar(ch) if "^$".contains(ch) => x
-            case x => rewrite(x, None) match {
-              case x: RegexCharacterClassComponent => x
-              case other =>
+            case r @ RegexChar(ch) if "^$".contains(ch) => r
+            case ch => rewrite(ch, None) match {
+              case valid: RegexCharacterClassComponent => valid
+              case _ =>
                 // this can happen when a character class contains a meta-sequence such as
                 // `\s` that gets transpiled into another character class
                 throw new RegexUnsupportedException("Character class contains one or more " +
