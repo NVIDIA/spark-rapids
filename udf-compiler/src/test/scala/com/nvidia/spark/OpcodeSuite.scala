@@ -2384,7 +2384,7 @@ class OpcodeSuite extends FunSuite {
     try {
       run(20)
     } catch {
-      case e: Throwable =>
+      case e: RuntimeException =>
         assert(e.getMessage == "Fold number must be in range [0, 20), but got 20.")
     }
   }
