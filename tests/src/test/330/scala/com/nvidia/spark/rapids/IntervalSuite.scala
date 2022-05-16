@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.time.{Duration, Period}
 
+import org.apache.spark
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
@@ -68,6 +69,8 @@ class IntervalSuite extends SparkQueryCompareTestSuite {
   }
 
   test("test GPU cache interval when reading/writing parquet") {
+    // temporarily skip the test on Spark 3.3.0-https://github.com/NVIDIA/spark-rapids/issues/5497
+    assume(spark.SPARK_VERSION_SHORT < "3.3.0")
     setPCBS()
 
     val tempFile = File.createTempFile("pcbs", ".parquet")
@@ -89,6 +92,8 @@ class IntervalSuite extends SparkQueryCompareTestSuite {
 
   // CPU write a parquet, then test the reading between CPU and GPU
   test("test ANSI interval read") {
+    // temporarily skip the test on Spark 3.3.0-https://github.com/NVIDIA/spark-rapids/issues/5497
+    assume(spark.SPARK_VERSION_SHORT < "3.3.0")
     val tmpFile = File.createTempFile("interval", ".parquet")
     try {
       withCpuSparkSession(spark => getDF(spark).coalesce(1)
@@ -105,6 +110,8 @@ class IntervalSuite extends SparkQueryCompareTestSuite {
 
   // GPU write a parquet, then test the reading between CPU and GPU
   test("test ANSI interval write") {
+    // temporarily skip the test on Spark 3.3.0-https://github.com/NVIDIA/spark-rapids/issues/5497
+    assume(spark.SPARK_VERSION_SHORT < "3.3.0")
     val tmpFile = File.createTempFile("interval", ".parquet")
     try {
       withGpuSparkSession(spark => getDF(spark).coalesce(1)
