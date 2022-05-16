@@ -547,6 +547,13 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
         conf=_regexp_conf)
 
+def test_re_replace_issue_5492():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "[^\\\\sa-zA-Z0-9]", "x")'),
+        conf=_regexp_conf)
+
 def test_re_replace_backrefs():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
     assert_gpu_and_cpu_are_equal_collect(
