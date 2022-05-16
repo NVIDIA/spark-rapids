@@ -280,14 +280,19 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
             conf=all_confs)
 
 @allow_non_gpu('DataWritingCommandExec')
-def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory):
+@pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
+    def write_func(spark, path):
+        writer = unary_op_df(spark, gen).coalesce(1).write
+        for key in write_options:
+            writer.option(key , write_options[key])
+        writer.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get())
     gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_fallback_write(
-        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write
-            .option("parquet.encryption.footer.key" , "k1")
-            .option("parquet.encryption.column.keys" , "k2:a")
-            .format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+        write_func,
         lambda spark, path: spark.read.parquet(path),
         data_path,
         'DataWritingCommandExec')
