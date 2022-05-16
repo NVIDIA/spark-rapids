@@ -333,16 +333,6 @@ object QualOutputWriter {
     execInfos.map(_.children.getOrElse(Seq.empty).map(_.nodeId).mkString(",").size)
   }
 
-  def getDetailedStagesHeaderStringsAndSizes(): LinkedHashMap[String, Int] = {
-    val detailedHeadersAndFields = LinkedHashMap[String, Int](
-      STAGE_ID_STR -> STAGE_ID_STR.size,
-      AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
-      TASK_DUR_STR -> TASK_DUR_STR.size,
-      UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size
-    )
-    detailedHeadersAndFields
-  }
-
   def getDetailedExecsHeaderStringsAndSizes(
       execInfos: Seq[ExecInfo]): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
@@ -381,6 +371,16 @@ object QualOutputWriter {
     constructOutputRow(data, delimiter, prettyPrint)
   }
 
+  def getDetailedStagesHeaderStringsAndSizes(): LinkedHashMap[String, Int] = {
+    val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      STAGE_ID_STR -> STAGE_ID_STR.size,
+      AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
+      TASK_DUR_STR -> TASK_DUR_STR.size,
+      UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size
+    )
+    detailedHeadersAndFields
+  }
+
   def constructStagesInfo(
       stagesInfo: Seq[StageQualSummaryInfo],
       headersAndSizes: LinkedHashMap[String, Int],
@@ -388,7 +388,7 @@ object QualOutputWriter {
       prettyPrint: Boolean): Seq[String] = {
     stagesInfo.map { info =>
       val data = ListBuffer[(String, Int)](
-        info.stageId.toString -> headersAndSizes(SQL_ID_STR),
+        info.stageId.toString -> headersAndSizes(STAGE_ID_STR),
         info.averageSpeedup.toString -> headersAndSizes(AVERAGE_SPEEDUP_STR),
         info.stageTaskTime.toString -> headersAndSizes(TASK_DUR_STR),
         info.unsupportedDur.toString -> headersAndSizes(UNSUPPORTED_DURATION_STR))
