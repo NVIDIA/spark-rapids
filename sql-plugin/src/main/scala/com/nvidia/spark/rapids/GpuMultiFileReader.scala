@@ -301,7 +301,7 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
 
       withResource(out) { _ =>
         withResource(new HostMemoryInputStream(hmb, dataLength)) { in =>
-          logInfo(s"Writing split data for $splits to $path")
+          logInfo(s"Writing split data for ${splits.mkString(", ")} to $path")
           IOUtils.copy(in, out)
         }
       }
