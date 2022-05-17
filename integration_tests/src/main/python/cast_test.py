@@ -83,9 +83,9 @@ valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                ]
 values_string_to_data = invalid_values_string_to_date + valid_values_string_to_date
 
-# Spark 320+ and db312+ support Ansi mode when casting string to date
-# This means an exception will be thrown when casting invalid string to date on Spark 320+ or db312+
-# test Spark versions < 3.2.0 and non db, ANSI mode
+# Spark 320+ and databricks support Ansi mode when casting string to date
+# This means an exception will be thrown when casting invalid string to date on Spark 320+ or databricks
+# test Spark versions < 3.2.0 and non databricks, ANSI mode
 @pytest.mark.skipif((not is_before_spark_320()) or is_databricks91_or_later(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
 def test_cast_string_date_invalid_ansi_before_320():
     data_rows = [(v,) for v in values_string_to_data]
@@ -94,7 +94,7 @@ def test_cast_string_date_invalid_ansi_before_320():
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'}, )
 
-# test db312+, ANSI mode, all db versions supports Ansi mode when casting string to date
+# test databricks, ANSI mode, all databricks versions supports Ansi mode when casting string to date
 @pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_cast_string_date_invalid_ansi_dbs(invalid):
@@ -104,7 +104,7 @@ def test_cast_string_date_invalid_ansi_dbs(invalid):
               'spark.sql.ansi.enabled': 'true'},
         error_message="DateTimeException")
 
-# test db312+, ANSI mode, valid values
+# test databricks, ANSI mode, valid values
 @pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
 def test_cast_string_date_valid_ansi_dbs():
     data_rows = [(v,) for v in valid_values_string_to_date]
