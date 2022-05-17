@@ -59,7 +59,6 @@
              dest="${project.cache.dir}/${lib.mustache.dir}.zip" />
         <available property="download.jquery.file" file="${project.cache.dir}/${lib.mustache.dir}.zip"/>
         <!-- get Datatables files -->
-
         <mkdir dir="${project.ui.output}/${lib.datatables.dir}"/>
         <!-- fetch css files -->
         <get src="${lib.datatables.url.domain}/1.12.0/css/dataTables.bootstrap4.min.css"
@@ -109,7 +108,112 @@
              dest="${project.cache.dir}/${lib.datatables.dir}/"
              skipexisting="true"/>
     </target>
-    <target name="extract" depends="env,download" description="Extract project files">
+
+    <target name="verify" depends="env,download" description="Verify downloaded files">
+        <echo level="info"
+              message="verifying checksums" />
+        <checksum file="${project.cache.dir}/${lib.bootstrap.dir}.zip"
+                  property="b508451d44199e859c12ff90b5237dd66a6742c6cd9b8bae6df2280f3645edd5a2decd6ec2915f811930fe3d67c2cab05edde7a5c03fd660d299abaa1d50392a"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.bootstrap.match"/>
+        <checksum file="${project.cache.dir}/${lib.jquery.dir}.zip"
+                  property="276ef6b1cbb38d14312cd28fee87d22a8f8c04e02eb31b2c7769742b76299dbcad5277ca857bda16e4c8d08196e6f34a0628862092da80fc749fca54e6d190cb"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.jquery.match"/>
+        <checksum file="${project.cache.dir}/${lib.mustache.dir}.zip"
+                  property="1d694395b6adf7aca7bd29d1163de3eee674178736a1b928a44dd18ea4f39600151186ae34c4afaef627a88fa4c44ef487433e51ee1a5d4e37b5dafbc3e56001"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.mustache.match"/>
+        <checksum file="${project.cache.dir}/${lib.spur.dir}.zip"
+                  property="693527ec199d6d7d12f84135dcf2cefe437836f65eea4963123be818b10e1595c59bbb70711c472711eb9a63402064bd82188aff4f1e0a17baeba9b1dfe2ae14"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.spur.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/buttons.bootstrap4.min.css"
+                  property="aa38030778936130c00190edcafeb174679dcdf1689f7cb5ca313fc88d91ec7bb1284b18e74697cac605adbda13f75196c72a23562a3f2d1088575c5c828b470"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-00.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/buttons.bootstrap4.min.js"
+                  property="0df4c628ed70e69725d3fa059649fb89c6a8a52f3301e38aa087e4d8c65121ac57e8d959ecf1522d7f37054e5420b85fa255c528de34964d9fb6945b7edc3e2b"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-01.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/buttons.html5.min.js"
+                  property="05d37e90703b41f58871013758cc128f9400bd552b486c492efeffcae104ca930e641489d55286afd052a4e7b0fbabdaf727c65000b0ffc62decb28d9f744a44"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-02.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/dataTables.bootstrap4.min.css"
+                  property="7ccd7a98fcbf919a365edc5d309b94e0e816368d0a24071b7eb0c93c19e221cbee7dfc0e76ea2eb764e5bf42549dd4ee2990a87529a09a740f01b95b565eb581"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-03.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/dataTables.bootstrap4.min.js"
+                  property="f68d894f8cc12608535341042203efcf31ceba536fa348eadaca537e8ea632667a4b78cafa0963adfa3498a0c0c68327ae465aea6976660072050e606bc9e80d"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-04.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/dataTables.buttons.min.js"
+                  property="413de81176a6461c74c7e4910dc822b328325b37b452272034b14cf438f941f26ebb64d5cb0ef14507e607483b679fd380275828d5b5e50ba62c1196a0f79f62"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-05.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/dataTables.responsive.min.js"
+                  property="d306e8823bdaed15cd73c4460bbb7bcdd50360e7e51c104404637a22d7d6aa18b3203b167d11340f18be3d0a49e383be7d2f1855e9e41561627c7f3ce692df92"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-06.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/dataTables.searchPanes.min.js"
+                  property="53d4b23612932efe52ca952bef66664d8fbe40a186fd211b9a9eaea2f93d57e474fcb2bee5ceeb8cff3e658d02d5b5ca57cab684908bc77822503a353d322f61"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-07.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/dataTables.select.min.js"
+                  property="58cd1b23c593aee3e7453c5c4aa82d934fa53d659e15aaf35d2604ea9f3070e846c57a6283a4b81e85b41b52935932e650f9c256be4c7fa82f090eaf7d6fc0a8"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-08.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/jquery.dataTables.min.js"
+                  property="7eed168831b9c6ab57da25a4edca75ed0f6ca39e120bee6593fcff825cf094a15d10ec061baa6252c78fd928a4f6196f966c8e27494a5d14aebf596d75593d26"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-09.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/responsive.bootstrap4.min.css"
+                  property="29ea7c507ad1c27a208f93971bf83a657b1f3ad745c090617049042882997e289e7599a3c151f7240c8f337020e31eb11b50d87fe53f52efcc142324421f9e59"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-10.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/responsive.bootstrap4.min.js"
+                  property="22ccfc61d0aad2a47caef8f6d8758515f8fdbe2f9a99bb87aee32ff5cb4305bd810e249f39c63be817281f9b92563d671c36c251bf6a786d820d24d891a7fc41"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-11.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/searchPanes.bootstrap4.min.css"
+                  property="dfc5436924b8818caa558c6fd6b925ba2811754ff20fb8d2c83a608346e6d367cfe883b8639c56f45abd509bc46cb1dac1b6a7c377b5e30bfeb295e9e4b58e26"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-12.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/searchPanes.bootstrap4.min.js"
+                  property="c37e65411e6e325d85e1870babe851f750d7d3bc9c98af935ee9d15b2e89b025d0995dc91c3538470b91f4c47e566a9028a7dba536ceef133e495f833016c5de"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-13.match"/>
+        <checksum file="${project.cache.dir}/${lib.datatables.dir}/select.bootstrap4.min.css"
+                  property="582645b0f1a0ad7dadd08a34b9cf04913ade20badbe2da5dd9146eb5f29426b64f62e0aea962be03aa66e4c37fc1c260d0f2a980a01707ae65a835bc5877b590"
+                  algorithm="SHA-512"
+                  verifyProperty="checksum.datatables-14.match"/>
+        <condition property="checksum.matches.fail">
+            <or>
+                <equals arg1="${checksum.bootstrap.match}" arg2="false"/>
+                <equals arg1="${checksum.jquery.match}" arg2="false"/>
+                <equals arg1="${checksum.mustache.match}" arg2="false"/>
+                <equals arg1="${checksum.spur.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-14.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-13.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-12.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-11.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-10.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-09.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-08.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-07.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-06.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-05.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-04.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-03.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-02.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-01.match}" arg2="false"/>
+                <equals arg1="${checksum.datatables-00.match}" arg2="false"/>
+            </or>
+        </condition>
+        <fail if="checksum.matches.fail">Checksum error</fail>
+    </target>
+    <target name="extract" depends="env,download,verify" description="Extract project files">
         <echo level="info"
               message="Extracting bootstrap .zip file" />
         <unzip src="${project.cache.dir}/${lib.bootstrap.dir}.zip"
