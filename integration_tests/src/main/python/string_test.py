@@ -853,7 +853,7 @@ def test_regexp_hexadecimal_digits():
 def test_regexp_whitespace():
     gen = mk_str_gen('\u001e[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f[0-9]{0,10}')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr('a',
+            lambda spark: unary_op_df(spark, gen).selectExpr(
                 'rlike(a, "\\\\s")',
                 'rlike(a, "\\\\s{3}")',
                 'rlike(a, "[abcd]+\\\\s+[0-9]+")',

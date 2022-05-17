@@ -335,6 +335,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a\\Z\\V", 
+      "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$[^\u000B\u0085\u2028\u2029\n\f\r]")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
@@ -740,6 +742,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       case '\r' => "\\r"
       case '\n' => "\\n"
       case '\t' => "\\t"
+      case '\f' => "\\f"
+      case '\u000b' => "\\u000b"
+      case '\u0085' => "\\u0085"
+      case '\u2028' => "\\u2028"
+      case '\u2029' => "\\u2029"
       case other => other
     }.mkString
   }
