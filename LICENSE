@@ -204,30 +204,38 @@
 MIT License
 -----------
 
-Boostrap V4.6.1 - The MIT License (MIT)
-    License Text ( https://github.com/twbs/bootstrap/blob/v4.6.1/LICENSE )
-    Copyright (c) 2011-2021 Twitter, Inc.
-    Copyright (c) 2011-2021 The Bootstrap Authors
+Boostrap V4.6.1
+    bootstrap.bundle.min.js
+    bootstrap.min.css
 
-DataTablesSrc V1.12 - The MIT License (MIT)
-    License Text ( https://datatables.net/license/ )
-    Copyright (C) 2008-present, SpryMedia Ltd.
+DataTables
+    DataTables-1.12.0/jquery.dataTables.min.js
+    DataTables-1.12.0/dataTables.bootstrap4.min.css
+    DataTables-1.12.0/dataTables.bootstrap4.min.js
+    searchpanes-2.0.1/searchPanes.bootstrap4.min.css
+    searchpanes-2.0.1/searchPanes.bootstrap4.min.js
+    searchpanes-2.0.1/dataTables.searchPanes.min.js
+    select-1.4.0/select.bootstrap4.min.css
+    select-1.4.0/dataTables.select.min.js
+    buttons-2.2.3/buttons.bootstrap4.min.css
+    buttons-2.2.3/buttons.bootstrap4.min.js
+    buttons-2.2.3/buttons.html5.min.js
+    buttons-2.2.3/dataTables.buttons.min.js
+    responsive-2.3.0/dataTables.responsive.min.js
+    responsive-2.3.0/responsive.bootstrap4.min.css
+    responsive-2.3.0/responsive.bootstrap4.min.js
 
-jQuery V3.6.0 - The MIT License (MIT)
-    License Text ( https://jquery.org/license/ )
-    Copyright OpenJS Foundation and other contributors, https://openjsf.org/
+jQuery V3.6.0
+    jquery.min.js
 
-Mustache.js V4.10 - The MIT License (MIT)
-    License Text ( https://github.com/janl/mustache.js/blob/master/LICENSE )
-    Copyright (c) 2009 Chris Wanstrath (Ruby)
-    Copyright (c) 2010-2014 Jan Lehnardt (JavaScript)
-    Copyright (c) 2010-2015 The mustache.js community
+Mustache.js V4.10
+    mustache.min.js
 
-Spur Dashboard V1.1.0 - The MIT License (MIT)
-    License Text ( https://github.com/HackerThemes/spur-template/blob/master/LICENSE )
-    Copyright 2016 - 2019 Alexander Rechsteiner
+Spur Dashboard V1.1.0
+    spur.min.css
 
-The MIT License (MIT)
+
+                       The MIT License (MIT)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
