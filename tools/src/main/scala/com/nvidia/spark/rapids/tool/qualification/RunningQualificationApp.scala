@@ -53,7 +53,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *                         apply to the score. Default is 20 percent.
  */
 class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
-  extends QualificationAppInfo(None, None, new PluginTypeChecker(), readScorePercent) {
+  extends QualificationAppInfo(None, None, new PluginTypeChecker()) {
 
   // since application is running, try to initialize current state
   private def initApp(): Unit = {
@@ -89,7 +89,8 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     appInfo match {
       case Some((info, _, _)) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
+        val headersAndSizes =
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info,
