@@ -289,6 +289,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
 
   def conf: Configuration
 
+  // Same default buffer size with Parquet readers.
   val cacheBufferSize = conf.getInt("avro.read.allocation.size", 8 * 1024 * 1024)
 
   /**
@@ -565,6 +566,12 @@ class GpuAvroPartitionReader(
  * A PartitionReader that can read multiple AVRO files in parallel.
  * This is most efficient running in a cloud environment where the I/O of reading is slow.
  *
+ * When reading a file, it
+ *   - seeks to the start position of the first block located in this partition.
+ *   - next, parses the meta and sync, rewirtes the meta and sync, and copies the data to a
+ *     batch buffer per block, until reaching the last one of the current partition.
+ *   - sends batches to GPU at last.
+ *
  * @param conf the Hadoop configuration
  * @param files the partitioned files to read
  * @param numThreads the size of the threadpool
@@ -719,9 +726,9 @@ class GpuMultiFileCloudAvroPartitionReader(
               // block meta through the file is quite expensive for files in cloud. So we do
               // not know the target buffer size ahead. Then we have to do an estimation.
               //   "the estimated total block size = partFile.length + additional space"
-              // Letting "additional space = one block length * 1.2" is we may move the
-              // start and stop positions when reading this split to keep the integrity of
-              // edge blocks.
+              // Letting "additional space = one block length * 1.2" is because we may
+              // move the start and stop positions when reading this split to keep the
+              // integrity of edge blocks.
               // One worst case is the stop position is one byte after a block start,
               // then we need to read the whole block into the current batch. And this block
               // may be larger than the first block. So we preserve an additional space

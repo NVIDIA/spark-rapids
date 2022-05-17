@@ -327,6 +327,13 @@ class AvroMetaFileReader(si: SeekableInput) extends AvroFileReader(si) {
 
 /**
  * AvroDataFileReader reads the Avro file data in the iterator pattern.
+ * You can use it as below.
+ *    while(reader.hasNextBlock) {
+ *      val b = reader.peekBlock
+ *      estimateBufSize(b)
+ *      // allocate the batch buffer
+ *      reader.readNextRawBlock(buffer_as_out_stream)
+ *    }
  */
 class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
   // Avro file format:
@@ -400,6 +407,8 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
   def readNextRawBlock(out: OutputStream): Unit = {
     // This is designed to reduce the data copy as much as possible.
     // Currently it leverages the BinarayDecoder, and data will be copied twice.
+    // Once to the temporary buffer `dataBuffer`, again to the output stream (the
+    // batch buffer in native).
     // Later we may want to implement a Decoder ourselves to copy the data from raw
     // buffer directly.
     if (!hasNextBlock) {
