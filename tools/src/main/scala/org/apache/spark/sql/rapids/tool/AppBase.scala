@@ -56,8 +56,6 @@ abstract class AppBase(
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
-  // TODO - I don't think we use this with qualificaiton tool right now, perhaps don't use for
-  // memory?
   val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
   val stageAccumulators: HashMap[Int, Seq[Long]] = new HashMap[Int, Seq[Long]]()
 

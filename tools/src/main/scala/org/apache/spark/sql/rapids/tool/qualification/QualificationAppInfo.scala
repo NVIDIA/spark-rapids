@@ -132,6 +132,7 @@ class QualificationAppInfo(
   // operations.  if the SQL contains a dataset, it isn't counted.
   private def calculateTaskDataframeDuration: Long = {
     val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
+      // TODO - need to update this to note exclude all of sql for dataset/rdd
       sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     validSums.values.map(dur => dur.totalTaskDuration).sum
@@ -193,8 +194,8 @@ class QualificationAppInfo(
     ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime)
   }
 
-  private def calculateSQLUnsupportedDuration(all: Seq[Set[StageQualSummaryInfo]]): Long = {
-    all.flatMap(_.map(_.unsupportedDur)).sum
+  private def calculateSQLUnsupportedTaskDuration(all: Seq[Set[StageQualSummaryInfo]]): Long = {
+    all.flatMap(_.map(_.unsupportedTaskDur)).sum
   }
 
   // TODO calculate speedup_factor - which is average of operator factors???
@@ -244,10 +245,11 @@ class QualificationAppInfo(
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
+      val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
       val noSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
-      val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
       val nonSQLTaskDuration = noSQLDataframeTaskDuration + jobOverheadTime
+
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
@@ -312,11 +314,20 @@ class QualificationAppInfo(
         }
       }
 
-      val unsupportedSQLDuration = calculateSQLUnsupportedDuration(perSqlStageSummary)
-      val speedupDuration = sqlDataframeTaskDuration - unsupportedSQLDuration
+      val unsupportedSQLDuration = calculateSQLUnsupportedTaskDuration(perSqlStageSummary)
+      // this is jobs/stages that don't have SQL, overhead, and unsupported execs
+      val totalStageWallClockTime = stageIdToInfo.flatMap { case ((_, _), v) =>
+        v.duration
+      }.sum
+      val totalJobWallClockTime = jobIdToInfo.flatMap { case (_, v) =>
+        v.duration
+      }.sum
+      // calculate the unsupported SQL wall clock estimate
+
+      val speedupOpportunity = sqlDataframeTaskDuration - unsupportedSQLDuration
       val speedupFactor = calculateSpeedupFactor(perSqlStageSummary)
       val estimatedDuration =
-        (speedupDuration / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
+        (speedupOpportunity / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
       val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
       val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
       val speedupBucket = if (totalSpeedup > 3) {
@@ -332,7 +343,7 @@ class QualificationAppInfo(
         endDurationEstimated, sqlDurProblem, failedIds, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
         calculateNonSqlDataframeWallClockDuration, nonSQLTaskDuration, estimatedDuration,
-        unsupportedSQLDuration, speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
+        unsupportedSQLDuration, speedupOpportunity, speedupFactor, totalSpeedup, speedupBucket)
       (summaryInfo, origPlanInfos, perSqlStageSummary.flatten)
     }
   }
@@ -414,7 +425,7 @@ case class QualificationSummaryInfo(
     nonSqlTaskDurationAndOverhead: Long,
     estimatedDuration: Long,
     unsupportedDuration: Long,
-    speedupDuration: Long,
+    speedupOpportunity: Long,
     speedupFactor: Double,
     totalSpeedup: Double,
     speedupBucket: String)
@@ -423,7 +434,7 @@ case class StageQualSummaryInfo(
     stageId: Int,
     averageSpeedup: Int,
     stageTaskTime: Long,
-    unsupportedDur: Long)
+    unsupportedTaskDur: Long)
 
 object QualificationAppInfo extends Logging {
   def createApp(
