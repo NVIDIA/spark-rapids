@@ -27,7 +27,7 @@ case class SubqueryBroadcastExecParser(
     sqlID: Long,
     app: AppBase) extends ExecParser {
 
-  val fullExecName = "ShuffleExchangeExec"
+  val fullExecName = node.name + "Exec"
 
   override def parse: ExecInfo = {
     val collectTimeId = node.metrics.find(_.name == "time to collect (ms)").map(_.accumulatorId)

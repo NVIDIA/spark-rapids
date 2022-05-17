@@ -2214,10 +2214,8 @@ object SupportedOpsForTools {
     val header = Seq("CPUOperator", "Score")
     println(header.mkString(","))
     val operatorCustomSpeedUp =  Map(
-      ("BatchScanExec", "2.0"),
       ("BroadcastHashJoinExec", "3.0"),
-      ("ExchangeExec", "3.1"),
-      ("FileSourceScanExec", "2.0"),
+      ("ShuffleExchangeExec", "3.1"),
       ("FilterExec", "2.4"),
       ("HashAggregateExec", "3.4"),
       ("SortExec", "6.0"),

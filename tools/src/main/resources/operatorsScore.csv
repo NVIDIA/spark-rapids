@@ -22,7 +22,7 @@ InMemoryTableScanExec,2.0
 DataWritingCommandExec,2.0
 BatchScanExec,2.0
 BroadcastExchangeExec,2.0
-ShuffleExchangeExec,2.0
+ShuffleExchangeExec,3.1
 BroadcastHashJoinExec,3.0
 BroadcastNestedLoopJoinExec,2.0
 CartesianProductExec,2.0
