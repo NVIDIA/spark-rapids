@@ -559,10 +559,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case Some(s) => Some(new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
       case None => None
     }
-    // repl match {
-    //   case Some(_) => System.out.println(replacement)
-    //   case _ =>
-    // }
 
     // validate that the regex is supported by cuDF
     val cudfRegex = rewrite(regex, replacement, None)
