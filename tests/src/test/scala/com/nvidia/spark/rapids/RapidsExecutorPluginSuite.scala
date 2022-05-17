@@ -46,5 +46,7 @@ class RapidsExecutorPluginSuite extends FunSuite {
     assert(RapidsExecutorPlugin.cudfVersionSatisfied("7.0.1-special", "7.0.2-special"))
     assert(!RapidsExecutorPlugin.cudfVersionSatisfied("7.0.2.2.2", "7.0.2.2"))
     assert(RapidsExecutorPlugin.cudfVersionSatisfied("7.0.2.2.2", "7.0.2.2.2"))
+    assert(RapidsExecutorPlugin.cudfVersionSatisfied("7.0.1-20220101.001122-123", "7.0.1-SNAPSHOT"))
+    assert(!RapidsExecutorPlugin.cudfVersionSatisfied("7.0.1-SNAPSHOT", "7.0.1-20220101.001122-123"))
   }
 }
