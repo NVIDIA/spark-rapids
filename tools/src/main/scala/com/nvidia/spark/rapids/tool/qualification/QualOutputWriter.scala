@@ -155,14 +155,11 @@ object QualOutputWriter {
   val APP_DUR_STR = "App Duration"
   val SQL_DUR_STR = "SQL DF Duration"
   val TASK_DUR_STR = "SQL Dataframe Task Duration"
-  val SCORE_STR = "Score"
   val POT_PROBLEM_STR = "Potential Problems"
   val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
   val APP_DUR_ESTIMATED_STR = "App Duration Estimated"
   val SQL_DUR_POT_PROBLEMS = "SQL Duration with Potential Problems"
   val SQL_IDS_FAILURES_STR = "SQL Ids with Failures"
-  val READ_SCORE_PERCENT_STR = "Read Score Percent"
-  val READ_FILE_FORMAT_SCORE_STR = "Read File Format Score"
   val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
   val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
   val COMPLEX_TYPES_STR = "Complex Types"
@@ -440,7 +437,6 @@ object QualOutputWriter {
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
-      appInfo.score.toString -> headersAndSizes(SCORE_STR),
       potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
@@ -450,9 +446,6 @@ object QualOutputWriter {
       stringIfempty(appInfo.sqlDurationForProblematic.toString) ->
           headersAndSizes(SQL_DUR_POT_PROBLEMS),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
-      appInfo.readScorePercent.toString -> headersAndSizes(READ_SCORE_PERCENT_STR),
-      stringIfempty(appInfo.readFileFormatScore.toString) ->
-        headersAndSizes(READ_FILE_FORMAT_SCORE_STR),
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
