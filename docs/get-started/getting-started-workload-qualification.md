@@ -30,8 +30,8 @@ This article describes the tools we provide and how to do gap analysis and workl
 ### How to use
 
 If you have Spark event logs from prior runs of the applications on Spark 2.x or 3.x, you can use
-the [Qualification tool](../spark-qualification-tool.md) and 
-[Profiling tool](../spark-profiling-tool.md) to analyze them.  The qualification tool outputs the score, rank
+the [Qualification tool](../qualification-tool.md) and 
+[Profiling tool](../profiling-tool.md) to analyze them.  The Qualification tool outputs the score, rank
 and some of the potentially not-supported features for each Spark application.  For example, the CSV
 output can print `Unsupported Read File Formats and Types`, `Unsupported Write Data Format` and
 `Potential Problems` which are the indication of some not-supported features.  Its output can help

@@ -52,17 +52,17 @@ You may need to disable RMM caching when exporting data to an ML library as that
 will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
 access to any of the memory that RMM is holding.
 
-## Spark Qualification and Profiling tools
+## Qualification and Profiling tools
 
-The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
+The Qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications.
 
-The profiling tool generates information which can be used for debugging and profiling applications.
+The Profiling tool generates information which can be used for debugging and profiling applications.
 Information such as Spark version, executor information, properties and so on. This runs on either CPU or
 GPU generated event logs.
 
-Please refer to [spark qualification tool documentation](docs/spark-qualification-tool.md)
-and [spark profiling tool documentation](docs/spark-profiling-tool.md)
+Please refer to [Qualification tool documentation](docs/qualification-tool.md)
+and [Profiling tool documentation](docs/profiling-tool.md)
 for more details on how to use the tools.
 
 ## Dependency for External Projects
