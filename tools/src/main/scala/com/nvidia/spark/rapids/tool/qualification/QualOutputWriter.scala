@@ -253,6 +253,8 @@ object QualOutputWriter {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
+      POT_PROBLEM_STR ->
+        getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       SQL_DUR_STR -> SQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       NON_SQL_TASK_DURATION_STR -> NON_SQL_TASK_DURATION_SIZE,
