@@ -61,8 +61,8 @@ The Profiling tool generates information which can be used for debugging and pro
 Information such as Spark version, executor information, properties and so on. This runs on either CPU or
 GPU generated event logs.
 
-Please refer to [Qualification tool documentation](docs/qualification-tool.md)
-and [Profiling tool documentation](docs/profiling-tool.md)
+Please refer to [Qualification tool documentation](docs/spark-qualification-tool.md)
+and [Profiling tool documentation](docs/spark-profiling-tool.md)
 for more details on how to use the tools.
 
 ## Dependency for External Projects
