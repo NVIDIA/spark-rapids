@@ -97,7 +97,7 @@ def test_cast_string_date_invalid_ansi_before_320():
 # test databricks, ANSI mode, all databricks versions supports Ansi mode when casting string to date
 @pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_cast_string_date_invalid_ansi_dbs(invalid):
+def test_cast_string_date_invalid_ansi_databricks(invalid):
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
@@ -106,7 +106,7 @@ def test_cast_string_date_invalid_ansi_dbs(invalid):
 
 # test databricks, ANSI mode, valid values
 @pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-def test_cast_string_date_valid_ansi_dbs():
+def test_cast_string_date_valid_ansi_databricks():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
