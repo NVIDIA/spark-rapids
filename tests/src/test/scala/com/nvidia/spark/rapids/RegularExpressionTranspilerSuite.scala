@@ -752,10 +752,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def toReadableString(x: String): String = {
     s""""${x.map {
-      case '\r' => "\\r"
-      case '\n' => "\\n"
-      case '\t' => "\\t"
-      case '\f' => "\\f"
       case '\u0000' => "\\u0000"
       case '\u0001' => "\\u0001"
       case '\u0002' => "\\u0002"
@@ -765,9 +761,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       case '\u0006' => "\\u0006"
       case '\u0007' => "\\u0007"
       case '\u0008' => "\\u0008"
-      case '\u0009' => "\\u0009"
+      case '\u0009' => "\\t"
+      case '\n' => "\\n"
       case '\u000b' => "\\u000b"
-      case '\u000c' => "\\u000c"
+      case '\u000c' => "\\f"
+      case '\r' => "\\r"
       case '\u000e' => "\\u000e"
       case '\u000f' => "\\u000f"
       case '\u0010' => "\\u0010"
