@@ -54,7 +54,7 @@ class RegexParser(pattern: String) {
   def parseReplacement(numCaptureGroups: Int): RegexReplacement = {
     val sequence = RegexReplacement(new ListBuffer(), numCaptureGroups)
     while (!eof()) {
-      parseReplacementBase(() => eof()) match {
+      parseReplacementBase() match {
         case RegexSequence(parts) =>
           sequence.parts ++= parts
         case other =>
