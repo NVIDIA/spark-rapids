@@ -83,7 +83,7 @@ any machine and include the jars in the classpath.
 java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain --help
 
-Qualification tool - RAPIDS Accelerator for Apache Spark
+RAPIDS Accelerator Qualification tool for Apache Spark
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
