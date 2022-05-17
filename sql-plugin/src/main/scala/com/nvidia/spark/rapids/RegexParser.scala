@@ -64,7 +64,7 @@ class RegexParser(pattern: String) {
     sequence
   }
 
-  def parseReplacementBase(until: () => Boolean): RegexAST = {
+  def parseReplacementBase(): RegexAST = {
       consume() match {
         case '\\' =>
           parseBackrefOrEscaped()
