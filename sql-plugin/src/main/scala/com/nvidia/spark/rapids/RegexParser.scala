@@ -269,6 +269,39 @@ class RegexParser(pattern: String) {
             // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
+          case 'h' | 'H' =>
+            // horizontal whitespace
+            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+            // under "Predefined character classes"
+            val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+              RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
+              RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
+            )
+            chars += RegexEscaped('t')
+            chars += RegexCharacterRange('\u2000', '\u200a')
+            consumeExpected(ch)
+            RegexCharacterClass(negated = ch.isUpper, characters = chars)
+          case 'v' | 'V' =>
+            // vertical whitespace
+            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+            // under "Predefined character classes"
+            val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+              RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+            )
+            chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
+            consumeExpected(ch)
+            RegexCharacterClass(negated = ch.isUpper, characters = chars)
+          case 'R' =>
+            // linebreak sequence
+            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+            // under "Linebreak matcher"
+            val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
+            val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
+              RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
+              RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+            ))
+            consumeExpected(ch)
+            RegexGroup(true, RegexChoice(l, r))
           case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
             // meta sequences
             consumeExpected(ch)
@@ -514,8 +547,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
     e match {
-      case RegexEscaped(ch) if ch != 'd' && ch != 'w' => // example: "\B?"
-        false
+      case RegexEscaped(ch) => ch match {
+        case 'd' | 'w' | 'h' | 'H' | 'v' | 'V' => true
+        case _ => false
+      }
 
       case RegexChar(a) if "$^".contains(a) =>
         // example: "$*"
