@@ -878,14 +878,14 @@ def test_parquet_check_schema_compatibility(spark_tmp_path):
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_int_as_long).parquet(data_path).collect(),
         conf={},
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')
 
     read_dec32_as_dec64 = StructType(
         [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
         conf={},
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')
 
 
 # For nested types, GPU throws incompatible exception with a different message from CPU.
@@ -902,32 +902,32 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
     assert_py4j_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_array_long_as_int).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')
 
     read_arr_arr_int_as_long = StructType(
         [StructField('array_array_int', ArrayType(ArrayType(LongType())))])
     assert_py4j_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_arr_arr_int_as_long).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')
 
     read_struct_flt_as_dbl = StructType([StructField(
         'struct_float', StructType([StructField('f', DoubleType())]))])
     assert_py4j_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_struct_flt_as_dbl).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')
 
     read_struct_arr_int_as_long = StructType([StructField(
         'struct_array_int', StructType([StructField('a', ArrayType(LongType()))]))])
     assert_py4j_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_struct_arr_int_as_long).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')
 
     read_map_str_str_as_str_int = StructType([StructField(
         'map', MapType(StringType(), IntegerType()))])
     assert_py4j_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted in')
+        error_message='Parquet column cannot be converted')

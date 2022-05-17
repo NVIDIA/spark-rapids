@@ -19,7 +19,7 @@ from data_gen import *
 from spark_session import is_before_spark_330, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, col, isnan, element_at
+from pyspark.sql.functions import array_contains, col, element_at, lit
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -141,34 +141,29 @@ def test_orderby_array_of_structs(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      FloatGen(no_nans=True), DoubleGen(no_nans=True),
+                                      float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
-    lit = gen_scalar(data_gen, force_no_nulls=True)
+    literal = gen_scalar(data_gen, force_no_nulls=True)
 
     def get_input(spark):
         return two_col_df(spark, arr_gen, data_gen)
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: get_input(spark).select(
-                                            array_contains(col('a'), lit.cast(data_gen.data_type)),
+                                            array_contains(col('a'), literal.cast(data_gen.data_type)),
                                             array_contains(col('a'), col('b')),
-                                            array_contains(col('a'), col('a')[5])
-                                         ), no_nans_conf)
+                                            array_contains(col('a'), col('a')[5])))
 
 
-# Test array_contains() with a literal key that is extracted from the input array of doubles
-# that does contain NaNs. Note that the config is still set to indicate that the input has NaNs
-# but we verify that the plan is on the GPU despite that if the value being looked up is not a NaN.
-@pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [FloatGen(special_cases=[(float('nan'), 20)]),
+                          DoubleGen(special_cases=[(float('nan'), 20)])], ids=idfn)
 def test_array_contains_for_nans(data_gen):
-    arr_gen = ArrayGen(data_gen)
-
-    def main_df(spark):
-        df = three_col_df(spark, arr_gen, data_gen, arr_gen)
-        chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
-        return df.select(array_contains(col('a'), chk_val))
-    assert_gpu_and_cpu_are_equal_collect(main_df)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, ArrayGen(data_gen), data_gen).select(
+            array_contains(col('a'), col('b')),
+            array_contains(col('a'), lit(float('nan')).cast(data_gen.data_type))))
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)

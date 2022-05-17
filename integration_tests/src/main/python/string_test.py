@@ -867,6 +867,19 @@ def test_regexp_whitespace():
             ),
         conf=_regexp_conf)
 
+def test_regexp_octal_digits():
+    gen = mk_str_gen('[abcd]\u0000\u0041\u007f\u0080\u00ff[\\\\xa0-\\\\xb0][abcd]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "\\\\0177")',
+                'rlike(a, "\\\\0200")',
+                'rlike(a, "\\\\0101")',
+                'regexp_extract(a, "([a-d]+)\\\\0240([a-d]+)", 1)',
+                'regexp_replace(a, "\\\\0377", "")',
+                'regexp_replace(a, "\\\\0260", "")',
+            ),
+        conf=_regexp_conf)
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
