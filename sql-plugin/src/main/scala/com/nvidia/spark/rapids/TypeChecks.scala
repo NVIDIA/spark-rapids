@@ -2213,13 +2213,25 @@ object SupportedOpsForTools {
   private def operatorMappingWithScore(): Unit = {
     val header = Seq("CPUOperator", "Score")
     println(header.mkString(","))
+    val operatorCustomSpeedUp =  Map(
+      ("BroadcastHashJoinExec", "3.0"),
+      ("ShuffleExchangeExec", "3.1"),
+      ("FilterExec", "2.4"),
+      ("HashAggregateExec", "3.4"),
+      ("SortExec", "6.0"),
+      ("SortMergeJoinExec", "14.9"))
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
       if (rule.isVisible && checks.forall(_.shown)) {
         val cpuName = rule.tag.runtimeClass.getSimpleName
-        // We are assigning speed up of 2 to all the Execs supported by the plugin. This can be
-        // adjusted later.
-        val allCols = Seq(cpuName, "2")
+        // We have estimated speed up of some of the operators by running various queries. Assign
+        // custom speed up for the operators which are evaluated. For other operators we are
+        // assigning speed up of 2.0
+        val allCols = if (operatorCustomSpeedUp.contains(cpuName)) {
+          Seq(cpuName, operatorCustomSpeedUp(cpuName))
+        } else {
+          Seq(cpuName, "2.0")
+        }
         println(s"${allCols.mkString(",")}")
       }
     }
