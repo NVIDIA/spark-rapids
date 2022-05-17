@@ -58,15 +58,17 @@ let toolTipsValues = {
         "App Duration": "Wall-Clock time measured since the application starts till it is completed. " +
           "If an app is not completed an estimated completion time would be computed.",
         "GPU Opportunity": "Expected percentage of Sql Task Duration that could be accelerated by the GPU ",
-        "Recommendation": "On a scale from 1 to 5, is it recommended to use RAPIDS",
-        "Estimated Speed-up": "speedup factor estimated for the app. Calculated as the ratio between App-Duration and GPU-Estimated-Duration",
+        "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
+        "Estimated Speed-up": "Speed-up factor estimated for the app. Calculated as the ratio between \<em\>App Duration\<\/em\> and \<em\>GPU Estimated Duration\<\/em\>",
         "details": {
             "mathFormatted": {
                 "totalSpeedup":
-                  "speedup factor estimated for the app. Calculated as (<math><mfrac><mn>App-Duration</mn><mi>GPU-Estimated-Duration</mi></mfrac></math>)",
+                  // math tags inside tooltip does not work on Chrome. Using Sup and Sub as a work-around for now.
+                  //"Speed-up factor estimated for the app. Calculated as (<math><mfrac><mn>App Duration</mn><mi>GPU Estimated Duration</mi></mfrac></math>)",
+                  "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
             },
             "totalSpeedup":
-              "speedup factor estimated for the app. Calculated as (<sup>App-Duration</sup>&frasl;<sub>GPU-Estimated-Duration</sub>)",
+              "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
             "nonSqlTaskDurationAndOverhead": "total duration of the app not involving SQL",
             "estimatedDuration": "Predicted runtime of the app if it was run on GPU",
             "speedupDuration": "Duration of SQL operations that are supported on GPU. It is calculated as (sqlDuration - unsupportedDuration)",
@@ -98,7 +100,7 @@ let UIConfig = {
             },
             "panes": {
                 "recommendation": {
-                    "header": "Gpu Recommendations",
+                    "header": "Recommendations",
                     "search": true,
                     "order": [[0, 'desc']],
                 },

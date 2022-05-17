@@ -90,6 +90,14 @@
             <resource>
               <directory>${project.basedir}/src/main/resources</directory>
             </resource>
+            <resource>
+                <directory>${project.basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <!-- The NOTICE will be taken care of by the antrun task below -->
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

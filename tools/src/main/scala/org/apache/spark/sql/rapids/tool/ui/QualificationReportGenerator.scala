@@ -41,7 +41,7 @@ class QualificationReportGenerator(outputDir: String,
 
   def launch(): Unit = {
     val uiRootPath = getPathForResource(RAPIDS_UI_ASSETS_DIR)
-    logInfo(s"Generating UI files into... ${outputWorkPath.toUri}")
+    logDebug(s"Generating UI files into... ${outputWorkPath.toUri}")
     copyAssetFolderRecursively(uiRootPath, outputWorkPath)
   }
 

@@ -53,6 +53,11 @@ function getExpandedAppDetails(rowData) {
     '      <td> ' + toolTipsValues.gpuRecommendations["App Duration"] + '</td>' +
     '    </tr>' +
     '    <tr>' +
+    '      <th scope=\"row\">GPU Estimated Duration</th>' +
+    '      <td> {{durationCollection.estimatedDurationWallClock}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.estimatedDuration + '</td>' +
+    '    </tr>' +
+    '    <tr>' +
     '      <th scope=\"row\">SQL Duration</th>' +
     '      <td> {{durationCollection.sqlDFDuration}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.sqlDFDuration + '</td>' +
@@ -61,11 +66,6 @@ function getExpandedAppDetails(rowData) {
     '      <th scope=\"row\">GPU Opportunity</th>' +
     '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuOpportunity + '</td>' +
-    '    </tr>' +
-    '    <tr>' +
-    '      <th scope=\"row\">GPU Estimated Duration</th>' +
-    '      <td> {{durationCollection.estimatedDurationWallClock}} </td>' +
-    '      <td> ' + toolTipsValues.gpuRecommendations.details.estimatedDuration + '</td>' +
     '    </tr>' +
     '  </tbody>' +
     '</table>';

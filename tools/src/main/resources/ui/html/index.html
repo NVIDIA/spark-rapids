@@ -69,14 +69,14 @@
   <!-- Dynamic code replacement using Mustache -->
   <script src="../assets/mustache-js/mustache.min.js"></script>
 
-  <title>Qualification tool - Is RAPIDS good fit for GPU Acceleration?</title>
+  <title>Qualification Tool Dashboard</title>
 </head>
 
 <body>
   <div class="dash">
     <div class="dash-nav dash-nav-dark">
       <header>
-        <a href="index.html" class="spur-logo"><span>Qualification Tool</span></a>
+        <a href="index.html"><span>Qualification Tool</span></a>
       </header>
       <nav class="dash-nav-list">
         <a href="index.html" class="dash-nav-item">
@@ -125,7 +125,7 @@
         <div class="container-fluid">
           <!-- place disclaimer at the top of the page, before showing results -->
           <div class="row">
-            <div class="col-lg-9">
+            <div class="col-lg-8">
               <div class="alert alert-warning alert-dismissible fade show" role="alert">
                 <svg width="1.2em" height="1.2em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
@@ -141,7 +141,7 @@
           <div id="qual-report-runtime-information"></div>
           <div id="qual-report-summary"></div>
           <div class="row">
-            <div class="col-lg-9">
+            <div class="col-lg-12">
               <div class="card spur-card">
                 <div class="card-header">
                   <div class="spur-card-icon">
@@ -202,7 +202,7 @@
 
   <script id="qual-report-summary-template" type="text/template">
     <div class="row dash-row">
-      <div class="col-xl-3">
+      <div class="col-xl-4">
         <div class="stats stats-primary">
           <h3 class="stats-title"> {{totalApps.header}} </h3>
           <div class="stats-content">
@@ -221,7 +221,7 @@
           </div>
         </div>
       </div>
-      <div class="col-xl-3">
+      <div class="col-xl-4">
         <div class="stats stats-success ">
           <h3 class="stats-title"> {{candidates.header}} </h3>
           <div class="stats-content">
@@ -240,7 +240,7 @@
           </div>
         </div>
       </div>
-      <div class="col-xl-3">
+      <div class="col-xl-4">
         <div class="stats stats-info">
           <h3 class="stats-title"> {{speedups.header}} </h3>
           <div class="stats-content">
