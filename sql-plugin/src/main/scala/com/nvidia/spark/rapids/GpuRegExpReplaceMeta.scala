@@ -48,14 +48,10 @@ class GpuRegExpReplaceMeta(
             val (pat, repl) = 
                 new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
             pattern = pat
-            repl match {
-              case Some(rep) =>
-                GpuRegExpUtils.backrefConversion(rep) match {
-                  case (hasBackref, convertedRep) =>
-                    containsBackref = hasBackref
-                    replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
-                }
-              case _ =>
+            repl.map(GpuRegExpUtils.backrefConversion).foreach {
+                case (hasBackref, convertedRep) =>
+                  containsBackref = hasBackref
+                  replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
             }
           } catch {
             case e: RegexUnsupportedException =>
