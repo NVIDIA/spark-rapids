@@ -604,7 +604,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(rowsSumOut.size == 2)
     val headers = rowsSumOut(0).split(",")
     val values = rowsSumOut(1).split(",")
-    assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+    val appInfo = qualApp.aggregateStats().map(_._1)
+    assert(appInfo.nonEmpty)
+    assert(headers.size ==
+      QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
     assert(values.size == headers.size)
     // 2 should be the SQL DF Duration
     assert(headers(2).contains("SQL DF"))
@@ -644,7 +647,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(rowsSumOut.size == 2)
         val headers = rowsSumOut(0).split(":")
         val values = rowsSumOut(1).split(":")
-        assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+        val appInfo = qualApp.aggregateStats().map(_._1)
+        assert(appInfo.nonEmpty)
+        assert(headers.size ==
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
         assert(values.size == headers.size)
         // 2 should be the SQL DF Duration
         assert(headers(2).contains("SQL DF"))
