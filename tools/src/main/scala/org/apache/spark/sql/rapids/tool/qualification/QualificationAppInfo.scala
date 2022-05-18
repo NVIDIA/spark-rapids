@@ -268,8 +268,8 @@ class QualificationAppInfo(
           }
           // TODO - do we need to estimate based on supported execs?
           // for now just take the time as is
-          val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0)
-          val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0)
+          val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
+          val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
 
           SQLStageSummary(stageSum, sqlID, hackEstimateWallclockUnsupported,
             execCPUTime, execRunTime)
