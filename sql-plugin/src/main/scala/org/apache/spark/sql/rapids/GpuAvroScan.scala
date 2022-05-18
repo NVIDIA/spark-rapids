@@ -568,7 +568,7 @@ class GpuAvroPartitionReader(
  *
  * When reading a file, it
  *   - seeks to the start position of the first block located in this partition.
- *   - next, parses the meta and sync, rewirtes the meta and sync, and copies the data to a
+ *   - next, parses the meta and sync, rewrites the meta and sync, and copies the data to a
  *     batch buffer per block, until reaching the last one of the current partition.
  *   - sends batches to GPU at last.
  *
