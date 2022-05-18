@@ -26,11 +26,8 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification._
+import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
-/**
- * Scores the applications for GPU acceleration and outputs the
- * reports.
- */
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
     pluginTypeChecker: PluginTypeChecker,
@@ -68,18 +65,34 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       threadPool.shutdownNow()
     }
 
+    val allAppsSum = allApps.asScala.toSeq
+    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
-    val allAppsSum = allApps.asScala.toSeq
-    // TODO - update
-    val sortedDesc = allAppsSum.sortBy(sum => {
-        (sum.recommendation, -sum.totalSpeedup)
-    })
-    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout,
-      uiEnabled)
+    val estimatedSorted = sortForExecutiveSummary(allAppsSum.map(_.estimatedInfo), order)
+    qWriter.writeReport(allAppsSum, estimatedSorted, numRows)
+    val sortedDetailed = sortForCSVDetailedReport(allAppsSum)
+    qWriter.writeDetailedReport(sortedDetailed)
+    qWriter.writeExecReport(allAppsSum, order)
+    qWriter.writeStageReport(allAppsSum, order)
+    if (uiEnabled) {
+      QualificationReportGenerator.generateDashBoard(outputDir, allAppsSum)
+    }
+    sortedDetailed
+  }
 
-    val sumsToWrite = allAppsSum.map(_.estimatedInfo)
-    val estimatedSorted = if (QualificationArgs.isOrderAsc(order)) {
+  private def sortForCSVDetailedReport(
+      allAppsSum: Seq[QualificationSummaryInfo]): Seq[QualificationSummaryInfo] = {
+    // Default sorting for of the csv files.
+    allAppsSum.sortBy(sum => {
+      (sum.recommendation)
+    })
+  }
+
+  // Sorting for the pretty printed executive summary
+  private def sortForExecutiveSummary(sumsToWrite: Seq[EstimatedSummaryInfo],
+      order: String): Seq[EstimatedSummaryInfo] = {
+    if (QualificationArgs.isOrderAsc(order)) {
       sumsToWrite.sortBy(sum => {
         (sum.recommendation, -sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
       })
@@ -88,12 +101,6 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       }).reverse
     }
-
-    qWriter.writeReport(allAppsSum, estimatedSorted, numRows)
-    qWriter.writeDetailedReport(sortedDesc)
-    qWriter.writeExecReport(sortedDesc, order)
-    qWriter.writeStageReport(sortedDesc, order)
-    sortedDesc
   }
 
   private def qualifyApp(

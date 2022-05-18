@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
 import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationSummaryInfo, Recommendation}
-import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
 /**
  * This class handles the output files for qualification.
@@ -33,13 +32,12 @@ import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
  * @param reportReadSchema Whether to include the read data source schema in csv output
  * @param printStdout Indicates if the summary report should be printed to stdout as well
  */
-class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean,
-    uiEnabled: Boolean) {
+class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
 
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
+  def writeDetailedReport(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
       val headersAndSizes = QualOutputWriter
@@ -85,13 +83,6 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       }
     } finally {
       csvFileWriter.close()
-    }
-  }
-
-  def writeDetailedReport(sums: Seq[QualificationSummaryInfo]): Unit = {
-    writeCSV(sums)
-    if (uiEnabled) {
-      QualificationReportGenerator.generateDashBoard(outputDir, sums)
     }
   }
 
