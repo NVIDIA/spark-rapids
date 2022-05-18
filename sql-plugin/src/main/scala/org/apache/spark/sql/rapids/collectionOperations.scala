@@ -94,33 +94,39 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
 
   override def nullable: Boolean = children.exists(_.nullable)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    val cols = children.safeMap(columnarEvalToColumn(_, batch))
-    val (key_list, value_list) = withResource(cols) { cols =>
-      withResource(ArrayBuffer[ColumnView]()) { keys => 
-        withResource(ArrayBuffer[ColumnView]()) { values =>
-          cols.foreach{ col =>
-              keys.append(GpuMapUtils.getKeysAsListView(col.getBase))
-              values.append(GpuMapUtils.getValuesAsListView(col.getBase))  
-          }    
-          (ColumnVector.listConcatenateByRow(keys: _*), 
-            ColumnVector.listConcatenateByRow(values: _*)) 
+  override def columnarEval(batch: ColumnarBatch): Any = (dataType, children.length) match {
+    // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
+    case (dt, 0) => GpuColumnVector.fromNull(batch.numRows(), dt)
+    // For single column concat, we pass the result of child node to avoid extra cuDF call.
+    case (_, 1) => children.head.columnarEval(batch)
+    case (dt, _) => {
+      val cols = children.safeMap(columnarEvalToColumn(_, batch))
+      val (key_list, value_list) = withResource(cols) { cols =>
+        withResource(ArrayBuffer[ColumnView]()) { keys => 
+          withResource(ArrayBuffer[ColumnView]()) { values =>
+            cols.foreach{ col =>
+                keys.append(GpuMapUtils.getKeysAsListView(col.getBase))
+                values.append(GpuMapUtils.getValuesAsListView(col.getBase))  
+            }    
+            (ColumnVector.listConcatenateByRow(keys: _*), 
+              ColumnVector.listConcatenateByRow(values: _*)) 
+          }
         }
       }
-    }
 
-    val struct_list = withResource(Seq(key_list, value_list)) { case Seq(keys, values) =>
-      withResource(Seq(keys.getChildColumnView(0), values.getChildColumnView(0))) { 
-        case Seq(k_child, v_chlid) =>
-          withResource(ColumnView.makeStructView(k_child, v_chlid)) {structs =>
-            keys.replaceListChild(structs)  
-          }
+      val struct_list = withResource(Seq(key_list, value_list)) { case Seq(keys, values) =>
+        withResource(Seq(keys.getChildColumnView(0), values.getChildColumnView(0))) { 
+          case Seq(k_child, v_chlid) =>
+            withResource(ColumnView.makeStructView(k_child, v_chlid)) {structs =>
+              keys.replaceListChild(structs)  
+            }
+        }
       }
-    }
 
-    withResource(struct_list) (
-      GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, _)
-    )
+      withResource(struct_list) (
+        GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, _)
+      )
+    }
   }
 }
 
