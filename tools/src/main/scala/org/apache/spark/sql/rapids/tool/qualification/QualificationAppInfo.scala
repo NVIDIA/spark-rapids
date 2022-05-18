@@ -288,11 +288,11 @@ class QualificationAppInfo(
       val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
       val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
       val recommendation = if (totalSpeedup > 3) {
-        "GREEN"
+        Recommendation.Green
       } else if (totalSpeedup > 1.25) {
-        "YELLOW"
+        Recommendation.Yellow
       } else {
-        "RED"
+        Recommendation.Red
       }
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(speedupOpportunity,
         sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, recommendation,
@@ -332,9 +332,16 @@ class QualificationAppInfo(
   }
 }
 
-case class EstimatedSummaryInfo(appName: String, appId: String, appDur: Long,
-    sqlDfDuration: Long, gpuOpportunity: Long, estimatedGpuDur: Double,
-    estimatedGpuSpeedup: Double, estimatedGpuTimeSaved: Double, recommendation: String)
+case class EstimatedSummaryInfo(
+    appName: String,
+    appId: String,
+    appDur: Long,
+    sqlDfDuration: Long,
+    gpuOpportunity: Long,
+    estimatedGpuDur: Double,
+    estimatedGpuSpeedup: Double,
+    estimatedGpuTimeSaved: Double,
+    recommendation: Recommendation.Recommendation)
 
 case class SQLStageSummary(
     stageSum: Set[StageQualSummaryInfo],
@@ -391,7 +398,7 @@ case class QualificationSummaryInfo(
     speedupOpportunity: Long,
     speedupFactor: Double,
     totalSpeedup: Double,
-    recommendation: String,
+    recommendation: Recommendation.Recommendation,
     user: String,
     startTime: Long,
     planInfo: Seq[PlanInfo],
@@ -404,10 +411,19 @@ case class StageQualSummaryInfo(
     stageTaskTime: Long,
     unsupportedTaskDur: Long)
 
+object Recommendation extends Enumeration {
+  type Recommendation = Value
+
+  val Green = Value(3, "GREEN")
+  val Yellow = Value(2, "YELLOW")
+  val Red = Value(1, "RED")
+}
+
 object QualificationAppInfo extends Logging {
 
   def calculateEstimatedInfoSummary(speedupOpportunity: Long, sqlDataFrameDuration: Long,
-      sqlDataframeTaskDuration: Long, appDuration: Long, recommendation: String,
+      sqlDataframeTaskDuration: Long, appDuration: Long,
+      recommendation: Recommendation.Recommendation,
       speedupFactor: Double, appName: String, appId: String): EstimatedSummaryInfo = {
     val estimatedRatio = (speedupOpportunity / sqlDataframeTaskDuration)
     val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio

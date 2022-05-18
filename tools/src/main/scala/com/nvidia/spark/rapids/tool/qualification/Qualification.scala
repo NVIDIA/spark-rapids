@@ -81,7 +81,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     val sumsToWrite = allAppsSum.map(_.estimatedInfo)
     val estimatedSorted = if (QualificationArgs.isOrderAsc(order)) {
       sumsToWrite.sortBy(sum => {
-        (-sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
+        (sum.recommendation, -sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
       })
     } else {
       sumsToWrite.sortBy(sum => {
