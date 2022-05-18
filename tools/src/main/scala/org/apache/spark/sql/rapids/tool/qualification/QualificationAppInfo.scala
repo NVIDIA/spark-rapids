@@ -45,9 +45,6 @@ class QualificationAppInfo(
   var appInfo: Option[QualApplicationInfo] = None
   val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
 
-  // The duration of the SQL execution, in ms.
-  val sqlDurationTime: HashMap[Long, Long] = HashMap.empty[Long, Long]
-
   // TODO - can we get rid of one of these
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
@@ -263,6 +260,8 @@ class QualificationAppInfo(
           // This is a guestimate at how much wall clock was unsupported
           val hackEstimateWallclockUnsupported = sqlWallClockDuration *
             (numUnsupportedExecs / execInfos.size)
+          logWarning(s"hackEstimateWallclockUnsupported is $hackEstimateWallclockUnsupported " +
+            s"sqlWallclock duration is $sqlWallClockDuration $numUnsupportedExecs ${execInfos.size}")
           if (hackEstimateWallclockUnsupported > longestSQLDuration) {
             longestSQLDuration = hackEstimateWallclockUnsupported
           }
