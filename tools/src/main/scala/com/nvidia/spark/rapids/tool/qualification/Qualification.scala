@@ -76,20 +76,19 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     val allAppsSum = allApps.asScala.toSeq
     // TODO - update
     val sortedDesc = allAppsSum.sortBy(sum => {
-        (sum.recommendation, sum.totalSpeedup)
+        (sum.recommendation, -sum.totalSpeedup)
     })
     val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout,
       uiEnabled)
 
     val sumsToWrite = QualificationAppInfo.calculateEstimatedInfoSummary(allAppsSum)
-    // TODO - update
     val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
       sumsToWrite.sortBy(sum => {
-        (sum.recommendation, -sum.estimatedGpuSpeedup)
+        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       })
     } else {
       sumsToWrite.sortBy(sum => {
-        (sum.recommendation, sum.estimatedGpuSpeedup)
+        (-sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
       }).reverse
     }
 
