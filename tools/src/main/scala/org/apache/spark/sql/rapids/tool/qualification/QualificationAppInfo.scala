@@ -154,7 +154,7 @@ class QualificationAppInfo(
     all.flatMap(_.map(_.unsupportedTaskDur)).sum
   }
 
-  private def calculateSpeedupFactor(all: Seq[Set[StageQualSummaryInfo]]): Int = {
+  private def calculateSpeedupFactor(all: Seq[Set[StageQualSummaryInfo]]): Double = {
     val allSpeedupFactors = all.flatMap(_.map(_.averageSpeedup))
     val res = SQLPlanParser.averageSpeedup(allSpeedupFactors)
     logWarning(s"average speedup factor is: $res from: ${allSpeedupFactors.mkString(",")}")
@@ -386,7 +386,7 @@ case class QualificationSummaryInfo(
     nestedComplexTypes: String,
     longestSqlDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
-    estimatedTaskDuration: Long,
+    estimatedTaskDuration: Double,
     unsupportedTaskDuration: Long,
     speedupOpportunity: Long,
     speedupFactor: Double,
