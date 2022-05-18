@@ -247,7 +247,6 @@ class QualificationAppInfo(
             val eachExecTime = stageTaskTime / allFlattenedExecs.size
             val unsupportedDur = eachExecTime * numUnsupported.size
 
-
             StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
           }
           val numUnsupportedExecs = execInfos.filterNot(_.isSupported).size
@@ -281,7 +280,8 @@ class QualificationAppInfo(
       val noSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
       val nonSQLTaskDuration = noSQLDataframeTaskDuration + jobOverheadTime
-      val speedupOpportunity = sqlDataframeTaskDuration - unsupportedSQLDuration
+      // TODO this should be removed as same as sqlDataframeTaskDuration
+      val speedupOpportunity = sqlDataframeTaskDuration
       val speedupFactor = calculateSpeedupFactor(allStagesSummary)
       val estimatedDuration =
         (speedupOpportunity / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
