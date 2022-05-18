@@ -433,7 +433,7 @@ object QualificationAppInfo extends Logging {
       1
     } else {
       logWarning(s"$speedupOpportunity $sqlDataframeTaskDuration")
-      speedupOpportunity / sqlDataframeTaskDuration
+      speedupOpportunity.toDouble / sqlDataframeTaskDuration.toDouble
     }
     val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio
     val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
@@ -444,7 +444,7 @@ object QualificationAppInfo extends Logging {
     val recommendation = getRecommendation(estimated_gpu_speedup)
 
     EstimatedSummaryInfo(appName, appId, appDuration,
-      sqlDataFrameDuration, speedupOpportunityWallClock,
+      sqlDataFrameDuration, speedupOpportunityWallClock.toLong,
       estimated_gpu_duration, estimated_gpu_speedup,
       estimated_gpu_timesaved, recommendation)
   }

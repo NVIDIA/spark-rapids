@@ -433,19 +433,13 @@ object QualOutputWriter {
       stringIfempty(replaceDelimiter(appInfo.readFileFormatAndTypesNotSupported, delimiter))
     val dataWriteFormat = stringIfempty(replaceDelimiter(appInfo.writeDataFormat, delimiter))
     val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems, delimiter))
-    val speedupOpportunityWallClock = if (appInfo.sqlDataframeTaskDuration > 0) {
-      val estimatedRatio = (appInfo.speedupOpportunity / appInfo.sqlDataframeTaskDuration)
-      appInfo.sqlDataFrameDuration * estimatedRatio
-    } else {
-      0
-    }
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
       appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
-      speedupOpportunityWallClock.toString -> GPU_OPPORTUNITY_STR_SIZE,
+      appInfo.estimatedInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
