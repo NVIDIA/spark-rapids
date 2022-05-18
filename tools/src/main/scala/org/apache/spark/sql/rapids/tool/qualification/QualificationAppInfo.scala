@@ -258,9 +258,9 @@ class QualificationAppInfo(
           }
           val numUnsupportedExecs = execInfos.filterNot(_.isSupported).size
           // This is a guestimate at how much wall clock was supported
-          val numExecs = execInfos.size
-          val numSupportedExecs = numExecs - numUnsupportedExecs
-          val ratio = (numSupportedExecs / numExecs).toDouble
+          val numExecs = execInfos.size.toDouble
+          val numSupportedExecs = (numExecs - numUnsupportedExecs).toDouble
+          val ratio = numSupportedExecs / numExecs
           val hackEstimateWallclockSupported = (sqlWallClockDuration * ratio).toInt
           logWarning(s"hackEstimateWallclockSupported is $hackEstimateWallclockSupported " +
             s"sqlWallclock duration is $sqlWallClockDuration $numUnsupportedExecs" +
