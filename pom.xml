@@ -80,14 +80,6 @@
             </properties>
         </profile>
         <profile>
-            <id>java-8-api-for-8</id>
-            <activation>
-                <jdk>8</jdk>
-            </activation>
-            <properties>
-            </properties>
-        </profile>
-        <profile>
             <id>release24X</id>
             <activation>
                 <property>
