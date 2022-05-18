@@ -278,7 +278,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size > 0)
     val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
-      SQLPlanParser.parseSQLPlan(plan, sqlID, pluginTypeChecker, app)
+      SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
     }
     val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val broadcasts = allExecInfo.filter(_.exec == "BroadcastExchange")

@@ -79,17 +79,17 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       uiEnabled)
 
     val sumsToWrite = QualificationAppInfo.calculateEstimatedInfoSummary(allAppsSum)
-    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+    val estimatedSorted = if (QualificationArgs.isOrderAsc(order)) {
       sumsToWrite.sortBy(sum => {
-        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
+        (-sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
       })
     } else {
       sumsToWrite.sortBy(sum => {
-        (-sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
+        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       }).reverse
     }
 
-    qWriter.writeReport(allAppsSum, sortedForReport, numRows)
+    qWriter.writeReport(allAppsSum, estimatedSorted, numRows)
     qWriter.writeDetailedReport(sortedDesc)
     qWriter.writeExecReport(sortedDesc, order)
     qWriter.writeStageReport(sortedDesc, order)
