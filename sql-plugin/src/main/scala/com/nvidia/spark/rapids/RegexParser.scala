@@ -173,9 +173,18 @@ class RegexParser(pattern: String) {
         case Some('0') => throw new RegexUnsupportedException(
           "cuDF does not support octal digits in character classes")
         case Some(ch) =>
-          // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
-          // within the character class, but could be any escaped character
-          RegexEscaped(consumeExpected(ch))
+          consumeExpected(ch) match {
+            case 'n' => RegexChar('\n')
+            case 'r' => RegexChar('\r')
+            case 't' => RegexChar('\t')
+            case 'f' => RegexChar('\f')
+            case 'a' => RegexChar('\u0007')
+            case 'b' => RegexChar('\b')
+            case _ =>
+              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
+              // within the character class, but could be any escaped character
+              RegexEscaped(ch) 
+          }
         case None =>
           throw new RegexUnsupportedException(
                 s"Unclosed character class", Some(pos))
@@ -361,7 +370,7 @@ class RegexParser(pattern: String) {
               RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
             )
             chars += RegexEscaped('t')
-            chars += RegexCharacterRange('\u2000', '\u200a')
+            chars += RegexCharacterRange(RegexChar('\u2000'), RegexChar('\u200a'))
             consumeExpected(ch)
             RegexCharacterClass(negated = ch.isUpper, characters = chars)
           case 'v' | 'V' =>

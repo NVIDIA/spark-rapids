@@ -28,6 +28,12 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
+  test("temp") {
+    assertCpuGpuMatchesRegexpFind(Seq("[^0-9\\\r\t]"), Seq("\r"))
+  }
+  test("temp2") {
+    assertCpuGpuMatchesRegexpFind(Seq("(?:[\r\n]|[^0-9\\\r\t])"), Seq("\r"))
+  }
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
@@ -152,16 +158,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support hex digits in character classes") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4865
-    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support hex digits in character classes"
-      )
-    )
-  }
-
   test("octal digits - find") {
     val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772", raw"\0200", 
       raw"\0376", raw"\0377", raw"\02002")
@@ -174,12 +170,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
-  }
-
-  test("hex digits >= 0x7F - find") {
-    val patterns = Seq(raw"\x7f", raw"\x80", raw"\xff", raw"\xfe", raw"\x{7f}", raw"\x{0008f}")
-    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u007f", "a\u007fb", 
-        "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
   }
 
   test("hex digit character classes") {
@@ -780,9 +770,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def toReadableString(x: String): String = {
     x.map {
-      case '\r' => "\\r"
+      case '\r' => "<r>"
       case '\n' => "\\n"
-      case '\t' => "\\t"
+      case '\t' => "<tab>"
       case '\f' => "\\f"
       case '\u000b' => "\\u000b"
       case '\u0085' => "\\u0085"
