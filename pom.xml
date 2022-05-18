@@ -70,17 +70,29 @@
         </developer>
     </developers>
     <profiles>
-        <profile>
-            <id>java-8-api</id>
+        <!-- <profile>
+            <id>java-8-api-after-9</id>
             <activation>
-                <jdk>[8,)</jdk>
+                <jdk>[9,)</jdk>
             </activation>
             <properties>
                 <maven.compiler.release>8</maven.compiler.release>
                 <maven.compiler.source>1.8</maven.compiler.source>
                 <maven.compiler.target>1.8</maven.compiler.target>
+                <scala.recompileMode>all</scala.recompileMode>
             </properties>
-        </profile>
+        </profile> -->
+        <!-- <profile>
+            <id>java-8-api</id>
+            <activation>
+                <jdk>8</jdk>
+            </activation>
+            <properties>
+                <maven.compiler.source>1.8</maven.compiler.source>
+                <maven.compiler.target>1.8</maven.compiler.target>
+                <scala.recompileMode>incremental</scala.recompileMode>
+            </properties>
+        </profile> -->
         <profile>
             <id>release24X</id>
             <activation>
@@ -827,6 +839,7 @@
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>22.06.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
+        <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
@@ -1067,7 +1080,7 @@
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                        <recompileMode>incremental</recompileMode>
+                        <recompileMode>${scala.recompileMode}</recompileMode>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>

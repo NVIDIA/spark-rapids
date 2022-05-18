@@ -147,7 +147,7 @@
                     <scalaVersion>${scala.version}</scalaVersion>
                     <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                     <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                    <recompileMode>incremental</recompileMode>
+                    <recompileMode>${scala.recompileMode}</recompileMode>
                     <args>
                         <arg>-unchecked</arg>
                         <arg>-deprecation</arg>

@@ -234,7 +234,7 @@ function build_single_shim() {
   fi
 
   echo "#### REDIRECTING mvn output to $LOG_FILE ####"
-  mvn -U "$MVN_PHASE" \
+  mvn -U -X "$MVN_PHASE" \
       -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
@@ -270,7 +270,7 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  mvn $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+  mvn -X $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dskip -Dmaven.javadoc.skip
 )
