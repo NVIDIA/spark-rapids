@@ -287,12 +287,12 @@ class QualificationAppInfo(
         (speedupOpportunity / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
       val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
       val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
-      val recommendation = if (totalSpeedup > 3) {
-        Recommendation.Green
-      } else if (totalSpeedup > 1.25) {
-        Recommendation.Yellow
+      val recommendation = if (totalSpeedup >= 2.5) {
+        Recommendation.Strongly_Recommended
+      } else if (totalSpeedup >= 1.25) {
+        Recommendation.Recommended
       } else {
-        Recommendation.Red
+        Recommendation.Not_Recommended
       }
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(speedupOpportunity,
         sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, recommendation,
@@ -337,10 +337,10 @@ case class EstimatedSummaryInfo(
     appId: String,
     appDur: Long,
     sqlDfDuration: Long,
-    gpuOpportunity: Long,
-    estimatedGpuDur: Double,
-    estimatedGpuSpeedup: Double,
-    estimatedGpuTimeSaved: Double,
+    gpuOpportunity: Long, // Projected opportunity for acceleration on GPU in ms
+    estimatedGpuDur: Double, // Predicted runtime for the app if it was run on the GPU
+    estimatedGpuSpeedup: Double, // app_duration / estimated_gpu_duration
+    estimatedGpuTimeSaved: Double, // app_duration - estimated_gpu_duration
     recommendation: Recommendation.Recommendation)
 
 case class SQLStageSummary(
@@ -414,9 +414,9 @@ case class StageQualSummaryInfo(
 object Recommendation extends Enumeration {
   type Recommendation = Value
 
-  val Green = Value(3, "GREEN")
-  val Yellow = Value(2, "YELLOW")
-  val Red = Value(1, "RED")
+  val Strongly_Recommended = Value(3, "Strongly_Recommended")
+  val Recommended = Value(2, "Recommended")
+  val Not_Recommended = Value(1, "Not_Recommended")
 }
 
 object QualificationAppInfo extends Logging {
