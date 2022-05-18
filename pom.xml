@@ -71,6 +71,17 @@
     </developers>
     <profiles>
         <profile>
+            <id>java-8-api</id>
+            <activation>
+                <jdk>[8,)</jdk>
+            </activation>
+            <properties>
+                <maven.compiler.release>8</maven.compiler.release>
+                <maven.compiler.source>1.8</maven.compiler.source>
+                <maven.compiler.target>1.8</maven.compiler.target>
+            </properties>
+        </profile>
+        <profile>
             <id>release24X</id>
             <activation>
                 <property>
@@ -809,8 +820,6 @@
 
     <properties>
         <buildver>311</buildver>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
