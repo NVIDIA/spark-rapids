@@ -158,7 +158,6 @@ object QualOutputWriter {
   val POT_PROBLEM_STR = "Potential Problems"
   val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
   val APP_DUR_ESTIMATED_STR = "App Duration Estimated"
-  val SQL_DUR_POT_PROBLEMS = "SQL Duration with Potential Problems"
   val SQL_IDS_FAILURES_STR = "SQL Ids with Failures"
   val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
   val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
@@ -253,15 +252,12 @@ object QualOutputWriter {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
-      POT_PROBLEM_STR ->
-        getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       SQL_DUR_STR -> SQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       NON_SQL_TASK_DURATION_STR -> NON_SQL_TASK_DURATION_SIZE,
       APP_DUR_STR -> APP_DUR_STR.size,
+      GPU_OPPORTUNITY_STR -> GPU_OPPORTUNITY_STR_SIZE,
       EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
-      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size,
-      SQL_DUR_POT_PROBLEMS -> SQL_DUR_POT_PROBLEMS.size,
       SQL_IDS_FAILURES_STR -> getMaxSizeForHeader(appInfos.map(_.failedSQLIds.size),
         SQL_IDS_FAILURES_STR),
       READ_FILE_FORMAT_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size),
@@ -272,6 +268,8 @@ object QualOutputWriter {
         getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
         NESTED_TYPES_STR),
+      POT_PROBLEM_STR ->
+        getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE,
       NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
       ESTIMATED_DURATION_STR -> ESTIMATED_DURATION_STR.size,
@@ -279,7 +277,8 @@ object QualOutputWriter {
       SPEEDUP_DURATION_STR -> SPEEDUP_DURATION_STR.size,
       SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
       TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR.size,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size,
+      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -327,7 +326,7 @@ object QualOutputWriter {
       f"${estimated_gpu_duration}%1.2f" -> ESTIMATED_GPU_DURATION.size,
       f"${estimated_gpu_speedup}%1.2f" -> ESTIMATED_GPU_SPEEDUP.size,
       f"${estimated_gpu_timesaved}%1.2f" -> ESTIMATED_GPU_TIMESAVED.size,
-      sumInfo.speedupBucket -> SPEEDUP_BUCKET_STR_SIZE
+      sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -436,31 +435,32 @@ object QualOutputWriter {
       stringIfempty(replaceDelimiter(appInfo.readFileFormatAndTypesNotSupported, delimiter))
     val dataWriteFormat = stringIfempty(replaceDelimiter(appInfo.writeDataFormat, delimiter))
     val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems, delimiter))
+    val estimatedRatio = (appInfo.speedupOpportunity / appInfo.sqlDataframeTaskDuration)
+    val speedupOpportunityWallClock = appInfo.sqlDataFrameDuration * estimatedRatio
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
-      potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
+      speedupOpportunityWallClock.toString -> GPU_OPPORTUNITY_STR_SIZE,
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
-      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
-      stringIfempty(appInfo.sqlDurationForProblematic.toString) ->
-          headersAndSizes(SQL_DUR_POT_PROBLEMS),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
       nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
+      potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
       appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
-      appInfo.estimatedDuration.toString -> headersAndSizes(ESTIMATED_DURATION_STR),
-      appInfo.unsupportedDuration.toString ->
+      appInfo.estimatedTaskDuration.toString -> headersAndSizes(ESTIMATED_DURATION_STR),
+      appInfo.unsupportedTaskDuration.toString ->
         headersAndSizes(UNSUPPORTED_DURATION_STR),
       appInfo.speedupOpportunity.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
       appInfo.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
       appInfo.totalSpeedup.toString -> headersAndSizes(TOTAL_SPEEDUP_STR),
-      stringIfempty(appInfo.speedupBucket) -> headersAndSizes(SPEEDUP_BUCKET_STR)
+      stringIfempty(appInfo.recommendation) -> headersAndSizes(SPEEDUP_BUCKET_STR),
+      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
     )
 
     if (reportReadSchema) {
