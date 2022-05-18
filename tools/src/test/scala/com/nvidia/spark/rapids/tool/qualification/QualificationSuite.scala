@@ -603,7 +603,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(rowsSumOut.size == 2)
     val headers = rowsSumOut(0).split(",")
     val values = rowsSumOut(1).split(",")
-    val appInfo = qualApp.aggregateStats().map(_._1)
+    val appInfo = qualApp.aggregateStats()
     assert(appInfo.nonEmpty)
     assert(headers.size ==
       QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
@@ -617,7 +617,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val headersDetailed = rowsDetailedOut(0).split(",")
     val valuesDetailed = rowsDetailedOut(1).split(",")
     assert(headersDetailed.size == QualOutputWriter
-      .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get._1), false).keys.size)
+      .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
     assert(valuesDetailed.size == headersDetailed.size)
     // 2 should be the Score
     assert(headersDetailed(2).contains("Score"))
@@ -646,7 +646,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(rowsSumOut.size == 2)
         val headers = rowsSumOut(0).split(":")
         val values = rowsSumOut(1).split(":")
-        val appInfo = qualApp.aggregateStats().map(_._1)
+        val appInfo = qualApp.aggregateStats()
         assert(appInfo.nonEmpty)
         assert(headers.size ==
           QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
