@@ -93,7 +93,8 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
           QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
-        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info,
+        val sumsToWrite = QualOutputWriter.calculateEstimatedInfoSummary(Seq(info))
+        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(sumsToWrite.head,
           headersAndSizes, appIdMaxSize,
           delimiter, prettyPrint)
         headerStr + appInfoStr

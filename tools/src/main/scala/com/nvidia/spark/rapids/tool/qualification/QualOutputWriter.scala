@@ -129,23 +129,6 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  private def calculateEstimatedInfoSummary(
-      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedSummaryInfo] = {
-    sums.map { sumInfo =>
-      val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
-      val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
-      val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
-      val estimated_gpu_duration =
-        (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-      val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
-      val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
-      EstimatedSummaryInfo(sumInfo.appName, sumInfo.appId, sumInfo.appDuration,
-        sumInfo.sqlDataFrameDuration, speedupOpportunityWallClock,
-        estimated_gpu_duration, estimated_gpu_speedup,
-        estimated_gpu_timesaved, sumInfo.recommendation)
-    }
-  }
-
   private def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo], numOutputRows: Int, sortOrder: String): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
@@ -283,6 +266,23 @@ object QualOutputWriter {
 
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) "\"\"" else str
+  }
+
+  def calculateEstimatedInfoSummary(
+      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedSummaryInfo] = {
+    sums.map { sumInfo =>
+      val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
+      val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
+      val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
+      val estimated_gpu_duration =
+        (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
+      val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
+      val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
+      EstimatedSummaryInfo(sumInfo.appName, sumInfo.appId, sumInfo.appDuration,
+        sumInfo.sqlDataFrameDuration, speedupOpportunityWallClock,
+        estimated_gpu_duration, estimated_gpu_speedup,
+        estimated_gpu_timesaved, sumInfo.recommendation)
+    }
   }
 
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
