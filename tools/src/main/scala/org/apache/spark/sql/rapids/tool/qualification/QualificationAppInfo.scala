@@ -287,15 +287,9 @@ class QualificationAppInfo(
         (speedupOpportunity / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
       val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
       val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
-      val recommendation = if (totalSpeedup >= 2.5) {
-        Recommendation.Strongly_Recommended
-      } else if (totalSpeedup >= 1.25) {
-        Recommendation.Recommended
-      } else {
-        Recommendation.Not_Recommended
-      }
+      val recommendation = QualificationAppInfo.getRecommendation(totalSpeedup)
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(speedupOpportunity,
-        sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, recommendation,
+        sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration,
         speedupFactor, appInfo.map(_.appName).getOrElse(""), appId)
       val summaryInfo = QualificationSummaryInfo(info.appName, appId, problems,
         sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
@@ -332,6 +326,7 @@ class QualificationAppInfo(
   }
 }
 
+// Estimate based on wall clock times
 case class EstimatedSummaryInfo(
     appName: String,
     appId: String,
@@ -421,9 +416,18 @@ object Recommendation extends Enumeration {
 
 object QualificationAppInfo extends Logging {
 
+  def getRecommendation(totalSpeedup: Double): Recommendation.Recommendation = {
+    if (totalSpeedup >= 2.5) {
+      Recommendation.Strongly_Recommended
+    } else if (totalSpeedup >= 1.25) {
+      Recommendation.Recommended
+    } else {
+      Recommendation.Not_Recommended
+    }
+  }
+
   def calculateEstimatedInfoSummary(speedupOpportunity: Long, sqlDataFrameDuration: Long,
       sqlDataframeTaskDuration: Long, appDuration: Long,
-      recommendation: Recommendation.Recommendation,
       speedupFactor: Double, appName: String, appId: String): EstimatedSummaryInfo = {
     val estimatedRatio = (speedupOpportunity / sqlDataframeTaskDuration)
     val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio
@@ -432,6 +436,8 @@ object QualificationAppInfo extends Logging {
       (speedupOpportunityWallClock / speedupFactor) + estimated_wall_clock_dur_not_on_gpu
     val estimated_gpu_speedup = appDuration / estimated_gpu_duration
     val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
+    val recommendation = getRecommendation(estimated_gpu_speedup)
+
     EstimatedSummaryInfo(appName, appId, appDuration,
       sqlDataFrameDuration, speedupOpportunityWallClock,
       estimated_gpu_duration, estimated_gpu_speedup,
