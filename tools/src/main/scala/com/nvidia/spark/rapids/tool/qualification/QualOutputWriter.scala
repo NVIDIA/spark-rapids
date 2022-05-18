@@ -308,7 +308,7 @@ object QualOutputWriter {
       f"${sumInfo.estimatedGpuDur}%1.2f" -> ESTIMATED_GPU_DURATION.size,
       f"${sumInfo.estimatedGpuSpeedup}%1.2f" -> ESTIMATED_GPU_SPEEDUP.size,
       f"${sumInfo.estimatedGpuTimeSaved}%1.2f" -> ESTIMATED_GPU_TIMESAVED.size,
-      sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE
+      sumInfo.recommendation.toString -> SPEEDUP_BUCKET_STR_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -460,7 +460,7 @@ object QualOutputWriter {
       appInfo.speedupOpportunity.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
       f"${appInfo.speedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
       f"${appInfo.totalSpeedup}%1.2f" -> headersAndSizes(TOTAL_SPEEDUP_STR),
-      stringIfempty(appInfo.recommendation) -> headersAndSizes(SPEEDUP_BUCKET_STR),
+      stringIfempty(appInfo.recommendation.toString) -> headersAndSizes(SPEEDUP_BUCKET_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
     )
 
