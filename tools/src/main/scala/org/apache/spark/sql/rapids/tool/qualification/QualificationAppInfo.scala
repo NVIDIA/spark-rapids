@@ -45,7 +45,6 @@ class QualificationAppInfo(
   var appInfo: Option[QualApplicationInfo] = None
   val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
 
-  // TODO - can we get rid of one of these
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
   val stageIdToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
@@ -263,9 +262,14 @@ class QualificationAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
 
-      val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
+      val sqlIdsWithJobFailures = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
-      }.keys.mkString(",")
+      }
+      val sqlIdsWithFailures = sqlIdsWithJobFailures.keys.mkString(",")
+
+      val failedStages = stageIdToInfo.filter{ case ((s, sa), v) =>
+        v.failureReason.nonEmpty
+      }
       val notSupportFormatAndTypesString = notSupportFormatAndTypes.map { case (format, types) =>
         val typeString = types.mkString(":").replace(",", ":")
         s"${format}[$typeString]"
@@ -316,7 +320,7 @@ class QualificationAppInfo(
 
       QualificationSummaryInfo(info.appName, appId, problems,
         sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
-        endDurationEstimated, failedIds, notSupportFormatAndTypesString,
+        endDurationEstimated, sqlIdsWithFailures, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes,
         longestSQLDuration, nonSQLTaskDuration, estimatedDuration,
         unsupportedSQLDuration, supportedSQLTaskDuration, speedupFactor, totalSpeedup,
@@ -324,7 +328,7 @@ class QualificationAppInfo(
         perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo)
     }
   }
-  case class TaskTimeSummaryInfo(sqlDataframeTaskDuration: Long, nonSQLTaskDuration: Long)
+  // case class TaskTimeSummaryInfo(sqlDataframeTaskDuration: Long, nonSQLTaskDuration: Long)
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
