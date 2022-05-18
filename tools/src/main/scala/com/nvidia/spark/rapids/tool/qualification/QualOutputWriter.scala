@@ -355,7 +355,7 @@ object QualOutputWriter {
       info.sqlID.toString -> headersAndSizes(SQL_ID_STR),
       stringIfempty(info.exec) -> headersAndSizes(EXEC_STR),
       stringIfempty(info.expr) -> headersAndSizes(EXEC_STR),
-      info.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      f"${info.speedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
       info.duration.getOrElse(0).toString -> headersAndSizes(EXEC_DURATION),
       info.nodeId.toString -> headersAndSizes(EXEC_NODEID),
       info.isSupported.toString -> headersAndSizes(EXEC_IS_SUPPORTED),

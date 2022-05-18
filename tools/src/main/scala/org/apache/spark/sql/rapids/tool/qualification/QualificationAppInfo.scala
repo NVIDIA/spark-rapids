@@ -429,7 +429,11 @@ object QualificationAppInfo extends Logging {
   def calculateEstimatedInfoSummary(speedupOpportunity: Long, sqlDataFrameDuration: Long,
       sqlDataframeTaskDuration: Long, appDuration: Long,
       speedupFactor: Double, appName: String, appId: String): EstimatedSummaryInfo = {
-    val estimatedRatio = (speedupOpportunity / sqlDataframeTaskDuration)
+    val estimatedRatio = if (sqlDataframeTaskDuration <= 0) {
+      1
+    } else {
+      speedupOpportunity / sqlDataframeTaskDuration
+    }
     val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio
     val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
     val estimated_gpu_duration =
