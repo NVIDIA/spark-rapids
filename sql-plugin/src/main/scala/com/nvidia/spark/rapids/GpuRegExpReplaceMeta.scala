@@ -47,7 +47,7 @@ class GpuRegExpReplaceMeta(
           try {
             val (pat, repl) = 
                 new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
-            pattern = pat
+            pattern = Some(pat)
             repl.map(GpuRegExpUtils.backrefConversion).foreach {
                 case (hasBackref, convertedRep) =>
                   containsBackref = hasBackref
