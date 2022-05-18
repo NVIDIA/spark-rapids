@@ -273,15 +273,14 @@ class QualificationAppInfo(
         perSqlStageSummary.map(s => s.hackEstimateWallclockSupported).sum
       // now need to remove the unsupported wall clock time
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
-      val sqlDataframeTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
+      val sqlDataframeTaskDuration = allStagesSummary.flatMap(_.map(s => s.stageTaskTime)).sum
       val unsupportedSQLDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
       val noSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
       val nonSQLTaskDuration = noSQLDataframeTaskDuration + jobOverheadTime
-      // TODO this should be removed as same as sqlDataframeTaskDuration
-      val speedupOpportunity = sqlDataframeTaskDuration
+      val speedupOpportunity = calculateSQLSupportedTaskDuration(allStagesSummary)
       val speedupFactor = calculateSpeedupFactor(allStagesSummary)
       val estimatedDuration =
         (speedupOpportunity / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
