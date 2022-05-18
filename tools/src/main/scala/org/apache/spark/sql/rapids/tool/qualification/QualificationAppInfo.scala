@@ -257,27 +257,28 @@ class QualificationAppInfo(
             StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
           }
           val numUnsupportedExecs = execInfos.filterNot(_.isSupported).size
-          // This is a guestimate at how much wall clock was unsupported
-          val hackEstimateWallclockUnsupported = sqlWallClockDuration *
-            (numUnsupportedExecs / execInfos.size)
-          logWarning(s"hackEstimateWallclockUnsupported is $hackEstimateWallclockUnsupported " +
-            s"sqlWallclock duration is $sqlWallClockDuration $numUnsupportedExecs ${execInfos.size}")
-          if (hackEstimateWallclockUnsupported > longestSQLDuration) {
-            longestSQLDuration = hackEstimateWallclockUnsupported
+          // This is a guestimate at how much wall clock was supported
+          val hackEstimateWallclockSupported = sqlWallClockDuration *
+            ((execInfos.size - numUnsupportedExecs) / execInfos.size)
+          logWarning(s"hackEstimateWallclockSupported is $hackEstimateWallclockSupported " +
+            s"sqlWallclock duration is $sqlWallClockDuration $numUnsupportedExecs" +
+            s" ${execInfos.size}")
+          if (hackEstimateWallclockSupported > longestSQLDuration) {
+            longestSQLDuration = hackEstimateWallclockSupported
           }
           // TODO - do we need to estimate based on supported execs?
           // for now just take the time as is
           val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
           val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
 
-          SQLStageSummary(stageSum, sqlID, hackEstimateWallclockUnsupported,
+          SQLStageSummary(stageSum, sqlID, hackEstimateWallclockSupported,
             execCPUTime, execRunTime)
         }
       }
       // wall clock time
       val executorCpuTimePercent = calculateCpuTimePercent(perSqlStageSummary)
       val sqlDFWallClockDuration =
-        perSqlStageSummary.map(s => s.hackEstimateWallclockUnsupported).sum
+        perSqlStageSummary.map(s => s.hackEstimateWallclockSupported).sum
       // now need to remove the unsupported wall clock time
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
       val sqlDataframeTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
@@ -335,7 +336,7 @@ class QualificationAppInfo(
 case class SQLStageSummary(
     stageSum: Set[StageQualSummaryInfo],
     sqlID: Long,
-    hackEstimateWallclockUnsupported: Long,
+    hackEstimateWallclockSupported: Long,
     execCPUTime: Long,
     execRunTime: Long)
 
