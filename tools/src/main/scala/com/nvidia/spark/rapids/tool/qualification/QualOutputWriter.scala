@@ -144,6 +144,7 @@ object QualOutputWriter {
   val APP_DUR_STR = "App Duration"
   val SQL_DUR_STR = "SQL DF Duration"
   val TASK_DUR_STR = "SQL Dataframe Task Duration"
+  val STAGE_DUR_STR = "Stage Task Duration"
   val POT_PROBLEM_STR = "Potential Problems"
   val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
   val APP_DUR_ESTIMATED_STR = "App Duration Estimated"
@@ -374,7 +375,7 @@ object QualOutputWriter {
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       STAGE_ID_STR -> STAGE_ID_STR.size,
       AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
-      TASK_DUR_STR -> TASK_DUR_STR.size,
+      STAGE_DUR_STR -> STAGE_DUR_STR.size,
       UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size
     )
     detailedHeadersAndFields
@@ -391,7 +392,7 @@ object QualOutputWriter {
         stringIfempty(appId) -> headersAndSizes(APP_ID_STR),
         info.stageId.toString -> headersAndSizes(STAGE_ID_STR),
         f"${info.averageSpeedup}%1.2f"  -> headersAndSizes(AVERAGE_SPEEDUP_STR),
-        info.stageTaskTime.toString -> headersAndSizes(TASK_DUR_STR),
+        info.stageTaskTime.toString -> headersAndSizes(STAGE_DUR_STR),
         info.unsupportedTaskDur.toString -> headersAndSizes(UNSUPPORTED_DURATION_STR))
       constructOutputRow(data, delimiter, prettyPrint)
     }

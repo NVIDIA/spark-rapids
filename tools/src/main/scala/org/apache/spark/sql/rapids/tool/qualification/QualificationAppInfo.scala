@@ -281,6 +281,7 @@ class QualificationAppInfo(
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
       val nonSQLTaskDuration = noSQLDataframeTaskDuration + jobOverheadTime
       val speedupOpportunity = calculateSQLSupportedTaskDuration(allStagesSummary)
+      logWarning(s"speedup Opportunity: $speedupOpportunity")
       val speedupFactor = calculateSpeedupFactor(allStagesSummary)
       val estimatedDuration =
         (speedupOpportunity / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
@@ -431,6 +432,7 @@ object QualificationAppInfo extends Logging {
     val estimatedRatio = if (sqlDataframeTaskDuration <= 0) {
       1
     } else {
+      logWarning(s"$speedupOpportunity $sqlDataframeTaskDuration")
       speedupOpportunity / sqlDataframeTaskDuration
     }
     val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio
