@@ -581,28 +581,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * Parse Java regular expression and translate into cuDF regular expression.
    *
    * @param pattern Regular expression that is valid in Java's engine
-   * @return Regular expression in cuDF format
+   * @param repl Optional replacement pattern
+   * @return Regular expression and optional replacement in cuDF format
    */
-  def transpile(pattern: String, repl: Option[String]): (Option[String], Option[String]) = {
+  def transpile(pattern: String, repl: Option[String]): (String, Option[String]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
-    val replacement = repl match {
-      case Some(s) => Some(new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
-      case None => None
-    }
+    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
     val cudfRegex = rewrite(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
-    replacement match {
-      case Some(replaceAST) =>
-        (Some(cudfRegex.toRegexString), Some(replaceAST.toRegexString))
-      case _ =>
-        (Some(cudfRegex.toRegexString), None)
-    }
+    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
