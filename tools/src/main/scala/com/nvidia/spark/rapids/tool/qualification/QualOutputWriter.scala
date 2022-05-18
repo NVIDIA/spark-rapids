@@ -54,25 +54,17 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  def writeStageReport(stagesInfo: Seq[StageQualSummaryInfo], order: String) : Unit = {
+  def writeStageReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_stages.csv",
       "Stage Exec Info")
     try {
-      val sortedDesc = stagesInfo.sortBy(sum => {
-        (-sum.stageId)
-      })
-      val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
-        stagesInfo.sortBy(sum => {
-          (sum.stageId)
-        })
-      } else {
-        sortedDesc
-      }
       val headersAndSizes = QualOutputWriter
-        .getDetailedStagesHeaderStringsAndSizes()
+        .getDetailedStagesHeaderStringsAndSizes(sums)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-      val rows = QualOutputWriter.constructStagesInfo(sortedForReport, headersAndSizes, ",", false)
-      rows.foreach(csvFileWriter.write(_))
+      sums.foreach { sumInfo =>
+        val rows = QualOutputWriter.constructStagesInfo(sumInfo, headersAndSizes, ",", false)
+        rows.foreach(csvFileWriter.write(_))
+      }
     } finally {
       csvFileWriter.close()
     }
@@ -376,8 +368,10 @@ object QualOutputWriter {
     constructOutputRow(data, delimiter, prettyPrint)
   }
 
-  def getDetailedStagesHeaderStringsAndSizes(): LinkedHashMap[String, Int] = {
+  def getDetailedStagesHeaderStringsAndSizes(
+      appInfos: Seq[QualificationSummaryInfo]): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       STAGE_ID_STR -> STAGE_ID_STR.size,
       AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
@@ -387,12 +381,14 @@ object QualOutputWriter {
   }
 
   def constructStagesInfo(
-      stagesInfo: Seq[StageQualSummaryInfo],
+      sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean): Seq[String] = {
-    stagesInfo.map { info =>
+    val appId = sumInfo.appId
+    sumInfo.stageInfo.map { info =>
       val data = ListBuffer[(String, Int)](
+        stringIfempty(appId) -> headersAndSizes(APP_ID_STR),
         info.stageId.toString -> headersAndSizes(STAGE_ID_STR),
         f"${info.averageSpeedup}%1.2f"  -> headersAndSizes(AVERAGE_SPEEDUP_STR),
         info.stageTaskTime.toString -> headersAndSizes(TASK_DUR_STR),
