@@ -81,7 +81,19 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout,
       uiEnabled)
 
-    qWriter.writeReport(allAppsSum, numRows, order)
+    val sumsToWrite = QualificationAppInfo.calculateEstimatedInfoSummary(allAppsSum)
+    // TODO - update
+    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+      sumsToWrite.sortBy(sum => {
+        (sum.recommendation, -sum.estimatedGpuSpeedup)
+      })
+    } else {
+      sumsToWrite.sortBy(sum => {
+        (sum.recommendation, sum.estimatedGpuSpeedup)
+      }).reverse
+    }
+
+    qWriter.writeReport(allAppsSum, sortedForReport, numRows)
     qWriter.writeDetailedReport(sortedDesc)
     qWriter.writeExecReport(allPlans.asScala.toSeq.flatten, order)
     qWriter.writeStageReport(allStages.asScala.toSeq.flatten, order)

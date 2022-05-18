@@ -403,6 +403,24 @@ case class StageQualSummaryInfo(
     unsupportedTaskDur: Long)
 
 object QualificationAppInfo extends Logging {
+
+  def calculateEstimatedInfoSummary(
+      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedSummaryInfo] = {
+    sums.map { sumInfo =>
+      val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
+      val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
+      val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
+      val estimated_gpu_duration =
+        (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
+      val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
+      val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
+      EstimatedSummaryInfo(sumInfo.appName, sumInfo.appId, sumInfo.appDuration,
+        sumInfo.sqlDataFrameDuration, speedupOpportunityWallClock,
+        estimated_gpu_duration, estimated_gpu_speedup,
+        estimated_gpu_timesaved, sumInfo.recommendation)
+    }
+  }
+
   def createApp(
       path: EventLogInfo,
       hadoopConf: Configuration,

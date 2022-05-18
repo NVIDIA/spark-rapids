@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
-import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationSummaryInfo, StageQualSummaryInfo}
+import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationAppInfo, QualificationSummaryInfo, StageQualSummaryInfo}
 import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
 /**
@@ -118,19 +118,20 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 
   // write the text summary report
-  def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int,
-      sortOrder: String) : Unit = {
+  def writeReport(sums: Seq[QualificationSummaryInfo], estSums: Seq[EstimatedSummaryInfo],
+      numOutputRows: Int) : Unit = {
     val textFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.log",
       "Summary report")
     try {
-      writeTextSummary(textFileWriter, summaries, numOutputRows, sortOrder)
+      writeTextSummary(textFileWriter, sums, estSums, numOutputRows)
     } finally {
       textFileWriter.close()
     }
   }
 
   private def writeTextSummary(writer: ToolTextFileWriter,
-      sums: Seq[QualificationSummaryInfo], numOutputRows: Int, sortOrder: String): Unit = {
+      sums: Seq[QualificationSummaryInfo], estSum: Seq[EstimatedSummaryInfo],
+      numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
     val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize)
     val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes, "|", true)
@@ -144,19 +145,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       print(entireHeader)
       print(s"$sep\n")
     }
-    val finalSums = sums.take(numOutputRows)
-    val sumsToWrite = calculateEstimatedInfoSummary(finalSums)
-    // TODO - update
-    val sortedForReport = if (QualificationArgs.isOrderAsc(sortOrder)) {
-      sumsToWrite.sortBy(sum => {
-        (sum.recommendation, -sum.estimatedGpuSpeedup)
-      })
-    } else {
-      sumsToWrite.sortBy(sum => {
-        (sum.recommendation, sum.estimatedGpuSpeedup)
-      }).reverse
-    }
-    sortedForReport.foreach { sumInfo =>
+    val finalSums = estSum.take(numOutputRows)
+    estSum.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
         appIdMaxSize, "|", true)
       writer.write(wStr)
@@ -266,23 +256,6 @@ object QualOutputWriter {
 
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) "\"\"" else str
-  }
-
-  def calculateEstimatedInfoSummary(
-      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedSummaryInfo] = {
-    sums.map { sumInfo =>
-      val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
-      val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
-      val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
-      val estimated_gpu_duration =
-        (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-      val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
-      val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
-      EstimatedSummaryInfo(sumInfo.appName, sumInfo.appId, sumInfo.appDuration,
-        sumInfo.sqlDataFrameDuration, speedupOpportunityWallClock,
-        estimated_gpu_duration, estimated_gpu_speedup,
-        estimated_gpu_timesaved, sumInfo.recommendation)
-    }
   }
 
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
