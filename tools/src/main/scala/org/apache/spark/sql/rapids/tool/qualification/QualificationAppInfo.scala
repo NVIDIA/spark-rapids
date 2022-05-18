@@ -397,7 +397,7 @@ case class QualificationSummaryInfo(
 
 case class StageQualSummaryInfo(
     stageId: Int,
-    averageSpeedup: Int,
+    averageSpeedup: Double,
     stageTaskTime: Long,
     unsupportedTaskDur: Long)
 
