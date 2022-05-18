@@ -294,14 +294,19 @@ class QualificationAppInfo(
       } else {
         "RED"
       }
-
+      val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(speedupOpportunity,
+        sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, recommendation,
+        speedupFactor, appInfo.map(_.appName).getOrElse(""), appId)
       val summaryInfo = QualificationSummaryInfo(info.appName, appId, problems,
         sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, failedIds, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes,
         longestSQLDuration, nonSQLTaskDuration, estimatedDuration,
         unsupportedSQLDuration, speedupOpportunity, speedupFactor, totalSpeedup, recommendation,
-        info.sparkUser, info.startTime, origPlanInfos, perSqlStageSummary.map(_.stageSum).flatten)
+        info.sparkUser, info.startTime, origPlanInfos, perSqlStageSummary.map(_.stageSum).flatten,
+        estimatedInfo)
+
+
       summaryInfo
     }
   }
@@ -390,7 +395,8 @@ case class QualificationSummaryInfo(
     user: String,
     startTime: Long,
     planInfo: Seq[PlanInfo],
-    stageInfo: Seq[StageQualSummaryInfo])
+    stageInfo: Seq[StageQualSummaryInfo],
+    estimatedInfo: EstimatedSummaryInfo)
 
 case class StageQualSummaryInfo(
     stageId: Int,
@@ -400,21 +406,20 @@ case class StageQualSummaryInfo(
 
 object QualificationAppInfo extends Logging {
 
-  def calculateEstimatedInfoSummary(
-      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedSummaryInfo] = {
-    sums.map { sumInfo =>
-      val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
-      val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
-      val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
-      val estimated_gpu_duration =
-        (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-      val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
-      val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
-      EstimatedSummaryInfo(sumInfo.appName, sumInfo.appId, sumInfo.appDuration,
-        sumInfo.sqlDataFrameDuration, speedupOpportunityWallClock,
-        estimated_gpu_duration, estimated_gpu_speedup,
-        estimated_gpu_timesaved, sumInfo.recommendation)
-    }
+  def calculateEstimatedInfoSummary(speedupOpportunity: Long, sqlDataFrameDuration: Long,
+      sqlDataframeTaskDuration: Long, appDuration: Long, recommendation: String,
+      speedupFactor: Double, appName: String, appId: String): EstimatedSummaryInfo = {
+    val estimatedRatio = (speedupOpportunity / sqlDataframeTaskDuration)
+    val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio
+    val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
+    val estimated_gpu_duration =
+      (speedupOpportunityWallClock / speedupFactor) + estimated_wall_clock_dur_not_on_gpu
+    val estimated_gpu_speedup = appDuration / estimated_gpu_duration
+    val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
+    EstimatedSummaryInfo(appName, appId, appDuration,
+      sqlDataFrameDuration, speedupOpportunityWallClock,
+      estimated_gpu_duration, estimated_gpu_speedup,
+      estimated_gpu_timesaved, recommendation)
   }
 
   def createApp(
