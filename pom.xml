@@ -71,10 +71,7 @@
     </developers>
     <profiles>
         <profile>
-            <id>java-8-api-after-9</id>
-            <activation>
-                <jdk>[9,)</jdk>
-            </activation>
+            <id>java-8-api</id>
             <properties>
                 <maven.compiler.release>${java.major.version}</maven.compiler.release>
             </properties>
