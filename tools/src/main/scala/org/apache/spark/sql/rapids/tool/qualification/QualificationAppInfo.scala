@@ -185,8 +185,7 @@ class QualificationAppInfo(
    * @return Option of QualificationSummaryInfo, Some if we were able to process the application
    *         otherwise None.
    */
-  def aggregateStats():
-      Option[(QualificationSummaryInfo, Seq[PlanInfo], Seq[StageQualSummaryInfo])] = {
+  def aggregateStats(): Option[QualificationSummaryInfo] = {
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
 
@@ -202,7 +201,7 @@ class QualificationAppInfo(
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
       val origPlanInfos = sqlPlans.map { case (id, plan) =>
-        SQLPlanParser.parseSQLPlan(plan, id, pluginTypeChecker, this)
+        SQLPlanParser.parseSQLPlan(appId, plan, id, pluginTypeChecker, this)
       }.toSeq
       // filter out any execs that should be removed
       val planInfos = origPlanInfos.map { p =>
@@ -302,8 +301,8 @@ class QualificationAppInfo(
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes,
         longestSQLDuration, nonSQLTaskDuration, estimatedDuration,
         unsupportedSQLDuration, speedupOpportunity, speedupFactor, totalSpeedup, recommendation,
-        info.sparkUser, info.startTime)
-      (summaryInfo, origPlanInfos, perSqlStageSummary.map(_.stageSum).flatten)
+        info.sparkUser, info.startTime, origPlanInfos, perSqlStageSummary.map(_.stageSum).flatten)
+      summaryInfo
     }
   }
 
@@ -389,7 +388,9 @@ case class QualificationSummaryInfo(
     totalSpeedup: Double,
     recommendation: String,
     user: String,
-    startTime: Long)
+    startTime: Long,
+    planInfo: Seq[PlanInfo],
+    stageInfo: Seq[StageQualSummaryInfo])
 
 case class StageQualSummaryInfo(
     stageId: Int,

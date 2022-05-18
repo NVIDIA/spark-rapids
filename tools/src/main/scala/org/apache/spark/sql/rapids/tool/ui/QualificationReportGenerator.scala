@@ -152,6 +152,7 @@ object QualificationReportGenerator extends Logging {
   }
 
   def generateDashBoard(outDir: String, sumArr: Seq[QualificationSummaryInfo]) : Unit = {
+    // TODO - I assume we want the EstimatedSummaryInfo here as well
     val generatorOp = Some(new QualificationReportGenerator(outDir, sumArr))
     var startTime = 0L;
     generatorOp.foreach { generator =>

@@ -54,13 +54,6 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  private def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
-    val topExecInfo = plans.flatMap(_.execInfo)
-    topExecInfo.flatMap { e =>
-      e.children.getOrElse(Seq.empty) :+ e
-    }
-  }
-
   def writeStageReport(stagesInfo: Seq[StageQualSummaryInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_stages.csv",
       "Stage Exec Info")
@@ -85,26 +78,19 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  def writeExecReport(plans: Seq[PlanInfo], order: String) : Unit = {
+  def writeExecReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
       "Plan Exec Info")
     try {
-      val allExecs = getAllExecsFromPlan(plans)
-      val sortedDesc = allExecs.sortBy(sum => {
-        (-sum.sqlID, sum.exec)
-      })
-      val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
-        allExecs.sortBy(sum => {
-          (sum.sqlID, sum.exec)
-        })
-      } else {
-        sortedDesc
-      }
+      val plans = sums.flatMap(_.planInfo)
+      val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
       val headersAndSizes = QualOutputWriter
-        .getDetailedExecsHeaderStringsAndSizes(sortedForReport)
+        .getDetailedExecsHeaderStringsAndSizes(sums, allExecs)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-      val rows = QualOutputWriter.constructExecsInfo(sortedForReport, headersAndSizes, ",", false)
-      rows.foreach(csvFileWriter.write(_))
+      sums.foreach { sumInfo =>
+        val rows = QualOutputWriter.constructExecsInfo(sumInfo, headersAndSizes, ",", false)
+        rows.foreach(csvFileWriter.write(_))
+      }
     } finally {
       csvFileWriter.close()
     }
@@ -350,9 +336,10 @@ object QualOutputWriter {
     execInfos.map(_.children.getOrElse(Seq.empty).map(_.nodeId).mkString(",").size)
   }
 
-  def getDetailedExecsHeaderStringsAndSizes(
+  def getDetailedExecsHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       execInfos: Seq[ExecInfo]): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       SQL_ID_STR -> SQL_ID_STR.size,
       EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
       EXPR_STR -> getMaxSizeForHeader(execInfos.map(_.expr.size), EXPR_STR),
@@ -369,9 +356,10 @@ object QualOutputWriter {
     detailedHeadersAndFields
   }
 
-  private def constructExecInfoBuffer(info: ExecInfo, delimiter: String = "|",
+  private def constructExecInfoBuffer(info: ExecInfo, appId: String, delimiter: String = "|",
       prettyPrint: Boolean, headersAndSizes: LinkedHashMap[String, Int]): String = {
     val data = ListBuffer[(String, Int)](
+      stringIfempty(appId) -> headersAndSizes(APP_ID_STR),
       info.sqlID.toString -> headersAndSizes(SQL_ID_STR),
       stringIfempty(info.exec) -> headersAndSizes(EXEC_STR),
       stringIfempty(info.expr) -> headersAndSizes(EXEC_STR),
@@ -413,16 +401,25 @@ object QualOutputWriter {
     }
   }
 
+  def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
+    val topExecInfo = plans.flatMap(_.execInfo)
+    topExecInfo.flatMap { e =>
+      e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
   def constructExecsInfo(
-      execInfos: Seq[ExecInfo],
+      sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean): Seq[String] = {
-    execInfos.flatMap { info =>
+    val allExecs = getAllExecsFromPlan(sumInfo.planInfo)
+    val appId = sumInfo.appId
+    allExecs.flatMap { info =>
       val children = info.children
-        .map(_.map(constructExecInfoBuffer(_, delimiter, prettyPrint, headersAndSizes)))
+        .map(_.map(constructExecInfoBuffer(_, appId, delimiter, prettyPrint, headersAndSizes)))
         .getOrElse(Seq.empty)
-      children :+ constructExecInfoBuffer(info, delimiter, prettyPrint, headersAndSizes)
+      children :+ constructExecInfoBuffer(info, appId, delimiter, prettyPrint, headersAndSizes)
     }
   }
 
