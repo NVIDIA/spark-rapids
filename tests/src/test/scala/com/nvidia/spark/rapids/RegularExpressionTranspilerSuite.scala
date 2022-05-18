@@ -714,7 +714,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
           fail(s"javaPattern=${toReadableString(javaPattern)}, " +
-            s"cudfPattern=${toReadableString(cudfPattern.get)}, " +
+            s"cudfPattern=${toReadableString(cudfPattern)}, " +
             s"input='${toReadableString(input(i))}', " +
             s"cpu=${toReadableString(cpu(i))}, " +
             s"gpu=${toReadableString(gpu(i))}")
