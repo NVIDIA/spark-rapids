@@ -142,14 +142,7 @@ trait Arm {
       block(r)
     } catch {
       case t: Throwable =>
-        try {
-          if (r != null) {
-            r.free()
-          }
-        } catch {
-          case e: Throwable =>
-            t.addSuppressed(e)
-        }
+        r.safeFree(t)
         throw t
     }
   }

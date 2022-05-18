@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids.tool.profiling
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
@@ -27,7 +26,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.spark.TaskFailedReason
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
+import org.apache.spark.sql.execution.ui.{SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 import org.apache.spark.sql.rapids.tool.EventProcessorBase
 
 /**
@@ -269,106 +268,11 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     }
   }
 
-  override def doSparkListenerDriverAccumUpdates(
-      app: ApplicationInfo,
-      event: SparkListenerDriverAccumUpdates): Unit = {
-    logDebug("Processing event: " + event.getClass)
-
-    val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
-    accumUpdates.foreach { accum =>
-      val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
-      val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
-        ArrayBuffer[DriverAccumCase]())
-      arrBuf += driverAccum
-    }
-  }
-
-  override def doSparkListenerJobStart(
-      app: ApplicationInfo,
-      event: SparkListenerJobStart): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
-    val sqlID = ProfileUtils.stringToLong(sqlIDString)
-    val thisJob = new JobInfoClass(
-      event.jobId,
-      event.stageIds,
-      sqlID,
-      event.properties.asScala,
-      event.time,
-      None,
-      None,
-      None,
-      None,
-      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
-    )
-    app.jobIdToInfo.put(event.jobId, thisJob)
-  }
-
-  override def doSparkListenerJobEnd(
-      app: ApplicationInfo,
-      event: SparkListenerJobEnd): Unit = {
-    logDebug("Processing event: " + event.getClass)
-
-    def jobResult(res: JobResult): String = {
-      res match {
-        case JobSucceeded => "JobSucceeded"
-        case _: JobFailed => "JobFailed"
-        case _ => "Unknown"
-      }
-    }
-
-    def failedReason(res: JobResult): String = {
-      res match {
-        case JobSucceeded => ""
-        case jobFailed: JobFailed => jobFailed.exception.toString
-        case _ => ""
-      }
-    }
-
-    app.jobIdToInfo.get(event.jobId) match {
-      case Some(j) =>
-        j.endTime = Some(event.time)
-        j.duration = ProfileUtils.OptionLongMinusLong(j.endTime, j.startTime)
-        val thisJobResult = jobResult(event.jobResult)
-        j.jobResult = Some(thisJobResult)
-        val thisFailedReason = failedReason(event.jobResult)
-        j.failedReason = Some(thisFailedReason)
-      case None =>
-        val thisJobResult = jobResult(event.jobResult)
-        val thisFailedReason = failedReason(event.jobResult)
-        val thisJob = new JobInfoClass(
-          event.jobId,
-          Seq.empty,
-          None,
-          Map.empty,
-          event.time,  // put end time as start time
-          Some(event.time),
-          Some(thisJobResult),
-          Some(thisFailedReason),
-          None,
-          app.gpuMode
-        )
-        app.jobIdToInfo.put(event.jobId, thisJob)
-    }
-  }
-
-  override def doSparkListenerStageSubmitted(
-      app: ApplicationInfo,
-      event: SparkListenerStageSubmitted): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    app.getOrCreateStage(event.stageInfo)
-  }
-
   override def doSparkListenerStageCompleted(
       app: ApplicationInfo,
       event: SparkListenerStageCompleted): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val stage = app.getOrCreateStage(event.stageInfo)
-    stage.completionTime = event.stageInfo.completionTime
-    stage.failureReason = event.stageInfo.failureReason
-
-    stage.duration = ProfileUtils.optionLongMinusOptionLong(stage.completionTime,
-      stage.info.submissionTime)
+    super.doSparkListenerStageCompleted(app, event)
 
     // Parse stage accumulables
     for (res <- event.stageInfo.accumulables) {

@@ -528,3 +528,15 @@ def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema).csv(data_path),
         conf=updated_conf)
+
+@allow_non_gpu(any = True)
+def test_csv_read_case_insensitivity(spark_tmp_path):
+    gen_list = [('one', int_gen), ('tWo', byte_gen), ('THREE', boolean_gen)]
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.option('header', True).csv(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.option('header', True).csv(data_path).select('one', 'two', 'three'),
+        {'spark.sql.caseSensitive': 'false'}
+    )

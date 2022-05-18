@@ -1849,14 +1849,11 @@ class MultiFileOrcPartitionReader(
    *
    * Please be note, the estimated size should be at least equal to size of HEAD + Blocks + FOOTER
    *
-   * @param filesAndBlocks a map with file as the key, and its stripes as the value
-   * @param schema schema info
+   * @param batchContext the batch building context
    * @return Long, the estimated output size
    */
-  override def calculateEstimatedBlocksOutputSize(
-      filesAndBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
-      schema: SchemaBase): Long = {
-
+  override def calculateEstimatedBlocksOutputSize(batchContext: BatchContext): Long = {
+    val filesAndBlocks = batchContext.origChunkedBlocks
     // start with header magic
     var size: Long = OrcFile.MAGIC.length
 
@@ -1903,13 +1900,13 @@ class MultiFileOrcPartitionReader(
    *
    * @param footerOffset  footer offset
    * @param stripes       stripes to be evaluated
-   * @param schema        schema info
+   * @param batchContext  the batch building context
    * @return the output size
    */
   override def calculateFinalBlocksOutputSize(
       footerOffset: Long,
       stripes: Seq[DataBlockBase],
-      schema: SchemaBase): Long = {
+      batchContext: BatchContext): Long = {
 
     // In calculateEstimatedBlocksOutputSize, we have got the true size for
     // HEADER + All STRIPES + the estimated the FileFooter size with the worst-case.
@@ -1941,6 +1938,7 @@ class MultiFileOrcPartitionReader(
    *               is in charge of closing it in sub-class
    * @param blocks blocks meta info to specify which blocks to be read
    * @param offset used as the offset adjustment
+   * @param batchContext the batch building context
    * @return Callable[(Seq[DataBlockBase], Long)], which will be submitted to a
    *         ThreadPoolExecutor, and the Callable will return a tuple result and
    *         result._1 is block meta info with the offset adjusted
@@ -1951,7 +1949,8 @@ class MultiFileOrcPartitionReader(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long): Callable[(Seq[DataBlockBase], Long)] = {
+      offset: Long,
+      batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)] = {
     new OrcCopyStripesRunner(tc, file, outhmb, blocks, offset)
   }
 
@@ -2007,9 +2006,10 @@ class MultiFileOrcPartitionReader(
    * just ignore it and return 0
    *
    * @param buffer where the header will be written
+   * @param batchContext the batch building context
    * @return how many bytes written
    */
-  override def writeFileHeader(paths: Seq[Path], buffer: HostMemoryBuffer): Long = {
+  override def writeFileHeader(buffer: HostMemoryBuffer, batchContext: BatchContext): Long = {
     withResource(new HostMemoryOutputStream(buffer)) { out =>
       withResource(new DataOutputStream(out)) { dataOut =>
         dataOut.writeBytes(OrcFile.MAGIC)
@@ -2032,6 +2032,7 @@ class MultiFileOrcPartitionReader(
    * @param footerOffset   Where begin to write the footer
    * @param stripes        The data block meta info
    * @param clippedSchema  The clipped schema info
+   * @param batchContext   The batch building context
    * @return the buffer and the buffer size
    */
   override def writeFileFooter(
@@ -2039,7 +2040,7 @@ class MultiFileOrcPartitionReader(
       bufferSize: Long,
       footerOffset: Long,
       stripes: Seq[DataBlockBase],
-      clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
+      batchContext: BatchContext): (HostMemoryBuffer, Long) = {
     val lenLeft = bufferSize - footerOffset
     closeOnExcept(buffer) { _ =>
       withResource(buffer.slice(footerOffset, lenLeft)) { finalizehmb =>

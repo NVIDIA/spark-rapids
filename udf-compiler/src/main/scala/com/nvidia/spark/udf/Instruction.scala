@@ -63,13 +63,33 @@ private[udf] object Repr {
       extends CompilerInternal("java.lang.StringBuilder") {
     override def dataType: DataType = string.dataType
 
-    def invoke(methodName: String, args: List[Expression]): (Expression, Boolean) = {
+    def invoke(methodName: String, args: List[Expression]): Option[(Expression, Boolean)] = {
       methodName match {
-        case "StringBuilder" => (this, false)
-        case "append" => (StringBuilder(Concat(string :: args)), true)
-        case "toString" => (string, false)
+        case "StringBuilder" => None
+        case "append" => Some((StringBuilder(Concat(string :: args)), true))
+        case "toString" => Some((string, false))
         case _ =>
           throw new SparkException(s"Unsupported StringBuilder op ${methodName}")
+      }
+    }
+  }
+
+  // Internal representation of org.apache.spark.SparkException
+  case class SparkExcept(var message: Expression = Literal.default(StringType))
+      extends CompilerInternal("org.apache.spark.SparkException") {
+
+    def invoke(methodName: String, args: List[Expression]): Option[(Expression, Boolean)] = {
+      methodName match {
+        case "SparkException" =>
+          if (args.length > 1) {
+            throw new SparkException("Unsupported SparkException construction " +
+                                     "with multiple arguments")
+          } else {
+            message = args.head
+            Some((this, false))
+          }
+        case _ =>
+          throw new SparkException(s"Unsupported SparkException op ${methodName}")
       }
     }
   }
@@ -96,11 +116,11 @@ private[udf] object Repr {
       extends CompilerInternal("scala.collection.mutable.ArrayBuffer") {
     override def dataType: DataType = arrayBuffer.dataType
 
-    def invoke(methodName: String, args: List[Expression]): (Expression, Boolean) = {
+    def invoke(methodName: String, args: List[Expression]): Option[(Expression, Boolean)] = {
       methodName match {
-        case "ArrayBuffer" => (this, false)
-        case "distinct" => (ArrayBuffer(ArrayDistinct(arrayBuffer)), false)
-        case "toArray" => (arrayBuffer, false)
+        case "ArrayBuffer" => Some((this, false))
+        case "distinct" => Some((ArrayBuffer(ArrayDistinct(arrayBuffer)), false))
+        case "toArray" => Some((arrayBuffer, false))
         case "$plus$eq" | "$colon$plus" =>
           val mutable = {
             if (methodName == "$plus$eq") {
@@ -138,11 +158,11 @@ private[udf] object Repr {
               }
             }
           }
-          (arrayBuffer match {
+          Some((arrayBuffer match {
              case CreateArray(Nil, _) => ArrayBuffer(CreateArray(elem))
              case array => ArrayBuffer(Concat(Seq(array, CreateArray(elem))))
            },
-           mutable)
+           mutable))
         case _ =>
           throw new SparkException(s"Unsupported ArrayBuffer op ${methodName}")
       }
@@ -233,6 +253,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         const(state, (opcode - Opcode.ICONST_0).asInstanceOf[Int])
       case Opcode.LCONST_0 | Opcode.LCONST_1 =>
         const(state, (opcode - Opcode.LCONST_0).asInstanceOf[Long])
+      case Opcode.ATHROW => athrow(state)
       case Opcode.DADD | Opcode.FADD | Opcode.IADD | Opcode.LADD => binary(state, Add(_, _))
       case Opcode.DSUB | Opcode.FSUB | Opcode.ISUB | Opcode.LSUB => binary(state, Subtract(_, _))
       case Opcode.DMUL | Opcode.FMUL | Opcode.IMUL | Opcode.LMUL => binary(state, Multiply(_, _))
@@ -310,6 +331,11 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     case _ => false
   }
 
+  def isThrow: Boolean = opcode match {
+    case Opcode.ATHROW => true
+    case _ => false
+  }
+
   //
   // Handle instructions
   //
@@ -321,6 +347,17 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
   private def store(state: State, localsIndex: Int): State = {
     val State(locals, top :: rest, cond, expr) = state
     State(locals.updated(localsIndex, top), rest, cond, expr)
+  }
+
+  private def athrow(state: State): State = {
+    val State(locals, top :: rest, cond, expr) = state
+    if (!top.isInstanceOf[Repr.SparkExcept]) {
+      throw new SparkException("Unsupported type for athrow")
+    }
+    // Empty the stack and convert the internal representation of
+    // org.apache.spark.SparkException object to RaiseError, then push it to the
+    // stack.
+    State(locals, List(RaiseError(top.asInstanceOf[Repr.SparkExcept].message)), cond, expr)
   }
 
   private def const(state: State, value: Any): State = {
@@ -360,6 +397,9 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     if (typeName.equals("java.lang.StringBuilder")) {
       val State(locals, stack, cond, expr) = state
       State(locals, Repr.StringBuilder() :: stack, cond, expr)
+    } else if (typeName.equals("org.apache.spark.SparkException")) {
+      val State(locals, stack, cond, expr) = state
+      State(locals, Repr.SparkExcept() :: stack, cond, expr)
     } else if (typeName.equals("scala.collection.mutable.ArrayBuffer")) {
       val State(locals, stack, cond, expr) = state
       State(locals, Repr.ArrayBuffer() :: stack, cond, expr)
@@ -447,97 +487,83 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     val (args, rest) = getArgs(stack, paramTypes.length)
     // We don't support arbitrary calls.
     // We support only some math and string methods.
-    if (declaringClassName.equals("scala.math.package$")) {
-      State(locals,
-        mathOp(method.getName, args) :: rest,
-        cond,
-        expr)
-    } else if (declaringClassName.equals("scala.Predef$")) {
-      State(locals,
-        predefOp(method.getName, args) :: rest,
-        cond,
-        expr)
-    } else if (declaringClassName.equals("scala.Array$")) {
-      State(locals,
-        arrayOp(method.getName, args) :: rest,
-        cond,
-        expr)
-    } else if (declaringClassName.equals("scala.reflect.ClassTag$")) {
-      State(locals,
-        classTagOp(method.getName, args) :: rest,
-        cond,
-        expr)
-    } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer$")) {
-      State(locals,
-        arrayBufferOp(method.getName, args) :: rest,
-        cond,
-        expr)
-    } else if (declaringClassName.equals("java.lang.Double")) {
-      State(locals, doubleOp(method.getName, args) :: rest, cond, expr)
-    } else if (declaringClassName.equals("java.lang.Float")) {
-      State(locals, floatOp(method.getName, args) :: rest, cond, expr)
-    } else if (declaringClassName.equals("java.lang.String")) {
-      State(locals, stringOp(method.getName, args) :: rest, cond, expr)
-    } else if (declaringClassName.equals("java.lang.StringBuilder")) {
-      if (!args.head.isInstanceOf[Repr.StringBuilder]) {
-        throw new SparkException("Internal error with StringBuilder")
-      }
-      val (retval, updateState) = args.head.asInstanceOf[Repr.StringBuilder]
-          .invoke(method.getName, args.tail)
-      val newState = State(locals, retval :: rest, cond, expr)
-      if (updateState) {
-        newState.remap(args.head, retval)
-      } else {
-        newState
-      }
-    } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer") ||
-               ((args.nonEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
-                ((declaringClassName.equals("scala.collection.AbstractSeq") &&
-                  opcode == Opcode.INVOKEVIRTUAL) ||
-                 (declaringClassName.equals("scala.collection.TraversableOnce") &&
-                  opcode == Opcode.INVOKEINTERFACE)))) {
-      if (!args.head.isInstanceOf[Repr.ArrayBuffer]) {
-        throw new SparkException(
-          s"Unexpected argument for ${declaringClassName}.${method.getName}")
-      }
-      val (retval, updateState) = args.head.asInstanceOf[Repr.ArrayBuffer]
-          .invoke(method.getName, args.tail)
-      val newState = State(locals, retval :: rest, cond, expr)
-      if (updateState) {
-        newState.remap(args.head, retval)
-      } else {
-        newState
-      }
-    } else if (declaringClassName.equals("java.time.format.DateTimeFormatter")) {
-      State(locals, dateTimeFormatterOp(method.getName, args) :: rest, cond, expr)
-    } else if (declaringClassName.equals("java.time.LocalDateTime")) {
-      State(locals, localDateTimeOp(method.getName, args) :: rest, cond, expr)
-    } else {
-      val mModifiers = method.getModifiers
-      val cModifiers = declaringClass.getModifiers
-      if (!javassist.Modifier.isEnum(mModifiers) &&
-          !javassist.Modifier.isInterface(mModifiers) &&
-          !javassist.Modifier.isNative(mModifiers) &&
-          !javassist.Modifier.isPackage(mModifiers) &&
-          !javassist.Modifier.isStrict(mModifiers) &&
-          !javassist.Modifier.isSynchronized(mModifiers) &&
-          !javassist.Modifier.isTransient(mModifiers) &&
-          !javassist.Modifier.isVarArgs(mModifiers) &&
-          !javassist.Modifier.isVolatile(mModifiers) &&
-          (javassist.Modifier.isFinal(mModifiers) ||
-           javassist.Modifier.isFinal(cModifiers))) {
-        val retval = {
-          if (javassist.Modifier.isStatic(mModifiers)) {
-            CatalystExpressionBuilder(method).compile(args)
-          } else {
-            CatalystExpressionBuilder(method).compile(args.tail, Some(args.head))
-          }
+    val retval = {
+      if (declaringClassName.equals("scala.math.package$")) {
+        Some((mathOp(method.getName, args), false))
+      } else if (declaringClassName.equals("scala.Predef$")) {
+        Some((predefOp(method.getName, args), false))
+      } else if (declaringClassName.equals("scala.Array$")) {
+        Some((arrayOp(method.getName, args), false))
+      } else if (declaringClassName.equals("scala.reflect.ClassTag$")) {
+        Some((classTagOp(method.getName, args), false))
+      } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer$")) {
+        Some((arrayBufferOp(method.getName, args), false))
+      } else if (declaringClassName.equals("java.lang.Double")) {
+        Some((doubleOp(method.getName, args), false))
+      } else if (declaringClassName.equals("java.lang.Float")) {
+        Some((floatOp(method.getName, args), false))
+      } else if (declaringClassName.equals("java.lang.String")) {
+        Some((stringOp(method.getName, args), false))
+      } else if (declaringClassName.equals("java.lang.StringBuilder")) {
+        if (!args.head.isInstanceOf[Repr.StringBuilder]) {
+          throw new SparkException("Internal error with StringBuilder")
         }
-        State(locals, retval.toList ::: rest, cond, expr)
+        args.head.asInstanceOf[Repr.StringBuilder].invoke(method.getName, args.tail)
+      } else if (declaringClassName.equals("org.apache.spark.SparkException")) {
+        if (!args.head.isInstanceOf[Repr.SparkExcept]) {
+          throw new SparkException("Internal error with SparkException")
+        }
+        args.head.asInstanceOf[Repr.SparkExcept].invoke(method.getName, args.tail)
+      } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer") ||
+                 ((args.nonEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
+                  ((declaringClassName.equals("scala.collection.AbstractSeq") &&
+                    opcode == Opcode.INVOKEVIRTUAL) ||
+                   (declaringClassName.equals("scala.collection.TraversableOnce") &&
+                    opcode == Opcode.INVOKEINTERFACE)))) {
+        if (!args.head.isInstanceOf[Repr.ArrayBuffer]) {
+          throw new SparkException(
+            s"Unexpected argument for ${declaringClassName}.${method.getName}")
+        }
+        args.head.asInstanceOf[Repr.ArrayBuffer].invoke(method.getName, args.tail)
+      } else if (declaringClassName.equals("java.time.format.DateTimeFormatter")) {
+        Some((dateTimeFormatterOp(method.getName, args), false))
+      } else if (declaringClassName.equals("java.time.LocalDateTime")) {
+        Some((localDateTimeOp(method.getName, args), false))
       } else {
-        // Other functions
-        throw new SparkException(
-          s"Unsupported invocation of ${declaringClassName}.${method.getName}")
+        val mModifiers = method.getModifiers
+        val cModifiers = declaringClass.getModifiers
+        if (!javassist.Modifier.isEnum(mModifiers) &&
+            !javassist.Modifier.isInterface(mModifiers) &&
+            !javassist.Modifier.isNative(mModifiers) &&
+            !javassist.Modifier.isPackage(mModifiers) &&
+            !javassist.Modifier.isStrict(mModifiers) &&
+            !javassist.Modifier.isSynchronized(mModifiers) &&
+            !javassist.Modifier.isTransient(mModifiers) &&
+            !javassist.Modifier.isVarArgs(mModifiers) &&
+            !javassist.Modifier.isVolatile(mModifiers) &&
+            (javassist.Modifier.isFinal(mModifiers) ||
+             javassist.Modifier.isFinal(cModifiers))) {
+          val retval = {
+            if (javassist.Modifier.isStatic(mModifiers)) {
+              CatalystExpressionBuilder(method).compile(args)
+            } else {
+              CatalystExpressionBuilder(method).compile(args.tail, Some(args.head))
+            }
+          }
+          Some((retval.get, false))
+        } else {
+          // Other functions
+          throw new SparkException(
+            s"Unsupported invocation of ${declaringClassName}.${method.getName}")
+        }
+      }
+    }
+    retval.fold(State(locals, rest, cond, expr)) { case (v, updateState) =>
+      val newState = State(locals, v :: rest, cond, expr)
+      if (updateState) {
+        newState.remap(args.head, v)
+      } else {
+        newState
       }
     }
   }

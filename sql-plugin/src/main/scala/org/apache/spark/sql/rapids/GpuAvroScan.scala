@@ -419,8 +419,21 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
   protected final def copyBlocksData(
       blocks: Seq[BlockInfo],
       in: FSDataInputStream,
-      out: OutputStream): Seq[BlockInfo] = {
-    val copyRanges = computeCopyRanges(blocks)
+      out: OutputStream,
+      sync: Option[Array[Byte]] = None): Seq[BlockInfo] = {
+    val copyRanges = sync.map { s =>
+      assert(s.size >= SYNC_SIZE)
+      // Copy every block without the tailing sync marker if a sync is given. This
+      // is for coalescing reader who requires to append this given sync marker
+      // to each block. Then we can not merge sequential blocks.
+      blocks.map(b => CopyRange(b.blockStart, b.blockLength - SYNC_SIZE))
+    }.getOrElse(computeCopyRanges(blocks))
+
+    val copySyncFunc: OutputStream => Unit = if (sync.isEmpty) {
+      out => // do nothing
+    } else {
+      out => out.write(sync.get, 0, SYNC_SIZE)
+    }
     // copy cache: 8MB
     val copyCache = new Array[Byte](8 * 1024 * 1024)
     var readTime, writeTime = 0L
@@ -442,6 +455,8 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
         writeTime += (end - mid)
         bytesLeft -= readLength
       }
+      // append the sync marker to the block data for the coalescing reader.
+      copySyncFunc(out)
     }
     metrics.get(READ_FS_TIME).foreach(_.add(readTime))
     metrics.get(WRITE_BUFFER_TIME).foreach(_.add(writeTime))
@@ -452,7 +467,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
    * Calculate the copy ranges from blocks.
    * And it will try to combine the sequential blocks.
    */
-  private def computeCopyRanges(blocks: Seq[BlockInfo]): Array[CopyRange] = {
+  private def computeCopyRanges(blocks: Seq[BlockInfo]): Seq[CopyRange] = {
     var currentCopyStart, currentCopyEnd = 0L
     val copyRanges = new ArrayBuffer[CopyRange]()
 
@@ -470,7 +485,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
     if (currentCopyEnd != currentCopyStart) {
       copyRanges.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
     }
-    copyRanges.toArray
+    copyRanges.toSeq
   }
 
 }
@@ -575,43 +590,42 @@ class GpuMultiFileAvroPartitionReader(
     false
   }
 
-  override def calculateEstimatedBlocksOutputSize(
-      blocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
-      schema: SchemaBase): Long = {
+  override protected def createBatchContext(
+      chunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+      clippedSchema: SchemaBase): BatchContext = {
     // Get headers according to the input paths.
-    val headers = blocks.keys.map(mapPathHeader.get(_).get)
+    val headers = chunkedBlocks.keys.map(mapPathHeader.get(_).get)
     // Merge the meta, it is safe because the compatibility has been verifed
     // in 'checkIfNeedToSplitDataBlock'
-    Header.mergeMetadata(headers.toSeq).map { mergedHeader =>
-      val allBlocks = blocks.values.flatten.toSeq
-      estimateOutputSize(allBlocks, Header.headerSizeInBytes(mergedHeader))
-    } getOrElse 0L
+    val mergedHeader = Header.mergeMetadata(headers.toSeq)
+    assert(mergedHeader.nonEmpty, "No header exists")
+    AvroBatchContext(chunkedBlocks, clippedSchema, mergedHeader.get)
   }
 
-  override def writeFileHeader(paths: Seq[Path], buffer: HostMemoryBuffer): Long = {
-    // Get headers according to the input paths.
-    val headers = paths.map(mapPathHeader.get(_).get)
-    // Merge the meta, it is safe because the compatibility has been verifed
-    // in 'checkIfNeedToSplitDataBlock'
-    Header.mergeMetadata(headers).map { mergedHeader =>
-      withResource(new HostMemoryOutputStream(buffer)) { out =>
-        AvroFileWriter(out).writeHeader(mergedHeader)
-        out.getPos
-      }
-    } getOrElse 0L
+  override def calculateEstimatedBlocksOutputSize(batchContext: BatchContext): Long = {
+    val allBlocks = batchContext.origChunkedBlocks.values.flatten.toSeq
+    val headerSize = Header.headerSizeInBytes(batchContext.mergedHeader)
+    estimateOutputSize(allBlocks, headerSize)
+  }
+
+  override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
+    withResource(new HostMemoryOutputStream(buffer)) { out =>
+      AvroFileWriter(out).writeHeader(bContext.mergedHeader)
+      out.getPos
+    }
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], schema: SchemaBase): Long = {
+      blocks: Seq[DataBlockBase], batchContext: BatchContext): Long = {
     // In 'calculateEstimatedBlocksOutputSize', we have got the true size for
     // Header + All Blocks.
     footerOffset
   }
 
   override def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
-      blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
+      blocks: Seq[DataBlockBase], bContext: BatchContext): (HostMemoryBuffer, Long) = {
     // AVRO files have no footer, do nothing
-    (buffer, bufferSize)
+    (buffer, footerOffset)
   }
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
@@ -629,8 +643,9 @@ class GpuMultiFileAvroPartitionReader(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long): Callable[(Seq[DataBlockBase], Long)] =
-    new AvroCopyBlocksRunner(tc, file, outhmb, blocks, offset)
+      offset: Long,
+      batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)] =
+    new AvroCopyBlocksRunner(tc, file, outhmb, blocks, offset, batchContext)
 
   // The runner to copy blocks to offset of HostMemoryBuffer
   class AvroCopyBlocksRunner(
@@ -638,8 +653,10 @@ class GpuMultiFileAvroPartitionReader(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long)
-    extends Callable[(Seq[DataBlockBase], Long)] {
+      offset: Long,
+      batchContext: BatchContext) extends Callable[(Seq[DataBlockBase], Long)] {
+
+    private val headerSync = Some(batchContext.mergedHeader.sync)
 
     override def call(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
@@ -648,7 +665,7 @@ class GpuMultiFileAvroPartitionReader(
         val res = withResource(outhmb) { _ =>
           withResource(file.getFileSystem(conf).open(file)) { in =>
             withResource(new HostMemoryOutputStream(outhmb)) { out =>
-              copyBlocksData(blocks, in, out)
+              copyBlocksData(blocks, in, out, headerSync)
             }
           }
         }
@@ -675,6 +692,9 @@ class GpuMultiFileAvroPartitionReader(
 
   implicit def toAvroExtraInfo(in: ExtraInfo): AvroExtraInfo =
     in.asInstanceOf[AvroExtraInfo]
+
+  implicit def toAvroBatchContext(in: BatchContext): AvroBatchContext =
+    in.asInstanceOf[AvroBatchContext]
 
 }
 
@@ -733,7 +753,7 @@ case class AvroBlockMeta(header: Header, headerSize: Long, blocks: Seq[BlockInfo
  */
 private case class CopyRange(offset: Long, length: Long)
 
-/** Extra information: codec */
+/** Extra information */
 case class AvroExtraInfo() extends ExtraInfo
 
 /** avro schema wrapper */
@@ -752,3 +772,8 @@ case class AvroSingleDataBlockInfo(
   partitionValues: InternalRow,
   schema: AvroSchemaWrapper,
   extraInfo: AvroExtraInfo) extends SingleDataBlockInfo
+
+case class AvroBatchContext(
+  override val origChunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+  override val schema: SchemaBase,
+  mergedHeader: Header) extends BatchContext(origChunkedBlocks, schema)

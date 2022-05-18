@@ -453,3 +453,12 @@ def test_transform_keys_last_win_fallback(data_gen):
 def test_sql_map_scalars(query):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.sql('SELECT {}'.format(query)))
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_filter(data_gen):
+    columns = ['map_filter(a, (key, value) -> isnotnull(value) )',
+               'map_filter(a, (key, value) -> isnull(value) )',
+               'map_filter(a, (key, value) -> isnull(key) or isnotnull(value) )',
+               'map_filter(a, (key, value) -> isnotnull(key) and isnull(value) )']
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(columns))

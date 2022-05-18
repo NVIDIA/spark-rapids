@@ -27,16 +27,15 @@ case class UnionExecParser(
 
   val fullExecName = node.name + "Exec"
 
-  override def parse: Seq[ExecInfo] = {
+  override def parse: ExecInfo = {
     // Union doesn't have duration
     val duration = None
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
-      (1, false)
+      (1.0, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    Seq(ExecInfo(sqlID, node.name, "", speedupFactor,
-      duration, node.id, isSupported, None))
+    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
   }
 }

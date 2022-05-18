@@ -22,16 +22,16 @@ with Docker on Kubernetes then skip these as you will do this as part of the doc
   - While JDK11 is supported by Spark, RAPIDS Spark is built and tested with JDK8, so JDK8 is
   recommended. 
 - Install the GPU driver and CUDA toolkit
-  - [Download](https://developer.nvidia.com/cuda-11.0-update1-download-archive) and install
+  - [Download](https://developer.nvidia.com/cuda-11-6-1-download-archive) and install
     GPU drivers and the CUDA Toolkit. A reboot will be required after installation. 
 ```bash
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
-sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
-wget https://developer.download.nvidia.com/compute/cuda/11.0.3/local_installers/cuda-repo-ubuntu1804-11-0-local_11.0.3-450.51.06-1_amd64.deb
-sudo dpkg -i cuda-repo-ubuntu1804-11-0-local_11.0.3-450.51.06-1_amd64.deb
-sudo apt-key add /var/cuda-repo-ubuntu1804-11-0-local/7fa2af80.pub
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
+sudo mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+sudo dpkg -i cuda-keyring_1.0-1_all.deb
+sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
 sudo apt-get update
-sudo apt-get -y install cuda	
+sudo apt-get -y install cuda
 ```	
 
 Below are sections on installing Spark and the RAPIDS Accelerator on a single node.  You may want
@@ -410,7 +410,12 @@ replaced with GPU calls.
 
 The following is an example of a physical plan with operators running on the GPU: 
 
-![ease-of-use](../img/ease-of-use.png)
+```
+== Physical Plan ==
+GpuColumnarToRow false
++- GpuProject [cast(c_customer_sk#0 as string) AS c_customer_sk#40]
+   +- GpuFileGpuScan parquet [c_customer_sk#0] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex[file:/tmp/customer], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<c_customer_sk:int>
+```
 
 
 ## Debugging
