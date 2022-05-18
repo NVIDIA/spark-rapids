@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -430,7 +430,12 @@ class RapidsShuffleClient(
     logDebug(s"Adding buffer id ${id} to catalog")
     if (buffer != null) {
       // add the buffer to the catalog so it is available for spill
-      devStorage.addBuffer(id, buffer, meta, SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
+      devStorage.addBuffer(id, buffer, meta,
+        SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY,
+        // set needsSync to false because we already have stream synchronized after
+        // consuming the bounce buffer, so we know these buffers are synchronized
+        // w.r.t. the CPU
+        needsSync = false)
     } else {
       // no device data, just tracking metadata
       catalog.registerNewBuffer(new DegenerateRapidsBuffer(id, meta))
