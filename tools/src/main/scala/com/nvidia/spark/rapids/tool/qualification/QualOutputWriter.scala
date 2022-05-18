@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
+import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
 /**
  * This class handles the output files for qualification.
@@ -31,9 +32,9 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  * @param reportReadSchema Whether to include the read data source schema in csv output
  * @param printStdout Indicates if the summary report should be printed to stdout as well
  */
-class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
+class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean,
+    uiEnabled: Boolean) {
 
-  private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
@@ -44,7 +45,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
-    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv", "CSV")
+    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
       val headersAndSizes = QualOutputWriter
         .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
@@ -58,9 +59,16 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
+  def writeDetailedReport(sums: Seq[QualificationSummaryInfo]): Unit = {
+    writeCSV(sums)
+    if (uiEnabled) {
+      QualificationReportGenerator.generateDashBoard(outputDir, sums)
+    }
+  }
+
   // write the text summary report
   def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int) : Unit = {
-    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log",
+    val textFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.log",
       "Summary report")
     try {
       writeTextSummary(textFileWriter, summaries, numOutputRows)
@@ -114,9 +122,20 @@ object QualOutputWriter {
   val COMPLEX_TYPES_STR = "Complex Types"
   val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
+  val NONSQL_DUR_STR = "NONSQL Task Duration Plus Overhead"
+  val ESTIMATED_DURATION_STR = "Estimated Duration"
+  val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
+  val SPEEDUP_DURATION_STR = "Speedup Duration"
+  val SPEEDUP_FACTOR_STR = "Speedup Factor"
+  val TOTAL_SPEEDUP_STR = "Total Speedup"
+  val SPEEDUP_BUCKET_STR = "Recommendation"
+  val LONGEST_SQL_DURATION_STR = "Longest SQL Duration"
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
   val PROBLEM_DUR_SIZE: Int = PROBLEM_DUR_STR.size
+  val SPEEDUP_BUCKET_STR_SIZE: Int = SPEEDUP_BUCKET_STR.size
+  val TOTAL_SPEEDUP_STR_SIZE: Int = TOTAL_SPEEDUP_STR.size
+  val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
@@ -172,7 +191,9 @@ object QualOutputWriter {
       APP_ID_STR -> appIdMaxSize,
       APP_DUR_STR -> APP_DUR_STR_SIZE,
       SQL_DUR_STR -> SQL_DUR_STR_SIZE,
-      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE
+      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE,
+      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR_SIZE,
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
     )
   }
 
@@ -205,7 +226,15 @@ object QualOutputWriter {
       COMPLEX_TYPES_STR ->
         getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
-        NESTED_TYPES_STR)
+        NESTED_TYPES_STR),
+      LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE,
+      NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
+      ESTIMATED_DURATION_STR -> ESTIMATED_DURATION_STR.size,
+      UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size,
+      SPEEDUP_DURATION_STR -> SPEEDUP_DURATION_STR.size,
+      SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
+      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR.size,
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -227,7 +256,9 @@ object QualOutputWriter {
       sumInfo.appId -> appIdMaxSize,
       sumInfo.appDuration.toString -> APP_DUR_STR_SIZE,
       sumInfo.sqlDataFrameDuration.toString -> SQL_DUR_STR_SIZE,
-      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE
+      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE,
+      sumInfo.totalSpeedup.toString -> TOTAL_SPEEDUP_STR_SIZE,
+      sumInfo.speedupBucket -> SPEEDUP_BUCKET_STR_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -271,7 +302,16 @@ object QualOutputWriter {
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
-      nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR)
+      nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
+      appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
+      appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
+      appInfo.estimatedDuration.toString -> headersAndSizes(ESTIMATED_DURATION_STR),
+      appInfo.unsupportedDuration.toString ->
+        headersAndSizes(UNSUPPORTED_DURATION_STR),
+      appInfo.speedupDuration.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
+      appInfo.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      appInfo.totalSpeedup.toString -> headersAndSizes(TOTAL_SPEEDUP_STR),
+      stringIfempty(appInfo.speedupBucket) -> headersAndSizes(SPEEDUP_BUCKET_STR)
     )
 
     if (reportReadSchema) {

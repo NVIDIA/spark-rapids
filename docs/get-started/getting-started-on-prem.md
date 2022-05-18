@@ -410,7 +410,12 @@ replaced with GPU calls.
 
 The following is an example of a physical plan with operators running on the GPU: 
 
-![ease-of-use](../img/ease-of-use.png)
+```
+== Physical Plan ==
+GpuColumnarToRow false
++- GpuProject [cast(c_customer_sk#0 as string) AS c_customer_sk#40]
+   +- GpuFileGpuScan parquet [c_customer_sk#0] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex[file:/tmp/customer], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<c_customer_sk:int>
+```
 
 
 ## Debugging

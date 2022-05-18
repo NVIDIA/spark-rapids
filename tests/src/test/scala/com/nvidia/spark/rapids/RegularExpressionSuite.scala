@@ -69,10 +69,8 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'[a-z]+','D')")
   }
 
-  testGpuFallback("String regexp_replace regex 3",
-    "RegExpReplace",
-    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
+  testSparkResultsAreEqual("String regexp_replace regex 3",
+    nullableStringsFromCsv,  conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'foo$','D')")
   }
 

@@ -795,11 +795,20 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       case _: ProjectExec | _: GpuProjectExec => true
       case _ => false
     })
+
+    def isAnsiCast(c: CastBase): Boolean = {
+      // prior to Spark 3.3.0 we could use toString to see if the name of
+      // the cast was "cast" or "ansi_cast" but now the name is always "cast"
+      // so we need to use reflection to access the protected field "ansiEnabled"
+      val m = c.getClass.getDeclaredField("ansiEnabled")
+      m.setAccessible(true)
+      m.getBoolean(c)
+    }
+
     val count = projections.map {
         case p: ProjectExec => p.projectList.count {
-          // ansiEnabled is protected so we rely on CastBase.toString
-          case c: CastBase => c.toString().startsWith("ansi_cast")
-          case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast")
+          case c: CastBase => isAnsiCast(c)
+          case Alias(c: CastBase, _) => isAnsiCast(c)
           case _ => false
         }
         case p: GpuProjectExec => p.projectList.count {

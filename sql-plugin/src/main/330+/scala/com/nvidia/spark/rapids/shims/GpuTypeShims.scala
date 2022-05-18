@@ -202,7 +202,16 @@ object GpuTypeShims {
    */
   def additionalCsvSupportedTypes: TypeSig = TypeSig.DAYTIME
 
-  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING
+  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
+
+  def typesYearMonthCanCastTo: TypeSig = TypeSig.integral
+
+  def typesDayTimeCanCastToOnSpark: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
+
+  def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING +
+      TypeSig.integral
+
+  def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.YEARMONTH + TypeSig.DAYTIME
 
   def additionalTypesStringCanCastTo: TypeSig = TypeSig.DAYTIME
 
@@ -216,4 +225,12 @@ object GpuTypeShims {
    * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
    */
   def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.ansiIntervals
+
+  def hasSideEffectsIfCastIntToYearMonth(ym: DataType): Boolean =
+      // if cast(int as interval year), multiplication by 12 can cause overflow
+      ym.asInstanceOf[YearMonthIntervalType].endField == YearMonthIntervalType.YEAR
+
+  def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean =
+      // if cast(int as interval day), multiplication by (86400 * 1000000) can cause overflow
+      dt.asInstanceOf[DayTimeIntervalType].endField == DayTimeIntervalType.DAY
 }
