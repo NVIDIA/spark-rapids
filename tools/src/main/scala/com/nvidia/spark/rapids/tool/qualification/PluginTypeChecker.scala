@@ -65,7 +65,7 @@ class PluginTypeChecker extends Logging {
 
   def setOperatorScore(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    supportedOperatorsScore = readSupportedOperators(source).map(x => (x._1, x._2.toInt))
+    supportedOperatorsScore = readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
   }
 
   def setSupportedExecs(filePath: String): Unit = {
@@ -82,9 +82,9 @@ class PluginTypeChecker extends Logging {
 
   def getSupportedExprs: Map[String, String] = supportedExprs
 
-  private def readOperatorsScore: Map[String, Int] = {
+  private def readOperatorsScore: Map[String, Double] = {
     val source = Source.fromResource(OPERATORS_SCORE_FILE)
-    readSupportedOperators(source).map(x => (x._1, x._2.toInt))
+    readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
   }
 
   private def readSupportedExecs: Map[String, String] = {
@@ -231,7 +231,7 @@ class PluginTypeChecker extends Logging {
       writeFormats.map(x => x.trim).contains(_))
   }
 
-  def getSpeedupFactor(execOrExpr: String): Int = {
+  def getSpeedupFactor(execOrExpr: String): Double = {
     supportedOperatorsScore.get(execOrExpr).getOrElse(-1)
   }
 

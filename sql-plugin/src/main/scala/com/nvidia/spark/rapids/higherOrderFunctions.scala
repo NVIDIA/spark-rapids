@@ -531,3 +531,45 @@ case class GpuTransformValues(
     }
   }
 }
+
+case class GpuMapFilter(argument: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty)
+    extends GpuMapSimpleHigherOrderFunction {
+
+  override def dataType: DataType = argument.dataType
+
+  override def prettyName: String = "map_filter"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuMapFilter(boundArg, boundFunc, isBound = true, boundIntermediate)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { mapArg =>
+      // `mapArg` is list of struct(key, value)
+      val plainBoolCol = withResource(makeElementProjectBatch(batch, mapArg.getBase)) { cb =>
+        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+      }
+
+      withResource(plainBoolCol) { plainBoolCol =>
+        assert(plainBoolCol.dataType() == BooleanType, "map_filter should have a predicate filter")
+        withResource(mapArg.getBase.getListOffsetsView) { argOffsetsCv =>
+          // convert the one dimension plain bool column to list of bool column
+          withResource(plainBoolCol.getBase.makeListFromOffsets(mapArg.getRowCount, argOffsetsCv)) {
+            listOfBoolCv =>
+              // extract entries for each map in the `mapArg` column
+              // according to the `listOfBoolCv` column
+              // `mapArg` is a map column containing no duplicate keys and null keys,
+              // so no need to `assertNoNullKeys` and `assertNoDuplicateKeys` after the extraction
+              val retCv = mapArg.getBase.applyBooleanMask(listOfBoolCv)
+              GpuColumnVector.from(retCv, dataType)
+          }
+        }
+      }
+    }
+  }
+}

@@ -867,6 +867,39 @@ def test_regexp_whitespace():
             ),
         conf=_regexp_conf)
 
+def test_regexp_horizontal_vertical_whitespace():
+    gen = mk_str_gen(
+        '''\xA0\u1680\u180e[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f[0-9]{0,10}
+            [\u2001-\u200a]{1,3}\u202f\u205f\u3000\x85\u2028\u2029
+        ''')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "\\\\h{2}")',
+                'rlike(a, "\\\\v{3}")',
+                'rlike(a, "[abcd]+\\\\h+[0-9]+")',
+                'rlike(a, "[abcd]+\\\\v+[0-9]+")',
+                'rlike(a, "\\\\H")',
+                'rlike(a, "\\\\V")',
+                'rlike(a, "[abcd]+\\\\h+\\\\V{2,3}")',
+                'regexp_extract(a, "([a-d]+)([0-9]+\\\\v)([a-d]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\\\H+)([0-9]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\\\V+)([0-9]+)", 3)',
+                'regexp_replace(a, "(\\\\v+)", "@")',
+                'regexp_replace(a, "(\\\\H+)", "#")',
+            ),
+        conf=_regexp_conf)
+
+def test_regexp_linebreak():
+    gen = mk_str_gen(
+        '[abc]{1,3}\u000D\u000A[def]{1,3}[\u000A\u000B\u000C\u000D\u0085\u2028\u2029]{0,5}[123]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "\\\\R")',
+                'regexp_extract(a, "([a-d]+)(\\\\R)([a-d]+)", 1)',
+                'regexp_replace(a, "\\\\R", "")',
+            ),
+        conf=_regexp_conf)
+
 def test_regexp_octal_digits():
     gen = mk_str_gen('[abcd]\u0000\u0041\u007f\u0080\u00ff[\\\\xa0-\\\\xb0][abcd]')
     assert_gpu_and_cpu_are_equal_collect(

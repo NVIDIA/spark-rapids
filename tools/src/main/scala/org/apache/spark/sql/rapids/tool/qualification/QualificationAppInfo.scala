@@ -309,7 +309,8 @@ class QualificationAppInfo(
         endDurationEstimated, failedIds, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes,
         longestSQLDuration, nonSQLTaskDuration, estimatedDuration,
-        unsupportedSQLDuration, speedupOpportunity, speedupFactor, totalSpeedup, recommendation)
+        unsupportedSQLDuration, speedupOpportunity, speedupFactor, totalSpeedup, recommendation,
+        info.sparkUser, info.startTime)
       (summaryInfo, origPlanInfos, perSqlStageSummary.map(_.stageSum).flatten)
     }
   }
@@ -390,7 +391,9 @@ case class QualificationSummaryInfo(
     speedupOpportunity: Long,
     speedupFactor: Double,
     totalSpeedup: Double,
-    recommendation: String)
+    recommendation: String,
+    user: String,
+    startTime: Long)
 
 case class StageQualSummaryInfo(
     stageId: Int,
