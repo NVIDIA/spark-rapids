@@ -70,29 +70,23 @@
         </developer>
     </developers>
     <profiles>
-        <!-- <profile>
+        <profile>
             <id>java-8-api-after-9</id>
             <activation>
                 <jdk>[9,)</jdk>
             </activation>
             <properties>
-                <maven.compiler.release>8</maven.compiler.release>
-                <maven.compiler.source>1.8</maven.compiler.source>
-                <maven.compiler.target>1.8</maven.compiler.target>
-                <scala.recompileMode>all</scala.recompileMode>
+                <maven.compiler.release>${java.major.version}</maven.compiler.release>
             </properties>
-        </profile> -->
-        <!-- <profile>
-            <id>java-8-api</id>
+        </profile>
+        <profile>
+            <id>java-8-api-for-8</id>
             <activation>
                 <jdk>8</jdk>
             </activation>
             <properties>
-                <maven.compiler.source>1.8</maven.compiler.source>
-                <maven.compiler.target>1.8</maven.compiler.target>
-                <scala.recompileMode>incremental</scala.recompileMode>
             </properties>
-        </profile> -->
+        </profile>
         <profile>
             <id>release24X</id>
             <activation>
@@ -832,6 +826,8 @@
 
     <properties>
         <buildver>311</buildver>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
@@ -841,6 +837,7 @@
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
+        <scala.javac.args>-Xlint:all,-serial,-path,-try</scala.javac.args>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
@@ -1096,13 +1093,7 @@
                             <jvmArg>-Xms1024m</jvmArg>
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
-                        <javacArgs>
-                            <javacArg>-source</javacArg>
-                            <javacArg>${maven.compiler.source}</javacArg>
-                            <javacArg>-target</javacArg>
-                            <javacArg>${maven.compiler.target}</javacArg>
-                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
-                        </javacArgs>
+                        <addJavacArgs>${scala.javac.args}</addJavacArgs>
                     </configuration>
                 </plugin>
                 <plugin>
