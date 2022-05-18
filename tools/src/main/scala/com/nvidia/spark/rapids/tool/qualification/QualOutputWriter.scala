@@ -381,7 +381,7 @@ object QualOutputWriter {
       stringIfempty(info.exec) -> headersAndSizes(EXEC_STR),
       stringIfempty(info.expr) -> headersAndSizes(EXEC_STR),
       info.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
-      info.duration.toString -> headersAndSizes(EXEC_DURATION),
+      info.duration.getOrElse(0).toString -> headersAndSizes(EXEC_DURATION),
       info.nodeId.toString -> headersAndSizes(EXEC_NODEID),
       info.isSupported.toString -> headersAndSizes(EXEC_IS_SUPPORTED),
       info.stages.mkString(":") -> headersAndSizes(EXEC_STAGES),
@@ -411,7 +411,7 @@ object QualOutputWriter {
     stagesInfo.map { info =>
       val data = ListBuffer[(String, Int)](
         info.stageId.toString -> headersAndSizes(STAGE_ID_STR),
-        info.averageSpeedup.toString -> headersAndSizes(AVERAGE_SPEEDUP_STR),
+        f"${info.averageSpeedup}%1.2f"  -> headersAndSizes(AVERAGE_SPEEDUP_STR),
         info.stageTaskTime.toString -> headersAndSizes(TASK_DUR_STR),
         info.unsupportedTaskDur.toString -> headersAndSizes(UNSUPPORTED_DURATION_STR))
       constructOutputRow(data, delimiter, prettyPrint)
