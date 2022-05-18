@@ -1302,8 +1302,9 @@ class CastChecks extends ExprChecks {
   val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
-    BINARY
-  val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+      BINARY + GpuTypeShims.additionalTypesIntegralCanCastTo
+  val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY +
+      BINARY + GpuTypeShims.additionalTypesIntegralCanCastTo
 
   val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
       s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
@@ -1333,14 +1334,14 @@ class CastChecks extends ExprChecks {
 
   val arrayChecks: TypeSig = psNote(TypeEnum.STRING, "the array's child type must also support " +
     "being cast to string") + ARRAY.nested(commonCudfTypes + DECIMAL_128 + NULL +
-    ARRAY + BINARY + STRUCT + MAP) +
+    ARRAY + BINARY + STRUCT + MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes) +
     psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to the " +
       "desired child type(s)")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
   val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY +
-      STRUCT + MAP) +
+      STRUCT + MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes) +
       psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
       "desired child types") +
       psNote(TypeEnum.STRING, "the map's key and value must also support being cast to string")
@@ -1348,7 +1349,8 @@ class CastChecks extends ExprChecks {
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
       "being cast to string") +
-      STRUCT.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+      STRUCT.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT + MAP +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes) +
       psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
           "desired child type(s)")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
@@ -1357,10 +1359,10 @@ class CastChecks extends ExprChecks {
   val sparkUdtSig: TypeSig = STRING + UDT
 
   val daytimeChecks: TypeSig = GpuTypeShims.typesDayTimeCanCastTo
-  val sparkDaytimeChecks: TypeSig = DAYTIME + STRING
+  val sparkDaytimeChecks: TypeSig = GpuTypeShims.typesDayTimeCanCastToOnSpark
 
-  val yearmonthChecks: TypeSig = none
-  val sparkYearmonthChecks: TypeSig = YEARMONTH + STRING
+  val yearmonthChecks: TypeSig = GpuTypeShims.typesYearMonthCanCastTo
+  val sparkYearmonthChecks: TypeSig = GpuTypeShims.typesYearMonthCanCastToOnSpark
 
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)

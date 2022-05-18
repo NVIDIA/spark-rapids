@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, ColumnView}
 
 import org.apache.spark.sql.types.DataType
 
@@ -24,11 +24,59 @@ import org.apache.spark.sql.types.DataType
  */
 object GpuIntervalUtils {
 
-  def castStringToDayTimeIntervalWithThrow(cv: ColumnVector, t: DataType): ColumnVector = {
-    throw new IllegalStateException()
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnView, t: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
   }
 
-  def toDayTimeIntervalString(micros: ColumnVector, dayTimeType: DataType): ColumnVector = {
-    throw new IllegalStateException()
+  def toDayTimeIntervalString(micros: ColumnView, dayTimeType: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def dayTimeIntervalToLong(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def dayTimeIntervalToInt(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def dayTimeIntervalToShort(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def dayTimeIntervalToByte(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def yearMonthIntervalToLong(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def yearMonthIntervalToInt(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def yearMonthIntervalToShort(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def yearMonthIntervalToByte(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def longToDayTimeInterval(longCv: ColumnView, dt: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def intToDayTimeInterval(intCv: ColumnView, dt: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def longToYearMonthInterval(longCv: ColumnView, ym: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
+  }
+
+  def intToYearMonthInterval(intCv: ColumnView, ym: DataType): ColumnVector = {
+    throw new IllegalStateException("Not supported in this Shim")
   }
 }
