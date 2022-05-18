@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
-import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationAppInfo, QualificationSummaryInfo, StageQualSummaryInfo}
+import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationSummaryInfo, StageQualSummaryInfo}
 import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
 /**

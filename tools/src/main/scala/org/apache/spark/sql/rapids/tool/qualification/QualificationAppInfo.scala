@@ -125,7 +125,6 @@ class QualificationAppInfo(
       // if jobEndTime is not set, use job.startTime
       pivot = Math max(pivot, job.endTime.getOrElse(job.startTime))
     })
-    logWarning(s"Calculated Overhead: ${overhead}")
     overhead
   }
 
@@ -135,8 +134,6 @@ class QualificationAppInfo(
     val allTaskTime = stageIdToTaskEndSum.values.map(_.totalTaskDuration).sum
     val res = allTaskTime - taskDFDuration
     assert(res >= 0)
-    logWarning(s"non sql task duration is: $res task df duraton is $taskDFDuration all " +
-      s"is $allTaskTime")
     res
   }
 
@@ -157,7 +154,6 @@ class QualificationAppInfo(
   private def calculateSpeedupFactor(all: Seq[Set[StageQualSummaryInfo]]): Double = {
     val allSpeedupFactors = all.flatMap(_.map(_.averageSpeedup))
     val res = SQLPlanParser.averageSpeedup(allSpeedupFactors)
-    logWarning(s"average speedup factor is: $res from: ${allSpeedupFactors.mkString(",")}")
     res
   }
 
@@ -247,7 +243,6 @@ class QualificationAppInfo(
               }
             }
             val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
-            logWarning(s"numUnsupported: ${numUnsupported.mkString(",")}")
             // if we have unsupported try to guess at how much time.  For now divide
             // time by number of execs and give each one equal weight
             val eachExecTime = stageTaskTime / allFlattenedExecs.size
