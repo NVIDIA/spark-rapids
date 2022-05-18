@@ -82,6 +82,48 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   }
 }
 
+case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
+
+  @transient override lazy val dataType: MapType = {
+    if (children.isEmpty) {
+      MapType(StringType, StringType)
+    } else {
+      super.dataType.asInstanceOf[MapType]
+    }
+  }
+
+  override def nullable: Boolean = children.exists(_.nullable)
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val cols = children.safeMap(columnarEvalToColumn(_, batch))
+    val (key_list, value_list) = withResource(cols) { cols =>
+      withResource(ArrayBuffer[ColumnView]()) { keys => 
+        withResource(ArrayBuffer[ColumnView]()) { values =>
+          cols.foreach{ col =>
+              keys.append(GpuMapUtils.getKeysAsListView(col.getBase))
+              values.append(GpuMapUtils.getValuesAsListView(col.getBase))  
+          }    
+          (ColumnVector.listConcatenateByRow(keys: _*), 
+            ColumnVector.listConcatenateByRow(values: _*)) 
+        }
+      }
+    }
+
+    val struct_list = withResource(Seq(key_list, value_list)) { case Seq(keys, values) =>
+      withResource(Seq(keys.getChildColumnView(0), values.getChildColumnView(0))) { 
+        case Seq(k_child, v_chlid) =>
+          withResource(ColumnView.makeStructView(k_child, v_chlid)) {structs =>
+            keys.replaceListChild(structs)  
+          }
+      }
+    }
+
+    withResource(struct_list) (
+      GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, _)
+    )
+  }
+}
+
 case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
@@ -106,7 +148,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   }
 
   override def checkInputDataTypes(): TypeCheckResult = {
-    (left.dataType, right.dataType) match {
+    (left.dataType, right.dataType) match { 
       case (_: ArrayType, e2) if e2 != IntegerType =>
         TypeCheckResult.TypeCheckFailure(s"Input to function $prettyName should have " +
           s"been ${ArrayType.simpleString} followed by a ${IntegerType.simpleString}, but it's " +

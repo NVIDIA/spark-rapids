@@ -252,6 +252,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Logarithm"></a>spark.rapids.sql.expression.Logarithm|`log`|Log variable base|true|None|
 <a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|`lower`, `lcase`|String lowercase operator|false|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
 <a name="sql.expression.MakeDecimal"></a>spark.rapids.sql.expression.MakeDecimal| |Create a Decimal from an unscaled long value for some aggregation optimizations|true|None|
+<a name="sql.expression.MapConcat"></a>spark.rapids.sql.expression.MapConcat|`map_concat`|Returns the union of all the given maps|true|None|
 <a name="sql.expression.MapEntries"></a>spark.rapids.sql.expression.MapEntries|`map_entries`|Returns an unordered array of all entries in the given map|true|None|
 <a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
 <a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|

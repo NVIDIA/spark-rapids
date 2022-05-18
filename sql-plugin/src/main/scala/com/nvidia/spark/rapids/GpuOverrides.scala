@@ -3083,6 +3083,18 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
       }),
+    expr[MapConcat](
+      "Returns the union of all the given maps",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.MAP.nested(TypeSig.all)))),
+      (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
+        override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
+      }),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
         "string using a given separator",

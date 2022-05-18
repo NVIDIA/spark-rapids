@@ -8607,9 +8607,9 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">MapEntries</td>
-<td rowSpan="2">`map_entries`</td>
-<td rowSpan="2">Returns an unordered array of all entries in the given map</td>
+<td rowSpan="2">MapConcat</td>
+<td rowSpan="2">`map_concat`</td>
+<td rowSpan="2">Returns the union of all the given maps</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
@@ -8648,15 +8648,15 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">MapKeys</td>
-<td rowSpan="2">`map_keys`</td>
-<td rowSpan="2">Returns an unordered array containing the keys of the map</td>
+<td rowSpan="2">MapEntries</td>
+<td rowSpan="2">`map_entries`</td>
+<td rowSpan="2">Returns an unordered array of all entries in the given map</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
@@ -8725,6 +8725,53 @@ are limited.
 <th>MAP</th>
 <th>STRUCT</th>
 <th>UDT</th>
+</tr>
+<tr>
+<td rowSpan="2">MapKeys</td>
+<td rowSpan="2">`map_keys`</td>
+<td rowSpan="2">Returns an unordered array containing the keys of the map</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">MapValues</td>
