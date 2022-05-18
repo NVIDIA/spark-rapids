@@ -262,9 +262,6 @@ class QualificationAppInfo(
           val numSupportedExecs = (numExecs - numUnsupportedExecs).toDouble
           val ratio = numSupportedExecs / numExecs
           val hackEstimateWallclockSupported = (sqlWallClockDuration * ratio).toInt
-          logWarning(s"hackEstimateWallclockSupported is $hackEstimateWallclockSupported " +
-            s"sqlWallclock duration is $sqlWallClockDuration $numUnsupportedExecs" +
-            s" ${numSupportedExecs} $numExecs ratio $ratio")
           if (hackEstimateWallclockSupported > longestSQLDuration) {
             longestSQLDuration = hackEstimateWallclockSupported
           }
@@ -335,6 +332,10 @@ class QualificationAppInfo(
     unSupportedWriteFormat.distinct.mkString(";").toUpperCase
   }
 }
+
+case class EstimatedSummaryInfo(appName: String, appId: String, appDur: Long,
+    sqlDfDuration: Long, gpuOpportunity: Long, estimatedGpuDur: Double,
+    estimatedGpuSpeedup: Double, estimatedGpuTimeSaved: Double, recommendation: String)
 
 case class SQLStageSummary(
     stageSum: Set[StageQualSummaryInfo],

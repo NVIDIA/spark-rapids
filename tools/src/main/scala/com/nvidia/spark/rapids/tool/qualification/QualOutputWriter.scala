@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
-import org.apache.spark.sql.rapids.tool.qualification.{QualificationSummaryInfo, StageQualSummaryInfo}
+import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationSummaryInfo, StageQualSummaryInfo}
 import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
 /**
@@ -118,18 +118,36 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 
   // write the text summary report
-  def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int) : Unit = {
+  def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int,
+      sortOrder: String) : Unit = {
     val textFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.log",
       "Summary report")
     try {
-      writeTextSummary(textFileWriter, summaries, numOutputRows)
+      writeTextSummary(textFileWriter, summaries, numOutputRows, sortOrder)
     } finally {
       textFileWriter.close()
     }
   }
 
+  private def calculateEstimatedInfoSummary(
+      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedSummaryInfo] = {
+    sums.map { sumInfo =>
+      val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
+      val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
+      val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
+      val estimated_gpu_duration =
+        (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
+      val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
+      val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
+      EstimatedSummaryInfo(sumInfo.appName, sumInfo.appId, sumInfo.appDuration,
+        sumInfo.sqlDataFrameDuration, speedupOpportunityWallClock,
+        estimated_gpu_duration, estimated_gpu_speedup,
+        estimated_gpu_timesaved, sumInfo.recommendation)
+    }
+  }
+
   private def writeTextSummary(writer: ToolTextFileWriter,
-      sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
+      sums: Seq[QualificationSummaryInfo], numOutputRows: Int, sortOrder: String): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
     val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize)
     val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes, "|", true)
@@ -144,7 +162,18 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       print(s"$sep\n")
     }
     val finalSums = sums.take(numOutputRows)
-    finalSums.foreach { sumInfo =>
+    val sumsToWrite = calculateEstimatedInfoSummary(finalSums)
+    // TODO - update
+    val sortedForReport = if (QualificationArgs.isOrderAsc(sortOrder)) {
+      sumsToWrite.sortBy(sum => {
+        (sum.recommendation, -sum.estimatedGpuSpeedup)
+      })
+    } else {
+      sumsToWrite.sortBy(sum => {
+        (sum.recommendation, sum.estimatedGpuSpeedup)
+      }).reverse
+    }
+    sortedForReport.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
         appIdMaxSize, "|", true)
       writer.write(wStr)
@@ -314,27 +343,20 @@ object QualOutputWriter {
   }
 
   def constructAppSummaryInfo(
-      sumInfo: QualificationSummaryInfo,
+      sumInfo: EstimatedSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       appIdMaxSize: Int,
       delimiter: String,
       prettyPrint: Boolean): String = {
-    val estimatedRatio = (sumInfo.speedupOpportunity / sumInfo.sqlDataframeTaskDuration)
-    val speedupOpportunityWallClock = sumInfo.sqlDataFrameDuration * estimatedRatio
-    val estimated_wall_clock_dur_not_on_gpu = sumInfo.appDuration - speedupOpportunityWallClock
-    val estimated_gpu_duration =
-      (speedupOpportunityWallClock / sumInfo.speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-    val estimated_gpu_speedup = sumInfo.appDuration / estimated_gpu_duration
-    val estimated_gpu_timesaved = sumInfo.appDuration - estimated_gpu_duration
     val data = ListBuffer[(String, Int)](
       sumInfo.appName -> headersAndSizes(APP_NAME_STR),
       sumInfo.appId -> appIdMaxSize,
-      sumInfo.appDuration.toString -> APP_DUR_STR_SIZE,
-      sumInfo.sqlDataFrameDuration.toString -> SQL_DUR_STR_SIZE,
-      speedupOpportunityWallClock.toString -> GPU_OPPORTUNITY_STR_SIZE,
-      f"${estimated_gpu_duration}%1.2f" -> ESTIMATED_GPU_DURATION.size,
-      f"${estimated_gpu_speedup}%1.2f" -> ESTIMATED_GPU_SPEEDUP.size,
-      f"${estimated_gpu_timesaved}%1.2f" -> ESTIMATED_GPU_TIMESAVED.size,
+      sumInfo.appDur.toString -> APP_DUR_STR_SIZE,
+      sumInfo.sqlDfDuration.toString -> SQL_DUR_STR_SIZE,
+      sumInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
+      f"${sumInfo.estimatedGpuDur}%1.2f" -> ESTIMATED_GPU_DURATION.size,
+      f"${sumInfo.estimatedGpuSpeedup}%1.2f" -> ESTIMATED_GPU_SPEEDUP.size,
+      f"${sumInfo.estimatedGpuTimeSaved}%1.2f" -> ESTIMATED_GPU_TIMESAVED.size,
       sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)

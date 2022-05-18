@@ -76,21 +76,13 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     val allAppsSum = allApps.asScala.toSeq
     // TODO - update
     val sortedDesc = allAppsSum.sortBy(sum => {
-        (-sum.sqlDataFrameDuration, -sum.appDuration)
+        (sum.recommendation, sum.totalSpeedup)
     })
     val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout,
       uiEnabled)
-    qWriter.writeDetailedReport(sortedDesc)
 
-    // TODO - update
-    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
-      allAppsSum.sortBy(sum => {
-        (sum.sqlDataFrameDuration, sum.appDuration)
-      })
-    } else {
-      sortedDesc
-    }
-    qWriter.writeReport(sortedForReport, numRows)
+    qWriter.writeReport(allAppsSum, numRows, order)
+    qWriter.writeDetailedReport(sortedDesc)
     qWriter.writeExecReport(allPlans.asScala.toSeq.flatten, order)
     qWriter.writeStageReport(allStages.asScala.toSeq.flatten, order)
     sortedDesc
