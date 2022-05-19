@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
@@ -31,3 +31,10 @@ def test_part_id():
             lambda spark : unary_op_df(spark, short_gen, num_slices=8).select(
                 f.col('a'),
                 f.spark_partition_id()))
+
+def test_raise_error():
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, short_gen, num_slices=8).select(
+                f.raise_error(f.col('a'))).collect(),
+        conf={},
+        error_message="java.lang.RuntimeException")
