@@ -153,7 +153,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   }
 
   override def checkInputDataTypes(): TypeCheckResult = {
-    (left.dataType, right.dataType) match { 
+    (left.dataType, right.dataType) match {
       case (_: ArrayType, e2) if e2 != IntegerType =>
         TypeCheckResult.TypeCheckFailure(s"Input to function $prettyName should have " +
           s"been ${ArrayType.simpleString} followed by a ${IntegerType.simpleString}, but it's " +
