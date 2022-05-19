@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.OrcOutputStripe
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
+import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 
@@ -95,9 +95,9 @@ trait OrcShims321CDHBase {
     lhs.equals(rhs)
   }
 
-  // forcePositionalEvolution is available from Spark-3.2. So setting this as false.
+  // forcePositionalEvolution is available from Spark-3.2.
   def forcePositionalEvolution(conf:Configuration): Boolean = {
-    false
+    OrcConf.FORCE_POSITIONAL_EVOLUTION.getBoolean(conf)
   }
 
   // orcTypeDescriptionString is renamed to getOrcSchemaString from 3.3+
