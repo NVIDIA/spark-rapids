@@ -29,6 +29,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.types._
 
@@ -74,6 +75,41 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       Some(schema))
   }
 
+  // drop the fields that won't go to DataFrame without encoders
+  case class TestQualificationSummary(
+      appName: String,
+      appId: String,
+      potentialProblems: String,
+      executorCpuTimePercent: Double,
+      endDurationEstimated: Boolean,
+      failedSQLIds: String,
+      readFileFormatAndTypesNotSupported: String,
+      readFileFormats: String,
+      writeDataFormat: String,
+      complexTypes: String,
+      nestedComplexTypes: String,
+      longestSqlDuration: Long,
+      sqlDataframeTaskDuration: Long,
+      nonSqlTaskDurationAndOverhead: Long,
+      unsupportedSQLTaskDuration: Long,
+      supportedSQLTaskDuration: Long,
+      taskSpeedupFactor: Double,
+      user: String,
+      startTime: Long)
+
+  private def createSummaryForDF(
+      appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
+    appSums.map { sum =>
+      TestQualificationSummary(sum.appName, sum.appId, sum.potentialProblems,
+        sum.executorCpuTimePercent, sum.endDurationEstimated, sum.failedSQLIds,
+        sum.readFileFormatAndTypesNotSupported, sum.readFileFormats, sum.writeDataFormat,
+        sum.complexTypes, sum.nestedComplexTypes, sum.longestSqlDuration,
+        sum.sqlDataframeTaskDuration, sum.nonSqlTaskDurationAndOverhead,
+        sum.unsupportedSQLTaskDuration, sum.supportedSQLTaskDuration, sum.taskSpeedupFactor,
+        sum.user, sum.startTime)
+    }
+  }
+
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
       shouldReturnEmpty: Boolean = false) = {
     TrampolineUtil.withTempDir { outpath =>
@@ -87,9 +123,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(exit == 0)
       val spark2 = sparkSession
       import spark2.implicits._
-      val dfTmp = appSum.toDF.drop("readFileFormats").drop("planInfo")
-        .drop("stageInfo").drop("estimatedInfo")
-      val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
+      val summaryDF = createSummaryForDF(appSum).toDF
+      val dfQual = sparkSession.createDataFrame(summaryDF.rdd, schema)
       if (shouldReturnEmpty) {
         assert(appSum.head.estimatedInfo.sqlDfDuration == 0.0)
       } else {
