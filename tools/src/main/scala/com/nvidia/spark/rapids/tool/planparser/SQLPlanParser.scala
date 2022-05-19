@@ -123,12 +123,12 @@ object SQLPlanParser extends Logging {
           CollectLimitExecParser(node, checker, sqlID).parse
         case "ColumnarToRow" =>
           // ignore ColumnarToRow to row for now as assume everything is columnar
-          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None, Seq.empty, shouldRemove=true)
         case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
           // create data source table doesn't show the format so we can't determine
           // if we support it
-          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
         case "CustomShuffleReader" | "AQEShuffleRead" =>
           CustomShuffleReaderExecParser(node, checker, sqlID).parse
@@ -185,7 +185,7 @@ object SQLPlanParser extends Logging {
           WindowInPandasExecParser(node, checker, sqlID).parse
         case _ =>
           // logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
-          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }
       // check is the node has a dataset operations and if so change to not supported
@@ -198,7 +198,9 @@ object SQLPlanParser extends Logging {
       }
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF
-      Seq(execInfos.copy(stages = stagesInNode, isSupported = supported))
+      Seq(new ExecInfo(execInfos.sqlID, execInfos.exec, execInfos.expr, execInfos.speedupFactor,
+        execInfos.duration, execInfos.nodeId, supported, execInfos.children,
+        stagesInNode, execInfos.shouldRemove))
     }
   }
 

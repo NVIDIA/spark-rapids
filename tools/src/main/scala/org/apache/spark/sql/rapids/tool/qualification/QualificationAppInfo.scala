@@ -246,7 +246,8 @@ class QualificationAppInfo(
         val filteredChildren = e.children.map { c =>
           c.filterNot(_.shouldRemove)
         }
-        e.copy(children = filteredChildren)
+        new ExecInfo(e.sqlID, e.exec, e.expr, e.speedupFactor, e.duration,
+          e.nodeId, e.isSupported, filteredChildren, e.stages, e.shouldRemove)
       }
       val filteredPlanInfos = execFilteredChildren.filterNot(_.shouldRemove)
       p.copy(execInfo = filteredPlanInfos)
