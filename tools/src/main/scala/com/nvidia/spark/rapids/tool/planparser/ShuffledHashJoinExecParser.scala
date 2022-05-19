@@ -41,7 +41,7 @@ case class ShuffledHashJoinExecParser(
     }
 
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor,
+    new ExecInfo(sqlID, node.name, "", speedupFactor,
       maxDuration, node.id, isSupported, None)
   }
 }

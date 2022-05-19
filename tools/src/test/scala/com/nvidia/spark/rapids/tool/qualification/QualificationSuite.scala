@@ -124,7 +124,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1623281204390"))
+      assert(appSum.head.appId.equals("local-1622043423018"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -135,7 +135,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1622043423018"))
+        assert(firstRow.contains("local-1623281204390"))
       } finally {
         inputSource.close()
       }
@@ -171,7 +171,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1623281204390"))
+        assert(firstRow.contains("local-1622043423018"))
       } finally {
         inputSource.close()
       }

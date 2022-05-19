@@ -25,17 +25,17 @@ import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphCluster, SparkPlanGraphNode}
 import org.apache.spark.sql.rapids.tool.AppBase
 
-case class ExecInfo(
-    sqlID: Long,
-    exec: String,
-    expr: String,
-    speedupFactor: Double,
-    duration: Option[Long],
-    nodeId: Long,
-    isSupported: Boolean,
-    children: Option[Seq[ExecInfo]], // only one level deep
-    stages: Seq[Int] = Seq.empty,
-    shouldRemove: Boolean = false) {
+class ExecInfo(
+    val sqlID: Long,
+    val exec: String,
+    val expr: String,
+    val speedupFactor: Double,
+    val duration: Option[Long],
+    val nodeId: Long,
+    val isSupported: Boolean,
+    val children: Option[Seq[ExecInfo]], // only one level deep
+    val stages: Seq[Int] = Seq.empty,
+    val shouldRemove: Boolean = false) {
   private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
