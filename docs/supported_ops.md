@@ -8654,12 +8654,12 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">MapEntries</td>
-<td rowSpan="2">`map_entries`</td>
-<td rowSpan="2">Returns an unordered array of all entries in the given map</td>
-<td rowSpan="2">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
+<td rowSpan="3">MapFilter</td>
+<td rowSpan="3">`map_filter`</td>
+<td rowSpan="3">Filters entries in a map using the function</td>
+<td rowSpan="3">None</td>
+<td rowSpan="3">project</td>
+<td>argument</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -8680,6 +8680,27 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td>function</td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td>result</td>
 <td> </td>
 <td> </td>
@@ -8695,8 +8716,8 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 </tr>

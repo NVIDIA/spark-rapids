@@ -2086,16 +2086,16 @@ object GpuOverrides extends Logging {
       "IF expression",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-            TypeSig.MAP).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.MAP).nested(),
+                TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.MAP).nested(),
+                TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
@@ -2955,6 +2955,22 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[TransformValues](in, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuTransformValues(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
+        }
+      }),
+    expr[MapFilter](
+      "Filters entries in a map using the function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[MapFilter](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuMapFilter(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
     expr[StringLocate](

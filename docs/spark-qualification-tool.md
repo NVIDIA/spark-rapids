@@ -1,10 +1,10 @@
 ---
 layout: page
-title: Spark Qualification tool
+title: Qualification Tool
 nav_order: 8
 ---
 
-# Spark Qualification tool
+# Qualification Tool
 
 The Qualification tool analyzes Spark events generated from CPU based Spark applications to determine 
 if the RAPIDS Accelerator for Apache Spark might be a good fit for GPU acceleration.
@@ -38,7 +38,7 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 more information.
 
 ### Step 1 Download the tools jar and Apache Spark 3 Distribution
-The Qualification tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
+The Qualification tool require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, you can download the Spark distribution to 
 any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/22.04.0/)
@@ -83,7 +83,7 @@ any machine and include the jars in the classpath.
 java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain --help
 
-RAPIDS Accelerator for Apache Spark Qualification tool
+RAPIDS Accelerator Qualification tool for Apache Spark
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
@@ -214,7 +214,7 @@ java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CO
 Note: The “regular expression” used by -a option is based on
 [java.util.regex.Pattern](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html).
 
-### The Qualification tool Output
+### The Qualification tool output
 After the above command is executed, the summary report goes to STDOUT and by default it outputs 2 files 
 under `./rapids_4_spark_qualification_output/` that contain the processed applications.
 The output will go into your default filesystem and it supports both local filesystem and HDFS. 
@@ -227,7 +227,7 @@ the applications that are reported on top are likely to be good candidates for t
 when there is no problematic duration reported for those same applications.
 The second output is a CSV file that contains more detailed information and can be used for further post processing.
 For more information on the ordering, please refer to the section below that explains the “score” for each application.
-See the [Understanding the Qualification tool Output](#understanding-the-qualification-tool-output) section
+See the [Understanding the Qualification tool output](#understanding-the-qualification-tool-output) section
 below for the description of output fields.
 
 ## Running the Qualification tool inside a running Spark application
@@ -312,7 +312,7 @@ For example, if running the spark-shell:
 $SPARK_HOME/bin/spark-shell --jars rapids-4-spark-tools_2.12-<version>.jar
 ```
 
-## Understanding the Qualification tool Output
+## Understanding the Qualification tool output
 Its summary report outputs the following information:
 1. Application ID 
 2. Application duration

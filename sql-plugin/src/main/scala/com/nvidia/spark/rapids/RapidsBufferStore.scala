@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -80,7 +81,7 @@ abstract class RapidsBufferStore(
       // We need to release the `RapidsBufferStore` lock to prevent a lock order inversion
       // deadlock: (1) `RapidsBufferBase.free`     calls  (2) `RapidsBufferStore.remove` and
       //           (1) `RapidsBufferStore.freeAll` calls  (2) `RapidsBufferBase.free`.
-      values.foreach(_.free())
+      values.safeFree()
     }
 
     def nextSpillableBuffer(): RapidsBufferBase = synchronized {
@@ -138,8 +139,7 @@ abstract class RapidsBufferStore(
   def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
   : RapidsBufferBase = {
     freeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
-      buffers.add(newBuffer)
-      catalog.registerNewBuffer(newBuffer)
+      addBuffer(newBuffer)
       newBuffer
     }
   }
@@ -208,6 +208,7 @@ abstract class RapidsBufferStore(
    * If the data transfer will be performed asynchronously, this method is responsible for
    * adding a reference to the existing buffer and later closing it when the transfer completes.
    * @note DO NOT close the buffer unless adding a reference!
+   * @note `createBuffer` impls should synchronize against `stream` before returning, if needed.
    * @param buffer data from another store
    * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. The ownership
    *                     for `memoryBuffer` is transferred to this store. The store may close

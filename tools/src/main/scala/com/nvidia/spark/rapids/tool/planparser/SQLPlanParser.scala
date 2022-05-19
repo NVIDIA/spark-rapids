@@ -29,7 +29,7 @@ case class ExecInfo(
     sqlID: Long,
     exec: String,
     expr: String,
-    speedupFactor: Int,
+    speedupFactor: Double,
     duration: Option[Long],
     nodeId: Long,
     isSupported: Boolean,
@@ -189,12 +189,12 @@ object SQLPlanParser extends Logging {
 
   /**
    * This function is used to calculate an average speedup factor. The input
-   * is assumed to an array of ints where each element is >= 1. If the input array
+   * is assumed to an array of doubles where each element is >= 1. If the input array
    * is empty we return 1 because we assume we don't slow things down. Generally
    * the array shouldn't be empty, but if there is some weird case we don't want to
    * blow up, just say we don't speed it up.
    */
-  def averageSpeedup(arr: Seq[Int]): Int = if (arr.isEmpty) 1 else arr.sum / arr.size
+  def averageSpeedup(arr: Seq[Double]): Double = if (arr.isEmpty) 1.0 else arr.sum / arr.size
 
   /**
    * Get the total duration by finding the accumulator with the largest value.
