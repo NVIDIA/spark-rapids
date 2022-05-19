@@ -985,6 +985,16 @@ object RapidsConf {
       .integerConf
       .createWithDefault(20)
 
+  val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
+    .doc("When set to false disables all Iceberg acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ICEBERG_READ = conf("spark.rapids.sql.format.iceberg.enabled")
+    .doc("When set to false disables Iceberg input acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1777,6 +1787,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val avroMultiThreadReadNumThreads: Int = get(AVRO_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
+
+  lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

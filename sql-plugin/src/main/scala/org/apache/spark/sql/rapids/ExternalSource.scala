@@ -152,10 +152,19 @@ object ExternalSource {
       Seq(new ScanRule[Scan](
         (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
           override def tagSelfForGpu(): Unit = {
-            // table could be a mix of Parquet and ORC, so check for ability to load for both
-            val readSchema = a.readSchema()
-            FileFormatChecks.tag(this, readSchema, ParquetFormatType, ReadFileOp)
-            FileFormatChecks.tag(this, readSchema, OrcFormatType, ReadFileOp)
+            // TODO: Should this be tied to Parquet/ORC formats as well since underlying files
+            //       could be that format?
+            if (!conf.isIcebergEnabled) {
+              willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+                  s"${RapidsConf.ENABLE_ICEBERG} to true")
+            }
+
+            if (!conf.isIcebergReadEnabled) {
+              willNotWorkOnGpu("Iceberg input has been disabled. To enable set " +
+                  s"${RapidsConf.ENABLE_ICEBERG_READ} to true")
+            }
+
+            FileFormatChecks.tag(this, a.readSchema(), IcebergFormatType, ReadFileOp)
           }
 
           override def convertToGpu(): Scan = GpuSparkBatchQueryScan.fromCpu(a, conf)
