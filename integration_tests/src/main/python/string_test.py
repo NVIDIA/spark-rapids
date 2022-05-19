@@ -950,7 +950,7 @@ def test_regexp_replace_digit():
         conf=_regexp_conf)
 
 def test_regexp_replace_word():
-    gen = mk_str_gen('[a-z]{0,2}[0-9]{0,2}') \
+    gen = mk_str_gen('[a-z]{0,2}[_]{0,1}[0-9]{0,2}') \
         .with_special_case('䤫畍킱곂⬡❽ࢅ獰᳌蛫青')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
