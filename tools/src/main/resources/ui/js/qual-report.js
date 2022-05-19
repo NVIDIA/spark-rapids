@@ -67,6 +67,11 @@ function getExpandedAppDetails(rowData) {
     '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuOpportunity + '</td>' +
     '    </tr>' +
+    '    <tr>' +
+    '      <th scope=\"row\">GPU Time Saved</th>' +
+    '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuTimeSaved + '</td>' +
+    '    </tr>' +
     '  </tbody>' +
     '</table>';
 
@@ -161,7 +166,7 @@ $(document).ready(function(){
       },
       {
         name: 'appDuration',
-        data: 'appDuration',
+        data: 'estimatedInfo.appDur',
         type: 'numeric',
         searchable: false,
         render: function (data, type, row) {
