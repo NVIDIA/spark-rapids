@@ -85,7 +85,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       allAppsSum: Seq[QualificationSummaryInfo]): Seq[QualificationSummaryInfo] = {
     // Default sorting for of the csv files.
     allAppsSum.sortBy(sum => {
-      (sum.recommendation, sum.totalSpeedup)
+      (sum.estimatedInfo.recommendation, sum.estimatedInfo.estimatedGpuSpeedup)
     }).reverse
   }
 
