@@ -30,7 +30,6 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, S
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -52,29 +51,23 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   val schema = new StructType()
     .add("App Name", StringType, true)
     .add("App ID", StringType, true)
-    .add("Score", DoubleType, true)
     .add("Potential Problems", StringType, true)
-    .add("SQL Dataframe Duration", LongType, true)
-    .add("SQL Dataframe Task Duration", LongType, true)
-    .add("App Duration", LongType, true)
     .add("Executor CPU Time Percent", DoubleType, true)
     .add("App Duration Estimated", BooleanType, true)
-    .add("SQL Duration with Potential Problems", LongType, true)
     .add("SQL Ids with Failures", StringType, true)
-    .add("Read Score Percent", IntegerType, true)
-    .add("Read File Format Score", DoubleType, true)
     .add("Unsupported Read File Formats and Types", StringType, true)
     .add("Unsupported Write Data Format", StringType, true)
     .add("Complex Types", StringType, true)
     .add("Nested Complex Types", StringType, true)
     .add("Longest SQL Duration", LongType, true)
+    .add("SQL Dataframe Task Duration", LongType, true)
     .add("NONSQL Task Duration Plus Overhead", LongType, true)
-    .add("Estimated Duration", DoubleType, true)
-    .add("Unsupported Duration", LongType, true)
-    .add("Speedup Duration", LongType, true)
+    .add("Unsupported Task Duration", LongType, true)
+    .add("Supported Task Duration", LongType, true)
     .add("Speedup Factor", DoubleType, true)
-    .add("Total Speedup", DoubleType, true)
-    .add("Recommendation", StringType, true)
+    .add("user", StringType, true)
+    .add("startTime", LongType, true)
+
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -94,7 +87,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(exit == 0)
       val spark2 = sparkSession
       import spark2.implicits._
-      val dfTmp = appSum.toDF.drop("readFileFormats")
+      val dfTmp = appSum.toDF.drop("readFileFormats").drop("planInfo")
+        .drop("stageInfo").drop("estimatedInfo")
       val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
       if (shouldReturnEmpty) {
         assert(appSum.head.estimatedInfo.sqlDfDuration == 0.0)
@@ -185,7 +179,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
         "--output-directory",
@@ -215,7 +208,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test datasource read format included") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
         "--output-directory",
@@ -244,7 +236,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test skip gpu event logs") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val logFiles = Array(s"$qualLogDir/gpu_eventlog")
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
         "--output-directory",
