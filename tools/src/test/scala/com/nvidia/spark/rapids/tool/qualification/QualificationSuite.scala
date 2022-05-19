@@ -42,7 +42,6 @@ case class TestQualificationSummary(
     endDurationEstimated: Boolean,
     failedSQLIds: String,
     readFileFormatAndTypesNotSupported: String,
-    readFileFormats: String,
     writeDataFormat: String,
     complexTypes: String,
     nestedComplexTypes: String,
@@ -101,7 +100,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     appSums.map { sum =>
       TestQualificationSummary(sum.appName, sum.appId, sum.potentialProblems,
         sum.executorCpuTimePercent, sum.endDurationEstimated, sum.failedSQLIds,
-        sum.readFileFormatAndTypesNotSupported, sum.readFileFormats, sum.writeDataFormat,
+        sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
         sum.complexTypes, sum.nestedComplexTypes, sum.longestSqlDuration,
         sum.sqlDataframeTaskDuration, sum.nonSqlTaskDurationAndOverhead,
         sum.unsupportedSQLTaskDuration, sum.supportedSQLTaskDuration, sum.taskSpeedupFactor,
