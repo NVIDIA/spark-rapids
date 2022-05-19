@@ -121,7 +121,7 @@ case class GpuShuffledHashJoinExec(
 
   // Goal to be used for the coalescing the build side. Note that this is internal to
   // the join and not used for planning purposes. The two valid choices are `RequireSingleBatch` or
-  // `RequireSingleBatchNoNulls`
+  // `RequireSingleBatchWithFilter`
   private lazy val buildGoal: CoalesceSizeGoal = joinType match {
     case _: InnerLike | LeftSemi | LeftAnti =>
       val nullFilteringMask = boundBuildKeys.map { bk =>

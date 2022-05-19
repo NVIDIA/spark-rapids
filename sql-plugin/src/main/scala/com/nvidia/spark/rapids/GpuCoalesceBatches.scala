@@ -245,7 +245,7 @@ abstract class AbstractGpuCoalesceIterator(
   private var batchInitialized: Boolean = false
 
   /**
-   * This is defined iff `goal` is `RequireSingleBatchNoNulls` and we have
+   * This is defined iff `goal` is `RequireSingleBatchWithFilter` and we have
    * reached the cuDF row-count limit.
    */
   private var inputFilterExpression: Option[Expression] = None
