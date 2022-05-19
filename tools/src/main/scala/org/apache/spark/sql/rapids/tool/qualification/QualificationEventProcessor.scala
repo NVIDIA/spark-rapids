@@ -109,8 +109,8 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     app.lastSQLEndTime = Some(event.time)
     val sqlInfo = app.sqlStart.get(event.executionId)
     // only include duration if it contains no jobs that failed
-    val failedJobs = app.sqlIDtoJobFailures.get(event.executionId)
-    if (event.executionFailure.isDefined || failedJobs.isDefined) {
+    val failures = app.sqlIDtoFailures.get(event.executionId)
+    if (event.executionFailure.isDefined || failures.isDefined) {
       logWarning(s"SQL execution id ${event.executionId} had failures, skipping")
       // zero out the cpu and run times since failed
       app.sqlIDToTaskEndSum.get(event.executionId).foreach { sum =>
@@ -142,14 +142,30 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     app.lastJobEndTime = Some(event.time)
     if (event.jobResult != JobSucceeded) {
       app.jobIdToSqlID.get(event.jobId) match {
-        case Some(id) =>
+        case Some(sqlID) =>
           // zero out the cpu and run times since failed
-          app.sqlIDToTaskEndSum.get(id).foreach { sum =>
+          app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
             sum.executorRunTime = 0
             sum.executorCPUTime = 0
           }
-          val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(id, ArrayBuffer.empty[Int])
-          failedJobs += event.jobId
+          val failures = app.sqlIDtoFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[String])
+          val jobStr = s"Job${event.jobId}"
+          failures += jobStr
+        case None =>
+      }
+    }
+  }
+
+  override def doSparkListenerStageCompleted(
+      app: QualificationAppInfo,
+      event: SparkListenerStageCompleted): Unit = {
+    super.doSparkListenerStageCompleted(app, event)
+    if (event.stageInfo.failureReason.nonEmpty) {
+      app.stageIdToSqlID.get(event.stageInfo.stageId) match {
+        case Some(sqlID) =>
+          val failures = app.sqlIDtoFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[String])
+          val stageStr = s"Stage${event.stageInfo.stageId}"
+          failures += stageStr
         case None =>
       }
     }

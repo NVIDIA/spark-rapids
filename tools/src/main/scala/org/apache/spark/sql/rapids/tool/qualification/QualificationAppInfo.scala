@@ -52,7 +52,7 @@ class QualificationAppInfo(
 
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
-  val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
+  val sqlIDtoFailures: HashMap[Long, ArrayBuffer[String]] = HashMap.empty[Long, ArrayBuffer[String]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
   var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
@@ -262,14 +262,11 @@ class QualificationAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
 
-      val sqlIdsWithJobFailures = sqlIDtoJobFailures.filter { case (_, v) =>
+      // if either job or stage failures then we mark as N/A
+      val sqlIdsWithFailures = sqlIDtoFailures.filter { case (_, v) =>
         v.size > 0
-      }
-      val sqlIdsWithFailures = sqlIdsWithJobFailures.keys.mkString(",")
+      }.keys.mkString(",")
 
-      val failedStages = stageIdToInfo.filter{ case ((s, sa), v) =>
-        v.failureReason.nonEmpty
-      }
       val notSupportFormatAndTypesString = notSupportFormatAndTypes.map { case (format, types) =>
         val typeString = types.mkString(":").replace(",", ":")
         s"${format}[$typeString]"
@@ -293,19 +290,14 @@ class QualificationAppInfo(
         perSqlStageSummary.map(s => s.hackEstimateWallclockSupported).sum
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
       val sqlDataframeTaskDuration = allStagesSummary.flatMap(_.map(s => s.stageTaskTime)).sum
-      val unsupportedSQLDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
+      val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val jobOverheadTime = calculateJobOverHeadTime(info.startTime)
       val nonSQLDataframeTaskDuration =
         calculateNonSQLTaskDataframeDuration(sqlDataframeTaskDuration)
       val nonSQLTaskDuration = nonSQLDataframeTaskDuration + jobOverheadTime
       val supportedSQLTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
-      val speedupFactor = calculateSpeedupFactor(allStagesSummary)
-      val estimatedDuration =
-        (supportedSQLTaskDuration / speedupFactor) + unsupportedSQLDuration + nonSQLTaskDuration
-      val appTaskDuration = nonSQLTaskDuration + sqlDataframeTaskDuration
-      val totalSpeedup = (appTaskDuration / estimatedDuration * 1000) / 1000
-      val recommendation = QualificationAppInfo.getRecommendation(totalSpeedup)
+      val taskSpeedupFactor = calculateSpeedupFactor(allStagesSummary)
 
       // get the ratio based on the Task durations that we will use for wall clock durations
       val estimatedGPURatio = if (sqlDataframeTaskDuration > 0) {
@@ -316,15 +308,15 @@ class QualificationAppInfo(
 
       val appName = appInfo.map(_.appName).getOrElse("")
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
-        sqlDFWallClockDuration, appDuration, speedupFactor, appName, appId)
+        sqlDFWallClockDuration, appDuration, taskSpeedupFactor, appName, appId,
+        sqlIdsWithFailures.nonEmpty)
 
       QualificationSummaryInfo(info.appName, appId, problems,
-        sqlDFWallClockDuration, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
-        endDurationEstimated, sqlIdsWithFailures, notSupportFormatAndTypesString,
-        getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes,
-        longestSQLDuration, nonSQLTaskDuration, estimatedDuration,
-        unsupportedSQLDuration, supportedSQLTaskDuration, speedupFactor, totalSpeedup,
-        recommendation, info.sparkUser, info.startTime, origPlanInfos,
+        executorCpuTimePercent, endDurationEstimated, sqlIdsWithFailures,
+        notSupportFormatAndTypesString, getAllReadFileFormats, writeFormat,
+        allComplexTypes, nestedComplexTypes, longestSQLDuration, nonSQLTaskDuration,
+        sqlDataframeTaskDuration, unsupportedSQLTaskDuration, supportedSQLTaskDuration,
+        taskSpeedupFactor, info.sparkUser, info.startTime, origPlanInfos,
         perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo)
     }
   }
@@ -400,9 +392,6 @@ case class QualificationSummaryInfo(
     appName: String,
     appId: String,
     potentialProblems: String,
-    sqlDataFrameDuration: Long,
-    sqlDataframeTaskDuration: Long,
-    appDuration: Long,
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
     failedSQLIds: String,
@@ -412,13 +401,11 @@ case class QualificationSummaryInfo(
     complexTypes: String,
     nestedComplexTypes: String,
     longestSqlDuration: Long,
+    sqlDataframeTaskDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
-    estimatedTaskDuration: Double,
-    unsupportedTaskDuration: Long,
-    speedupOpportunity: Long,
-    speedupFactor: Double,
-    totalSpeedup: Double,
-    recommendation: Recommendation.Recommendation,
+    unsupportedSQLTaskDuration: Long,
+    supportedSQLTaskDuration: Long,
+    taskSpeedupFactor: Double,
     user: String,
     startTime: Long,
     planInfo: Seq[PlanInfo],
@@ -437,12 +424,16 @@ object Recommendation extends Enumeration {
   val Strongly_Recommended = Value(3, "Strongly_Recommended")
   val Recommended = Value(2, "Recommended")
   val Not_Recommended = Value(1, "Not_Recommended")
+  val Not_Applicable = Value(1, "Not_Applicable")
 }
 
 object QualificationAppInfo extends Logging {
 
-  def getRecommendation(totalSpeedup: Double): Recommendation.Recommendation = {
-    if (totalSpeedup >= 2.5) {
+  def getRecommendation(totalSpeedup: Double,
+      hasFailures: Boolean): Recommendation.Recommendation = {
+    if (hasFailures) {
+      Recommendation.Not_Applicable
+    } else if (totalSpeedup >= 2.5) {
       Recommendation.Strongly_Recommended
     } else if (totalSpeedup >= 1.25) {
       Recommendation.Recommended
@@ -454,14 +445,14 @@ object QualificationAppInfo extends Logging {
   // Summarize and estimate based on wall clock times
   def calculateEstimatedInfoSummary(estimatedRatio: Double, sqlDataFrameDuration: Long,
       appDuration: Long, speedupFactor: Double, appName: String,
-      appId: String): EstimatedSummaryInfo = {
+      appId: String, hasFailures: Boolean): EstimatedSummaryInfo = {
     val speedupOpportunityWallClock = sqlDataFrameDuration * estimatedRatio
     val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
     val estimated_gpu_duration =
       (speedupOpportunityWallClock / speedupFactor) + estimated_wall_clock_dur_not_on_gpu
     val estimated_gpu_speedup = appDuration / estimated_gpu_duration
     val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
-    val recommendation = getRecommendation(estimated_gpu_speedup)
+    val recommendation = getRecommendation(estimated_gpu_speedup, hasFailures)
 
     EstimatedSummaryInfo(appName, appId, appDuration,
       sqlDataFrameDuration, speedupOpportunityWallClock.toLong,

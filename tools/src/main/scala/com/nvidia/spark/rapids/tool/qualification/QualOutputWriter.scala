@@ -441,10 +441,10 @@ object QualOutputWriter {
       appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
       appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
       f"${appInfo.estimatedTaskDuration}%1.2f" -> headersAndSizes(ESTIMATED_DURATION_STR),
-      appInfo.unsupportedTaskDuration.toString ->
+      appInfo.unsupportedSQLTaskDuration.toString ->
         headersAndSizes(UNSUPPORTED_DURATION_STR),
-      appInfo.speedupOpportunity.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
-      f"${appInfo.speedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
+      f"${appInfo.taskSpeedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
       f"${appInfo.totalSpeedup}%1.2f" -> headersAndSizes(TOTAL_SPEEDUP_STR),
       stringIfempty(appInfo.recommendation.toString) -> headersAndSizes(SPEEDUP_BUCKET_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
