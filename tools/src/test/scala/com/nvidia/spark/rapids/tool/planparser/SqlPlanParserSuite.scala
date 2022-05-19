@@ -168,7 +168,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val parquet = allExecInfo.filter(_.exec.contains("Scan parquet"))
     val text = allExecInfo.filter(_.exec.contains("Scan text"))
     val csv = allExecInfo.filter(_.exec.contains("Scan csv"))
-    assertSizeAndNotSupported(2, json.toSeq)
+    assertSizeAndSupported(2, json.toSeq)
     assertSizeAndNotSupported(1, text.toSeq)
     for (t <- Seq(parquet, csv)) {
       assertSizeAndSupported(1, t.toSeq)
@@ -190,7 +190,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val orc = allExecInfo.filter(_.exec.contains("BatchScan orc"))
     val parquet = allExecInfo.filter(_.exec.contains("BatchScan parquet"))
     val csv = allExecInfo.filter(_.exec.contains("BatchScan csv"))
-    assertSizeAndNotSupported(3, json.toSeq)
+    assertSizeAndSupported(3, json.toSeq)
     assertSizeAndSupported(1, csv.toSeq)
     for (t <- Seq(orc, parquet)) {
       assertSizeAndSupported(2, t.toSeq)

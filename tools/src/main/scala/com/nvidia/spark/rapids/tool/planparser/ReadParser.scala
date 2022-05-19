@@ -27,6 +27,11 @@ case class ReadMetaData(schema: String, location: String, filters: String, forma
 
 object ReadParser extends Logging {
 
+  // Some of the File formats are Configured Off by default. These fileformats should
+  // be considered as "supported" while calculating th speed up factor.
+  val DEFAULT_CONFIGUREDOFF_FORMATS = List("JSON", "AVRO")
+  val DEFAULT_SCORES = (1.0, Set("*"))
+
   // strip off the struct<> part that Spark adds to the ReadSchema
   def formatSchemaStr(schema: String): String = {
     schema.stripPrefix("struct<").stripSuffix(">")
@@ -96,7 +101,12 @@ object ReadParser extends Logging {
   def calculateReadScoreRatio(meta: ReadMetaData,
       pluginTypeChecker: PluginTypeChecker): Double = {
     val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
-    val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(meta.format, meta.schema)
+    val format = meta.format.toUpperCase
+    val (readScore, nsTypes) = if(DEFAULT_CONFIGUREDOFF_FORMATS.contains(format)) {
+      DEFAULT_SCORES
+    } else {
+      pluginTypeChecker.scoreReadDataTypes(meta.format, meta.schema)
+    }
     if (nsTypes.nonEmpty) {
       val currentFormat = notSupportFormatAndTypes.get(meta.format).getOrElse(Set.empty[String])
       notSupportFormatAndTypes(meta.format) = (currentFormat ++ nsTypes)
