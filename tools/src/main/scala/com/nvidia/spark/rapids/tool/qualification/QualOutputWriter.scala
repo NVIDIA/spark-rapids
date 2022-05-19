@@ -115,7 +115,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       print(s"$sep\n")
     }
     val finalSums = estSum.take(numOutputRows)
-    estSum.foreach { sumInfo =>
+    finalSums.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
         appIdMaxSize, "|", true)
       writer.write(wStr)

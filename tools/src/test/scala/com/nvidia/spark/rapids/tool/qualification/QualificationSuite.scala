@@ -222,7 +222,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "2")
 
       val appArgs = new QualificationArgs(allArgs ++ logFiles)
-      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      val (exit, _) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
