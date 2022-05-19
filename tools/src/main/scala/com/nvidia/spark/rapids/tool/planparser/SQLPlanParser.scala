@@ -187,6 +187,8 @@ object SQLPlanParser extends Logging {
       }
       // check is the node has a dataset operations and if so change to not supported
       val ds = app.isDataSetOrRDDPlan(node.desc)
+      // TODO - this is going to cause the *InPandas and the ArrowEvalPython to possibly
+      // be reported as not supported
       val containsUDF = app.containsUDF(node.desc)
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF

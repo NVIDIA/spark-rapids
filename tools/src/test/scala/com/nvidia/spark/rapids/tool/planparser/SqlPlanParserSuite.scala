@@ -43,10 +43,11 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
-  private def assertSizeAndNotSupported(size: Int, execs: Seq[ExecInfo]): Unit = {
+  private def assertSizeAndNotSupported(size: Int, execs: Seq[ExecInfo],
+      speedupFactor: Int = 1): Unit = {
     for (t <- Seq(execs)) {
       assert(t.size == size, t)
-      assert(t.forall(_.speedupFactor == 1), t)
+      assert(t.forall(_.speedupFactor == speedupFactor), t)
       assert(t.forall(_.isSupported == false), t)
       assert(t.forall(_.children.isEmpty), t)
       assert(t.forall(_.duration.isEmpty), t)
@@ -491,8 +492,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assertSizeAndSupported(1, flatMapGroups)
     val aggregateInPandas = allExecInfo.filter(_.exec == "AggregateInPandas")
     assertSizeAndSupported(1, aggregateInPandas)
+    // this event log had UDF for ArrowEvalPath so shows up as not supported
     val arrowEvalPython = allExecInfo.filter(_.exec == "ArrowEvalPython")
-    assertSizeAndSupported(1, arrowEvalPython)
+    assertSizeAndNotSupported(1, arrowEvalPython, speedupFactor=2)
     val mapInPandas = allExecInfo.filter(_.exec == "MapInPandas")
     assertSizeAndSupported(1, mapInPandas)
     val windowInPandas = allExecInfo.filter(_.exec == "WindowInPandas")
