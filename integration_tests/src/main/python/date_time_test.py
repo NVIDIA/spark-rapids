@@ -233,7 +233,7 @@ def test_to_unix_timestamp(data_gen, ansi_enabled):
 ], ids=idfn)
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
 @pytest.mark.parametrize('operator', ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"], ids=idfn)
-def test_to_unix_timestamp_with_formats_ansi_invalid(invalid, fmt, parser_policy, operator):
+def test_string_to_timestamp_functions_ansi_invalid(invalid, fmt, parser_policy, operator):
     sql = "{operator}(a, '{fmt}')".format(fmt=fmt, operator=operator)
     parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
 
@@ -246,7 +246,7 @@ def test_to_unix_timestamp_with_formats_ansi_invalid(invalid, fmt, parser_policy
 
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
 # first get expected string via `date_format`
-def test_to_unix_timestamp_with_formats_ansi_valid(parser_policy):
+def test_string_to_timestamp_functions_ansi_valid(parser_policy):
     expr_format = "{operator}(date_format(a, '{fmt}'), '{fmt}')"
     formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM', 'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss',
                'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM', 'MM/yyyy', 'MM-yyyy', 'MM/dd/yyyy', 'MM-dd-yyyy']
