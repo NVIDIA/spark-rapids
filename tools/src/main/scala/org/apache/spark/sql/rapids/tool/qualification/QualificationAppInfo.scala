@@ -162,6 +162,18 @@ class QualificationAppInfo(
     }.mkString(":")
   }
 
+  private def checkUnsupportedReadFormats(): Unit = {
+    if (dataSourceInfo.size > 0) {
+      dataSourceInfo.map { ds =>
+        val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
+        if (nsTypes.nonEmpty) {
+          val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
+          notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
+        }
+      }
+    }
+  }
+
   private def getStageToExec(execInfos: Seq[ExecInfo]): Map[Int, Seq[ExecInfo]] = {
     execInfos.flatMap { execInfo =>
       if (execInfo.stages.size > 1) {
@@ -268,6 +280,9 @@ class QualificationAppInfo(
         v.size > 0
       }.keys.mkString(",")
 
+      // a bit odd but force filling in notSupportFormatAndTypes
+      // TODO - make this better
+      checkUnsupportedReadFormats()
       val notSupportFormatAndTypesString = notSupportFormatAndTypes.map { case (format, types) =>
         val typeString = types.mkString(":").replace(",", ":")
         s"${format}[$typeString]"
@@ -287,6 +302,8 @@ class QualificationAppInfo(
       // wall clock time
       val executorCpuTimePercent = calculateCpuTimePercent(perSqlStageSummary)
 
+      // TODO - do we want to use this and rely on stages, but some SQL don't have stages
+      // so this is less than SQL DF real
       val sqlDFWallClockDuration =
         perSqlStageSummary.map(s => s.hackEstimateWallclockSupported).sum
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
