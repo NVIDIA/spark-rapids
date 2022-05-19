@@ -872,6 +872,19 @@ def test_regexp_extract_idx_0():
                 'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)\\z", 0)'),
         conf=_regexp_conf)
 
+def test_character_classes():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "[abcd]")',
+                'rlike(a, "[^\n\r]")',
+                'rlike(a, "[\n-\\]")',
+                'rlike(a, "[+--]")',
+                'regexp_extract(a, "[123]", 0)',
+                'regexp_replace(a, "[\\\\x41-\\\\x5a]", "@")',
+            ),
+        conf=_regexp_conf)
+
 def test_regexp_hexadecimal_digits():
     gen = mk_str_gen(
         '[abcd]\\\\x00\\\\x7f\\\\x80\\\\xff\\\\x{10ffff}\\\\x{00eeee}[\\\\xa0-\\\\xb0][abcd]')
@@ -879,10 +892,13 @@ def test_regexp_hexadecimal_digits():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'rlike(a, "\\\\x7f")',
                 'rlike(a, "\\\\x80")',
+                'rlike(a, "[\\\\xa0-\\\\xf0]")',
                 'rlike(a, "\\\\x{00eeee}")',
                 'regexp_extract(a, "([a-d]+)\\\\xa0([a-d]+)", 1)',
-                'regexp_replace(a, "\\\\xff", "")',
-                'regexp_replace(a, "\\\\x{10ffff}", "")',
+                'regexp_extract(a, "([a-d]+)[\\\\xa0\nabcd]([a-d]+)", 1)',
+                'regexp_replace(a, "\\\\xff", "@")',
+                'regexp_replace(a, "[\\\\xa0-\\\\xb0]", "@")',
+                'regexp_replace(a, "\\\\x{10ffff}", "@")',
             ),
         conf=_regexp_conf)
 

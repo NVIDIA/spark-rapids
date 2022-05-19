@@ -27,12 +27,6 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
-  test("temp") {
-    assertCpuGpuMatchesRegexpFind(Seq("[^0-9\\\r\t]"), Seq("\r"))
-  }
-  test("temp2") {
-    assertCpuGpuMatchesRegexpFind(Seq("(?:[\r\n]|[^0-9\\\r\t])"), Seq("\r"))
-  }
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
@@ -181,16 +175,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("hex digit character classes") {
-    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]", raw"[\x80]")
-    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u007f", "a\u007fb", 
-        "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
-  }
-
-  test("hex digit character class ranges") {
-    val patterns = Seq(raw"[\x01-\xff]", raw"[\x20-\x7f]", raw"[\x{123}-\x{abc}]", 
-        raw"[a-\xff]", raw"[\x20-z]")
-    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "abcd", "A123B", 
-        "\u0000\u007f\u00ff\u0123\u0abc"))
+    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]", raw"[\x80]", raw"[\x01-\xff]",
+      raw"[a-\xff]", raw"[\x20-z]")
+    val inputs = Seq("", "\u007f", "a\u007fb", "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", 
+      "\u007f2", "abcd", "\u0000\u007f\u00ff\u0123\u0abc")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
   test("compare CPU and GPU: character range with escaped characters") {

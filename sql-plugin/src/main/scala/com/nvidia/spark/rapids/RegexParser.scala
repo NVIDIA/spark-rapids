@@ -165,6 +165,8 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
+    val supportedMetaCharacters = "\\^-]+"
+
     def getEscapedComponent(): RegexCharacterClassComponent = {
       peek() match {
         case Some('x') => 
@@ -180,10 +182,14 @@ class RegexParser(pattern: String) {
             case 'f' => RegexChar('\f')
             case 'a' => RegexChar('\u0007')
             case 'b' => RegexChar('\b')
-            case _ =>
-              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
-              // within the character class, but could be any escaped character
-              RegexEscaped(ch) 
+            case ch => 
+              if (supportedMetaCharacters.contains(ch)) {
+                // an escaped metacharacter ('\\', '^', '-', ']', '+')
+                RegexEscaped(ch) 
+              } else {
+                throw new RegexUnsupportedException(
+                  s"Unsupported escaped character in character class", Some(pos))
+              }
           }
         case None =>
           throw new RegexUnsupportedException(
@@ -217,7 +223,13 @@ class RegexParser(pattern: String) {
         case ch => 
           val nextChar: RegexCharacterClassComponent = ch match {
             case '\\' =>
-              getEscapedComponent()
+              getEscapedComponent() match {
+                case RegexChar(ch) if supportedMetaCharacters.contains(ch) =>
+                  // A hex or octal representation of a meta character gets treated as an escaped 
+                  // char. Example: [\x5ea] is treated as [\^a], not just [^a]
+                  RegexEscaped(ch)
+                case other => other
+              }
             case ch =>
               RegexChar(ch)
           }
