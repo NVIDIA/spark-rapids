@@ -28,6 +28,18 @@ import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
+  test("issue 5450 ci failure 1") {
+    val pattern = Seq("D?")
+    val inputs = Seq("\u000E\u0011\u0006h\u00B9TEST\ud720AA")
+    assertCpuGpuMatchesRegexpFind(pattern, inputs)
+  }
+
+  test("issue 5450 ci failure 2") {
+    val pattern = Seq("D?")
+    val inputs = Seq("\u000E\u0011\u0006h¹TEST\ud720AA")
+    assertCpuGpuMatchesRegexpFind(pattern, inputs)
+  }
+
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
     // that fail to compile in cuDF and to check that the transpiler detects these correctly.
