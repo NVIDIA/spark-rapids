@@ -232,7 +232,6 @@ object QualOutputWriter {
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       SQL_DUR_STR -> SQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
-      NON_SQL_TASK_DURATION_STR -> NON_SQL_TASK_DURATION_SIZE,
       APP_DUR_STR -> APP_DUR_STR.size,
       GPU_OPPORTUNITY_STR -> GPU_OPPORTUNITY_STR_SIZE,
       EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
