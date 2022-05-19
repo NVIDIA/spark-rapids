@@ -23,8 +23,10 @@ import java.util.Map;
 import java.util.Objects;
 
 import scala.collection.JavaConverters;
+import scala.collection.Seq;
 
 import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.GpuParquetUtils;
 import com.nvidia.spark.rapids.ParquetPartitionReader;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
@@ -144,12 +146,14 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
       StructType sparkSchema = SparkSchemaUtil.convertWithoutConstants(expectedSchema, idToConstant);
       MessageType fileReadSchema = buildFileReadSchema(fileSchema);
+      Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
+          fileReadSchema, filteredRowGroups, caseSensitive);
 
       // reuse Parquet scan code to read the raw data from the file
       ParquetPartitionReader partReader = new ParquetPartitionReader(conf, partFile,
-          new Path(input.location()), JavaConverters.collectionAsScalaIterable(filteredRowGroups),
-          fileReadSchema, caseSensitive, sparkSchema, debugDumpPrefix,
-          maxBatchSizeRows, maxBatchSizeBytes, metrics, true, true, true);
+          new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
+          sparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, metrics,
+          true, true, true);
 
       return new GpuIcebergReader(expectedSchema, partReader, deleteFilter, idToConstant);
     } catch (IOException e) {
