@@ -276,6 +276,7 @@ class QualificationAppInfo(
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
 
       // if either job or stage failures then we mark as N/A
+      // TODO - what about incomplete, do we want to change those?
       val sqlIdsWithFailures = sqlIDtoFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")

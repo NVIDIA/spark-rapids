@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphCluster, SparkPlanGraphNode}
-import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class ExecInfo(
     val sqlID: Long,
@@ -211,7 +211,14 @@ object SQLPlanParser extends Logging {
    * the array shouldn't be empty, but if there is some weird case we don't want to
    * blow up, just say we don't speed it up.
    */
-  def averageSpeedup(arr: Seq[Double]): Double = if (arr.isEmpty) 1.0 else arr.sum / arr.size
+  def averageSpeedup(arr: Seq[Double]): Double = {
+    if (arr.isEmpty) {
+      1.0
+    } else {
+      val sum = arr.sum
+      ToolUtils.calculateAverage(sum, arr.size, 2)
+    }
+  }
 
   /**
    * Get the total duration by finding the accumulator with the largest value.
