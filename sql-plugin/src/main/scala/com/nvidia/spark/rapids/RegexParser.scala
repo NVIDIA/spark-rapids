@@ -176,12 +176,15 @@ class RegexParser(pattern: String) {
           "cuDF does not support octal digits in character classes")
         case Some(ch) =>
           consumeExpected(ch) match {
+            // List of character literals with an escape from here, under "Characters"
+            // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
             case 'n' => RegexChar('\n')
             case 'r' => RegexChar('\r')
             case 't' => RegexChar('\t')
             case 'f' => RegexChar('\f')
             case 'a' => RegexChar('\u0007')
             case 'b' => RegexChar('\b')
+            case 'e' => RegexChar('\u001b')
             case ch => 
               if (supportedMetaCharacters.contains(ch)) {
                 // an escaped metacharacter ('\\', '^', '-', ']', '+')
