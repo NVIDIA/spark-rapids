@@ -21,6 +21,7 @@ import java.net.URL
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
+import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
@@ -79,6 +80,7 @@ object ShimLoader extends Logging {
   @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
+  @volatile private var conventionalSingleShimJarDetected: Boolean = _
 
   // REPL-only logic
   @volatile private var tmpClassLoader: MutableURLClassLoader = _
@@ -213,7 +215,15 @@ object ShimLoader extends Logging {
       logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
         urlsForSparkClassLoader.mkString(", "))
       urlsForSparkClassLoader.foreach { url =>
-        MethodUtils.invokeMethod(urlAddable, true, "addURL", url)
+        Try(MethodUtils.invokeMethod(urlAddable, true, "addURL", url))
+          .recoverWith {
+            case nsm: NoSuchMethodException =>
+              logWarning("JDK8+ detected,  if you are not using a single-Spark-shim jar consider" +
+                "spark.rapids.force.caller.classloader to false as a workaround")
+              logDebug(s"JDK8+ detected by catching ${nsm}", nsm)
+              Success(Unit)
+            case t => Failure(t)
+          }.get
       }
       logInfo(s"Spark classLoader $urlAddable updated successfully")
       urlAddable match {
