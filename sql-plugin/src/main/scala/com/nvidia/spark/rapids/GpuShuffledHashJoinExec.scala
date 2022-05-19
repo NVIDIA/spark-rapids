@@ -135,8 +135,8 @@ case class GpuShuffledHashJoinExec(
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
     case (FullOuter, _) => Seq(RequireSingleBatch, RequireSingleBatch)
-    case (_, GpuBuildLeft) => Seq(RequireSingleBatch, null)
-    case (_, GpuBuildRight) => Seq(null, RequireSingleBatch)
+    case (_, GpuBuildLeft) => Seq(buildGoal, null)
+    case (_, GpuBuildRight) => Seq(null, buildGoal)
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
