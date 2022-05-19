@@ -178,7 +178,6 @@ trait RequireSingleBatchLike
  * limitations of the batch size by both Spark and cudf.
  */
 case object RequireSingleBatch extends CoalesceSizeGoal with RequireSingleBatchLike {
-//^^ or change this to be case class with an optional filter
 
   override val targetSizeBytes: Long = Long.MaxValue
 
