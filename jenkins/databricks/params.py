@@ -26,7 +26,7 @@ tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
 base_spark_pom_version = '3.1.1'
 base_spark_version_to_install_databricks_jars = base_spark_pom_version
 clusterid = ''
-build_profiles = 'databricks,!snapshot-shims'
+build_profiles = ''
 jar_path = ''
 # `spark_conf` can take comma seperated multiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
 spark_conf = ''

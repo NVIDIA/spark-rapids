@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, \
+    assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -66,8 +67,22 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
 multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
-reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
+native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+
+# For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files
+# for nested types
+reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded_parquet_file_reader_conf,
+                    native_coalesce_parquet_file_reader_conf]
+
+reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf]
+
+reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -222,7 +237,7 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
                                           [ArrayGen(decimal_gen_32bit, max_length=10)],
                                           [StructGen([['child0', decimal_gen_32bit]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -327,7 +342,7 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
@@ -351,7 +366,7 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
@@ -376,6 +391,32 @@ def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, re
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_native)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@allow_non_gpu('ColumnarToRowExec')
+def test_parquet_read_merge_schema_native_fallback(spark_tmp_path, v1_enabled_list, reader_confs):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
+    # we should go with a more standard set of generators
+    parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+                    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
+    first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
+    with_cpu_session(
+        lambda spark: gen_df(spark, first_gen_list).write.parquet(first_data_path),
+        conf=rebase_write_legacy_conf)
+    second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
+    with_cpu_session(
+        lambda spark: gen_df(spark, second_gen_list).write.parquet(second_data_path),
+        conf=rebase_write_corrected_conf)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_fallback_collect(
+        lambda spark: spark.read.option('mergeSchema', 'true').parquet(data_path),
+        cpu_fallback_class_name='FileSourceScanExec' if v1_enabled_list == 'parquet' else 'BatchScanExec',
+        conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -830,3 +871,90 @@ def test_parquet_read_case_insensitivity(spark_tmp_path):
         lambda spark: spark.read.parquet(data_path).select('one', 'two', 'three'),
         {'spark.sql.caseSensitive': 'false'}
     )
+
+
+# test read INT32 as INT8/INT16/Date
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    write_schema = [("d", date_gen), ('s', short_gen), ('b', byte_gen)]
+    with_cpu_session(
+        lambda spark: gen_df(spark, write_schema).selectExpr(
+            "cast(d as Int) as d",
+            "cast(s as Int) as s",
+            "cast(b as Int) as b").write.parquet(data_path))
+
+    read_schema = StructType([StructField("d", DateType()),
+                              StructField("s", ShortType()),
+                              StructField("b", ByteType())])
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path),
+        conf=conf)
+
+
+def test_parquet_check_schema_compatibility(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('int', int_gen), ('long', long_gen), ('dec32', decimal_gen_32bit)]
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
+
+    read_int_as_long = StructType(
+        [StructField('long', LongType()), StructField('int', LongType())])
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.read.schema(read_int_as_long).parquet(data_path).collect(),
+        conf={},
+        error_message='Parquet column cannot be converted')
+
+    read_dec32_as_dec64 = StructType(
+        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
+        conf={},
+        error_message='Parquet column cannot be converted')
+
+
+# For nested types, GPU throws incompatible exception with a different message from CPU.
+def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('array_long', ArrayGen(long_gen)),
+                ('array_array_int', ArrayGen(ArrayGen(int_gen))),
+                ('struct_float', StructGen([('f', float_gen), ('d', double_gen)])),
+                ('struct_array_int', StructGen([('a', ArrayGen(int_gen))])),
+                ('map', map_string_string_gen[0])]
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
+
+    read_array_long_as_int = StructType([StructField('array_long', ArrayType(IntegerType()))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_array_long_as_int).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted')
+
+    read_arr_arr_int_as_long = StructType(
+        [StructField('array_array_int', ArrayType(ArrayType(LongType())))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_arr_arr_int_as_long).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted')
+
+    read_struct_flt_as_dbl = StructType([StructField(
+        'struct_float', StructType([StructField('f', DoubleType())]))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_struct_flt_as_dbl).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted')
+
+    read_struct_arr_int_as_long = StructType([StructField(
+        'struct_array_int', StructType([StructField('a', ArrayType(LongType()))]))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_struct_arr_int_as_long).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted')
+
+    read_map_str_str_as_str_int = StructType([StructField(
+        'map', MapType(StringType(), IntegerType()))])
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
+        error_message='Parquet column cannot be converted')

@@ -315,14 +315,14 @@ New functionality and performance improvements for this release include:
 * Ability to read cached data from the GPU on the supported Databricks runtimes
 * Enabling Parquet writing of array data types from the GPU
 * Optimized reads for small files for ORC
-* Spark Qualification and Profiling Tools
+* Qualification and Profiling Tools
   * Additional filtering capabilities
   * Reporting on data types
   * Reporting on read data formats
-  * Ability to run the qualification tool on Spark 2.x logs
+  * Ability to run the Qualification tool on Spark 2.x logs
   * Ability to run the tool on Apache Spark 3.x, AWS EMR 6.3.0, Dataproc 2.0, Microsoft Azure, and
     Databricks 7.3 and 8.2 logs
-  * Improved qualification tool performance
+  * Improved Qualification tool performance
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
@@ -469,10 +469,10 @@ New functionality for this release includes:
   * Range windows supporting non-timestamp order by expressions
 * Enabling large joins that can spill out of memory
 * Support for the `concat_ws` operator
-* Spark Qualification and Profiling Tools
-  * A qualification tool to look at a set of applications to determine if the RAPIDS Accelerator for
+* Qualification and Profiling Tools
+  * Qualification tool looks at a set of applications to determine if the RAPIDS Accelerator for
     Apache Spark is a good fit
-  * A profiling tool to generate information used for debugging and profiling applications
+  * Profiling tool to generate information used for debugging and profiling applications
 
 Performance improvements for this release include: 
 * Moving RAPIDS Shuffle out of beta
