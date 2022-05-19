@@ -29,9 +29,31 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
+
+// drop the fields that won't go to DataFrame without encoders
+case class TestQualificationSummary(
+    appName: String,
+    appId: String,
+    potentialProblems: String,
+    executorCpuTimePercent: Double,
+    endDurationEstimated: Boolean,
+    failedSQLIds: String,
+    readFileFormatAndTypesNotSupported: String,
+    readFileFormats: String,
+    writeDataFormat: String,
+    complexTypes: String,
+    nestedComplexTypes: String,
+    longestSqlDuration: Long,
+    sqlDataframeTaskDuration: Long,
+    nonSqlTaskDurationAndOverhead: Long,
+    unsupportedSQLTaskDuration: Long,
+    supportedSQLTaskDuration: Long,
+    taskSpeedupFactor: Double,
+    user: String,
+    startTime: Long)
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
@@ -69,33 +91,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("user", StringType, true)
     .add("startTime", LongType, true)
 
-
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
       Some(schema))
   }
-
-  // drop the fields that won't go to DataFrame without encoders
-  case class TestQualificationSummary(
-      appName: String,
-      appId: String,
-      potentialProblems: String,
-      executorCpuTimePercent: Double,
-      endDurationEstimated: Boolean,
-      failedSQLIds: String,
-      readFileFormatAndTypesNotSupported: String,
-      readFileFormats: String,
-      writeDataFormat: String,
-      complexTypes: String,
-      nestedComplexTypes: String,
-      longestSqlDuration: Long,
-      sqlDataframeTaskDuration: Long,
-      nonSqlTaskDurationAndOverhead: Long,
-      unsupportedSQLTaskDuration: Long,
-      supportedSQLTaskDuration: Long,
-      taskSpeedupFactor: Double,
-      user: String,
-      startTime: Long)
 
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
