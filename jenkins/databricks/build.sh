@@ -20,8 +20,10 @@ set -ex
 SPARKSRCTGZ=$1
 # version of Apache Spark we are building against
 BASE_SPARK_VERSION=$2
-MVN_OPT=$3
-BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$4
+BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$3
+
+# Move MVN_OPT to last, as it is empty in most cases
+MVN_OPT=$4
 MVN_OPT=${MVN_OPT:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
 BUILDVER=$(echo ${BASE_SPARK_VERSION} | sed 's/\.//g')db
