@@ -184,7 +184,6 @@ object SQLPlanParser extends Logging {
         case "WindowInPandas" =>
           WindowInPandasExecParser(node, checker, sqlID).parse
         case _ =>
-          // logWarning(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }

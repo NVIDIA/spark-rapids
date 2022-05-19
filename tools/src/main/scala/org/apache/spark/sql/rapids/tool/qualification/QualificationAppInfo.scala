@@ -339,7 +339,6 @@ class QualificationAppInfo(
         perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo)
     }
   }
-  // case class TaskTimeSummaryInfo(sqlDataframeTaskDuration: Long, nonSQLTaskDuration: Long)
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
