@@ -34,7 +34,7 @@ object RapidsErrorUtils {
       key: String,
       keyType: DataType,
       origin: Origin): NoSuchElementException = {
-    QueryExecutionErrors.mapKeyNotExistError(key, origin.context)
+    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
