@@ -146,12 +146,10 @@ object QualOutputWriter {
   val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
   val NONSQL_DUR_STR = "NONSQL Task Duration Plus Overhead"
-  val ESTIMATED_DURATION_STR = "Estimated Duration"
   val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
   val SPEEDUP_DURATION_STR = "Speedup Duration"
   val SPEEDUP_FACTOR_STR = "Speedup Factor"
   val AVERAGE_SPEEDUP_STR = "Average Speedup Factor"
-  val TOTAL_SPEEDUP_STR = "Total Speedup"
   val SPEEDUP_BUCKET_STR = "Recommendation"
   val LONGEST_SQL_DURATION_STR = "Longest SQL Duration"
   val EXEC_STR = "Exec Name"
@@ -172,7 +170,6 @@ object QualOutputWriter {
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
   val NON_SQL_TASK_DURATION_SIZE: Int = NON_SQL_TASK_DURATION_STR.size
   val SPEEDUP_BUCKET_STR_SIZE: Int = Recommendation.Strongly_Recommended.toString.size
-  val TOTAL_SPEEDUP_STR_SIZE: Int = TOTAL_SPEEDUP_STR.size
   val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
   val GPU_OPPORTUNITY_STR_SIZE: Int = GPU_OPPORTUNITY_STR.size
 
@@ -253,12 +250,9 @@ object QualOutputWriter {
         getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE,
       NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
-      ESTIMATED_DURATION_STR -> ESTIMATED_DURATION_STR.size,
       UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size,
       SPEEDUP_DURATION_STR -> SPEEDUP_DURATION_STR.size,
       SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
-      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR.size,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size,
       APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size
     )
     if (reportReadSchema) {
@@ -427,9 +421,9 @@ object QualOutputWriter {
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
-      appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
+      appInfo.estimatedInfo.sqlDfDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
-      appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
+      appInfo.estimatedInfo.appDur.toString -> headersAndSizes(APP_DUR_STR),
       appInfo.estimatedInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
@@ -440,13 +434,10 @@ object QualOutputWriter {
       potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
       appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
-      f"${appInfo.estimatedTaskDuration}%1.2f" -> headersAndSizes(ESTIMATED_DURATION_STR),
       appInfo.unsupportedSQLTaskDuration.toString ->
         headersAndSizes(UNSUPPORTED_DURATION_STR),
       appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
       f"${appInfo.taskSpeedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
-      f"${appInfo.totalSpeedup}%1.2f" -> headersAndSizes(TOTAL_SPEEDUP_STR),
-      stringIfempty(appInfo.recommendation.toString) -> headersAndSizes(SPEEDUP_BUCKET_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
     )
 
