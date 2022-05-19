@@ -37,22 +37,23 @@ import org.apache.spark.sql.types._
 case class TestQualificationSummary(
     appName: String,
     appId: String,
-    potentialProblems: String,
+    sqlDataframeDuration: Long,
+    sqlDataframeTaskDuration: Long,
+    appDuration: Long,
+    gpuOpportunity: Long,
     executorCpuTimePercent: Double,
-    endDurationEstimated: Boolean,
     failedSQLIds: String,
     readFileFormatAndTypesNotSupported: String,
     writeDataFormat: String,
     complexTypes: String,
     nestedComplexTypes: String,
+    potentialProblems: String,
     longestSqlDuration: Long,
-    sqlDataframeTaskDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
     unsupportedSQLTaskDuration: Long,
     supportedSQLTaskDuration: Long,
     taskSpeedupFactor: Double,
-    user: String,
-    startTime: Long)
+    endDurationEstimated: Boolean)
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
@@ -73,22 +74,24 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   val schema = new StructType()
     .add("App Name", StringType, true)
     .add("App ID", StringType, true)
-    .add("Potential Problems", StringType, true)
+    .add("SQL DF Duration", LongType, true)
+    .add("SQL Dataframe Task Duration", LongType, true)
+    .add("App Duration", LongType, true)
+    .add("GPU Opportunity", LongType, true)
     .add("Executor CPU Time Percent", DoubleType, true)
-    .add("App Duration Estimated", BooleanType, true)
     .add("SQL Ids with Failures", StringType, true)
     .add("Unsupported Read File Formats and Types", StringType, true)
     .add("Unsupported Write Data Format", StringType, true)
     .add("Complex Types", StringType, true)
     .add("Nested Complex Types", StringType, true)
+    .add("Potential Problems", StringType, true)
     .add("Longest SQL Duration", LongType, true)
-    .add("SQL Dataframe Task Duration", LongType, true)
     .add("NONSQL Task Duration Plus Overhead", LongType, true)
     .add("Unsupported Task Duration", LongType, true)
-    .add("Supported Task Duration", LongType, true)
+    .add("Supported DF Task Duration", LongType, true)
     .add("Speedup Factor", DoubleType, true)
-    .add("user", StringType, true)
-    .add("startTime", LongType, true)
+    .add("App Duration Estimated", BooleanType, true)
+
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -98,13 +101,14 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
     appSums.map { sum =>
-      TestQualificationSummary(sum.appName, sum.appId, sum.potentialProblems,
-        sum.executorCpuTimePercent, sum.endDurationEstimated, sum.failedSQLIds,
+      TestQualificationSummary(sum.appName, sum.appId, sum.estimatedInfo.sqlDfDuration,
+        sum.sqlDataframeTaskDuration, sum.estimatedInfo.appDur,
+        sum.estimatedInfo.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
         sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
-        sum.complexTypes, sum.nestedComplexTypes, sum.longestSqlDuration,
-        sum.sqlDataframeTaskDuration, sum.nonSqlTaskDurationAndOverhead,
+        sum.complexTypes, sum.nestedComplexTypes, sum.potentialProblems, sum.longestSqlDuration,
+        sum.nonSqlTaskDurationAndOverhead,
         sum.unsupportedSQLTaskDuration, sum.supportedSQLTaskDuration, sum.taskSpeedupFactor,
-        sum.user, sum.startTime)
+        sum.endDurationEstimated)
     }
   }
 
