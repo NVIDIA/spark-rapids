@@ -43,11 +43,10 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
-  private def assertSizeAndNotSupported(size: Int, execs: Seq[ExecInfo],
-      speedupFactor: Int = 1): Unit = {
+  private def assertSizeAndNotSupported(size: Int, execs: Seq[ExecInfo]): Unit = {
     for (t <- Seq(execs)) {
       assert(t.size == size, t)
-      assert(t.forall(_.speedupFactor == speedupFactor), t)
+      assert(t.forall(_.speedupFactor == 1), t)
       assert(t.forall(_.isSupported == false), t)
       assert(t.forall(_.children.isEmpty), t)
       assert(t.forall(_.duration.isEmpty), t)
@@ -489,16 +488,16 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
     val flatMapGroups = allExecInfo.filter(_.exec == "FlatMapGroupsInPandas")
-    assertSizeAndSupported(1, flatMapGroups)
+    assertSizeAndSupported(1, flatMapGroups, speedUpFactor = 1.2)
     val aggregateInPandas = allExecInfo.filter(_.exec == "AggregateInPandas")
-    assertSizeAndSupported(1, aggregateInPandas)
+    assertSizeAndSupported(1, aggregateInPandas, speedUpFactor = 1.2)
     // this event log had UDF for ArrowEvalPath so shows up as not supported
     val arrowEvalPython = allExecInfo.filter(_.exec == "ArrowEvalPython")
-    assertSizeAndNotSupported(1, arrowEvalPython, speedupFactor=2)
+    assertSizeAndSupported(1, arrowEvalPython, speedUpFactor = 1.2)
     val mapInPandas = allExecInfo.filter(_.exec == "MapInPandas")
-    assertSizeAndSupported(1, mapInPandas)
+    assertSizeAndSupported(1, mapInPandas, speedUpFactor = 1.2)
     val windowInPandas = allExecInfo.filter(_.exec == "WindowInPandas")
-    assertSizeAndNotSupported(1, windowInPandas)
+    assertSizeAndSupported(1, windowInPandas, speedUpFactor = 1.2)
   }
 
   // GlobalLimit and LocalLimit is not in physical plan when collect is called on the dataframe.

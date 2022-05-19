@@ -89,6 +89,9 @@ object SQLPlanParser extends Logging {
     }.toSeq
   }
 
+  private val skipUDFCheckExecs = Seq("ArrowEvalPython", "AggregateInPandas",
+    "FlatMapGroupsInPandas", "MapInPandas", "WindowInPandas")
+
   def parsePlanNode(
       node: SparkPlanGraphNode,
       sqlID: Long,
@@ -187,9 +190,12 @@ object SQLPlanParser extends Logging {
       }
       // check is the node has a dataset operations and if so change to not supported
       val ds = app.isDataSetOrRDDPlan(node.desc)
-      // TODO - this is going to cause the *InPandas and the ArrowEvalPython to possibly
-      // be reported as not supported
-      val containsUDF = app.containsUDF(node.desc)
+      // we don't want to mark the *InPandas and ArrowEvalPythonExec as unsupported with UDF
+      val containsUDF = if (skipUDFCheckExecs.contains(node.name)) {
+        false
+      } else {
+        app.containsUDF(node.desc)
+      }
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF
       Seq(execInfos.copy(stages = stagesInNode, isSupported = supported))
