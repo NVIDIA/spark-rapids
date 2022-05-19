@@ -94,7 +94,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       order: String): Seq[EstimatedSummaryInfo] = {
     if (QualificationArgs.isOrderAsc(order)) {
       sumsToWrite.sortBy(sum => {
-        (sum.recommendation, -sum.estimatedGpuSpeedup, -sum.estimatedGpuTimeSaved)
+        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       })
     } else {
       sumsToWrite.sortBy(sum => {

@@ -496,8 +496,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assertSizeAndSupported(1, arrowEvalPython, speedUpFactor = 1.2)
     val mapInPandas = allExecInfo.filter(_.exec == "MapInPandas")
     assertSizeAndSupported(1, mapInPandas, speedUpFactor = 1.2)
+    // WindowInPandas configured off by default
     val windowInPandas = allExecInfo.filter(_.exec == "WindowInPandas")
-    assertSizeAndSupported(1, windowInPandas, speedUpFactor = 1.2)
+    assertSizeAndNotSupported(1, windowInPandas)
   }
 
   // GlobalLimit and LocalLimit is not in physical plan when collect is called on the dataframe.
