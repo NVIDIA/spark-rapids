@@ -97,7 +97,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val dfTmp = appSum.toDF.drop("readFileFormats")
       val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
       if (shouldReturnEmpty) {
-        assert(appSum.head.sqlDataFrameDuration == 0.0)
+        assert(appSum.head.estimatedInfo.sqlDfDuration == 0.0)
       } else {
         val dfExpect = readExpectedFile(resultExpectation)
         assert(!dfQual.isEmpty)

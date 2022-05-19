@@ -424,7 +424,7 @@ object Recommendation extends Enumeration {
   val Strongly_Recommended = Value(3, "Strongly_Recommended")
   val Recommended = Value(2, "Recommended")
   val Not_Recommended = Value(1, "Not_Recommended")
-  val Not_Applicable = Value(1, "Not_Applicable")
+  val Not_Applicable = Value(0, "Not_Applicable")
 }
 
 object QualificationAppInfo extends Logging {
