@@ -31,13 +31,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("issue 5450 ci failure 1") {
     val pattern = Seq("D?")
     val inputs = Seq("\u000E\u0011\u0006h\u00B9TEST\ud720AA")
-    assertCpuGpuMatchesRegexpFind(pattern, inputs)
+    assertCpuGpuMatchesRegexpReplace(pattern, inputs)
   }
 
   test("issue 5450 ci failure 2") {
     val pattern = Seq("D?")
     val inputs = Seq("\u000E\u0011\u0006h¹TEST\ud720AA")
-    assertCpuGpuMatchesRegexpFind(pattern, inputs)
+    assertCpuGpuMatchesRegexpReplace(pattern, inputs)
   }
 
   test("transpiler detects invalid cuDF patterns") {
