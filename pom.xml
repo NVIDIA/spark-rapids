@@ -71,6 +71,12 @@
     </developers>
     <profiles>
         <profile>
+            <id>java-8-api</id>
+            <properties>
+                <maven.compiler.release>${java.major.version}</maven.compiler.release>
+            </properties>
+        </profile>
+        <profile>
             <id>release24X</id>
             <activation>
                 <property>
@@ -818,7 +824,9 @@
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>22.06.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
+        <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
+        <scala.javac.args>-Xlint:all,-serial,-path,-try</scala.javac.args>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
@@ -1059,7 +1067,7 @@
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                        <recompileMode>incremental</recompileMode>
+                        <recompileMode>${scala.recompileMode}</recompileMode>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>
@@ -1074,13 +1082,7 @@
                             <jvmArg>-Xms1024m</jvmArg>
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
-                        <javacArgs>
-                            <javacArg>-source</javacArg>
-                            <javacArg>${maven.compiler.source}</javacArg>
-                            <javacArg>-target</javacArg>
-                            <javacArg>${maven.compiler.target}</javacArg>
-                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
-                        </javacArgs>
+                        <addJavacArgs>${scala.javac.args}</addJavacArgs>
                     </configuration>
                 </plugin>
                 <plugin>
