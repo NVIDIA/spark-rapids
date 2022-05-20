@@ -474,6 +474,12 @@ case class GpuTransformKeys(
 
   override def prettyName: String = "transform_keys"
 
+  private val exceptionOnDupKeys = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+    SQLConf.MapKeyDedupPolicy.EXCEPTION.toString
+
+  override lazy val hasSideEffects: Boolean =
+    function.nullable || exceptionOnDupKeys || super.hasSideEffects
+
   override def bind(input: AttributeSeq): GpuExpression = {
     val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
 
@@ -491,8 +497,7 @@ case class GpuTransformKeys(
           updatedMapView => {
             GpuMapUtils.assertNoNullKeys(updatedMapView)
             withResource(updatedMapView.dropListDuplicatesWithKeysValues()) { deduped =>
-              if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-                SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
+              if (exceptionOnDupKeys) {
                 // Compare child data row count before and after removing duplicates to determine
                 // if there were duplicates.
                 withResource(deduped.getChildColumnView(0)) { a =>
