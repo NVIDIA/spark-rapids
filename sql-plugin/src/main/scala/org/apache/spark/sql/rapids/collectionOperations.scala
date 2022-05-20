@@ -109,8 +109,9 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
               keys.append(GpuMapUtils.getKeysAsListView(col.getBase))
               values.append(GpuMapUtils.getValuesAsListView(col.getBase))
             }    
-            (ColumnVector.listConcatenateByRow(keys: _*), 
-              ColumnVector.listConcatenateByRow(values: _*))
+            closeOnExcept(ColumnVector.listConcatenateByRow(keys: _*)) {key_list =>
+              (key_list, ColumnVector.listConcatenateByRow(values: _*))
+            }
           }
         }
       }
