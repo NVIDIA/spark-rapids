@@ -474,7 +474,7 @@ case class GpuTransformKeys(
 
   override def prettyName: String = "transform_keys"
 
-  private val exceptionOnDupKeys = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+  private def exceptionOnDupKeys = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
     SQLConf.MapKeyDedupPolicy.EXCEPTION.toString
 
   override lazy val hasSideEffects: Boolean =
