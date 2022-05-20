@@ -949,30 +949,6 @@ def test_regexp_octal_digits():
             ),
         conf=_regexp_conf)
 
-def test_regexp_replace_digit():
-    gen = mk_str_gen('[a-z]{0,2}[0-9]{0,2}') \
-        .with_special_case('䤫畍킱곂⬡❽ࢅ獰᳌蛫青')
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'regexp_replace(a, "\\\\d", "x")',
-            'regexp_replace(a, "\\\\D", "x")',
-            'regexp_replace(a, "[0-9]", "x")',
-            'regexp_replace(a, "[^0-9]", "x")',
-        ),
-        conf=_regexp_conf)
-
-def test_regexp_replace_word():
-    gen = mk_str_gen('[a-z]{0,2}[_]{0,1}[0-9]{0,2}') \
-        .with_special_case('䤫畍킱곂⬡❽ࢅ獰᳌蛫青')
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'regexp_replace(a, "\\\\w", "x")',
-            'regexp_replace(a, "\\\\W", "x")',
-            'regexp_replace(a, "[a-zA-Z_0-9]", "x")',
-            'regexp_replace(a, "[^a-zA-Z_0-9]", "x")',
-        ),
-        conf=_regexp_conf)
-
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
