@@ -301,14 +301,20 @@ class QualificationAppInfo(
       // Using the spark SQL reported duration, this could be a bit off from the
       // task times because it relies on the stage times and we might not have
       // a stage for every exec
-      val sparkSQLDFDuration = sqlIdToInfo.map { case (_, info) =>
-        info.duration.getOrElse(0)
-      }.sum
+      val allSQLDurations = sqlIdToInfo.map { case (_, info) =>
+        info.duration.getOrElse(0L)
+      }
+      val sparkSQLDFWallClockDuration = allSQLDurations.sum
+      val longestSQLDuration = if (allSQLDurations.size > 0) {
+        allSQLDurations.max
+      } else {
+        0L
+      }
 
       val sqlDFSupportedWallClockDurationBasedStages = perSqlStageSummary.map { s =>
         s.estimateWallClockSupported
       }.sum
-      logWarning(s"sql df spark duration is $sparkSQLDFDuration " +
+      logWarning(s"sql df spark duration is $sparkSQLDFWallClockDuration " +
         s"stages version: $sqlDFSupportedWallClockDurationBasedStages")
 
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
