@@ -546,15 +546,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       RegexReplaceMode)
   }
 
-  // ignored because this fails in CI
-  // https://github.com/NVIDIA/spark-rapids/issues/5549
   test("AST fuzz test - regexp_find - full unicode input") {
     doAstFuzzTest(None, REGEXP_LIMITED_CHARS_FIND,
       RegexFindMode)
   }
 
-  // ignored because this fails in CI
-  // https://github.com/NVIDIA/spark-rapids/issues/5549
   test("AST fuzz test - regexp_replace - full unicode input") {
     doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
       RegexReplaceMode)
