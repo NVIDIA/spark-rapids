@@ -71,12 +71,6 @@
     </developers>
     <profiles>
         <profile>
-            <id>java-8-api</id>
-            <properties>
-                <maven.compiler.release>${java.major.version}</maven.compiler.release>
-            </properties>
-        </profile>
-        <profile>
             <id>release24X</id>
             <activation>
                 <property>
@@ -814,6 +808,7 @@
     </profiles>
 
     <properties>
+        <allowConventionalDistJar>false</allowConventionalDistJar>
         <buildver>311</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
