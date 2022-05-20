@@ -101,6 +101,30 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 You can build against different versions of the CUDA Toolkit by using qone of the following profiles:
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
+### Building and Testing with JDK9+
+We support JDK8 as our main JDK version. However, it's possible to build and run with more modern
+JDK versions as well. To this end set `JAVA_HOME` in the environment to your JDK root directory.
+
+With JDK9+, you need to disable the default classloader manipulation option and set
+spark.rapids.force.caller.classloader=false in your Spark application configuration. There are, however,
+known issues with it, e.g. see #5513.
+
+At the time of this writing, the most robust way to run the Plugin from a jar dedicated to
+a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
+
+Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or later to correctly process
+[maven.compiler.release](https://github.com/davidB/scala-maven-plugin/blob/4.6.1/src/main/java/scala_maven/ScalaMojoSupport.java#L161)
+flag if cross-compilation is required.
+
+```bash
+mvn clean verify -Dbuildver=321 \
+  -Dmaven.compiler.release=11 \
+  -Dmaven.compiler.source=11 \
+  -Dmaven.compiler.target=11 \
+  -Dscala.plugin.version=4.6.1 \
+  -DallowConventionalDistJar=true
+```
+
 ## Code contributions
 
 ### Source code layout
@@ -160,8 +184,8 @@ Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021
 select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0, and click "Reload"
 if not triggered automatically.
 
-There is a known issue where, even after selecting a different Maven profile in the Maven submenu, the source folders from 
-a previously selected profile may remain active. To get around this you have to manually reload the Maven project from 
+There is a known issue where, even after selecting a different Maven profile in the Maven submenu, the source folders from
+a previously selected profile may remain active. To get around this you have to manually reload the Maven project from
 the Maven side menu.
 
 If you see Scala symbols unresolved (highlighted red) in IDEA please try the following steps to resolve it:
