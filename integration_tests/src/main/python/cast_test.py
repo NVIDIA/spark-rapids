@@ -407,7 +407,7 @@ long_gen_to_timestamp = LongGen(max_val=math.floor((9999-1970) * 365 * 86400),
     int_gen,
     long_gen_to_timestamp], ids=idfn)
 def test_cast_integral_to_timestamp(gen, ansi_enabled):
-    if(is_before_spark_330() and ansi_enabled): # 31x does not support in ANSI mode
+    if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
         pytest.skip()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr("cast(a as timestamp)"),
@@ -415,7 +415,7 @@ def test_cast_integral_to_timestamp(gen, ansi_enabled):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 def test_cast_float_to_timestamp(ansi_enabled):
-    if(is_before_spark_330() and ansi_enabled): # 31x does not support in ANSI mode
+    if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
         pytest.skip()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, long_gen_to_timestamp)
@@ -424,7 +424,7 @@ def test_cast_float_to_timestamp(ansi_enabled):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 def test_cast_double_to_timestamp(ansi_enabled):
-    if (is_before_spark_330() and ansi_enabled):  # 31x does not support in ANSI mode
+    if (is_before_spark_330() and ansi_enabled):  # 330- does not support in ANSI mode
         pytest.skip()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, long_gen_to_timestamp)
@@ -449,7 +449,7 @@ def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 def test_cast_timestamp_to_numeric(ansi_enabled):
-    if(is_before_spark_330() and ansi_enabled): # 31x does not support in ANSI mode
+    if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
         pytest.skip()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)
