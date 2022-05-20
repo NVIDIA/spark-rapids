@@ -50,7 +50,6 @@ class QualificationAppInfo(
     HashMap.empty[Long, StageTaskQualificationSummary]
 
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
-  val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoFailures: HashMap[Long, ArrayBuffer[String]] = HashMap.empty[Long, ArrayBuffer[String]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
@@ -318,6 +317,16 @@ class QualificationAppInfo(
         s"stages version: $sqlDFSupportedWallClockDurationBasedStages")
 
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
+      val allStageIdsInExecs = allStagesSummary.flatMap(s => s.map(_.stageId)).toSet
+      val allStageIdsNotInExecs = origPlanInfos.flatMap(_.stageIdsNotInExecs).toSet
+      // make sure no other sql ids used stages listed as not in execs
+      val allStageIdsNotInExecsNoOverlap = allStageIdsNotInExecs -- allStageIdsInExecs
+      val taskDurationForStageIdsNotInExecs = allStageIdsNotInExecsNoOverlap.map { sId =>
+        stageIdToTaskEndSum.values.map(_.totalTaskDuration).sum
+      }.sum
+      logWarning(s"task duration from stage ids not in execs: $taskDurationForStageIdsNotInExecs," +
+        s"stage ids not in execs ${allStageIdsNotInExecs.mkString(",")}, final" +
+        s" ${allStageIdsNotInExecsNoOverlap.mkString(",")}")
       val sqlDataframeTaskDuration = allStagesSummary.flatMap(_.map(s => s.stageTaskTime)).sum
       val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0

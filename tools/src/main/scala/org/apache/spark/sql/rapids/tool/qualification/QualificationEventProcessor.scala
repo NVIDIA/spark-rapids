@@ -130,7 +130,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event.stageIds.foreach { stageId =>
         app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
-      app.jobIdToSqlID(event.jobId) = sqlID
     }
   }
 
