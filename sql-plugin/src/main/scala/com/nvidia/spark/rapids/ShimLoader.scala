@@ -140,6 +140,7 @@ object ShimLoader extends Logging {
       .flatMap {
         case env if !env.conf.get("spark.rapids.force.caller.classloader",
           true.toString).toBoolean => Option(env.serializer)
+        case _ if (conventionalSingleShimJarDetected) => None
         case _ =>
           logInfo("Forcing shim caller classloader update (default behavior). " +
             "If it causes issues with userClassPathFirst, set " +
@@ -164,7 +165,9 @@ object ShimLoader extends Logging {
         findURLClassLoader(serdeClassLoader)
       }.orElse {
         val shimLoaderCallerCl = getClass.getClassLoader
-        logInfo("Falling back on ShimLoader caller's classloader " + shimLoaderCallerCl)
+        if (!conventionalSingleShimJarDetected) {
+          logInfo("Falling back on ShimLoader caller's classloader " + shimLoaderCallerCl)
+        }
         Option(shimLoaderCallerCl)
       }
   }
@@ -212,10 +215,10 @@ object ShimLoader extends Logging {
     // TODO propose a proper addClassPathURL API to Spark similar to addJar but
     //  accepting non-file-based URI
     serializerClassloader().foreach { urlAddable =>
-      logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
-        urlsForSparkClassLoader.mkString(", "))
       urlsForSparkClassLoader.foreach { url =>
         if (!conventionalSingleShimJarDetected) {
+          logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
+            urlsForSparkClassLoader.mkString(", "))
           Try(MethodUtils.invokeMethod(urlAddable, true, "addURL", url))
             .recoverWith {
               case nsm: NoSuchMethodException =>
