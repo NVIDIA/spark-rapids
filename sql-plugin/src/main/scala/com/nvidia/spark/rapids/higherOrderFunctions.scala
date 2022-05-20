@@ -508,7 +508,7 @@ case class GpuTransformKeys(
                   }
                 }
               }
-              GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+              GpuColumnVector.from(deduped.incRefCount(), dataType)
             }
           }
         }
