@@ -84,23 +84,13 @@ def test_concat_string():
 
 @pytest.mark.parametrize('data_gen', all_basic_map_gens + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_concat(data_gen):
-    conf = {"spark.sql.mapKeyDedupPolicy": "LAST_WIN"}
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr('map_concat(a)'),
-        conf)
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr('map_concat(a, b)'),
-        conf)
-
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, data_gen, data_gen, data_gen
-                                   ).selectExpr('map_concat(a, b, c)'),
-        conf)
-
-def test_map_concat_empty():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, MapGen(LongGen(False), ByteGen())).selectExpr('map_concat()'))
+                                   ).selectExpr('map_concat()',
+                                                'map_concat(a)',
+                                                'map_concat(b, c)',
+                                                'map_concat(a, b, c)'),
+        {"spark.sql.mapKeyDedupPolicy": "LAST_WIN"})
 
 @pytest.mark.parametrize('data_gen', all_gen + nested_gens, ids=idfn)
 @pytest.mark.parametrize('size_of_null', ['true', 'false'], ids=idfn)
