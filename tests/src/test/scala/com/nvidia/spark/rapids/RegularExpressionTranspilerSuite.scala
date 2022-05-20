@@ -383,20 +383,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  test("fall back to CPU for \\D") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4475
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("\\D", mode, "non-digit class \\D is not supported")
-    }
-  }
-
-  test("fall back to CPU for \\W") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4475
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("\\W", mode, "non-word class \\W is not supported")
-    }
-  }
-
   test("compare CPU and GPU: replace digits") {
     // note that we do not test with quantifiers `?` or `*` due
     // to https://github.com/NVIDIA/spark-rapids/issues/4468
