@@ -15,7 +15,6 @@
  */
 package com.nvidia.spark.rapids
 
-
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
@@ -527,27 +526,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("AST fuzz test - regexp_find") {
-    doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), REGEXP_LIMITED_CHARS_FIND,
-      RegexFindMode)
+    doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), RegexFindMode)
   }
 
   test("AST fuzz test - regexp_replace") {
-    doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), REGEXP_LIMITED_CHARS_REPLACE,
-      RegexReplaceMode)
-  }
-
-  // ignored because this fails in CI
-  // https://github.com/NVIDIA/spark-rapids/issues/5549
-  test("AST fuzz test - regexp_find - full unicode input") {
-    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_FIND,
-      RegexFindMode)
-  }
-
-  // ignored because this fails in CI
-  // https://github.com/NVIDIA/spark-rapids/issues/5549
-  test("AST fuzz test - regexp_replace - full unicode input") {
-    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
-      RegexReplaceMode)
+    doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), RegexReplaceMode)
   }
 
   test("string split - optimized") {
@@ -588,7 +571,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("string split fuzz") {
     val (data, patterns) = generateDataAndPatterns(Some(REGEXP_LIMITED_CHARS_REPLACE),
-      REGEXP_LIMITED_CHARS_REPLACE, RegexSplitMode)
+      RegexSplitMode)
     for (limit <- Seq(-2, -1, 2, 5)) {
       doStringSplitTest(patterns, data, limit)
     }
@@ -649,9 +632,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
-  private def doAstFuzzTest(validDataChars: Option[String], validPatternChars: String,
-      mode: RegexMode) {
-    val (data, patterns) = generateDataAndPatterns(validDataChars, validPatternChars, mode)
+  private def doAstFuzzTest(validChars: Option[String], mode: RegexMode) {
+    val (data, patterns) = generateDataAndPatterns(validChars, mode)
     if (mode == RegexReplaceMode) {
       assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
     } else {
@@ -659,19 +641,17 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
-  private def generateDataAndPatterns(
-      validDataChars: Option[String],
-      validPatternChars: String,
-      mode: RegexMode): (Seq[String], Set[String]) = {
+  private def generateDataAndPatterns(validChars: Option[String], mode: RegexMode)
+      : (Seq[String], Set[String]) = {
+    val r = new EnhancedRandom(new Random(seed = 0L),
+      FuzzerOptions(validChars, maxStringLen = 12))
 
-    val dataGen = new EnhancedRandom(new Random(seed = 0L),
-      FuzzerOptions(validDataChars, maxStringLen = 12))
+    val fuzzer = new FuzzRegExp(REGEXP_LIMITED_CHARS_FIND)
 
     val data = Range(0, 1000)
-      .map(_ => dataGen.nextString())
+      .map(_ => r.nextString())
 
     // generate patterns that are valid on both CPU and GPU
-    val fuzzer = new FuzzRegExp(validPatternChars)
     val patterns = HashSet[String]()
     while (patterns.size < 5000) {
       val pattern = fuzzer.generate(0).toRegexString
