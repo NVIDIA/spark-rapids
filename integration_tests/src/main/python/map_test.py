@@ -442,6 +442,12 @@ def test_transform_keys_last_win(data_gen):
             lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> 1)'),
             conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False), long_gen)], ids=idfn)
+def test_transform_keys_last_win2(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> key % 2)'),
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
 # We add in several types of processing for foldable functions because the output
 # can be different types.
 @pytest.mark.parametrize('query', [
