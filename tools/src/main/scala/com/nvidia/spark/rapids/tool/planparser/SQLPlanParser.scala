@@ -87,7 +87,7 @@ object SQLPlanParser extends Logging {
     // all stages should be in both, just double check
     val stagesInBoth = allStagesBasedOnJobs.toSet.intersect(allStagesInExecs.toSet)
     if (stagesInBoth.size != allStagesInExecs.size) {
-      logWarning("Something is wrong, all the stages from execs are not in the jobs stages")
+      logError("Something is wrong, all the stages from execs are not in the jobs stages")
     }
     val stagesNotInExecs = allStagesBasedOnJobs.toSet.diff(allStagesInExecs.toSet)
     logWarning(s"Stages not in execs are: $stagesNotInExecs")

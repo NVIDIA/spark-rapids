@@ -189,6 +189,18 @@ class QualificationAppInfo(
     }
   }
 
+  private def getFlattenedExecs(execs: Seq[ExecInfo]): Seq[ExecInfo] = {
+    // need to remove the WholeStageCodegen wrappers since they aren't actual
+    // execs that we want to get timings of
+    execs.flatMap { e =>
+      if (e.exec.contains("WholeStageCodegen")) {
+        e.children.getOrElse(Seq.empty)
+      } else {
+        e.children.getOrElse(Seq.empty) :+ e
+      }
+    }
+  }
+
   def summarizeStageLevel(allStagesToExecs: Map[Int, Seq[ExecInfo]]): Set[StageQualSummaryInfo] = {
     // if it doesn't have a stage id associated we can't calculate the time spent in that
     // SQL so we just drop it
@@ -199,21 +211,12 @@ class QualificationAppInfo(
       val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
       val speedupFactors = execsForStage.map(_.speedupFactor)
       val averageSpeedupFactor = SQLPlanParser.averageSpeedup(speedupFactors)
-      // need to remove the WholeStageCodegen wrappers since they aren't actual
-      // execs that we want to get timings of
-      val allFlattenedExecs = execsForStage.flatMap { e =>
-        if (e.exec.contains("WholeStageCodegen")) {
-          e.children.getOrElse(Seq.empty)
-        } else {
-          e.children.getOrElse(Seq.empty) :+ e
-        }
-      }
+      val allFlattenedExecs = getFlattenedExecs(execsForStage)
       val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
       // if we have unsupported try to guess at how much time.  For now divide
       // time by number of execs and give each one equal weight
       val eachExecTime = stageTaskTime / allFlattenedExecs.size
       val unsupportedDur = eachExecTime * numUnsupported.size
-
       StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
     }
   }
@@ -239,6 +242,13 @@ class QualificationAppInfo(
         // don't worry about supported execs for these are these are mostly indicator of I/O
         val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
         val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
+
+        val execsWithoutStages = getFlattenedExecs(execInfos).filter(_.stages.isEmpty)
+        logWarning(s"execs without stages include: ${execsWithoutStages.mkString(",")}")
+        // estimate the speedup factor
+        // pInfo.stageIdsNotInExecs
+
+
 
         SQLStageSummary(stageSum, sqlID, estimateWallclockSupported,
           execCPUTime, execRunTime)
