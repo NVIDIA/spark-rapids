@@ -32,7 +32,6 @@ import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, P
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
-import org.apache.avro.mapred.FsInput
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 
@@ -701,9 +700,7 @@ class GpuMultiFileCloudAvroPartitionReader(
      */
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
-      val in = new FsInput(new Path(new URI(partFile.filePath)), config)
-      val reader = closeOnExcept(in) { _ => AvroFileReader.openDataReader(in) }
-      withResource(reader) { _ =>
+      withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
         // Go to the start of the first block after the start position
         reader.sync(partFile.start)
         if (!reader.hasNextBlock || isDone) {
@@ -959,9 +956,7 @@ case class AvroFileFilterHandler(
 
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
     if (ignoreExtension || partFile.filePath.endsWith(".avro")) {
-      val in = new FsInput(new Path(new URI(partFile.filePath)), hadoopConf)
-      val reader = closeOnExcept(in) { _ => AvroFileReader.openMetaReader(in) }
-      withResource(reader) { _ =>
+      withResource(AvroFileReader.openMetaReader(partFile.filePath, hadoopConf)) { reader =>
         // Get blocks only belong to this split
         reader.sync(partFile.start)
         val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)
