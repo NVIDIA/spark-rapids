@@ -337,11 +337,17 @@ class QualificationAppInfo(
         1
       }
 
+      val stageIdsUsedForSQL = allStagesSummary.flatMap(_.map(s => s.stageId))
       // currently for task duration we use the stage task time, sql duration could be different
       // from that as not everything has stages or is run on driver
-      val sparkStageWallClockDuration = stageIdToInfo.map(s => s._2.duration.getOrElse(0L)).sum
+      // TODO - still need to deal with attempts
+      val stagesInfoUsedForSQL = stageIdToInfo.filter { case ((s, _), _) =>
+        stageIdsUsedForSQL.contains(s)
+      }
+      val sparkStageWallClockDuration = stagesInfoUsedForSQL.map(_._2.duration.getOrElse(0L)).sum
       val sqlDurOverhead = sparkSQLDFWallClockDuration - sparkStageWallClockDuration
-      logWarning(s"sql duration overhead is $sqlDurOverhead")
+      logWarning(s"sql duration overhead is $sqlDurOverhead $sparkSQLDFWallClockDuration" +
+        s" $sparkStageWallClockDuration")
 
       val appName = appInfo.map(_.appName).getOrElse("")
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
