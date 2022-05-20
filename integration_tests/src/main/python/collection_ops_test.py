@@ -31,18 +31,12 @@ non_nested_array_gens = [ArrayGen(sub_gen, nullable=nullable)
 @pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
 def test_concat_list(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr('concat(a)'))
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr('concat(a, b)'))
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen
-                                   ).selectExpr('concat(a, b, c)'))
-
-def test_empty_concat_list():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, ArrayGen(LongGen())).selectExpr('concat()'))
+        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen).selectExpr(
+            'concat()',
+            'concat(a)',
+            'concat(a, b)',
+            'concat(a, b, c)')
+        )
 
 @pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
 def test_concat_list_with_lit(data_gen):
