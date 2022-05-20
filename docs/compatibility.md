@@ -588,9 +588,7 @@ Here are some examples of regular expression patterns that are not supported on 
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported by `regexp_replace`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Non-digit character class `\D`
-- Non-word character class `\W`
-- Word and non-word boundaries, `\b` and `\B`
+ Word and non-word boundaries, `\b` and `\B`
 - Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
