@@ -115,14 +115,14 @@ class QualificationAppInfo(
     var pivot = startTime
     var overhead : Long = 0
 
-    sortedJobs.foreach(job => {
+    sortedJobs.foreach { job =>
       val timeDiff = job.startTime - pivot
       if (timeDiff > 0) {
         overhead += timeDiff
       }
       // if jobEndTime is not set, use job.startTime
-      pivot = Math max(pivot, job.endTime.getOrElse(job.startTime))
-    })
+      pivot = Math.max(pivot, job.endTime.getOrElse(job.startTime))
+    }
     overhead
   }
 
@@ -336,18 +336,6 @@ class QualificationAppInfo(
       } else {
         1
       }
-
-      val stageIdsUsedForSQL = allStagesSummary.flatMap(_.map(s => s.stageId))
-      // currently for task duration we use the stage task time, sql duration could be different
-      // from that as not everything has stages or is run on driver
-      // TODO - still need to deal with attempts
-      val stagesInfoUsedForSQL = stageIdToInfo.filter { case ((s, _), _) =>
-        stageIdsUsedForSQL.contains(s)
-      }
-      val sparkStageWallClockDuration = stagesInfoUsedForSQL.map(_._2.duration.getOrElse(0L)).sum
-      val sqlDurOverhead = sparkSQLDFWallClockDuration - sparkStageWallClockDuration
-      logWarning(s"sql duration overhead is $sqlDurOverhead $sparkSQLDFWallClockDuration" +
-        s" $sparkStageWallClockDuration")
 
       val appName = appInfo.map(_.appName).getOrElse("")
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
