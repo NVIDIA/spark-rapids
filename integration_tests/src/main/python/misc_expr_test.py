@@ -33,8 +33,13 @@ def test_part_id():
                 f.spark_partition_id()))
 
 def test_raise_error():
+    data_gen = ShortGen(nullable=False, min_val=0, max_val=20, special_cases=[])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen, num_slices=2).select(
+            f.when(f.col('a') > 30, f.raise_error("unexpected"))))
+
     assert_gpu_and_cpu_error(
-        lambda spark : unary_op_df(spark, short_gen, num_slices=8).select(
+        lambda spark : unary_op_df(spark, short_gen, num_slices=2).select(
                 f.raise_error(f.col('a'))).collect(),
         conf={},
         error_message="java.lang.RuntimeException")

@@ -16,13 +16,14 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
+import ai.rapids.cudf.{ColumnVector}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, NullType, StringType}
 
-case class GpuRaiseError(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+case class GpuRaiseError(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes
+  with Arm {
 
   override def dataType: DataType = NullType
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -32,13 +33,19 @@ case class GpuRaiseError(child: Expression) extends GpuUnaryExpression with Expe
   override def hasSideEffects: Boolean = true
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    if (input == null || input.getRowCount <= 0) {
-      throw new RuntimeException()
+    if (input.getRowCount <= 0) {
+      // For the case: when(condition, raise_error())
+      return GpuColumnVector.columnVectorFromNull(0, NullType)
     }
 
     // Take the first one as the error message
-    val msg = input.copyToHost().getUTF8String(0).toString
-    throw new RuntimeException(msg)
+    withResource(input.getBase.getScalarElement(0)) { scalarMsg =>
+      if (!scalarMsg.isValid()) {
+        throw new RuntimeException()
+      } else {
+        throw new RuntimeException(scalarMsg.getJavaString())
+      }
+    }
   }
 
 }
