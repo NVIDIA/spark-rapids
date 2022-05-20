@@ -342,11 +342,13 @@ class QualificationAppInfo(
         sparkSQLDFWallClockDuration, appDuration, taskSpeedupFactor, appName, appId,
         sqlIdsWithFailures.nonEmpty)
 
+      val sqlOverheadNotAccountedStages = sparkSQLDFWallClockDuration - estimatedInfo.gpuOpportunity
+
       QualificationSummaryInfo(info.appName, appId, problems,
         executorCpuTimePercent, endDurationEstimated, sqlIdsWithFailures,
         notSupportFormatAndTypesString, getAllReadFileFormats, writeFormat,
-        allComplexTypes, nestedComplexTypes, longestSQLDuration, nonSQLTaskDuration,
-        sqlDataframeTaskDuration, unsupportedSQLTaskDuration, supportedSQLTaskDuration,
+        allComplexTypes, nestedComplexTypes, longestSQLDuration, sqlDataframeTaskDuration,
+        nonSQLTaskDuration, unsupportedSQLTaskDuration, supportedSQLTaskDuration,
         taskSpeedupFactor, info.sparkUser, info.startTime, origPlanInfos,
         perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo)
     }
