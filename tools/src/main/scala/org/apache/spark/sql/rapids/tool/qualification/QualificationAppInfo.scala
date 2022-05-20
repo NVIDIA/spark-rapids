@@ -303,10 +303,17 @@ class QualificationAppInfo(
       // wall clock time
       val executorCpuTimePercent = calculateCpuTimePercent(perSqlStageSummary)
 
+      val sparkSQLDFDuration = sqlIdToInfo.map { case (_, info) =>
+        info.duration.getOrElse(0)
+      }.sum
       // TODO - do we want to use this and rely on stages, but some SQL don't have stages
       // so this is less than SQL DF real
-      val sqlDFWallClockDuration =
-        perSqlStageSummary.map(s => s.hackEstimateWallclockSupported).sum
+      val sqlDFWallClockDuration = perSqlStageSummary.map { s =>
+        s.hackEstimateWallclockSupported
+      }.sum
+
+      logWarning(s"sql df spark duration is $sparkSQLDFDuration " +
+        s"stages version: $sqlDFWallClockDuration")
       val allStagesSummary = perSqlStageSummary.map(_.stageSum)
       val sqlDataframeTaskDuration = allStagesSummary.flatMap(_.map(s => s.stageTaskTime)).sum
       val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
