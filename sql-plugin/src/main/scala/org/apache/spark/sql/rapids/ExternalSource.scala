@@ -99,7 +99,7 @@ object ExternalSource {
     if (hasSparkAvroJar) {
       format match {
         case _: AvroFileFormat =>
-          val f = GpuAvroMultiFilePartitionReaderFactory(
+          GpuAvroMultiFilePartitionReaderFactory(
             fileScan.relation.sparkSession.sessionState.conf,
             fileScan.rapidsConf,
             broadcastedConf,
@@ -110,22 +110,6 @@ object ExternalSource {
             fileScan.allMetrics,
             pushedFilters,
             fileScan.queryUsesInputFile)
-          // Now only coalescing is supported, so need to check if it can be used
-          // for the final choice.
-          if (f.canUseCoalesceFilesReader){
-            f
-          } else {
-          // Fall back to PerFile reading
-          GpuAvroPartitionReaderFactory(
-            fileScan.relation.sparkSession.sessionState.conf,
-            fileScan.rapidsConf,
-            broadcastedConf,
-            fileScan.relation.dataSchema,
-            fileScan.requiredSchema,
-            fileScan.relation.partitionSchema,
-            new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
-            fileScan.allMetrics)
-          }
         case _ =>
           // never reach here
           throw new RuntimeException(s"File format $format is not supported yet")

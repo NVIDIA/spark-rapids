@@ -342,40 +342,7 @@ class RegexParser(pattern: String) {
             // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
-          case 'h' | 'H' =>
-            // horizontal whitespace
-            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
-            // under "Predefined character classes"
-            val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
-              RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
-              RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
-            )
-            chars += RegexEscaped('t')
-            chars += RegexCharacterRange('\u2000', '\u200a')
-            consumeExpected(ch)
-            RegexCharacterClass(negated = ch.isUpper, characters = chars)
-          case 'v' | 'V' =>
-            // vertical whitespace
-            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
-            // under "Predefined character classes"
-            val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
-              RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
-            )
-            chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
-            consumeExpected(ch)
-            RegexCharacterClass(negated = ch.isUpper, characters = chars)
-          case 'R' =>
-            // linebreak sequence
-            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
-            // under "Linebreak matcher"
-            val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
-            val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
-              RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
-              RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
-            ))
-            consumeExpected(ch)
-            RegexGroup(true, RegexChoice(l, r))
-          case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
+          case 's' | 'S' | 'd' | 'D' | 'w' | 'W' | 'v' | 'V' | 'h' | 'H' | 'R' =>
             // meta sequences
             consumeExpected(ch)
             RegexEscaped(ch)
@@ -581,28 +548,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * Parse Java regular expression and translate into cuDF regular expression.
    *
    * @param pattern Regular expression that is valid in Java's engine
-   * @return Regular expression in cuDF format
+   * @param repl Optional replacement pattern
+   * @return Regular expression and optional replacement in cuDF format
    */
-  def transpile(pattern: String, repl: Option[String]): (Option[String], Option[String]) = {
+  def transpile(pattern: String, repl: Option[String]): (String, Option[String]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
-    val replacement = repl match {
-      case Some(s) => Some(new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
-      case None => None
-    }
+    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
     val cudfRegex = rewrite(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
-    replacement match {
-      case Some(replaceAST) =>
-        (Some(cudfRegex.toRegexString), Some(replaceAST.toRegexString))
-      case _ =>
-        (Some(cudfRegex.toRegexString), None)
-    }
+    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
@@ -647,7 +607,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
     e match {
       case RegexEscaped(ch) => ch match {
-        case 'd' | 'w' | 'h' | 'H' | 'v' | 'V' => true
+        case 'd' | 'w' | 's' | 'S' | 'h' | 'H' | 'v' | 'V' => true
         case _ => false
       }
 
@@ -693,6 +653,46 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(
           RegexCharacterClass(negated = false, characters = terminatorChars),
           RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))))
+    }
+  }
+
+  private def negateCharacterClass(components: Seq[RegexCharacterClassComponent]): RegexAST = {
+    // There are differences between cuDF and Java handling of newlines
+    // for negative character matches. The expression `[^a]` will match
+    // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
+    // `(?:[\r\n]|[^a])`. We also have to take into account whether any
+    // newline characters are included in the character range.
+    //
+    // Examples:
+    //
+    // `[^a]`     => `(?:[\r\n]|[^a])`
+    // `[^a\r]`   => `(?:[\n]|[^a])`
+    // `[^a\n]`   => `(?:[\r]|[^a])`
+    // `[^a\r\n]` => `[^a]`
+    // `[^\r\n]`  => `[^\r\n]`
+
+    val linefeedCharsInPattern = components.flatMap {
+      case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
+      case RegexEscaped(ch) if ch == 'n' => Seq('\n')
+      case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+      case _ => Seq.empty
+    }
+
+    val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
+
+    val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
+
+    if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
+      // special case for `[^\r\n]` and `[^\\r\\n]`
+      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+    } else if (negatedNewlines.isEmpty) {
+      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+    } else {
+      RegexGroup(capture = false,
+        RegexChoice(
+          RegexCharacterClass(negated = false,
+            characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
+          RegexCharacterClass(negated = true, ListBuffer(components: _*))))
     }
   }
 
@@ -828,10 +828,53 @@ class CudfRegexTranspiler(mode: RegexMode) {
               rewrite(RegexChar('$'), replacement, previous)
           }
         case 's' | 'S' =>
+          // whitespace characters
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar(' '), RegexChar('\u000b'))
           chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped)
-          RegexCharacterClass(negated = ch.isUpper, characters = chars)
+          if (ch.isUpper) {
+            negateCharacterClass(chars) 
+          } else {
+            RegexCharacterClass(negated = false, characters = chars)
+          }
+        case 'h' | 'H' =>
+          // horizontal whitespace
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+          // under "Predefined character classes"
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
+            RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
+          )
+          chars += RegexEscaped('t')
+          chars += RegexCharacterRange('\u2000', '\u200a')
+          if (ch.isUpper) {
+            negateCharacterClass(chars) 
+          } else {
+            RegexCharacterClass(negated = false, characters = chars)
+          }
+        case 'v' | 'V' =>
+          // vertical whitespace
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+          // under "Predefined character classes"
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+          )
+          chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
+          if (ch.isUpper) {
+            negateCharacterClass(chars) 
+          } else {
+            RegexCharacterClass(negated = false, characters = chars)
+          }
+        case 'R' =>
+          // linebreak sequence
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+          // under "Linebreak matcher"
+          val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
+          val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
+            RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
+            RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+          ))
+          RegexGroup(true, RegexChoice(l, r))
         case _ =>
           regex
       }
@@ -860,49 +903,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
-          .map(x => x match {
-            case RegexChar(ch) if "^$".contains(ch) => x
-            case _ => rewrite(x, replacement, None).asInstanceOf[RegexCharacterClassComponent]
-          })
+          .map {
+            case r @ RegexChar(ch) if "^$".contains(ch) => r
+            case ch => rewrite(ch, replacement, None) match {
+              case valid: RegexCharacterClassComponent => valid
+              case _ =>
+                // this can happen when a character class contains a meta-sequence such as
+                // `\s` that gets transpiled into another character class
+                throw new RegexUnsupportedException("Character class contains one or more " +
+                  "characters that cannot be transpiled to supported character-class components")
+            }
+          }
 
         if (negated) {
-          // There are differences between cuDF and Java handling of newlines
-          // for negative character matches. The expression `[^a]` will match
-          // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
-          // `(?:[\r\n]|[^a])`. We also have to take into account whether any
-          // newline characters are included in the character range.
-          //
-          // Examples:
-          //
-          // `[^a]`     => `(?:[\r\n]|[^a])`
-          // `[^a\r]`   => `(?:[\n]|[^a])`
-          // `[^a\n]`   => `(?:[\r]|[^a])`
-          // `[^a\r\n]` => `[^a]`
-          // `[^\r\n]`  => `[^\r\n]`
-
-          val linefeedCharsInPattern = components.flatMap {
-            case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
-            case RegexEscaped(ch) if ch == 'n' => Seq('\n')
-            case RegexEscaped(ch) if ch == 'r' => Seq('\r')
-            case _ => Seq.empty
-          }
-
-          val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
-
-          val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
-
-          if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
-            // special case for `[^\r\n]` and `[^\\r\\n]`
-            RegexCharacterClass(negated = true, ListBuffer(components: _*))
-          } else if (negatedNewlines.isEmpty) {
-            RegexCharacterClass(negated = true, ListBuffer(components: _*))
-          } else {
-            RegexGroup(capture = false,
-              RegexChoice(
-                RegexCharacterClass(negated = false,
-                  characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
-                RegexCharacterClass(negated = true, ListBuffer(components: _*))))
-          }
+          negateCharacterClass(components)
         } else {
           RegexCharacterClass(negated, ListBuffer(components: _*))
         }
