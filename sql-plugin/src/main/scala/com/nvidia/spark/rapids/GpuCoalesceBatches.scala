@@ -381,7 +381,7 @@ abstract class AbstractGpuCoalesceIterator(
       while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
         val cbFromIter = iter.next()
 
-        val cb = if (inputFilterExpression.isDefined) {
+        var cb = if (inputFilterExpression.isDefined) {
           // If we have reached the cuDF limit once, proactively filter batches
           // after that first limit is reached.
           GpuFilter(cbFromIter, inputFilterExpression.get)
@@ -415,6 +415,7 @@ abstract class AbstractGpuCoalesceIterator(
                   closeOnExcept(filteredDown) { _ =>
                     // filter the incoming batch as well
                     closeOnExcept(GpuFilter(cb, filterExpression)) { filteredCb =>
+                      cb = null // null out `cb` to prevent multiple close calls
                       val filteredWouldBeRows = filteredDown.numRows() + filteredCb.numRows()
                       if (filteredWouldBeRows > Int.MaxValue) {
                         throw new IllegalStateException(
