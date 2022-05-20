@@ -109,7 +109,7 @@ With JDK9+, you need to disable the default classloader manipulation option and 
 spark.rapids.force.caller.classloader=false in your Spark application configuration. There are, however,
 known issues with it, e.g. see #5513.
 
-At the time of this writing, the most robust way to run the Plugin from a jar dedicated to
+At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
 a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
 
 Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or later to correctly process
