@@ -122,7 +122,12 @@
     <target name="build-conventional-jar"
             depends="copy-dependencies"
             if="should.build.conventional.jar">
-            <echo>GERA_DEBUG here we build conventional jar</echo>
+            <echo level="info">Single Shim build and allowConventionalDistJar is set to true:
+                promoting aggregator jar as the final conventional jar.
+            </echo>
+            <unzip src="${aggregatorPrefix}-spark${included_buildvers}.jar"
+                dest="${project.build.directory}/parallel-world"
+            />
     </target>
     <target name="build-parallel-worlds"
             depends="build-conventional-jar"
