@@ -547,6 +547,16 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
         conf=_regexp_conf)
 
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_re_replace_issue_5492():
+    # https://github.com/NVIDIA/spark-rapids/issues/5492
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "[^\\\\sa-zA-Z0-9]", "x")'),
+        'RegExpReplace',
+        conf=_regexp_conf)
+
 def test_re_replace_backrefs():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
     assert_gpu_and_cpu_are_equal_collect(
@@ -558,6 +568,32 @@ def test_re_replace_backrefs():
             'REGEXP_REPLACE(a, "([0-9]+)(T)[a-z]+(T)", "[$3][$2][$1]")',
             'REGEXP_REPLACE(a, "(.)([0-9]+TEST)", "$0 $1 $2")',
             'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1")'  # no match
+        ),
+        conf=_regexp_conf)
+
+def test_re_replace_anchors():
+    gen = mk_str_gen('.{0,2}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?') \
+        .with_special_case("TEST") \
+        .with_special_case("TEST\n") \
+        .with_special_case("TEST\r\n") \
+        .with_special_case("TEST\r")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "TEST$", "")',
+            'REGEXP_REPLACE(a, "TEST$", "PROD")',
+            'REGEXP_REPLACE(a, "\ud720[A-Z]+$", "PROD")',
+            'REGEXP_REPLACE(a, "(\ud720[A-Z]+)$", "PROD")',
+            'REGEXP_REPLACE(a, "(TEST)$", "$1")',
+            'REGEXP_REPLACE(a, "^(TEST)$", "$1")',
+            'REGEXP_REPLACE(a, "\\\\ATEST\\\\Z", "PROD")',
+            'REGEXP_REPLACE(a, "\\\\ATEST$", "PROD")',
+            'REGEXP_REPLACE(a, "^TEST\\\\Z", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\Z", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
+            'REGEXP_REPLACE(a, "\\\\zTEST", "PROD")',
+            'REGEXP_REPLACE(a, "^TEST$", "PROD")',
+            'REGEXP_REPLACE(a, "^TEST\\\\z", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
         ),
         conf=_regexp_conf)
 

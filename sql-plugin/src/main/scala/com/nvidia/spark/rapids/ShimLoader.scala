@@ -21,6 +21,7 @@ import java.net.URL
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
+import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
@@ -79,6 +80,7 @@ object ShimLoader extends Logging {
   @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
+  @volatile private var conventionalSingleShimJarDetected: Boolean = _
 
   // REPL-only logic
   @volatile private var tmpClassLoader: MutableURLClassLoader = _
@@ -213,18 +215,29 @@ object ShimLoader extends Logging {
       logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
         urlsForSparkClassLoader.mkString(", "))
       urlsForSparkClassLoader.foreach { url =>
-        MethodUtils.invokeMethod(urlAddable, true, "addURL", url)
-      }
-      logInfo(s"Spark classLoader $urlAddable updated successfully")
-      urlAddable match {
-        case urlCl: java.net.URLClassLoader =>
-          if (!urlCl.getURLs.contains(shimCommonURL)) {
-            // infeasible, defensive diagnostics
-            logWarning(s"Didn't find expected URL $shimCommonURL in the spark " +
-              s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
-              s"parent classloader ${urlCl.getParent}")
+        if (!conventionalSingleShimJarDetected) {
+          Try(MethodUtils.invokeMethod(urlAddable, true, "addURL", url))
+            .recoverWith {
+              case nsm: NoSuchMethodException =>
+                logWarning("JDK8+ detected, consider setting " +
+                  "spark.rapids.force.caller.classloader to false as a workaround")
+                logDebug(s"JDK8+ detected by catching ${nsm}", nsm)
+                Success(Unit)
+              case t => Failure(t)
+            }.get
+
+          logInfo(s"Spark classLoader $urlAddable updated successfully")
+          urlAddable match {
+            case urlCl: java.net.URLClassLoader =>
+              if (!urlCl.getURLs.contains(shimCommonURL)) {
+                // infeasible, defensive diagnostics
+                logWarning(s"Didn't find expected URL $shimCommonURL in the spark " +
+                  s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
+                  s"parent classloader ${urlCl.getParent}")
+              }
+            case _ => ()
           }
-        case _ => ()
+        }
       }
       pluginClassLoader = urlAddable
     }
@@ -285,18 +298,27 @@ object ShimLoader extends Logging {
         thisClassLoader.getResources(serviceProviderListPath)
           .asScala.map(scala.io.Source.fromURL)
           .flatMap(_.getLines())
+          .toSeq
       }
 
     assert(serviceProviderList.nonEmpty, "Classpath should contain the resource for " +
         serviceProviderListPath)
 
+    val numShimServiceProviders = serviceProviderList.size
     val shimServiceProviderOpt = serviceProviderList.flatMap { shimServiceProviderStr =>
       val mask = shimIdFromPackageName(shimServiceProviderStr)
       try {
         val shimURL = new java.net.URL(s"${shimRootURL.toString}$mask/")
         val shimClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
           thisClassLoader)
-        val shimClass = shimClassLoader.loadClass(shimServiceProviderStr)
+        val shimClass = Try[java.lang.Class[_]] {
+          val ret = thisClassLoader.loadClass(shimServiceProviderStr)
+          if (numShimServiceProviders == 1) {
+            conventionalSingleShimJarDetected = true
+            logInfo("Conventional shim jar layout for a single Spark verision detected")
+          }
+          ret
+        }.getOrElse(shimClassLoader.loadClass(shimServiceProviderStr))
         Option(
           (instantiateClass(shimClass).asInstanceOf[SparkShimServiceProvider], shimURL)
         )
