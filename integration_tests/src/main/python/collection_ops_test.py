@@ -40,24 +40,14 @@ def test_concat_list(data_gen):
 
 @pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
 def test_concat_list_with_lit(data_gen):
-    array_lit = gen_scalar(data_gen)
-    array_lit2 = gen_scalar(data_gen)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).select(
-            f.concat(f.col('a'),
-                     f.col('b'),
-                     f.lit(array_lit).cast(data_gen.data_type))))
+    lit_col1 = f.lit(gen_scalar(data_gen)).cast(data_gen.data_type)
+    lit_col2 = f.lit(gen_scalar(data_gen)).cast(data_gen.data_type)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
-            f.concat(f.lit(array_lit).cast(data_gen.data_type),
-                     f.col('a'),
-                     f.lit(array_lit2).cast(data_gen.data_type))))
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).select(
-            f.concat(f.lit(array_lit).cast(data_gen.data_type),
-                     f.lit(array_lit2).cast(data_gen.data_type))))
+            f.concat(f.col('a'), f.col('b'), lit_col1),
+            f.concat(lit_col1, f.col('a'), lit_col2),
+            f.concat(lit_col1, lit_col2)))
 
 def test_concat_string():
     gen = mk_str_gen('.{0,5}')
