@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.{EOFException, InputStream, IOException, OutputStream}
+import java.net.URI
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
@@ -25,7 +26,10 @@ import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants._
 import org.apache.avro.file.SeekableInput
 import org.apache.avro.io.{BinaryData, BinaryDecoder, DecoderFactory}
+import org.apache.avro.mapred.FsInput
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 
 private[rapids] class AvroSeekableInputStream(in: SeekableInput) extends InputStream
     with SeekableInput {
@@ -434,13 +438,21 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
 
 }
 
-object AvroFileReader {
+object AvroFileReader extends Arm {
 
-  def openMetaReader(si: SeekableInput): AvroMetaFileReader = {
-    new AvroMetaFileReader(si)
+  def openMetaReader(filePath: String, conf: Configuration): AvroMetaFileReader = {
+    closeOnExcept(openFile(filePath, conf)) { si =>
+      new AvroMetaFileReader(si)
+    }
   }
 
-  def openDataReader(si: SeekableInput): AvroDataFileReader = {
-    new AvroDataFileReader(si)
+  def openDataReader(filePath: String, conf: Configuration): AvroDataFileReader = {
+    closeOnExcept(openFile(filePath, conf)) { si =>
+      new AvroDataFileReader(si)
+    }
+  }
+
+  private def openFile(filePath: String, conf: Configuration): SeekableInput = {
+    new FsInput(new Path(new URI(filePath)), conf)
   }
 }
