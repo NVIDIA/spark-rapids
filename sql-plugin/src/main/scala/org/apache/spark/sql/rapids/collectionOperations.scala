@@ -84,6 +84,9 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
 
 case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
+  override lazy val hasSideEffects: Boolean =
+    GpuCreateMap.exceptionOnDupKeys || super.hasSideEffects
+
   @transient override lazy val dataType: MapType = {
     if (children.isEmpty) {
       MapType(StringType, StringType)
