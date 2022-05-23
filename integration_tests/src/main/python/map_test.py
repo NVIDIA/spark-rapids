@@ -135,6 +135,12 @@ def test_get_map_value_timestamp_keys(data_gen):
             'a[timestamp "2022-01-01"]',
             'a[null]'))
 
+def test_map_side_effects():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(10).selectExpr(
+                'id',
+                'if(id == 0, null, map(id, id, id DIV 2, id)) as m'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'EXCEPTION'})
 
 @pytest.mark.parametrize('key_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
 @pytest.mark.parametrize('value_gen', [StringGen(nullable=True), IntegerGen(nullable=True), basic_struct_gen], ids=idfn)

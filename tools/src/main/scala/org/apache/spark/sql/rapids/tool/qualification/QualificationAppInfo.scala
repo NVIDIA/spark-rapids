@@ -378,7 +378,7 @@ class QualificationAppInfo(
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes, longestSQLDuration,
         nonSQLDuration, estimatedDuration, unsupportedDuration,
-        speedupDuration, speedupFactor, totalSpeedup, speedupBucket)
+        speedupDuration, speedupFactor, totalSpeedup, speedupBucket, info.sparkUser, info.startTime)
     }
   }
 
@@ -464,7 +464,9 @@ case class QualificationSummaryInfo(
     speedupDuration: Long,
     speedupFactor: Double,
     totalSpeedup: Double,
-    speedupBucket: String)
+    speedupBucket: String,
+    user: String,
+    startTime: Long)
 
 object QualificationAppInfo extends Logging {
   def createApp(
