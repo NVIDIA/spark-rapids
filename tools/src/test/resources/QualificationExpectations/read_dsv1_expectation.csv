@@ -1,2 +1,2 @@
 App Name,App ID,SQL DF Duration,SQL Dataframe Task Duration,App Duration,GPU Opportunity,Executor CPU Time Percent,SQL Ids with Failures,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types,Potential Problems,Longest SQL Duration,NONSQL Task Duration Plus Overhead,Unsupported Task Duration,Supported SQL DF Task Duration,Task Speedup Factor,App Duration Estimated
-Spark shell,local-1624371544219,4107,175857,175293,594,72.15,"",JSON[string:double:date:int:bigint];Text[*],JSON,"","","",1859,20421,17464,2957,1.57,false
+Spark shell,local-1624371544219,6695,20421,175293,969,72.15,"",JSON[string:double:date:int:bigint];Text[*],JSON,"","","",1859,175857,17464,2957,1.57,false
