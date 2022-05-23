@@ -24,11 +24,13 @@ import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.sql.rapids.GpuOr
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
+import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuShuffledHashJoinMeta(
@@ -117,10 +119,24 @@ case class GpuShuffledHashJoinExec(
       "GpuShuffledHashJoin does not support the execute() code path.")
   }
 
+  // Goal to be used for the coalescing the build side. Note that this is internal to
+  // the join and not used for planning purposes. The two valid choices are `RequireSingleBatch` or
+  // `RequireSingleBatchWithFilter`
+  private lazy val buildGoal: CoalesceSizeGoal = joinType match {
+    case _: InnerLike | LeftSemi | LeftAnti =>
+      val nullFilteringMask = boundBuildKeys.map { bk =>
+        // coalesce(key1, false) or coalesce(key2, false) ... or ... coalesce(keyN, false)
+        // For any row with a key that is null, this filter mask will remove those rows.
+        GpuCoalesce(Seq(GpuCast(bk, BooleanType), GpuLiteral(false)))
+      }.reduce(GpuOr)
+      RequireSingleBatchWithFilter(nullFilteringMask)
+    case _ => RequireSingleBatch
+  }
+
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
     case (FullOuter, _) => Seq(RequireSingleBatch, RequireSingleBatch)
-    case (_, GpuBuildLeft) => Seq(RequireSingleBatch, null)
-    case (_, GpuBuildRight) => Seq(null, RequireSingleBatch)
+    case (_, GpuBuildLeft) => Seq(buildGoal, null)
+    case (_, GpuBuildRight) => Seq(null, buildGoal)
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
@@ -149,6 +165,7 @@ case class GpuShuffledHashJoinExec(
       (streamIter, buildIter) => {
         val (builtBatch, maybeBufferedStreamIter) =
           GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+            buildGoal,
             batchSizeBytes,
             localBuildOutput,
             buildIter,
@@ -219,6 +236,7 @@ object GpuShuffledHashJoinExec extends Arm {
    * because we hold onto the semaphore during the entire time after realizing the goal
    * has been hit.
    *
+   * @param buildGoal the build goal to use when coalescing batches
    * @param hostTargetBatchSize target batch size goal on the host
    * @param buildOutput output attributes of the build plan
    * @param buildIter build iterator
@@ -230,6 +248,7 @@ object GpuShuffledHashJoinExec extends Arm {
    *         used for the join
    */
   def getBuiltBatchAndStreamIter(
+      buildGoal: CoalesceSizeGoal,
       hostTargetBatchSize: Long,
       buildOutput: Seq[Attribute],
       buildIter: Iterator[ColumnarBatch],
@@ -295,7 +314,7 @@ object GpuShuffledHashJoinExec extends Arm {
               }
             } else {
               val buildBatch = getBuildBatchFromUnfinished(
-                Seq(hostConcatResult).iterator ++ hostConcatIter,
+                buildGoal, Seq(hostConcatResult).iterator ++ hostConcatIter,
                 buildOutput, spillCallback, coalesceMetricsMap)
               buildTime += System.nanoTime() - startTime
               (buildBatch, streamIter)
@@ -307,6 +326,7 @@ object GpuShuffledHashJoinExec extends Arm {
   }
 
   private def getBuildBatchFromUnfinished(
+      buildGoal: CoalesceSizeGoal,
       iterWithPrior: Iterator[HostConcatResult],
       buildOutput: Seq[Attribute],
       spillCallback: SpillCallback,
@@ -322,10 +342,9 @@ object GpuShuffledHashJoinExec extends Arm {
         iterWithPrior,
         dataTypes,
         coalesceMetricsMap)
-      val res = ConcatAndConsumeAll.getSingleBatchWithVerification(
+    val res = ConcatAndConsumeAll.getSingleBatchWithVerification(
         new GpuCoalesceIterator(shuffleCoalesce,
-          dataTypes,
-          RequireSingleBatch,
+          dataTypes, buildGoal,
           NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
           coalesceMetricsMap(GpuMetric.CONCAT_TIME),
           coalesceMetricsMap(GpuMetric.OP_TIME),
