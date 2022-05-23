@@ -214,6 +214,53 @@ def test_to_unix_timestamp(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
+
+@pytest.mark.parametrize('invalid,fmt', [
+    ('2021-01/01', 'yyyy-MM-dd'),
+    ('2021/01-01', 'yyyy/MM/dd'),
+    ('2021/01', 'yyyy-MM'),
+    ('2021-01', 'yyyy/MM'),
+    ('01/02/201', 'dd/MM/yyyy'),
+    ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('01#01', 'MM-dd'),
+    ('01T01', 'MM/dd'),
+    ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
+    ('01-01', 'dd/MM'),
+    ('2021-01', 'MM/yyyy'),
+    ('2021-01', 'MM-yyyy'),
+    ('01-02-2022', 'MM/dd/yyyy'),
+    ('99-01-2022', 'MM-dd-yyyy'),
+], ids=idfn)
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+@pytest.mark.parametrize('operator', ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"], ids=idfn)
+def test_string_to_timestamp_functions_ansi_invalid(invalid, fmt, parser_policy, operator):
+    sql = "{operator}(a, '{fmt}')".format(fmt=fmt, operator=operator)
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+
+    def fun(spark):
+        df = spark.createDataFrame([(invalid,)], "a string")
+        return df.selectExpr(sql).collect()
+
+    assert_gpu_and_cpu_error(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf), error_message="Exception")
+
+
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+# first get expected string via `date_format`
+def test_string_to_timestamp_functions_ansi_valid(parser_policy):
+    expr_format = "{operator}(date_format(a, '{fmt}'), '{fmt}')"
+    formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM', 'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss',
+               'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM', 'MM/yyyy', 'MM-yyyy', 'MM/dd/yyyy', 'MM-dd-yyyy']
+    operators = ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"]
+    format_operator_pairs = [(fmt, operator) for fmt in formats for operator in operators]
+    expr_list = [expr_format.format(operator=operator, fmt=fmt) for (fmt, operator) in format_operator_pairs]
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+
+    def fun(spark):
+        df = spark.createDataFrame([(datetime(1970, 8, 12, tzinfo=timezone.utc),)], "a timestamp")
+        return df.selectExpr(expr_list)
+
+    assert_gpu_and_cpu_are_equal_collect(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf))
+
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp_improved(data_gen, ansi_enabled):

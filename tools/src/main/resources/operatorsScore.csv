@@ -172,6 +172,7 @@ PromotePrecision,3
 PythonUDF,3
 Quarter,3
 RLike,3
+RaiseError,3
 Rand,3
 Rank,3
 RegExpExtract,3

@@ -47,6 +47,8 @@ function print_usage() {
   echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
   echo "   --install"
   echo "        Intall the resulting jar instead of just building it"
+  echo "   -o=MVN_OPT, --option=MVN_OPT"
+  echo "        use this option to build project with maven. E.g., --option='-Dcudf.version=cuda11'"
 }
 
 function bloopInstall() {
@@ -60,7 +62,7 @@ function bloopInstall() {
       mkdir -p "$bloop_config_dir"
       rm -f "$bloop_config_dir"/*
 
-      mvn install ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall -pl dist -am \
+      $MVN install ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall -pl dist -am \
         -Dbloop.configDirectory="$bloop_config_dir" \
         -DdownloadSources=true \
         -Dbuildver="$bv" \
@@ -139,6 +141,9 @@ shift
 
 done
 
+# include options to mvn command
+export MVN="mvn ${MVN_OPT}"
+
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
@@ -203,12 +208,12 @@ export BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 
 if [[ "$SKIP_CLEAN" != "1" ]]; then
   echo Clean once across all modules
-  mvn -q clean
+  $MVN -q clean
 fi
 
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
-export MVN_BASE_DIR=$(mvn help:evaluate -Dexpression=project.basedir -q -DforceStdout)
+export MVN_BASE_DIR=$($MVN help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 
 function build_single_shim() {
   set -x
@@ -234,7 +239,7 @@ function build_single_shim() {
   fi
 
   echo "#### REDIRECTING mvn output to $LOG_FILE ####"
-  mvn -U "$MVN_PHASE" \
+  $MVN -U "$MVN_PHASE" \
       -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
@@ -270,7 +275,7 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  mvn $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dskip -Dmaven.javadoc.skip
 )
