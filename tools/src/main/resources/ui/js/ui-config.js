@@ -74,7 +74,8 @@ let toolTipsValues = {
             "speedupDuration": "Duration of SQL operations that are supported on GPU. It is calculated as (sqlDuration - unsupportedDuration)",
             "unsupportedDuration": "An estimate total duration of SQL operations that are not supported on GPU",
             "sqlDFDuration": "Time duration that includes only SQL-Dataframe queries.",
-            "gpuOpportunity": "Wall-Clock time that shows how much of the SQL duration can be speed-up on the GPU."
+            "gpuOpportunity": "Wall-Clock time that shows how much of the SQL duration can be speed-up on the GPU.",
+            "gpuTimeSaved": "Estimated Wall-Clock time saved if it was run on the GPU"
         }
     }
 }
@@ -83,7 +84,7 @@ let UIConfig = {
     "dataProcessing": {
         // name of the column used to decide on the category of the app
         // total SpeedUp is a factor between 1.0 and 10.0
-        "gpuRecommendation.appColumn": "totalSpeedup",
+        "gpuRecommendation.appColumn": "estimatedInfo.estimatedGpuSpeedup",
         // when set to true, the JS will generate random value for recommendations
         "simulateRecommendation": false
     },

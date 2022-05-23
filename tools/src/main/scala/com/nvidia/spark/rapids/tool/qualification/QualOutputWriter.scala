@@ -19,10 +19,10 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
-import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
+import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationSummaryInfo, Recommendation}
 
 /**
  * This class handles the output files for qualification.
@@ -32,24 +32,17 @@ import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
  * @param reportReadSchema Whether to include the read data source schema in csv output
  * @param printStdout Indicates if the summary report should be printed to stdout as well
  */
-class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean,
-    uiEnabled: Boolean) {
+class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
 
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  private def writeCSVHeader(writer: ToolTextFileWriter,
-      appInfos: Seq[QualificationSummaryInfo],
-      headersAndSizes: LinkedHashMap[String, Int]): Unit = {
-    writer.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-  }
-
-  def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
+  def writeDetailedReport(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
       val headersAndSizes = QualOutputWriter
         .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
-      writeCSVHeader(csvFileWriter, sums, headersAndSizes)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
       sums.foreach { appSum =>
         csvFileWriter.write(QualOutputWriter.constructAppDetailedInfo(appSum, headersAndSizes,
           ",", false, reportReadSchema))
@@ -59,28 +52,58 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
   }
 
-  def writeDetailedReport(sums: Seq[QualificationSummaryInfo]): Unit = {
-    writeCSV(sums)
-    if (uiEnabled) {
-      QualificationReportGenerator.generateDashBoard(outputDir, sums)
+  def writeStageReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
+    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_stages.csv",
+      "Stage Exec Info")
+    try {
+      val headersAndSizes = QualOutputWriter
+        .getDetailedStagesHeaderStringsAndSizes(sums)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      sums.foreach { sumInfo =>
+        val rows = QualOutputWriter.constructStagesInfo(sumInfo, headersAndSizes, ",", false)
+        rows.foreach(csvFileWriter.write(_))
+      }
+    } finally {
+      csvFileWriter.close()
+    }
+  }
+
+  def writeExecReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
+    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
+      "Plan Exec Info")
+    try {
+      val plans = sums.flatMap(_.planInfo)
+      val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
+      val headersAndSizes = QualOutputWriter
+        .getDetailedExecsHeaderStringsAndSizes(sums, allExecs)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+      sums.foreach { sumInfo =>
+        val rows = QualOutputWriter.constructExecsInfo(sumInfo, headersAndSizes, ",", false)
+        rows.foreach(csvFileWriter.write(_))
+      }
+    } finally {
+      csvFileWriter.close()
     }
   }
 
   // write the text summary report
-  def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int) : Unit = {
+  def writeReport(sums: Seq[QualificationSummaryInfo], estSums: Seq[EstimatedSummaryInfo],
+      numOutputRows: Int) : Unit = {
     val textFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.log",
       "Summary report")
     try {
-      writeTextSummary(textFileWriter, summaries, numOutputRows)
+      writeTextSummary(textFileWriter, sums, estSums, numOutputRows)
     } finally {
       textFileWriter.close()
     }
   }
 
   private def writeTextSummary(writer: ToolTextFileWriter,
-      sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
+      sums: Seq[QualificationSummaryInfo], estSum: Seq[EstimatedSummaryInfo],
+      numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-    val entireHeader = QualOutputWriter.constructSummaryHeader(appIdMaxSize, "|", true)
+    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize)
+    val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes, "|", true)
     val sep = "=" * (entireHeader.size - 1)
     writer.write(s"$sep\n")
     writer.write(entireHeader)
@@ -91,9 +114,10 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       print(entireHeader)
       print(s"$sep\n")
     }
-    val finalSums = sums.take(numOutputRows)
+    val finalSums = estSum.take(numOutputRows)
     finalSums.foreach { sumInfo =>
-      val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, appIdMaxSize, "|", true)
+      val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
+        appIdMaxSize, "|", true)
       writer.write(wStr)
       if (printStdout) print(wStr)
     }
@@ -103,39 +127,51 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 }
 
 object QualOutputWriter {
-  val PROBLEM_DUR_STR = "Problematic Duration"
+  val NON_SQL_TASK_DURATION_STR = "NonSQL Task Duration"
+  val SQL_ID_STR = "SQL ID"
+  val STAGE_ID_STR = "Stage ID"
   val APP_ID_STR = "App ID"
   val APP_NAME_STR = "App Name"
   val APP_DUR_STR = "App Duration"
   val SQL_DUR_STR = "SQL DF Duration"
   val TASK_DUR_STR = "SQL Dataframe Task Duration"
-  val SCORE_STR = "Score"
+  val STAGE_DUR_STR = "Stage Task Duration"
   val POT_PROBLEM_STR = "Potential Problems"
   val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
   val APP_DUR_ESTIMATED_STR = "App Duration Estimated"
-  val SQL_DUR_POT_PROBLEMS = "SQL Duration with Potential Problems"
   val SQL_IDS_FAILURES_STR = "SQL Ids with Failures"
-  val READ_SCORE_PERCENT_STR = "Read Score Percent"
-  val READ_FILE_FORMAT_SCORE_STR = "Read File Format Score"
   val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
   val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
   val COMPLEX_TYPES_STR = "Complex Types"
   val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
   val NONSQL_DUR_STR = "NONSQL Task Duration Plus Overhead"
-  val ESTIMATED_DURATION_STR = "Estimated Duration"
-  val UNSUPPORTED_DURATION_STR = "Unsupported Duration"
-  val SPEEDUP_DURATION_STR = "Speedup Duration"
-  val SPEEDUP_FACTOR_STR = "Speedup Factor"
-  val TOTAL_SPEEDUP_STR = "Total Speedup"
+  val UNSUPPORTED_TASK_DURATION_STR = "Unsupported Task Duration"
+  val SUPPORTED_SQL_TASK_DURATION_STR = "Supported SQL DF Task Duration"
+  val SPEEDUP_FACTOR_STR = "Task Speedup Factor"
+  val AVERAGE_SPEEDUP_STR = "Average Speedup Factor"
   val SPEEDUP_BUCKET_STR = "Recommendation"
   val LONGEST_SQL_DURATION_STR = "Longest SQL Duration"
+  val EXEC_STR = "Exec Name"
+  val EXPR_STR = "Expression Name"
+  val EXEC_DURATION = "Exec Duration"
+  val EXEC_NODEID = "SQL Node Id"
+  val EXEC_IS_SUPPORTED = "Exec Is Supported"
+  val EXEC_STAGES = "Exec Stages"
+  val EXEC_SHOULD_REMOVE = "Exec Should Remove"
+  val EXEC_CHILDREN = "Exec Children"
+  val EXEC_CHILDREN_NODE_IDS = "Exec Children Node Ids"
+  val GPU_OPPORTUNITY_STR = "GPU Opportunity"
+  val ESTIMATED_GPU_DURATION = "Estimated GPU Duration"
+  val ESTIMATED_GPU_SPEEDUP = "Estimated GPU Speedup"
+  val ESTIMATED_GPU_TIMESAVED = "Estimated GPU Time Saved"
+
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
-  val PROBLEM_DUR_SIZE: Int = PROBLEM_DUR_STR.size
-  val SPEEDUP_BUCKET_STR_SIZE: Int = SPEEDUP_BUCKET_STR.size
-  val TOTAL_SPEEDUP_STR_SIZE: Int = TOTAL_SPEEDUP_STR.size
+  val NON_SQL_TASK_DURATION_SIZE: Int = NON_SQL_TASK_DURATION_STR.size
+  val SPEEDUP_BUCKET_STR_SIZE: Int = Recommendation.Strongly_Recommended.toString.size
   val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
+  val GPU_OPPORTUNITY_STR_SIZE: Int = GPU_OPPORTUNITY_STR.size
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
@@ -151,7 +187,7 @@ object QualOutputWriter {
   }
 
   // ordered hashmap contains each header string and the size to use
-  private def constructOutputRowFromMap(
+  def constructOutputRowFromMap(
       strAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean = false): String = {
@@ -185,18 +221,6 @@ object QualOutputWriter {
     entireHeader.toString
   }
 
-  private[qualification] def getSummaryHeaderStringsAndSizes(
-      appIdMaxSize: Int): LinkedHashMap[String, Int] = {
-    LinkedHashMap[String, Int](
-      APP_ID_STR -> appIdMaxSize,
-      APP_DUR_STR -> APP_DUR_STR_SIZE,
-      SQL_DUR_STR -> SQL_DUR_STR_SIZE,
-      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE,
-      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR_SIZE,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
-    )
-  }
-
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) "\"\"" else str
   }
@@ -206,19 +230,13 @@ object QualOutputWriter {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
-      SCORE_STR -> getMaxSizeForHeader(appInfos.map(_.score.toString.size), SCORE_STR),
-      POT_PROBLEM_STR ->
-        getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       SQL_DUR_STR -> SQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       APP_DUR_STR -> APP_DUR_STR.size,
+      GPU_OPPORTUNITY_STR -> GPU_OPPORTUNITY_STR_SIZE,
       EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
-      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size,
-      SQL_DUR_POT_PROBLEMS -> SQL_DUR_POT_PROBLEMS.size,
       SQL_IDS_FAILURES_STR -> getMaxSizeForHeader(appInfos.map(_.failedSQLIds.size),
         SQL_IDS_FAILURES_STR),
-      READ_SCORE_PERCENT_STR -> READ_SCORE_PERCENT_STR.size,
-      READ_FILE_FORMAT_SCORE_STR -> READ_FILE_FORMAT_SCORE_STR.size,
       READ_FILE_FORMAT_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size),
         READ_FILE_FORMAT_TYPES_STR),
       WRITE_DATA_FORMAT_STR -> getMaxSizeForHeader(appInfos.map(_.writeDataFormat.size),
@@ -227,14 +245,14 @@ object QualOutputWriter {
         getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
         NESTED_TYPES_STR),
+      POT_PROBLEM_STR ->
+        getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       LONGEST_SQL_DURATION_STR -> LONGEST_SQL_DURATION_STR_SIZE,
       NONSQL_DUR_STR -> NONSQL_DUR_STR.size,
-      ESTIMATED_DURATION_STR -> ESTIMATED_DURATION_STR.size,
-      UNSUPPORTED_DURATION_STR -> UNSUPPORTED_DURATION_STR.size,
-      SPEEDUP_DURATION_STR -> SPEEDUP_DURATION_STR.size,
+      UNSUPPORTED_TASK_DURATION_STR -> UNSUPPORTED_TASK_DURATION_STR.size,
+      SUPPORTED_SQL_TASK_DURATION_STR -> SUPPORTED_SQL_TASK_DURATION_STR.size,
       SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
-      TOTAL_SPEEDUP_STR -> TOTAL_SPEEDUP_STR.size,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR.size
+      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -244,21 +262,38 @@ object QualOutputWriter {
     detailedHeadersAndFields
   }
 
-  def constructSummaryHeader(appIdMaxSize: Int, delimiter: String,
-      prettyPrint: Boolean): String = {
-    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
-    QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
+  private[qualification] def getSummaryHeaderStringsAndSizes(
+      appInfos: Seq[QualificationSummaryInfo],
+      appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+    LinkedHashMap[String, Int](
+      APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
+      APP_ID_STR -> appIdMaxSize,
+      APP_DUR_STR -> APP_DUR_STR_SIZE,
+      SQL_DUR_STR -> SQL_DUR_STR_SIZE,
+      GPU_OPPORTUNITY_STR -> GPU_OPPORTUNITY_STR_SIZE,
+      ESTIMATED_GPU_DURATION -> ESTIMATED_GPU_DURATION.size,
+      ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
+      ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
+    )
   }
 
-  def constructAppSummaryInfo(sumInfo: QualificationSummaryInfo,
-      appIdMaxSize: Int, delimiter: String, prettyPrint: Boolean): String = {
+  def constructAppSummaryInfo(
+      sumInfo: EstimatedSummaryInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      appIdMaxSize: Int,
+      delimiter: String,
+      prettyPrint: Boolean): String = {
     val data = ListBuffer[(String, Int)](
+      sumInfo.appName -> headersAndSizes(APP_NAME_STR),
       sumInfo.appId -> appIdMaxSize,
-      sumInfo.appDuration.toString -> APP_DUR_STR_SIZE,
-      sumInfo.sqlDataFrameDuration.toString -> SQL_DUR_STR_SIZE,
-      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE,
-      sumInfo.totalSpeedup.toString -> TOTAL_SPEEDUP_STR_SIZE,
-      sumInfo.speedupBucket -> SPEEDUP_BUCKET_STR_SIZE
+      sumInfo.appDur.toString -> APP_DUR_STR_SIZE,
+      sumInfo.sqlDfDuration.toString -> SQL_DUR_STR_SIZE,
+      sumInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
+      f"${sumInfo.estimatedGpuDur}%1.2f" -> ESTIMATED_GPU_DURATION.size,
+      f"${sumInfo.estimatedGpuSpeedup}%1.2f" -> ESTIMATED_GPU_SPEEDUP.size,
+      f"${sumInfo.estimatedGpuTimeSaved}%1.2f" -> ESTIMATED_GPU_TIMESAVED.size,
+      sumInfo.recommendation.toString -> SPEEDUP_BUCKET_STR_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -268,6 +303,105 @@ object QualOutputWriter {
       delimiter: String,
       prettyPrint: Boolean): String = {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
+  }
+
+  private def getChildrenSize(execInfos: Seq[ExecInfo]): Seq[Int] = {
+    execInfos.map(_.children.getOrElse(Seq.empty).mkString(",").size)
+  }
+
+  private def getChildrenNodeIdsSize(execInfos: Seq[ExecInfo]): Seq[Int] = {
+    execInfos.map(_.children.getOrElse(Seq.empty).map(_.nodeId).mkString(",").size)
+  }
+
+  def getDetailedExecsHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
+      execInfos: Seq[ExecInfo]): LinkedHashMap[String, Int] = {
+    val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
+      SQL_ID_STR -> SQL_ID_STR.size,
+      EXEC_STR -> getMaxSizeForHeader(execInfos.map(_.exec.size), EXEC_STR),
+      EXPR_STR -> getMaxSizeForHeader(execInfos.map(_.expr.size), EXPR_STR),
+      SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
+      EXEC_DURATION -> EXEC_DURATION.size,
+      EXEC_NODEID -> EXEC_NODEID.size,
+      EXEC_IS_SUPPORTED -> EXEC_IS_SUPPORTED.size,
+      EXEC_STAGES -> getMaxSizeForHeader(execInfos.map(_.stages.mkString(",").size), EXEC_STAGES),
+      EXEC_CHILDREN -> getMaxSizeForHeader(getChildrenSize(execInfos), EXEC_CHILDREN),
+      EXEC_CHILDREN_NODE_IDS -> getMaxSizeForHeader(getChildrenNodeIdsSize(execInfos),
+        EXEC_CHILDREN_NODE_IDS),
+      EXEC_SHOULD_REMOVE -> EXEC_SHOULD_REMOVE.size
+    )
+    detailedHeadersAndFields
+  }
+
+  private def constructExecInfoBuffer(info: ExecInfo, appId: String, delimiter: String = "|",
+      prettyPrint: Boolean, headersAndSizes: LinkedHashMap[String, Int]): String = {
+    val data = ListBuffer[(String, Int)](
+      stringIfempty(appId) -> headersAndSizes(APP_ID_STR),
+      info.sqlID.toString -> headersAndSizes(SQL_ID_STR),
+      stringIfempty(info.exec) -> headersAndSizes(EXEC_STR),
+      stringIfempty(info.expr) -> headersAndSizes(EXEC_STR),
+      f"${info.speedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      info.duration.getOrElse(0).toString -> headersAndSizes(EXEC_DURATION),
+      info.nodeId.toString -> headersAndSizes(EXEC_NODEID),
+      info.isSupported.toString -> headersAndSizes(EXEC_IS_SUPPORTED),
+      info.stages.mkString(":") -> headersAndSizes(EXEC_STAGES),
+      info.children.getOrElse(Seq.empty).map(_.exec).mkString(":") ->
+        headersAndSizes(EXEC_CHILDREN),
+      info.children.getOrElse(Seq.empty).map(_.nodeId).mkString(":") ->
+        headersAndSizes(EXEC_CHILDREN_NODE_IDS),
+      info.shouldRemove.toString -> headersAndSizes(EXEC_SHOULD_REMOVE))
+    constructOutputRow(data, delimiter, prettyPrint)
+  }
+
+  def getDetailedStagesHeaderStringsAndSizes(
+      appInfos: Seq[QualificationSummaryInfo]): LinkedHashMap[String, Int] = {
+    val detailedHeadersAndFields = LinkedHashMap[String, Int](
+      APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
+      STAGE_ID_STR -> STAGE_ID_STR.size,
+      AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
+      STAGE_DUR_STR -> STAGE_DUR_STR.size,
+      UNSUPPORTED_TASK_DURATION_STR -> UNSUPPORTED_TASK_DURATION_STR.size
+    )
+    detailedHeadersAndFields
+  }
+
+  def constructStagesInfo(
+      sumInfo: QualificationSummaryInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String = "|",
+      prettyPrint: Boolean): Seq[String] = {
+    val appId = sumInfo.appId
+    sumInfo.stageInfo.map { info =>
+      val data = ListBuffer[(String, Int)](
+        stringIfempty(appId) -> headersAndSizes(APP_ID_STR),
+        info.stageId.toString -> headersAndSizes(STAGE_ID_STR),
+        f"${info.averageSpeedup}%1.2f"  -> headersAndSizes(AVERAGE_SPEEDUP_STR),
+        info.stageTaskTime.toString -> headersAndSizes(STAGE_DUR_STR),
+        info.unsupportedTaskDur.toString -> headersAndSizes(UNSUPPORTED_TASK_DURATION_STR))
+      constructOutputRow(data, delimiter, prettyPrint)
+    }
+  }
+
+  def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
+    val topExecInfo = plans.flatMap(_.execInfo)
+    topExecInfo.flatMap { e =>
+      e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
+  def constructExecsInfo(
+      sumInfo: QualificationSummaryInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String = "|",
+      prettyPrint: Boolean): Seq[String] = {
+    val allExecs = getAllExecsFromPlan(sumInfo.planInfo)
+    val appId = sumInfo.appId
+    allExecs.flatMap { info =>
+      val children = info.children
+        .map(_.map(constructExecInfoBuffer(_, appId, delimiter, prettyPrint, headersAndSizes)))
+        .getOrElse(Seq.empty)
+      children :+ constructExecInfoBuffer(info, appId, delimiter, prettyPrint, headersAndSizes)
+    }
   }
 
   def constructAppDetailedInfo(
@@ -286,32 +420,24 @@ object QualOutputWriter {
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
-      appInfo.score.toString -> headersAndSizes(SCORE_STR),
-      potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
-      appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
+      appInfo.estimatedInfo.sqlDfDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
-      appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
+      appInfo.estimatedInfo.appDur.toString -> headersAndSizes(APP_DUR_STR),
+      appInfo.estimatedInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
-      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
-      stringIfempty(appInfo.sqlDurationForProblematic.toString) ->
-          headersAndSizes(SQL_DUR_POT_PROBLEMS),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
-      appInfo.readScorePercent.toString -> headersAndSizes(READ_SCORE_PERCENT_STR),
-      stringIfempty(appInfo.readFileFormatScore.toString) ->
-        headersAndSizes(READ_FILE_FORMAT_SCORE_STR),
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
       nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
+      potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
       appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
-      appInfo.estimatedDuration.toString -> headersAndSizes(ESTIMATED_DURATION_STR),
-      appInfo.unsupportedDuration.toString ->
-        headersAndSizes(UNSUPPORTED_DURATION_STR),
-      appInfo.speedupDuration.toString -> headersAndSizes(SPEEDUP_DURATION_STR),
-      appInfo.speedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
-      appInfo.totalSpeedup.toString -> headersAndSizes(TOTAL_SPEEDUP_STR),
-      stringIfempty(appInfo.speedupBucket) -> headersAndSizes(SPEEDUP_BUCKET_STR)
+      appInfo.unsupportedSQLTaskDuration.toString ->
+        headersAndSizes(UNSUPPORTED_TASK_DURATION_STR),
+      appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SUPPORTED_SQL_TASK_DURATION_STR),
+      f"${appInfo.taskSpeedupFactor}%1.2f" -> headersAndSizes(SPEEDUP_FACTOR_STR),
+      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
     )
 
     if (reportReadSchema) {

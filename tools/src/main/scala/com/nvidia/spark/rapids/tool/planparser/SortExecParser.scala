@@ -36,6 +36,6 @@ case class SortExecParser(
       (1.0, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    new ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
   }
 }
