@@ -75,7 +75,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       val plans = sums.flatMap(_.planInfo)
       val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
       val headersAndSizes = QualOutputWriter
-        .getDetailedExecsHeaderStringsAndSizes(sums, allExecs)
+        .getDetailedExecsHeaderStringsAndSizes(sums, allExecs.toSeq)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
       sums.foreach { sumInfo =>
         val rows = QualOutputWriter.constructExecsInfo(sumInfo, headersAndSizes, ",", false)
@@ -315,7 +315,7 @@ object QualOutputWriter {
   }
 
   def getDetailedExecsHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
-      execInfos: Set[ExecInfo]): LinkedHashMap[String, Int] = {
+      execInfos: Seq[ExecInfo]): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       SQL_ID_STR -> SQL_ID_STR.size,
