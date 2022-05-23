@@ -15,6 +15,7 @@
   limitations under the License.
 -->
 <project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib" xmlns:if="ant:if">
+    <record name="/tmp/ant-build.log" loglevel="verbose" action="start" />
     <!--
         - Generates shim service discovery META-INF entries for ShimLoader
 
@@ -61,7 +62,6 @@
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix" value="${project.build.directory}/deps/${aggregatorArtifact}-${project.version}"/>
-        <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <property name="aggregatorBuildDir" value="${project.basedir}/../aggregator/target"/>
 
         <condition property="should.build.conventional.jar">
@@ -148,6 +148,7 @@
             </sequential>
         </ac:for>
 
+        <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <concat destfile="${shimServiceFile}">
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
         </concat>
