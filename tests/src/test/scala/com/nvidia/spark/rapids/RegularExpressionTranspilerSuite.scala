@@ -74,6 +74,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("Detect unsupported combinations of line anchors and \\W and \\D") {
+    val patterns = Seq("\\W\\Z\\D", "\\W$", "$\\D")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Combination of \\W or \\D with line anchor $ " +
+          "or string anchors \\z or \\Z is not supported")
+    )
+  }
+
   test("cuDF does not support choice with nothing to repeat") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>

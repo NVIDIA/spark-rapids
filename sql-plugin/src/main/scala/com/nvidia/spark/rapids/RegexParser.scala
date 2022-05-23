@@ -559,7 +559,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, replacement, None)
+    val cudfRegex = transpile(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     (cudfRegex.toRegexString, replacement.map(_.toRegexString))
@@ -694,6 +694,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
             characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
           RegexCharacterClass(negated = true, ListBuffer(components: _*))))
     }
+  }
+
+  private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
+      previous: Option[RegexAST]): RegexAST = {
+
+    // look for patterns that we know are problematic before we attempt to rewrite the expression
+    val negatedWordOrDigit = contains(regex, {
+      case RegexEscaped('W') | RegexEscaped('D') => true
+      case _ => false
+    })
+    val endOfLineAnchor = contains(regex, {
+      case RegexChar('$') | RegexEscaped('Z') | RegexEscaped('z') => true
+      case _ => false
+    })
+
+    // this check is quite broad and could potentially be refined to look for \W or \D
+    // immediately next to a line anchor
+    if (negatedWordOrDigit && endOfLineAnchor) {
+      throw new RegexUnsupportedException(
+        "Combination of \\W or \\D with line anchor $ " +
+          "or string anchors \\z or \\Z is not supported")
+    }
+
+    rewrite(regex, replacement, previous)
   }
 
   private def rewrite(regex: RegexAST, replacement: Option[RegexReplacement],
@@ -1164,6 +1188,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
     }
+  }
+
+  private def contains(regex: RegexAST, f: RegexAST => Boolean): Boolean = regex match {
+    case RegexSequence(parts) => parts.exists(x => contains(x, f))
+    case RegexGroup(_, term) => contains(term, f)
+    case RegexChoice(l, r) => contains(l, f) || contains(r, f)
+    case RegexRepetition(term, _) => contains(term, f)
+    case RegexCharacterClass(_, chars) => chars.exists(ch => contains(ch, f))
+    case leaf => f(leaf)
   }
 
   private def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
