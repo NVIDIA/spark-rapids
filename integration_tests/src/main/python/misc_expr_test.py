@@ -38,6 +38,9 @@ def test_raise_error():
         lambda spark: unary_op_df(spark, data_gen, num_slices=2).select(
             f.when(f.col('a') > 30, f.raise_error("unexpected"))))
 
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0).select(f.raise_error(f.col("id"))))
+
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, null_gen, length=2, num_slices=1).select(
                 f.raise_error(f.col('a'))).collect(),
