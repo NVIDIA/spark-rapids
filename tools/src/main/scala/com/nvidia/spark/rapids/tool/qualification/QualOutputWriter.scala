@@ -385,11 +385,11 @@ object QualOutputWriter {
     }
   }
 
-  def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
+  def getAllExecsFromPlan(plans: Seq[PlanInfo]): Set[ExecInfo] = {
     val topExecInfo = plans.flatMap(_.execInfo)
     topExecInfo.flatMap { e =>
       e.children.getOrElse(Seq.empty) :+ e
-    }
+    }.toSet
   }
 
   def constructExecsInfo(
