@@ -36,7 +36,7 @@ case class CoalesceExecParser(
       (1.0, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", speedupFactor,
+    new ExecInfo(sqlID, node.name, "", speedupFactor,
       duration, node.id, isSupported, None)
   }
 }

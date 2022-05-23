@@ -28,8 +28,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * This tool is intended to give the user a starting point and does not guarantee the
  * applications it scores high will actually be accelerated the most. When running
  * like this on a single application, the detailed output may be most useful to look
- * for potential issues and time spent in Dataframe operations. The score could be
- * used to compare against other applications.
+ * for potential issues and time spent in Dataframe operations.
  *
  * Create the `RunningQualicationApp`:
  * {{{
@@ -49,11 +48,8 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *   val detailedOutput = qualApp.getDetailed()
  * }}}
  *
- * @param readScorePercent The percent the read format and datatypes
- *                         apply to the score. Default is 20 percent.
  */
-class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
-  extends QualificationAppInfo(None, None, new PluginTypeChecker(), readScorePercent) {
+class RunningQualificationApp() extends QualificationAppInfo(None, None, new PluginTypeChecker()) {
 
   // since application is running, try to initialize current state
   private def initApp(): Unit = {
@@ -89,9 +85,12 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val headerStr = QualOutputWriter.constructSummaryHeader(appIdMaxSize, delimiter,
-          prettyPrint)
-        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info, appIdMaxSize,
+        val headersAndSizes =
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
+        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+          delimiter, prettyPrint)
+        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
+          headersAndSizes, appIdMaxSize,
           delimiter, prettyPrint)
         headerStr + appInfoStr
       case None =>

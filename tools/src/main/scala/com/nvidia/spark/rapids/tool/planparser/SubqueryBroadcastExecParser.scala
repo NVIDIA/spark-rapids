@@ -39,6 +39,6 @@ case class SubqueryBroadcastExecParser(
     }
     // TODO - check is broadcast associated can be replaced
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
+    new ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
   }
 }

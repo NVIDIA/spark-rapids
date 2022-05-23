@@ -45,6 +45,6 @@ case class ShuffleExchangeExecParser(
       (1.0, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
+    new ExecInfo(sqlID, node.name, "", filterSpeedupFactor, duration, node.id, isSupported, None)
   }
 }
