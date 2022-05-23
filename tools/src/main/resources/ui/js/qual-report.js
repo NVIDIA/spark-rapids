@@ -64,12 +64,12 @@ function getExpandedAppDetails(rowData) {
     '    </tr>' +
     '    <tr>' +
     '      <th scope=\"row\">GPU Opportunity</th>' +
-    '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
+    '      <td> {{durationCollection.gpuOpportunity}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuOpportunity + '</td>' +
     '    </tr>' +
     '    <tr>' +
     '      <th scope=\"row\">GPU Time Saved</th>' +
-    '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
+    '      <td> {{durationCollection.gpuTimeSaved}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuTimeSaved + '</td>' +
     '    </tr>' +
     '  </tbody>' +
@@ -99,8 +99,6 @@ function collapseAllGpuRowEntries() {
 }
 
 function expandAllGpuRows(gpuTable) {
-  resetCollapsableGrps(recommendationContainer, false);
-
   // Enumerate all rows
   gpuTable.rows().every(function(){
     // If row has details collapsed
@@ -111,11 +109,9 @@ function expandAllGpuRows(gpuTable) {
     }
   });
   gpuTable.draw(false);
-
 }
 
 function collapseAllGpuRows(gpuTable) {
-  resetCollapsableGrps(recommendationContainer, true);
   // Enumerate all rows
   gpuTable.rows().every(function(){
     // If row has details expanded
@@ -133,7 +129,6 @@ $(document).ready(function(){
   let attemptArray = processRawData(qualificationRecords);
   let initGpuRecommendationConf = UIConfig[gpuRecommendationTableID];
   // Start implementation of GPU Recommendations Apps
-
   let recommendGPUColName = "gpuRecommendation"
   let totalSpeedupColumnName = "totalSpeedup"
   let sortColumnForGPURecommend = totalSpeedupColumnName
@@ -152,8 +147,12 @@ $(document).ready(function(){
         "data":           null,
         "defaultContent": ''
       },
-      {data: "appName"},
       {
+        name: "appName",
+        data: "appName"
+      },
+      {
+        name: "appId",
         data: "appId",
         render:  (appId, type, row) => {
           if (type === 'display' || type === 'filter') {
@@ -166,26 +165,32 @@ $(document).ready(function(){
       },
       {
         name: 'appDuration',
-        data: 'estimatedInfo.appDur',
+        data: 'appDuration',
         type: 'numeric',
         searchable: false,
         render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
+          if (type === 'display') {
             return formatDuration(data)
           }
           return data;
         },
         fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-          if (oData.estimated) {
+          if (oData.endDurationEstimated) {
             $(nTd).css('color', 'blue');
           }
         }
       },
       {
         name: totalSpeedupColumnName,
-        data: 'totalSpeedup_display',
+        data: 'totalSpeedup',
         searchable: false,
         type: 'numeric',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.totalSpeedup_display
+          }
+          return data;
+        },
       },
       {
         name: recommendGPUColName,
@@ -210,8 +215,6 @@ $(document).ready(function(){
       }
     ],
     //dom with search panes
-    //dom: 'Bfrtlip',
-    //dom: '<"dtsp-dataTable"Bfrtip>',
     dom: 'Bfrtlip',
     initComplete: function(settings, json) {
       // Add custom Tool Tip to the headers of the table
@@ -229,52 +232,6 @@ $(document).ready(function(){
 
   gpuRecommendationConf.order =
       [[getColumnIndex(gpuRecommendationConf.columns, sortColumnForGPURecommend), "desc"]];
-  if (initGpuRecommendationConf["rowgroup.enabled"] == true) {
-    gpuRecommendationConf.rowGroup = {
-      startRender: function (rows, group) {
-        // var collapsed = !!(collapsedGroups[group]);
-        let collapsedBool = recommendationsMap[group].collapsed;
-        rows.nodes().each(function (r) {
-          r.style.display = '';
-          if (collapsedBool) {
-            r.style.display = 'none';
-          }
-        });
-        // Iterate group rows and close open child rows.
-        if (collapsedBool) {
-          rows.every(function (rowIdx, tableLoop, rowLoop) {
-            if (this.child.isShown()) {
-              var tr = $(this.node());
-              this.child.hide();
-
-              tr.removeClass('shown');
-            }
-          });
-        }
-        var arrow = collapsedBool ?
-            '<span class="collapse-table-arrow arrow-closed"></span> '
-            : ' <span class="collapse-table-arrow arrow-open"></span> ';
-
-        let toolTip = 'data-toggle=\"tooltip\" data-html=\"true\" data-placement=\"top\" '
-            + 'title=\"' + recommendationsMap[group].description + '\"';
-        var addToolTip = true;
-        return $('<tr/>')
-            .append('<td colspan=\"' + rows.columns()[0].length + '\"'
-                + (addToolTip ? toolTip : '') + '>'
-                + arrow + '&nbsp;'
-                + group
-                + ' (' + rows.count() + ')'
-                + '</td>')
-            .attr('data-name', group)
-            .toggleClass('collapsed', collapsedBool);
-      },
-      dataSrc: function (row) {
-        var recommendedGroup = recommendationContainer.find(grp => grp.isGroupOf(row))
-        return recommendedGroup.displayName;
-      }
-    }
-  } // rowGrouping by recommendations
-
 
   // set the dom of the tableConf
   gpuRecommendationConf.dom = initGpuRecommendationConf["Dom"].default;
@@ -361,11 +318,6 @@ $(document).ready(function(){
   if (initGpuRecommendationConf.hasOwnProperty('buttons')) {
     let buttonsConf = initGpuRecommendationConf['buttons'];
     if (buttonsConf["enabled"]) {
-      // below if to avoid the buttons messed up with length page
-      // dom: "<'row'<'col-sm-12 col-md-10'><'col-sm-12 col-md-2'B>>" +
-      //      "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
-      //      "<'row'<'col-sm-12'tr>>" +
-      //      "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
       gpuRecommendationConf["buttons"] = buttonsConf.buttons
       gpuRecommendationConf.dom = 'B' + gpuRecommendationConf.dom
     }
@@ -374,18 +326,6 @@ $(document).ready(function(){
   var gpuRecommendationTable = $('#gpu-recommendation-table').DataTable(gpuRecommendationConf);
 
   definedDataTables[gpuRecommendationTableID] = gpuRecommendationTable;
-
-  //TODO: we need to expand the rowGroups on search events
-  //There is a possible solution
-  // https://stackoverflow.com/questions/57692989/datatables-trigger-rowgroup-click-with-search-filter
-
-  $('#gpu-recommendation-table tbody').on('click', 'tr.dtrg-start', function () {
-    var name = $(this).data('name');
-    // we may need to hide tooltip hangs
-    // $('#gpu-recommendation-table [data-toggle="tooltip"]').tooltip('hide');
-    recommendationsMap[name].toggleCollapsed();
-    gpuRecommendationTable.draw(false);
-  });
 
   // Add event listener for opening and closing details
   $('#gpu-recommendation-table tbody').on('click', 'td.dt-control', function () {
@@ -419,13 +359,6 @@ $(document).ready(function(){
   var text = Mustache.render(template, qualReportSummary);
   $("#qual-report-summary").html(text);
 
-  // set the template of the Qualification runtimeInformation
-  if (false) {
-    //TODO: fill the template of the execution: last executed, how long it took..etc
-    var template = $("#qual-report-runtime-information-template").html();
-    var text = Mustache.render(template, qualReportSummary);
-    $("#qual-report-runtime-information").html(text);
-  }
   // set the tootTips for the table
   $('#gpu-recommendation-card [data-toggle="tooltip"]').tooltip({
     container: 'body',

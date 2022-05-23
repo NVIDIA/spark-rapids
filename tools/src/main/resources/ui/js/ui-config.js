@@ -74,9 +74,36 @@ let toolTipsValues = {
             "speedupDuration": "Duration of SQL operations that are supported on GPU. It is calculated as (sqlDuration - unsupportedDuration)",
             "unsupportedDuration": "An estimate total duration of SQL operations that are not supported on GPU",
             "sqlDFDuration": "Time duration that includes only SQL-Dataframe queries.",
-            "gpuOpportunity": "Wall-Clock time that shows how much of the SQL duration can be speed-up on the GPU.",
+            "gpuOpportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",
             "gpuTimeSaved": "Estimated Wall-Clock time saved if it was run on the GPU"
         }
+    },
+    "rawTable": {
+        "App Name": "Name of the application",
+        "App ID": "An application is referenced by its application ID, \<em\>app-id\<\/em\>. " +
+          "\<br\> When running on YARN, each application may have multiple attempts, but there are " +
+          "attempt IDs only for applications in cluster mode, not applications in client mode. " +
+          "Applications in YARN cluster mode can be identified by their \<em\>attempt-id\<\/em\>.",
+        "App Duration": "Wall-Clock time measured since the application starts till it is completed. " +
+          "If an app is not completed an estimated completion time would be computed.",
+        "GPU Opportunity": "Expected percentage of Sql Task Duration that could be accelerated by the GPU ",
+        "Estimated GPU Duration": "Predicted runtime of the app if it was run on GPU",
+        "SQL DF Duration": "Wall-Clock time duration that includes only SQL-Dataframe queries.",
+        "SQL Dataframe Task Duration": "Sum of time durations that includes parallel SQL-Dataframe queries.",
+        "Executor CPU Time Percent":
+          "This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO. Shaded red when it is below 40%",
+        "Unsupported Task Duration": "Sum of durations for any unsupported operators.",
+        "GPU Opportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",
+        "Total Speedup Factor":
+          "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
+        "NONSQL Task Duration Plus Overhead": "Time duration that does not span any running SQL task.",
+        "Unsupported Read File Formats and Types": "Looks at the Read Schema and reports the file formats along with types " +
+          "which may not be fully supported. Example: Parquet[decimal], JDBC[*]. Note that this is based on the current " +
+          "version of the plugin and future versions may add support for more file formats and types.",
+        "Unsupported Write Data Format": "Reports the data format which we currently don’t support, i.e. if the result " +
+          "is written in JSON or CSV format.",
+        "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
+        "GPU Time Saved": "Estimated Wall-Clock time saved if it was run on the GPU"
     }
 }
 
@@ -89,7 +116,6 @@ let UIConfig = {
         "simulateRecommendation": false
     },
     "datatables.gpuRecommendations": {
-        "rowgroup.enabled": false,
         "searchPanes": {
             enabled: true,
             "dtConfigurations": {

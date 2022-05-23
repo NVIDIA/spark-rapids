@@ -18,8 +18,9 @@
 
 $(document).ready(function() {
   let attemptArray = processRawData(qualificationRecords);
-  let totalSpeedupColumnName = "totalSpeedup"
+  let totalSpeedupColumnName = "totalSpeedupFactor"
   let sortColumnForGPURecommend = totalSpeedupColumnName
+  let recommendGPUColName = "gpuRecommendation"
   let rawDataTableConf = {
     // TODO: To use horizontal scroll for wide table
     //"scrollX": true,
@@ -30,7 +31,10 @@ $(document).ready(function() {
     info: true,
     data: attemptArray,
     columns: [
-      {data: "appName"},
+      {
+        name: "appName",
+        data: "appName",
+      },
       {
         data: "appId",
         render:  (appId, type, row) => {
@@ -41,23 +45,41 @@ $(document).ready(function() {
         }
       },
       {
-        name: 'sqlDataFrameDuration',
-        data: 'sqlDataFrameDuration',
+        name: "sparkUser",
+        data: "user",
+      },
+      {
+        name: "startTime",
+        data: "startTime",
+        type: 'numeric',
         searchable: false,
         render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
-            return formatDuration(data)
+          if (type === 'display') {
+            return formatTimeMillis(data)
           }
           return data;
         },
       },
       {
-        name: 'sqlDataframeTaskDuration',
-        data: 'sqlDataframeTaskDuration',
-        searchable: false,
+        name: recommendGPUColName,
+        data: 'gpuCategory',
         render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
-            return formatDuration(data)
+          if (type === 'display') {
+            let recommendGroup = recommendationsMap.get(data);
+            return `<span class="` + recommendGroup.getBadgeDisplay(row)
+              + `">` + recommendGroup.displayName + `</span>`;
+          }
+          return data;
+        },
+      },
+      {
+        name: totalSpeedupColumnName,
+        data: "totalSpeedup",
+        searchable: false,
+        type: 'numeric',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.totalSpeedup_display
           }
           return data;
         },
@@ -80,6 +102,73 @@ $(document).ready(function() {
         }
       },
       {
+        name: "estimatedGPUDuration",
+        data: "estimatedGPUDuration",
+        type: 'numeric',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.estimatedDurationWallClock;
+          }
+          return data;
+        },
+      },
+      {
+        name: "gpuTimeSaved",
+        data: "gpuTimeSaved",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.gpuTimeSaved
+          }
+          return data;
+        },
+      },
+      {
+        name: 'sqlDataFrameDuration',
+        data: 'sqlDataFrameDuration',
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.sqlDFDuration
+          }
+          return data;
+        },
+      },
+      {
+        name: 'gpuOpportunity',
+        data: "estimatedInfo.gpuOpportunity",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.gpuOpportunity
+          }
+          return data;
+        },
+      },
+      {
+        name: 'unsupportedTaskDuration',
+        data: "unsupportedTaskDuration",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.unsupportedDuration
+          }
+          return data;
+        },
+      },
+      {
+        name: 'sqlDataframeTaskDuration',
+        data: 'sqlDataframeTaskDuration',
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.sqlDFTaskDuration
+          }
+          return data;
+        },
+      },
+      {
+        name: "executorCpuTimePercent",
         data: "executorCpuTimePercent",
         searchable: false,
         fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
@@ -90,53 +179,81 @@ $(document).ready(function() {
         }
       },
       {
-        data: "durationCollection.estimatedDurationWallClock",
-      },
-      {
-        data: "unsupportedTaskDuration",
-      },
-      {
-        data: "estimatedInfo.gpuOpportunity",
-      },
-      {
-        name: "totalSpeedup",
-        data: "estimatedInfo.estimatedGpuSpeedup",
-      },
-      {
-        data: "gpuCategory",
-      },
-      {
+        name: "longestSqlDuration",
         data: "longestSqlDuration",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.longestSqlDuration
+          }
+          return data;
+        },
       },
-      {data: "failedSQLIds"},
-      {data: "readFileFormatAndTypesNotSupported"},
+      {
+        name: "nonSqlTaskDurationAndOverhead",
+        data: "nonSqlTaskDurationAndOverhead",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.nonSqlTaskDurationAndOverhead
+          }
+          return data;
+        },
+      },
+      {
+        name: "failedSQLIds",
+        data: "failedSQLIds",
+        searchable: false,
+      },
+      {
+        name: "readFileFormatAndTypesNotSupported",
+        data: "readFileFormatAndTypesNotSupported",
+        searchable: false,
+      },
       {
         data: "writeDataFormat",
+        name: "writeDataFormat",
         orderable: false,
       },
       {
         data: "complexTypes",
+        name: "complexTypes",
         orderable: false,
       },
       {
         data: "nestedComplexTypes",
+        name: "nestedComplexTypes",
         orderable: false,
-      }
+      },
     ],
-    // dom: "<'row'<'col-sm-12 col-md-6'B><'col-sm-12 col-md-6'>>" +
-    //      "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
-    //      "<'row'<'col-sm-12'tr>>" +
-    //      "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
     dom: 'Bfrtlip',
     buttons: [{
       extend: 'csv',
       text: 'Export'
-    }]
+    }],
+    initComplete: function(settings, json) {
+      // Add custom Tool Tip to the headers of the table
+      $('#all-apps-raw-data-table thead th').each(function () {
+        var $td = $(this);
+        var toolTipVal = toolTipsValues.rawTable[$td.text().trim()];
+        $td.attr('data-toggle', "tooltip");
+        $td.attr('data-placement', "top");
+        $td.attr('html', "true");
+        $td.attr('data-html', "true");
+        $td.attr('title', toolTipVal);
+      });
+    }
   };
   rawDataTableConf.order =
     [[getColumnIndex(rawDataTableConf.columns, sortColumnForGPURecommend), "desc"]];
   var rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
-  $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip();
+  // set the tootTips for the table
+  $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip({
+    container: 'body',
+    html: true,
+    animation: true,
+    placement:"bottom",
+    delay: {show: 0, hide: 10.0}});
 
   setupNavigation();
 });
