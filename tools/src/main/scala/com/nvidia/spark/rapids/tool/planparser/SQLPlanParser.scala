@@ -58,8 +58,7 @@ class ExecInfo(
 case class PlanInfo(
     appID: String,
     sqlID: Long,
-    execInfo: Seq[ExecInfo],
-    stageIdsNotInExecs: Set[Int]
+    execInfo: Seq[ExecInfo]
 )
 
 object SQLPlanParser extends Logging {
@@ -76,22 +75,7 @@ object SQLPlanParser extends Logging {
     val execInfos = planGraph.nodes.flatMap { node =>
       parsePlanNode(node, sqlID, checker, app)
     }
-    // also get the job ids associated with the SQLId
-    val jobsIdsInSQLQuery = app.jobIdToSqlID.filter { case (_, sqlIdForJob) =>
-      sqlIdForJob == sqlID
-    }.keys.toSeq
-    val allStagesBasedOnJobs = jobsIdsInSQLQuery.flatMap { jId =>
-      app.jobIdToInfo(jId).stageIds
-    }
-    val allStagesInExecs = execInfos.flatMap(_.stages)
-    // all stages should be in both, just double check
-    val stagesInBoth = allStagesBasedOnJobs.toSet.intersect(allStagesInExecs.toSet)
-    if (stagesInBoth.size != allStagesInExecs.size) {
-      logError("Something is wrong, all the stages from execs are not in the jobs stages")
-    }
-    val stagesNotInExecs = allStagesBasedOnJobs.toSet.diff(allStagesInExecs.toSet)
-    logWarning(s"Stages not in execs are: $stagesNotInExecs")
-    PlanInfo(appID, sqlID, execInfos, stagesNotInExecs)
+    PlanInfo(appID, sqlID, execInfos)
   }
 
   def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
