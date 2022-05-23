@@ -396,16 +396,13 @@ class QualificationAppInfo(
         val numExecs = execInfos.size.toDouble
         val numSupportedExecs = (numExecs - numUnsupportedExecs).toDouble
         val ratio = numSupportedExecs / numExecs
-        val hackEstimateWallclockSupported = (sqlWallClockDuration * ratio).toInt
-        if (hackEstimateWallclockSupported > longestSQLDuration) {
-          longestSQLDuration = hackEstimateWallclockSupported
-        }
-        // TODO - do we need to estimate based on supported execs?
+        val estimateWallclockSupported = (sqlWallClockDuration * ratio).toInt
+        // don't worry about supported execs for these are these are mostly indicator of I/O
         // for now just take the time as is
         val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
         val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
 
-        SQLStageSummary(stageSum, sqlID, hackEstimateWallclockSupported,
+        SQLStageSummary(stageSum, sqlID, estimateWallclockSupported,
           execCPUTime, execRunTime)
       }
     }
