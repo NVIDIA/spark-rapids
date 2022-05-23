@@ -39,6 +39,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
       when(mockBuildIter.hasNext).thenReturn(false)
       val mockStreamIter = mock[Iterator[ColumnarBatch]]
       val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+        RequireSingleBatch,
         0,
         Seq.empty,
         mockBuildIter,
@@ -71,6 +72,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
           when(buildIter.buffered).thenReturn(buildBufferedIter)
           val mockStreamIter = mock[Iterator[ColumnarBatch]]
           val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+            RequireSingleBatch,
             0,
             Seq.empty,
             buildIter,
@@ -103,6 +105,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
       val buildIter = Seq(emptyBatch).iterator
       val mockStreamIter = mock[Iterator[ColumnarBatch]]
       val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+        RequireSingleBatch,
         0,
         Seq.empty,
         buildIter,
@@ -129,6 +132,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
         val buildIter = Seq(batch).iterator
         val mockStreamIter = mock[Iterator[ColumnarBatch]]
         val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+          RequireSingleBatch,
           0,
           Seq.empty,
           buildIter,
@@ -182,6 +186,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
         val buildIter = Seq(serializedBatch).iterator
         val attrs = AttributeReference("a", IntegerType, false)() :: Nil
         val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+          RequireSingleBatch,
           1024,
           attrs,
           buildIter,
@@ -215,6 +220,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
             val buildIter = Seq(serializedBatch).iterator
             val attrs = AttributeReference("a", IntegerType, false)() :: Nil
             val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+              RequireSingleBatch,
               1024,
               attrs,
               buildIter,
@@ -252,6 +258,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
               val buildIter = Seq(serializedBatch, serializedBatch2).iterator
               val attrs = AttributeReference("a", IntegerType, false)() :: Nil
               val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+                RequireSingleBatch,
                 1,
                 attrs,
                 buildIter,
@@ -290,6 +297,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
               val buildIter = Seq(serializedBatch, serializedBatch2).iterator
               val attrs = AttributeReference("a", IntegerType, false)() :: Nil
               val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+                RequireSingleBatch,
                 1024,
                 attrs,
                 buildIter,
