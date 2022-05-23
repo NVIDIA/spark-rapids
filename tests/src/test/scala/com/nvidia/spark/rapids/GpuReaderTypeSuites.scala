@@ -31,6 +31,7 @@ trait ReaderTypeSuite extends SparkQueryCompareTestSuite with Arm {
   protected def format: String
 
   protected def otherConfs: Iterable[(String, String)] = Seq.empty
+  protected def testContextOk: Boolean = true
 
   private def checkReaderType(
       readerFactory: PartitionReaderFactory,
@@ -83,11 +84,9 @@ trait ReaderTypeSuite extends SparkQueryCompareTestSuite with Arm {
       }, conf.setAll(otherConfs))
     }
   }
-}
-
-trait MultiReaderTypeSuite extends ReaderTypeSuite {
 
   test("Use coalescing reading for local files") {
+    assume(testContextOk)
     val testFile = Array("/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
@@ -97,6 +96,7 @@ trait MultiReaderTypeSuite extends ReaderTypeSuite {
   }
 
   test("Use multithreaded reading for cloud files") {
+    assume(testContextOk)
     val testFile = Array("s3:/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
@@ -106,6 +106,7 @@ trait MultiReaderTypeSuite extends ReaderTypeSuite {
   }
 
   test("Force coalescing reading for cloud files when setting COALESCING ") {
+    assume(testContextOk)
     val testFile = Array("s3:/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
@@ -116,6 +117,7 @@ trait MultiReaderTypeSuite extends ReaderTypeSuite {
   }
 
   test("Force multithreaded reading for local files when setting MULTITHREADED") {
+    assume(testContextOk)
     val testFile = Array("/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
@@ -126,6 +128,7 @@ trait MultiReaderTypeSuite extends ReaderTypeSuite {
   }
 
   test("Use multithreaded reading for input expression even setting COALESCING") {
+    assume(testContextOk)
     val testFile = Array("/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
@@ -136,6 +139,7 @@ trait MultiReaderTypeSuite extends ReaderTypeSuite {
   }
 
   test("Use multithreaded reading for ignoreCorruptFiles even setting COALESCING") {
+    assume(testContextOk)
     val testFile = Array("/tmp/xyz")
     Seq(format, "").foreach(useV1Source => {
       val conf = new SparkConf()
@@ -147,11 +151,11 @@ trait MultiReaderTypeSuite extends ReaderTypeSuite {
   }
 }
 
-class GpuParquetReaderTypeSuites extends MultiReaderTypeSuite {
+class GpuParquetReaderTypeSuites extends ReaderTypeSuite {
   override protected def format: String = "parquet"
 }
 
-class GpuOrcReaderTypeSuites extends MultiReaderTypeSuite {
+class GpuOrcReaderTypeSuites extends ReaderTypeSuite {
   override protected def format: String = "orc"
 }
 
@@ -160,60 +164,5 @@ class GpuAvroReaderTypeSuites extends ReaderTypeSuite {
   override lazy val otherConfs: Iterable[(String, String)] = Seq(
     ("spark.rapids.sql.format.avro.read.enabled", "true"),
     ("spark.rapids.sql.format.avro.enabled", "true"))
-
-  private lazy val hasAvroJar = ExternalSource.hasSparkAvroJar
-
-  test("Use coalescing reading for local files") {
-    assume(hasAvroJar)
-    val testFile = Array("/tmp/xyz")
-    Seq(format, "").foreach(useV1Source => {
-      val conf = new SparkConf()
-        .set("spark.sql.sources.useV1SourceList", useV1Source)
-      testReaderType(conf, testFile, COALESCING)
-    })
-  }
-
-  test("Use coalescing reading for cloud files if coalescing can work") {
-    assume(hasAvroJar)
-    val testFile = Array("s3:/tmp/xyz")
-    Seq(format, "").foreach(useV1Source => {
-      val conf = new SparkConf()
-        .set("spark.sql.sources.useV1SourceList", useV1Source)
-      testReaderType(conf, testFile, COALESCING)
-    })
-  }
-
-  test("Force coalescing reading for cloud files when setting COALESCING ") {
-    assume(hasAvroJar)
-    val testFile = Array("s3:/tmp/xyz")
-    Seq(format, "").foreach(useV1Source => {
-      val conf = new SparkConf()
-        .set("spark.sql.sources.useV1SourceList", useV1Source)
-        .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
-      testReaderType(conf, testFile, COALESCING)
-    })
-  }
-
-  test("Use per-file reading for input expression even setting COALESCING") {
-    assume(hasAvroJar)
-    val testFile = Array("/tmp/xyz")
-    Seq(format, "").foreach(useV1Source => {
-      val conf = new SparkConf()
-        .set("spark.sql.sources.useV1SourceList", useV1Source)
-        .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
-      testReaderType(conf, testFile, PERFILE, hasInputExpression=true)
-    })
-  }
-
-  test("Use per-file reading for ignoreCorruptFiles even setting COALESCING") {
-    assume(hasAvroJar)
-    val testFile = Array("/tmp/xyz")
-    Seq(format, "").foreach(useV1Source => {
-      val conf = new SparkConf()
-        .set("spark.sql.sources.useV1SourceList", useV1Source)
-        .set("spark.sql.files.ignoreCorruptFiles", "true")
-        .set(s"spark.rapids.sql.format.${format}.reader.type", "COALESCING")
-      testReaderType(conf, testFile, PERFILE)
-    })
-  }
+  override lazy val testContextOk = ExternalSource.hasSparkAvroJar
 }

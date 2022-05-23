@@ -35,7 +35,7 @@ ART_ID=$(mvnEval project.artifactId)
 ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
 
-DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
+DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$CUDA_CLASSIFIER"
 DIST_POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
 DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
@@ -114,7 +114,6 @@ $MVN -B clean install -pl '!tools' \
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
-    DIST_FPATH="$DIST_FPATH-$CUDA_CLASSIFIER"
     distWithReducedPom "deploy"
 
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1

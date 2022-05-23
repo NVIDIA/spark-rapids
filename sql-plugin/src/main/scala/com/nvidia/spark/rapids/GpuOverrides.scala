@@ -2937,7 +2937,7 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
-            case "EXCEPTION" => // Good we can support this
+            case "EXCEPTION"| "LAST_WIN" => // Good we can support this
             case other =>
               willNotWorkOnGpu(s"$other is not supported for config setting" +
                   s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
@@ -3486,7 +3486,15 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
-    )
+    ),
+    expr[RaiseError](
+      "Throw an exception",
+      ExprChecks.unaryProject(
+        TypeSig.NULL, TypeSig.NULL,
+        TypeSig.STRING, TypeSig.STRING),
+      (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions

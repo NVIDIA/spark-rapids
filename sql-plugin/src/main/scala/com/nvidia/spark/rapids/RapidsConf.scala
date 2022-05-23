@@ -962,18 +962,27 @@ object RapidsConf {
     .doc("Sets the avro reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
-      "individually has high overhead, and using COALESCING is " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
       "recommended instead. The COALESCING reader is good when using a local file system where " +
       "the executors are on the same nodes or close to the nodes the data is being read on. " +
       "This reader coalesces all the files assigned to a task into a single host buffer before " +
       "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
       "separate threads in parallel, see " +
       "spark.rapids.sql.format.avro.multiThreadedRead.numThreads. " +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.avro.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
-      "be COALESCING.")
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues((RapidsReaderType.values - RapidsReaderType.MULTITHREADED).map(_.toString))
+    .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
   val AVRO_MULTITHREAD_READ_NUM_THREADS =
@@ -984,6 +993,16 @@ object RapidsConf {
         "spark.rapids.sql.format.avro.reader.type.")
       .integerConf
       .createWithDefault(20)
+
+  val AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.avro.reader.type")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
     .doc("When set to false disables all Iceberg acceleration")
@@ -1786,7 +1805,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isAvroCoalesceFileReadEnabled: Boolean = isAvroAutoReaderEnabled ||
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.COALESCING
 
+  lazy val isAvroMultiThreadReadEnabled: Boolean = isAvroAutoReaderEnabled ||
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
+
   lazy val avroMultiThreadReadNumThreads: Int = get(AVRO_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
