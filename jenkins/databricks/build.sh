@@ -20,9 +20,11 @@ set -ex
 SPARKSRCTGZ=$1
 # version of Apache Spark we are building against
 BASE_SPARK_VERSION=$2
-BUILD_PROFILES=$3
-BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$4
-BUILD_PROFILES=${BUILD_PROFILES:-'databricks312,!snapshot-shims'}
+BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$3
+
+# Move MVN_OPT to last, as it is empty in most cases
+MVN_OPT=$4
+MVN_OPT=${MVN_OPT:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
 BUILDVER=$(echo ${BASE_SPARK_VERSION} | sed 's/\.//g')db
 # the version of Spark used when we install the Databricks jars in .m2
@@ -34,7 +36,7 @@ SPARK_MAJOR_VERSION_STRING=spark_${SPARK_MAJOR_VERSION_NUM_STRING}
 
 echo "tgz is $SPARKSRCTGZ"
 echo "Base Spark version is $BASE_SPARK_VERSION"
-echo "build profiles $BUILD_PROFILES"
+echo "build profiles $MVN_OPT"
 echo "BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS is $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
 
 sudo apt install -y maven rsync

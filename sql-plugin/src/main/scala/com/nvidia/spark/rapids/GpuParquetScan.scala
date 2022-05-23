@@ -36,7 +36,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ParquetFieldIdShims, SparkShimImpl}
 import java.util
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -392,17 +392,17 @@ class HMBSeekableInputStream(
   }
 
   private def readHeapBuffer(buf: ByteBuffer) = {
-    val bytesRead = read(buf.array, buf.arrayOffset + buf.position, buf.remaining)
+    val bytesRead = read(buf.array, buf.arrayOffset + buf.position(), buf.remaining)
     if (bytesRead < 0) {
       bytesRead
     } else {
-      buf.position(buf.position + bytesRead)
+      buf.position(buf.position() + bytesRead)
       bytesRead
     }
   }
 
   private def readFullyHeapBuffer(buf: ByteBuffer): Unit = {
-    readFully(buf.array, buf.arrayOffset + buf.position, buf.remaining)
+    readFully(buf.array, buf.arrayOffset + buf.position(), buf.remaining)
     buf.position(buf.limit)
   }
 
@@ -784,9 +784,10 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
         return
 
-      // TODO: add YearMonthIntervalType
       case PrimitiveTypeName.INT32 =>
-        if (dt == DataTypes.IntegerType || canReadAsIntDecimal(pt, dt)) {
+        if (dt == DataTypes.IntegerType || GpuTypeShims.isSupportedYearMonthType(dt)
+            || canReadAsIntDecimal(pt, dt)) {
+          // Year-month interval type is stored as int32 in parquet
           return
         }
         // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
@@ -797,9 +798,10 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
            return
          }
 
-      // TODO: add DayTimeIntervalType
       case PrimitiveTypeName.INT64 =>
-        if (dt == DataTypes.LongType || canReadAsLongDecimal(pt, dt)) {
+        if (dt == DataTypes.LongType || GpuTypeShims.isSupportedDayTimeType(dt) ||
+            // Day-time interval type is stored as int64 in parquet
+            canReadAsLongDecimal(pt, dt)) {
           return
         }
         // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation

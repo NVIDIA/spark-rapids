@@ -350,6 +350,81 @@ class QualificationAppInfo(
     }
   }
 
+  def summarizeStageLevel(allStagesToExecs: Map[Int, Seq[ExecInfo]]): Set[StageQualSummaryInfo] = {
+    // if it doesn't have a stage id associated we can't calculate the time spent in that
+    // SQL so we just drop it
+    val stageIds = allStagesToExecs.keys.toSet
+    stageIds.map { stageId =>
+      val stageTaskTime = stageIdToTaskEndSum.get(stageId)
+        .map(_.totalTaskDuration).getOrElse(0L)
+      val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
+      val speedupFactors = execsForStage.map(_.speedupFactor)
+      val averageSpeedupFactor = SQLPlanParser.averageSpeedup(speedupFactors)
+      // need to remove the WholeStageCodegen wrappers since they aren't actual
+      // execs that we want to get timings of
+      val allFlattenedExecs = execsForStage.flatMap { e =>
+        if (e.exec.contains("WholeStageCodegen")) {
+          e.children.getOrElse(Seq.empty)
+        } else {
+          e.children.getOrElse(Seq.empty) :+ e
+        }
+      }
+      val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
+      // if we have unsupported try to guess at how much time.  For now divide
+      // time by number of execs and give each one equal weight
+      val eachExecTime = stageTaskTime / allFlattenedExecs.size
+      val unsupportedDur = eachExecTime * numUnsupported.size
+
+      StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur)
+    }
+  }
+
+  def summarizeSQLStageInfo(planInfos: Seq[PlanInfo]): Seq[SQLStageSummary] = {
+    planInfos.flatMap { pInfo =>
+      val perSQLId = pInfo.execInfo.groupBy(_.sqlID)
+      perSQLId.map { case (sqlID, execInfos) =>
+        val sqlWallClockDuration = sqlIdToInfo.get(sqlID).flatMap(_.duration).getOrElse(0L)
+        // there are issues with duration in whole stage code gen where duration of multiple
+        // execs is more than entire stage time, for now ignore the exec duration and just
+        // calculate based on average applied to total task time of each stage
+        val allStagesToExecs = getStageToExec(execInfos)
+        // if it doesn't have a stage id associated we can't calculate the time spent in that
+        // SQL so we just drop it
+        val stageSum = summarizeStageLevel(allStagesToExecs)
+        val numUnsupportedExecs = execInfos.filterNot(_.isSupported).size
+        // This is a guestimate at how much wall clock was supported
+        val numExecs = execInfos.size.toDouble
+        val numSupportedExecs = (numExecs - numUnsupportedExecs).toDouble
+        val ratio = numSupportedExecs / numExecs
+        val hackEstimateWallclockSupported = (sqlWallClockDuration * ratio).toInt
+        if (hackEstimateWallclockSupported > longestSQLDuration) {
+          longestSQLDuration = hackEstimateWallclockSupported
+        }
+        // TODO - do we need to estimate based on supported execs?
+        // for now just take the time as is
+        val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
+        val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
+
+        SQLStageSummary(stageSum, sqlID, hackEstimateWallclockSupported,
+          execCPUTime, execRunTime)
+      }
+    }
+  }
+
+  def removeExecsShouldRemove(origPlanInfos: Seq[PlanInfo]): Seq[PlanInfo] = {
+    origPlanInfos.map { p =>
+      val execFilteredChildren = p.execInfo.map { e =>
+        val filteredChildren = e.children.map { c =>
+          c.filterNot(_.shouldRemove)
+        }
+        new ExecInfo(e.sqlID, e.exec, e.expr, e.speedupFactor, e.duration,
+          e.nodeId, e.isSupported, filteredChildren, e.stages, e.shouldRemove)
+      }
+      val filteredPlanInfos = execFilteredChildren.filterNot(_.shouldRemove)
+      p.copy(execInfo = filteredPlanInfos)
+    }
+  }
+
   /**
    * Aggregate and process the application after reading the events.
    * @return Option of QualificationSummaryInfo, Some if we were able to process the application

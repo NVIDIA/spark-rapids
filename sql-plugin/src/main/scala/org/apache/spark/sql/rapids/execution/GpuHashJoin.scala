@@ -634,7 +634,7 @@ trait GpuHashJoin extends GpuExec {
       case GpuBuildLeft => GpuExec.outputBatching(right)
       case GpuBuildRight => GpuExec.outputBatching(left)
     }
-    if (batching == RequireSingleBatch) {
+    if (batching.isInstanceOf[RequireSingleBatchLike]) {
       RequireSingleBatch
     } else {
       null
