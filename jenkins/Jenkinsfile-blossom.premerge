@@ -89,7 +89,6 @@ RUNTIME_MAP = [
                 '10.4.x-gpu-ml-scala2.12',
                 '3.2.1',
                 'init_cudf_udf.sh',
-                'databricks321,!snapshot-shims',
                 '3.2.1'
         ]
 ]
