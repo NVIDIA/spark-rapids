@@ -1,5 +1,5 @@
-App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,ReadFileFormat Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types
-Rapids Spark Profiling Tool Unit Tests,local-1623281204390,3732.80,UDF,2032,4666,6240,46.27,false,577,"",20,0.00,"JSON[string:bigint:int]",JSON,"",""
-Spark shell,local-1651188809790,226.4,UDF,911,283,166215,81.18,false,715,"",20,0.0,"JSON[string:bigint:int]","","",""
-Spark shell,local-1651187225439,123.2,"",498,154,355637,86.21,false,0,"",20,0.0,"JSON[string:bigint:int]","","",""
-Rapids Spark Profiling Tool Unit Tests,local-1622043423018,0.0,"",0,0,16319,0.0,false,0,"",20,100.00,"",JSON,"",""
+App Name,App ID,SQL DF Duration,SQL Dataframe Task Duration,App Duration,GPU Opportunity,Executor CPU Time Percent,SQL Ids with Failures,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types,Potential Problems,Longest SQL Duration,NONSQL Task Duration Plus Overhead,Unsupported Task Duration,Supported SQL DF Task Duration,Task Speedup Factor,App Duration Estimated
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,9538,4717,16319,8123,37.7,"","",JSON,"","","",5844,132257,19616,112641,3.06,false
+Spark shell,local-1651187225439,253,343411,355637,116,87.88,"",JSON[string:bigint:int],"","","","",166,180,97,83,1.37,false
+Spark shell,local-1651188809790,65,133608,166215,3,81.18,"",JSON[string:bigint:int],"","","","",65,283,269,14,1.50,false
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,0,5793,6240,0,46.27,"",JSON[string:bigint:int],JSON,"","","",0,4666,4664,2,1.25,false

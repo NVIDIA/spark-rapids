@@ -295,7 +295,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       _.getMessage.startsWith("cannot resolve"),
       longsFromCSVDf,
       conf = floatAggConf) {
-    frame => frame.agg(avg(lit(true)),avg(lit(false)))
+    frame => frame.agg(avg(lit(true)).alias("t"), avg(lit(false)).alias("f"))
   }
 
   testSparkResultsAreEqual(

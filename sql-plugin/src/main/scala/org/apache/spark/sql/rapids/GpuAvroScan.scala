@@ -29,9 +29,9 @@ import scala.math.max
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
-import org.apache.avro.mapred.FsInput
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 
@@ -42,7 +42,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.avro.AvroOptions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
+import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
@@ -119,17 +119,9 @@ case class GpuAvroScan(
       GpuAvroPartitionReaderFactory(sparkSession.sessionState.conf, rapidsConf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics)
     } else {
-      val f = GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
+      GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
         parsedOptions, metrics, pushedFilters, queryUsesInputFile)
-      // Now only coalescing is supported, so need to check it can be used for the final choice.
-      if (f.canUseCoalesceFilesReader) {
-        f
-      } else {
-        // Fall back to PerFile reading
-        GpuAvroPartitionReaderFactory(sparkSession.sessionState.conf, rapidsConf, broadcastedConf,
-          dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics)
-      }
     }
   }
 
@@ -167,6 +159,8 @@ case class GpuAvroPartitionReaderFactory(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
+  override def supportColumnarReads(partition: InputPartition): Boolean = true
+
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
   }
@@ -202,6 +196,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   private val numThreads = rapidsConf.avroMultiThreadReadNumThreads
+  private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -209,8 +204,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   override val canUseCoalesceFilesReader: Boolean =
     rapidsConf.isAvroCoalesceFileReadEnabled && !(queryUsesInputFile || ignoreCorruptFiles)
 
-  // disbale multi-threaded until it is supported.
-  override val canUseMultiThreadReader: Boolean = false
+  override val canUseMultiThreadReader: Boolean = rapidsConf.isAvroMultiThreadReadEnabled
 
   /**
    * File format short name used for logging and other things to uniquely identity
@@ -221,10 +215,20 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   /**
    * Build the PartitionReader for cloud reading
    */
+  @scala.annotation.nowarn(
+    "msg=value ignoreExtension in class AvroOptions is deprecated*"
+  )
   override def buildBaseColumnarReaderForCloud(
-      files: Array[PartitionedFile],
+      partFiles: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    throw new UnsupportedOperationException()
+    val files = if (options.ignoreExtension) {
+      partFiles
+    } else {
+      partFiles.filter(_.filePath.endsWith(".avro"))
+    }
+    new GpuMultiFileCloudAvroPartitionReader(conf, files, numThreads, maxNumFileProcessed,
+      filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix,
+      readDataSchema, partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes)
   }
 
   /**
@@ -281,6 +285,11 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
   def debugDumpPrefix: Option[String]
 
   def readDataSchema: StructType
+
+  def conf: Configuration
+
+  // Same default buffer size with Parquet readers.
+  val cacheBufferSize = conf.getInt("avro.read.allocation.size", 8 * 1024 * 1024)
 
   /**
    * Read the host data to GPU for decoding, and return it as a cuDF Table.
@@ -362,7 +371,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
           if (numBytes == 0 || numBytes + estBytes <= maxReadBatchSizeBytes) {
             currentChunk += blockIter.next()
             numRows += currentChunk.last.count
-            numAvroBytes += currentChunk.last.blockDataSize
+            numAvroBytes += currentChunk.last.dataSize
             numBytes += estBytes
             readNextBatch()
           }
@@ -411,7 +420,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
     // Start from the Header
     var totalSize: Long = headerSize
     // Add all blocks
-    totalSize += blocks.map(_.blockLength).sum
+    totalSize += blocks.map(_.blockSize).sum
     totalSize
   }
 
@@ -419,10 +428,23 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
   protected final def copyBlocksData(
       blocks: Seq[BlockInfo],
       in: FSDataInputStream,
-      out: OutputStream): Seq[BlockInfo] = {
-    val copyRanges = computeCopyRanges(blocks)
-    // copy cache: 8MB
-    val copyCache = new Array[Byte](8 * 1024 * 1024)
+      out: OutputStream,
+      sync: Option[Array[Byte]] = None): Seq[BlockInfo] = {
+    val copyRanges = sync.map { s =>
+      assert(s.size >= SYNC_SIZE)
+      // Copy every block without the tailing sync marker if a sync is given. This
+      // is for coalescing reader who requires to append this given sync marker
+      // to each block. Then we can not merge sequential blocks.
+      blocks.map(b => CopyRange(b.blockStart, b.blockSize - SYNC_SIZE))
+    }.getOrElse(computeCopyRanges(blocks))
+
+    val copySyncFunc: OutputStream => Unit = if (sync.isEmpty) {
+      out => // do nothing
+    } else {
+      out => out.write(sync.get, 0, SYNC_SIZE)
+    }
+    // copy cache, default to 8MB
+    val copyCache = new Array[Byte](cacheBufferSize)
     var readTime, writeTime = 0L
 
     copyRanges.foreach { range =>
@@ -442,6 +464,8 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
         writeTime += (end - mid)
         bytesLeft -= readLength
       }
+      // append the sync marker to the block data for the coalescing reader.
+      copySyncFunc(out)
     }
     metrics.get(READ_FS_TIME).foreach(_.add(readTime))
     metrics.get(WRITE_BUFFER_TIME).foreach(_.add(writeTime))
@@ -452,7 +476,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
    * Calculate the copy ranges from blocks.
    * And it will try to combine the sequential blocks.
    */
-  private def computeCopyRanges(blocks: Seq[BlockInfo]): Array[CopyRange] = {
+  private def computeCopyRanges(blocks: Seq[BlockInfo]): Seq[CopyRange] = {
     var currentCopyStart, currentCopyEnd = 0L
     val copyRanges = new ArrayBuffer[CopyRange]()
 
@@ -464,20 +488,20 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
         currentCopyStart = block.blockStart
         currentCopyEnd = currentCopyStart
       }
-      currentCopyEnd += block.blockLength
+      currentCopyEnd += block.blockSize
     }
 
     if (currentCopyEnd != currentCopyStart) {
       copyRanges.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
     }
-    copyRanges.toArray
+    copyRanges.toSeq
   }
 
 }
 
 /** A PartitionReader that reads an AVRO file split on the GPU. */
 class GpuAvroPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     partFile: PartitionedFile,
     blockMeta: AvroBlockMeta,
     override val readDataSchema: StructType,
@@ -538,12 +562,247 @@ class GpuAvroPartitionReader(
 }
 
 /**
+ * A PartitionReader that can read multiple AVRO files in parallel.
+ * This is most efficient running in a cloud environment where the I/O of reading is slow.
+ *
+ * When reading a file, it
+ *   - seeks to the start position of the first block located in this partition.
+ *   - next, parses the meta and sync, rewrites the meta and sync, and copies the data to a
+ *     batch buffer per block, until reaching the last one of the current partition.
+ *   - sends batches to GPU at last.
+ *
+ * @param conf the Hadoop configuration
+ * @param files the partitioned files to read
+ * @param numThreads the size of the threadpool
+ * @param maxNumFileProcessed threshold to control the maximum file number to be
+ *                            submitted to threadpool
+ * @param filters filters passed into the filterHandler
+ * @param execMetrics the metrics
+ * @param ignoreCorruptFiles Whether to ignore corrupt files
+ * @param ignoreMissingFiles Whether to ignore missing files
+ * @param debugDumpPrefix a path prefix to use for dumping the fabricated AVRO data or null
+ * @param readDataSchema the Spark schema describing what will be read
+ * @param partitionSchema Schema of partitions.
+ * @param maxReadBatchSizeRows soft limit on the maximum number of rows to be read per batch
+ * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes to be read per batch
+ */
+class GpuMultiFileCloudAvroPartitionReader(
+    override val conf: Configuration,
+    files: Array[PartitionedFile],
+    numThreads: Int,
+    maxNumFileProcessed: Int,
+    filters: Array[Filter],
+    execMetrics: Map[String, GpuMetric],
+    ignoreCorruptFiles: Boolean,
+    ignoreMissingFiles: Boolean,
+    override val debugDumpPrefix: Option[String],
+    override val readDataSchema: StructType,
+    partitionSchema: StructType,
+    maxReadBatchSizeRows: Integer,
+    maxReadBatchSizeBytes: Long)
+  extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
+    execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
+
+  override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
+      Option[ColumnarBatch] = fileBufsAndMeta match {
+    case buffer: AvroHostBuffersWithMeta =>
+      val bufsAndSizes = buffer.memBuffersAndSizes
+      val (dataBuf, dataSize) = bufsAndSizes.head
+      val partitionValues = buffer.partitionedFile.partitionValues
+      val optBatch = if (dataBuf == null) {
+        // Not reading any data, but add in partition data if needed
+        // Someone is going to process this data, even if it is just a row count
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
+        addPartitionValues(Some(emptyBatch), partitionValues, partitionSchema)
+      } else {
+        val maybeBatch = sendToGpu(dataBuf, dataSize, files)
+        // we have to add partition values here for this batch, we already verified that
+        // it's not different for all the blocks in this batch
+        addPartitionValues(maybeBatch, partitionValues, partitionSchema)
+      }
+       // Update the current buffers
+      closeOnExcept(optBatch) { _ =>
+        if (bufsAndSizes.length > 1) {
+          val updatedBuffers = bufsAndSizes.drop(1)
+          currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
+        } else {
+          currentFileHostBuffers = None
+        }
+      }
+      optBatch
+    case t =>
+      throw new RuntimeException(s"Unknown avro buffer type: ${t.getClass.getSimpleName}")
+  }
+
+  override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
+    AvroMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
+
+  override final def getFileFormatShortName: String = "AVRO"
+
+  override def getBatchRunner(
+      tc: TaskContext,
+      file: PartitionedFile,
+      config: Configuration,
+      filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] =
+    new ReadBatchRunner(tc, file, config, filters)
+
+  /** Two utils classes */
+  private case class AvroHostBuffersWithMeta(
+    override val partitionedFile: PartitionedFile,
+    override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
+    override val bytesRead: Long) extends HostMemoryBuffersWithMetaDataBase
+
+  private class ReadBatchRunner(
+      taskContext: TaskContext,
+      partFile: PartitionedFile,
+      config: Configuration,
+      filters: Array[Filter]) extends Callable[HostMemoryBuffersWithMetaDataBase] with Logging {
+
+    override def call(): HostMemoryBuffersWithMetaDataBase = {
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        doRead()
+      } catch {
+        case e: FileNotFoundException if ignoreMissingFiles =>
+          logWarning(s"Skipped missing file: ${partFile.filePath}", e)
+          AvroHostBuffersWithMeta(partFile, Array((null, 0)), 0)
+        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+        case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        case e @(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(
+            s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
+          AvroHostBuffersWithMeta(partFile, Array((null, 0)), 0)
+      } finally {
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def createBufferAndMeta(
+        arrayBufSize: Array[(HostMemoryBuffer, Long)],
+        startingBytesRead: Long): HostMemoryBuffersWithMetaDataBase = {
+      val bytesRead = fileSystemBytesRead() - startingBytesRead
+      AvroHostBuffersWithMeta(partFile, arrayBufSize, bytesRead)
+    }
+
+    private val stopPosition = partFile.start + partFile.length
+
+    /**
+     * Read the split to one or more batches.
+     * Here is overview of the process:
+     *     - some preparation
+     *     - while (has next block in this split) {
+     *     -   1) peek the current head block and estimate the batch buffer size
+     *     -   2) read blocks as many as possible to fill the batch buffer
+     *     -   3) One batch is done, append it to the list
+     *     - }
+     *     - post processing
+     */
+    private def doRead(): HostMemoryBuffersWithMetaDataBase = {
+      val startingBytesRead = fileSystemBytesRead()
+      withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
+        // Go to the start of the first block after the start position
+        reader.sync(partFile.start)
+        if (!reader.hasNextBlock || isDone) {
+          // no data or got close before finishing, return null buffer and zero size
+          return createBufferAndMeta(Array((null, 0)), startingBytesRead)
+        }
+        val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+        try {
+          val headerSize = reader.headerSize
+          var isBlockSizeEstimated = false
+          var estBlocksSize = 0L
+          var totalRowsNum = 0
+          var curBlock: MutableBlockInfo = null
+          while (reader.hasNextBlock && !reader.pastSync(stopPosition)) {
+            // Get the block metadata first
+            curBlock = reader.peekBlock(curBlock)
+            if (!isBlockSizeEstimated) {
+              // Initialize the estimated block total size.
+              // The AVRO file has no special section for block metadata, and collecting the
+              // block meta through the file is quite expensive for files in cloud. So we do
+              // not know the target buffer size ahead. Then we have to do an estimation.
+              //   "the estimated total block size = partFile.length + additional space"
+              // Letting "additional space = one block length * 1.2" is because we may
+              // move the start and stop positions when reading this split to keep the
+              // integrity of edge blocks.
+              // One worst case is the stop position is one byte after a block start,
+              // then we need to read the whole block into the current batch. And this block
+              // may be larger than the first block. So we preserve an additional space
+              // whose size is 'one block length * 1.2' to try to avoid reading it to a new
+              // batch.
+              estBlocksSize = partFile.length + (curBlock.blockSize * 1.2F).toLong
+              isBlockSizeEstimated = true
+            }
+
+            var estSizeToRead = if (estBlocksSize > maxReadBatchSizeBytes) {
+              maxReadBatchSizeBytes
+            } else if (estBlocksSize < curBlock.blockSize) {
+              // This may happen only for the last block.
+              logInfo("Less buffer is estimated, read the last block into a new batch.")
+              curBlock.blockSize
+            } else {
+              estBlocksSize
+            }
+            // Allocate the buffer for the header and blocks for a batch
+            closeOnExcept(HostMemoryBuffer.allocate(headerSize + estSizeToRead)) { hmb =>
+              val out = new HostMemoryOutputStream(hmb)
+              // Write the header to the output stream
+              AvroFileWriter(out).writeHeader(reader.header)
+              // Read the block data to the output stream
+              var batchRowsNum: Int = 0
+              var hasNextBlock = true
+              do {
+                reader.readNextRawBlock(out)
+                batchRowsNum += curBlock.count.toInt
+                estSizeToRead -= curBlock.blockSize
+                // Continue reading the next block into the current batch when
+                //  - the next block exists, and
+                //  - the remaining buffer is enough to hold the next block, and
+                //  - the batch rows number does not go beyond the upper limit.
+                hasNextBlock = reader.hasNextBlock && !reader.pastSync(stopPosition)
+                if (hasNextBlock) {
+                  curBlock = reader.peekBlock(curBlock)
+                }
+              } while (hasNextBlock && curBlock.blockSize <= estSizeToRead &&
+                  batchRowsNum <= maxReadBatchSizeRows)
+
+              // One batch is done
+              hostBuffers += ((hmb, out.getPos))
+              totalRowsNum += batchRowsNum
+              estBlocksSize -= (out.getPos - headerSize)
+            }
+          } // end of while
+
+          val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
+            // Overload the size to be the number of rows with null buffer
+            Array((null, totalRowsNum))
+          } else if (isDone) {
+            // got close before finishing, return null buffer and zero size
+            hostBuffers.foreach(_._1.safeClose(new Exception))
+            Array((null, 0))
+          } else {
+            hostBuffers.toArray
+          }
+          createBufferAndMeta(bufAndSize, startingBytesRead)
+        } catch {
+          case e: Throwable =>
+            hostBuffers.foreach(_._1.safeClose(e))
+            throw e
+        }
+      } // end of withResource(reader)
+    } // end of doRead
+  } // end of Class ReadBatchRunner
+
+}
+
+/**
  * A PartitionReader that can read multiple AVRO files up to the certain size. It will
  * coalesce small files together and copy the block data in a separate thread pool to speed
  * up processing the small files before sending down to the GPU.
  */
 class GpuMultiFileAvroPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     splits: Array[PartitionedFile],
     clippedBlocks: Seq[AvroSingleDataBlockInfo],
     override val readDataSchema: StructType,
@@ -571,47 +830,45 @@ class GpuMultiFileAvroPartitionReader(
         s" splitting it into a new batch!")
       return true
     }
-
     false
   }
 
-  override def calculateEstimatedBlocksOutputSize(
-      blocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
-      schema: SchemaBase): Long = {
+  override protected def createBatchContext(
+      chunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+      clippedSchema: SchemaBase): BatchContext = {
     // Get headers according to the input paths.
-    val headers = blocks.keys.map(mapPathHeader.get(_).get)
+    val headers = chunkedBlocks.keys.map(mapPathHeader.get(_).get)
     // Merge the meta, it is safe because the compatibility has been verifed
     // in 'checkIfNeedToSplitDataBlock'
-    Header.mergeMetadata(headers.toSeq).map { mergedHeader =>
-      val allBlocks = blocks.values.flatten.toSeq
-      estimateOutputSize(allBlocks, Header.headerSizeInBytes(mergedHeader))
-    } getOrElse 0L
+    val mergedHeader = Header.mergeMetadata(headers.toSeq)
+    assert(mergedHeader.nonEmpty, "No header exists")
+    AvroBatchContext(chunkedBlocks, clippedSchema, mergedHeader.get)
   }
 
-  override def writeFileHeader(paths: Seq[Path], buffer: HostMemoryBuffer): Long = {
-    // Get headers according to the input paths.
-    val headers = paths.map(mapPathHeader.get(_).get)
-    // Merge the meta, it is safe because the compatibility has been verifed
-    // in 'checkIfNeedToSplitDataBlock'
-    Header.mergeMetadata(headers).map { mergedHeader =>
-      withResource(new HostMemoryOutputStream(buffer)) { out =>
-        AvroFileWriter(out).writeHeader(mergedHeader)
-        out.getPos
-      }
-    } getOrElse 0L
+  override def calculateEstimatedBlocksOutputSize(batchContext: BatchContext): Long = {
+    val allBlocks = batchContext.origChunkedBlocks.values.flatten.toSeq
+    val headerSize = Header.headerSizeInBytes(batchContext.mergedHeader)
+    estimateOutputSize(allBlocks, headerSize)
+  }
+
+  override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
+    withResource(new HostMemoryOutputStream(buffer)) { out =>
+      AvroFileWriter(out).writeHeader(bContext.mergedHeader)
+      out.getPos
+    }
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], schema: SchemaBase): Long = {
+      blocks: Seq[DataBlockBase], batchContext: BatchContext): Long = {
     // In 'calculateEstimatedBlocksOutputSize', we have got the true size for
     // Header + All Blocks.
     footerOffset
   }
 
   override def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
-      blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
+      blocks: Seq[DataBlockBase], bContext: BatchContext): (HostMemoryBuffer, Long) = {
     // AVRO files have no footer, do nothing
-    (buffer, bufferSize)
+    (buffer, footerOffset)
   }
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
@@ -629,8 +886,9 @@ class GpuMultiFileAvroPartitionReader(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long): Callable[(Seq[DataBlockBase], Long)] =
-    new AvroCopyBlocksRunner(tc, file, outhmb, blocks, offset)
+      offset: Long,
+      batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)] =
+    new AvroCopyBlocksRunner(tc, file, outhmb, blocks, offset, batchContext)
 
   // The runner to copy blocks to offset of HostMemoryBuffer
   class AvroCopyBlocksRunner(
@@ -638,8 +896,10 @@ class GpuMultiFileAvroPartitionReader(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
-      offset: Long)
-    extends Callable[(Seq[DataBlockBase], Long)] {
+      offset: Long,
+      batchContext: BatchContext) extends Callable[(Seq[DataBlockBase], Long)] {
+
+    private val headerSync = Some(batchContext.mergedHeader.sync)
 
     override def call(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
@@ -648,7 +908,7 @@ class GpuMultiFileAvroPartitionReader(
         val res = withResource(outhmb) { _ =>
           withResource(file.getFileSystem(conf).open(file)) { in =>
             withResource(new HostMemoryOutputStream(outhmb)) { out =>
-              copyBlocksData(blocks, in, out)
+              copyBlocksData(blocks, in, out, headerSync)
             }
           }
         }
@@ -676,6 +936,9 @@ class GpuMultiFileAvroPartitionReader(
   implicit def toAvroExtraInfo(in: ExtraInfo): AvroExtraInfo =
     in.asInstanceOf[AvroExtraInfo]
 
+  implicit def toAvroBatchContext(in: BatchContext): AvroBatchContext =
+    in.asInstanceOf[AvroBatchContext]
+
 }
 
 /** Singleton threadpool that is used across all the tasks. */
@@ -691,25 +954,13 @@ case class AvroFileFilterHandler(
   )
   val ignoreExtension = options.ignoreExtension
 
-  private def passSync(blockStart: Long, position: Long): Boolean = {
-    blockStart >= position + SYNC_SIZE
-  }
-
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
     if (ignoreExtension || partFile.filePath.endsWith(".avro")) {
-      val in = new FsInput(new Path(new URI(partFile.filePath)), hadoopConf)
-      closeOnExcept(in) { _ =>
-        withResource(AvroDataFileReader.openReader(in)) { reader =>
-          val blocks = reader.blocks
-          val filteredBlocks = new ArrayBuffer[BlockInfo]()
-          blocks.foreach(block => {
-            if (partFile.start <= block.blockStart - SYNC_SIZE &&
-              !passSync(block.blockStart, partFile.start + partFile.length)) {
-              filteredBlocks.append(block)
-            }
-          })
-          AvroBlockMeta(reader.header, reader.headerSize, filteredBlocks)
-        }
+      withResource(AvroFileReader.openMetaReader(partFile.filePath, hadoopConf)) { reader =>
+        // Get blocks only belong to this split
+        reader.sync(partFile.start)
+        val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)
+        AvroBlockMeta(reader.header, reader.headerSize, partBlocks)
       }
     } else {
       AvroBlockMeta(null, 0L, Seq.empty)
@@ -733,7 +984,7 @@ case class AvroBlockMeta(header: Header, headerSize: Long, blocks: Seq[BlockInfo
  */
 private case class CopyRange(offset: Long, length: Long)
 
-/** Extra information: codec */
+/** Extra information */
 case class AvroExtraInfo() extends ExtraInfo
 
 /** avro schema wrapper */
@@ -742,8 +993,8 @@ case class AvroSchemaWrapper(schema: Schema) extends SchemaBase
 /** avro BlockInfo wrapper */
 case class AvroDataBlock(blockInfo: BlockInfo) extends DataBlockBase {
   override def getRowCount: Long = blockInfo.count
-  override def getReadDataSize: Long = blockInfo.blockDataSize
-  override def getBlockSize: Long = blockInfo.blockLength
+  override def getReadDataSize: Long = blockInfo.dataSize
+  override def getBlockSize: Long = blockInfo.blockSize
 }
 
 case class AvroSingleDataBlockInfo(
@@ -752,3 +1003,8 @@ case class AvroSingleDataBlockInfo(
   partitionValues: InternalRow,
   schema: AvroSchemaWrapper,
   extraInfo: AvroExtraInfo) extends SingleDataBlockInfo
+
+case class AvroBatchContext(
+  override val origChunkedBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+  override val schema: SchemaBase,
+  mergedHeader: Header) extends BatchContext(origChunkedBlocks, schema)

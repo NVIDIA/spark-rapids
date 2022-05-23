@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,5 +46,7 @@ class RapidsExecutorPluginSuite extends FunSuite {
     assert(RapidsExecutorPlugin.cudfVersionSatisfied("7.0.1-special", "7.0.2-special"))
     assert(!RapidsExecutorPlugin.cudfVersionSatisfied("7.0.2.2.2", "7.0.2.2"))
     assert(RapidsExecutorPlugin.cudfVersionSatisfied("7.0.2.2.2", "7.0.2.2.2"))
+    assert(RapidsExecutorPlugin.cudfVersionSatisfied("7.0.1-20220101.001122-12", "7.0.1-SNAPSHOT"))
+    assert(!RapidsExecutorPlugin.cudfVersionSatisfied("7.0.1-SNAPSHOT", "7.0.1-20220101.001122-12"))
   }
 }

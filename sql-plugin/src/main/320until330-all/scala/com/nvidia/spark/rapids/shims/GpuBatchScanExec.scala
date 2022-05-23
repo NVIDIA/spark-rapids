@@ -93,7 +93,7 @@ case class GpuBatchScanExec(
       // return an empty RDD with 1 partition if dynamic filtering removed the only split
       sparkContext.parallelize(Array.empty[InternalRow], 1)
     } else {
-      new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
+      new GpuDataSourceRDD(sparkContext, filteredPartitions, readerFactory)
     }
   }
 

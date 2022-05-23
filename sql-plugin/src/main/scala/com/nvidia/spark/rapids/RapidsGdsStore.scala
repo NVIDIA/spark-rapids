@@ -23,6 +23,7 @@ import java.util.function.BiFunction
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -136,7 +137,7 @@ class RapidsGdsStore(
     private[this] var currentOffset = 0L
 
     override def close(): Unit = {
-      pendingBuffers.foreach(_.free())
+      pendingBuffers.safeFree()
       pendingBuffers.clear()
       batchWriteBuffer.close()
     }
