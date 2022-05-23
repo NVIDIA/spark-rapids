@@ -15,7 +15,6 @@
   limitations under the License.
 -->
 <project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib" xmlns:if="ant:if">
-    <record name="/tmp/ant-build.log" loglevel="verbose" action="start" />
     <!--
         - Generates shim service discovery META-INF entries for ShimLoader
 
