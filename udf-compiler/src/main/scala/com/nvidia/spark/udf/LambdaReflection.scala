@@ -22,7 +22,7 @@ import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField, CtMet
 import javassist.bytecode.{CodeIterator, ConstPool, Descriptor}
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
 import org.apache.spark.sql.types._
 
 //
@@ -101,6 +101,10 @@ class LambdaReflection private(private val classPool: ClassPool,
 
   lazy val ret: CtClass = ctMethod.getReturnType
 
+  if (ret == CtClass.voidType) {
+    throw new SparkException("Cannot construct Catalyst expression with void return type")
+  }
+
   lazy val maxLocals: Int = codeAttribute.getMaxLocals
 }
 
@@ -119,13 +123,21 @@ object LambdaReflection {
     writeReplace.setAccessible(true)
     val serializedLambda = writeReplace.invoke(function)
         .asInstanceOf[SerializedLambda]
-    val capturedArgs = Seq.tabulate(serializedLambda.getCapturedArgCount){
-      // Add UnknownCapturedArg expressions to the list of captured arguments
-      // until we figure out how to handle captured variables in various
-      // situations.
-      // This, however, lets us pass captured arguments as long as they are not
-      // evaluated.
-      _ => Repr.UnknownCapturedArg()
+    val capturedArgs = Seq.tabulate(serializedLambda.getCapturedArgCount) { i =>
+      val capturedArg = serializedLambda.getCapturedArg(i)
+      if (capturedArg.isInstanceOf[Byte] || capturedArg.isInstanceOf[Char] ||
+          capturedArg.isInstanceOf[Short] || capturedArg.isInstanceOf[Int] ||
+          capturedArg.isInstanceOf[Long] || capturedArg.isInstanceOf[Float] ||
+          capturedArg.isInstanceOf[Double] || capturedArg.isInstanceOf[Boolean]) {
+        Literal(capturedArg)
+      } else {
+        // Add UnknownCapturedArg expressions to the list of captured arguments
+        // until we figure out how to handle captured variables in various
+        // situations.
+        // This, however, lets us pass captured arguments as long as they are
+        // not evaluated.
+        Repr.UnknownCapturedArg()
+      }
     }
 
     val classPool = new ClassPool(true)
