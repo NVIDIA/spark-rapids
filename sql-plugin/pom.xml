@@ -34,6 +34,7 @@
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${cuda.version}</classifier>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>

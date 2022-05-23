@@ -44,8 +44,8 @@
         <dependency>
           <groupId>org.openucx</groupId>
           <artifactId>jucx</artifactId>
-          <version>1.12.1</version>
-          <scope>compile</scope>
+          <version>${ucx.version}</version>
+          <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>

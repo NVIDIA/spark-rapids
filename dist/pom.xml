@@ -301,7 +301,7 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <phase>generate-resources</phase>
+                        <phase>generate-sources</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
@@ -408,6 +408,42 @@
                         <exclude>*.md</exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <plugin>
+                <!-- The dependency scopes of spark-rapids-jni and jucx are provided in sql-plugin, shuffle-plugin and udf-compiler submodules, -->
+                <!-- this will skip the dedupe processing in `create-parallel-world` -->
+                <!-- Unpack spark-rapids-jni and jucx jars to parallel-world directory after `create-parallel-world`, then `parallel-world` will be packaged -->
+                <!-- Note all Shims use the same version of spark-rapids-jni and jucx -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-spark-rapids-jni-and-ucx</id>
+                        <!-- after the generate-sources phase of `create-parallel-world` -->
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>spark-rapids-jni</artifactId>
+                                    <version>${spark-rapids-jni.version}</version>
+                                    <excludes>META-INF</excludes>
+                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.openucx</groupId>
+                                    <artifactId>jucx</artifactId>
+                                    <version>${ucx.version}</version>
+                                    <excludes>META-INF</excludes>
+                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
