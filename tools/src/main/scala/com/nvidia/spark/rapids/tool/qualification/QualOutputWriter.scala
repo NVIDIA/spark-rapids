@@ -315,7 +315,7 @@ object QualOutputWriter {
   }
 
   def getDetailedExecsHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
-      execInfos: Seq[ExecInfo]): LinkedHashMap[String, Int] = {
+      execInfos: Set[ExecInfo]): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       SQL_ID_STR -> SQL_ID_STR.size,
@@ -396,7 +396,7 @@ object QualOutputWriter {
       sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
-      prettyPrint: Boolean): Seq[String] = {
+      prettyPrint: Boolean): Set[String] = {
     val allExecs = getAllExecsFromPlan(sumInfo.planInfo)
     val appId = sumInfo.appId
     allExecs.flatMap { info =>
