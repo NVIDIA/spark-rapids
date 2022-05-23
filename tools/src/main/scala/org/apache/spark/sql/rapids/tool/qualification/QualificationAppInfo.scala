@@ -280,9 +280,10 @@ class QualificationAppInfo(
       }
 
 
+      logWarning(s"execs without stages include: ${execsNoStage.mkString(",")}")
       // if it doesn't have a stage id associated we can't calculate the time spent in that
       // SQL so we just drop it
-      stageIdsWithExecs.map { stageId =>
+      val stagesFromExecs = stageIdsWithExecs.map { stageId =>
         val stageTaskTime = stageIdToTaskEndSum.get(stageId)
           .map(_.totalTaskDuration).getOrElse(0L)
         val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
@@ -296,6 +297,7 @@ class QualificationAppInfo(
         val unsupportedDur = eachExecTime * numUnsupported.size
         StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur, false)
       }
+      stagesFromExecs ++ stageSummaryNotMapped
     }
   }
 
@@ -323,13 +325,6 @@ class QualificationAppInfo(
         // don't worry about supported execs for these are these are mostly indicator of I/O
         val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
         val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
-
-        val execsWithoutStages = flattenedExecs(execInfos).filter(_.stages.isEmpty)
-        logWarning(s"execs without stages include: ${execsWithoutStages.mkString(",")}")
-        // estimate the speedup factor
-        // pInfo.stageIdsNotInExecs
-
-
         SQLStageSummary(stageSum, sqlID, estimateWallclockSupported,
           execCPUTime, execRunTime)
       }
