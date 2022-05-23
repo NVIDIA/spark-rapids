@@ -3479,7 +3479,7 @@ object GpuOverrides extends Logging {
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
     ),
     expr[RaiseError](
-      "throw exception",
+      "Throw an exception",
       ExprChecks.unaryProject(
         TypeSig.NULL, TypeSig.NULL,
         TypeSig.STRING, TypeSig.STRING),

@@ -10336,7 +10336,7 @@ are limited.
 <tr>
 <td rowSpan="2">RaiseError</td>
 <td rowSpan="2">`raise_error`</td>
-<td rowSpan="2">throw exception</td>
+<td rowSpan="2">Throw an exception</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>

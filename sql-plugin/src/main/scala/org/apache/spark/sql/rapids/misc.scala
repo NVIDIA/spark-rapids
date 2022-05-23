@@ -34,7 +34,7 @@ case class GpuRaiseError(child: Expression) extends GpuUnaryExpression with Expe
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     if (input.getRowCount <= 0) {
-      // For the case: when(condition, raise_error())
+      // For the case: when(condition, raise_error(col("a"))
       return GpuColumnVector.columnVectorFromNull(0, NullType)
     }
 
