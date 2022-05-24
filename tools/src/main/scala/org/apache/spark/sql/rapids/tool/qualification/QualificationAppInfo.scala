@@ -367,10 +367,6 @@ class QualificationAppInfo(
       } else {
         0L
       }
-
-      val sqlDFSupportedWallClockDurationBasedStages = perSqlStageSummary.map { s =>
-        s.estimateWallClockSupported
-      }.sum
       val allStagesSummary = perSqlStageSummary.flatMap(_.stageSum)
       val sqlDataframeTaskDuration = allStagesSummary.map(s => s.stageTaskTime).sum
       val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
