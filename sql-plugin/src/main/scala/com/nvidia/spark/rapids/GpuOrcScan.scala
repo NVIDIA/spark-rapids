@@ -125,9 +125,6 @@ object GpuOrcScan {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
-    if (scan.options.getBoolean("mergeSchema", false)) {
-      scanMeta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
@@ -146,11 +143,6 @@ object GpuOrcScan {
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)
-
-    if (sparkSession.conf
-      .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
-      meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
   }
 }
 
@@ -796,7 +788,7 @@ private case class GpuOrcFileFilterHandler(
 
     // After getting the necessary information from ORC reader, we must close the ORC reader
     OrcShims.withReader(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
-    val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
+      val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
         readDataSchema, orcReader, conf)
       if (resultedColPruneInfo.isEmpty) {
         // Be careful when the OrcPartitionReaderContext is null, we should change
@@ -808,11 +800,13 @@ private case class GpuOrcFileFilterHandler(
         assert(requestedColIds.length == readDataSchema.length,
           "[BUG] requested column IDs do not match required schema")
 
+        // Create a local copy of broadcastedConf before we set task-local configs.
+        val taskConf = new Configuration(conf)
         // Following SPARK-35783, set requested columns as OrcConf. This setting may not make
         // any difference. Just in case it might be important for the ORC methods called by us,
         // either today or in the future.
         val includeColumns = requestedColIds.filter(_ != -1).sorted.mkString(",")
-        conf.set(OrcConf.INCLUDE_COLUMNS.getAttribute, includeColumns)
+        taskConf.set(OrcConf.INCLUDE_COLUMNS.getAttribute, includeColumns)
 
         // Only need to filter ORC's schema evolution if it cannot prune directly
         val requestedMapping = if (canPruneCols) {
@@ -821,13 +815,13 @@ private case class GpuOrcFileFilterHandler(
           Some(requestedColIds)
         }
         val fullSchema = StructType(dataSchema ++ partitionSchema)
-        val readerOpts = buildOrcReaderOpts(conf, orcReader, partFile, fullSchema)
+        val readerOpts = buildOrcReaderOpts(taskConf, orcReader, partFile, fullSchema)
 
         withResource(OrcTools.buildDataReader(orcReader.getCompressionSize,
-          orcReader.getCompressionKind, orcReader.getSchema, readerOpts, filePath, fs, conf)) {
+          orcReader.getCompressionKind, orcReader.getSchema, readerOpts, filePath, fs, taskConf)) {
           dataReader =>
-            new GpuOrcPartitionReaderUtils(filePath, conf, partFile, orcFileReaderOpts, orcReader,
-              readerOpts, dataReader, requestedMapping).getOrcPartitionReaderContext
+            new GpuOrcPartitionReaderUtils(filePath, taskConf, partFile, orcFileReaderOpts,
+              orcReader, readerOpts, dataReader, requestedMapping).getOrcPartitionReaderContext
         }
       }
     }

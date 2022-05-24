@@ -274,7 +274,6 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
             lambda spark : spark.read.orc(data_path).select("key"),
             conf=all_confs)
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/135')
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
