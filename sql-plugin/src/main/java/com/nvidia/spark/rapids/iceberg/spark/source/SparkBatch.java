@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import java.util.List;
+import java.util.Objects;
 
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.RapidsConf;
@@ -47,11 +48,13 @@ public class SparkBatch implements Batch {
   private final boolean localityEnabled;
   private final RapidsConf rapidsConf;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
+  private final GpuSparkScan parentScan;
 
   SparkBatch(JavaSparkContext sparkContext, Table table, SparkReadConf readConf,
              List<CombinedScanTask> tasks, Schema expectedSchema,
              RapidsConf rapidsConf,
-             scala.collection.immutable.Map<String, GpuMetric> metrics) {
+             scala.collection.immutable.Map<String, GpuMetric> metrics,
+             GpuSparkScan parentScan) {
     this.sparkContext = sparkContext;
     this.table = table;
     this.readConf = readConf;
@@ -61,6 +64,7 @@ public class SparkBatch implements Batch {
     this.localityEnabled = readConf.localityEnabled();
     this.rapidsConf = rapidsConf;
     this.metrics = metrics;
+    this.parentScan = parentScan;
   }
 
   @Override
@@ -121,4 +125,24 @@ public class SparkBatch implements Batch {
 //  private boolean onlyFileFormat(CombinedScanTask task, FileFormat fileFormat) {
 //    return task.files().stream().allMatch(fileScanTask -> fileScanTask.file().format().equals(fileFormat));
 //  }
+
+  // TODO: See if latest Iceberg code has the same issues with lacking equals/hashCode on batch
+  //       causing exchange to not be reused
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    SparkBatch that = (SparkBatch) o;
+    // Emulating Apache Iceberg old SparkScan behavior where the scan was the batch
+    // to fix exchange reuse with DPP.
+    return this.parentScan.equals(that.parentScan);
+  }
+
+  @Override
+  public int hashCode() {
+    // Emulating Apache Iceberg old SparkScan behavior where the scan was the batch
+    // to fix exchange reuse with DPP.
+    return Objects.hash(parentScan);
+  }
 }

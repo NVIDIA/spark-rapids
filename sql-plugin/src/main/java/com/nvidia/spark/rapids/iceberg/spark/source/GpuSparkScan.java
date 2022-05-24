@@ -118,7 +118,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   @Override
   public Batch toBatch() {
     return new SparkBatch(sparkContext, table, readConf, tasks(), expectedSchema,
-        rapidsConf, metrics());
+        rapidsConf, metrics(), this);
   }
 
   @Override
