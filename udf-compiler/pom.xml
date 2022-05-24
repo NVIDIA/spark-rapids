@@ -34,7 +34,6 @@
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${cuda.version}</classifier>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
@@ -54,6 +53,7 @@
             <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
