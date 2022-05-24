@@ -385,6 +385,15 @@ def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
         return df.select(f.col('value').cast(TimestampType())).collect()
     assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "ArithmeticException")
 
+@pytest.mark.skipif(is_before_spark_330(), reason='330+ throws exception in ANSI mode')
+def test_cast_float_to_timestamp_side_effect():
+    def getDf(spark):
+        return spark.createDataFrame([(True, float(LONG_MAX) + 100), (False, float(1))],
+                                     "c_b boolean, c_f float").repartition(1)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: getDf(spark).selectExpr("if(c_b, cast(0 as timestamp), cast(c_f as timestamp))"),
+        conf=ansi_enabled_conf)
+
 # non ansi mode, will get null
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
 def test_cast_float_to_timestamp_for_nan_inf(type):

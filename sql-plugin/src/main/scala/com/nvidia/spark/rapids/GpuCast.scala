@@ -1642,6 +1642,8 @@ case class GpuCast(
         GpuTypeShims.hasSideEffectsIfCastIntToYearMonth(yearMonthIntervalType)
       case (yearMonthIntervalType: DataType, _: ShortType | ByteType)
         if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
+      case (FloatType | DoubleType, TimestampType) =>
+        GpuTypeShims.hasSideEffectsIfCastFloatToTimestamp
       case _ => false
     }
   }

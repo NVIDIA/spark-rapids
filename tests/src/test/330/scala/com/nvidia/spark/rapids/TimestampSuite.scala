@@ -50,21 +50,30 @@ class TimestampSuite extends SparkQueryCompareTestSuite {
    * ValueError: year -290308 is out of range
    *
    */
-  // TODO Skip because of Spark issue: https://issues.apache.org/jira/browse/SPARK-39209
-  if (false) {
+  // TODO, blocked by a follow on issue: https://github.com/NVIDIA/spark-rapids/issues/5606
+  if (true) {
     testSparkResultsAreEqual("test cast overflowed long seconds to max seconds",
       spark => getOverflowLong(spark)) {
       df => df.repartition(1).selectExpr("cast(a as timestamp)")
     }
 
-    testSparkResultsAreEqual("test cast overflowed long seconds to max seconds, ansi mode",
-      spark => getOverflowLong(spark), conf = ansiConf) {
+    // non ansi mode, should get SECONDS.toMicros(t) which will be truncated to
+    // the max long micro seconds
+    testSparkResultsAreEqual("test cast overflowed long seconds to max seconds",
+      spark => getOverflowLong(spark)) {
       df => df.repartition(1).selectExpr("cast(a as timestamp)")
     }
 
-    // non ansi mode, should get `(double * 1000000L).toLong`\
-    // this test failed on Pyspark
-    testSparkResultsAreEqual("test overflowed float to timestamp, non ansi",
+    // ansi mode, should get SECONDS.toMicros(t) which will be truncated to
+    // the max long micro seconds
+    testSparkResultsAreEqual("test cast overflowed long seconds to max seconds, ansi mode",
+      spark => getOverflowLong(spark),
+      conf = ansiConf) {
+      df => df.repartition(1).selectExpr("cast(a as timestamp)")
+    }
+
+    // non ansi mode, should get `(double * 1000000L).toLong`
+    testSparkResultsAreEqual("test overflowed float to timestamp",
       spark => getOverflowDouble(spark)) {
       df => df.selectExpr("cast(a as timestamp)")
     }
