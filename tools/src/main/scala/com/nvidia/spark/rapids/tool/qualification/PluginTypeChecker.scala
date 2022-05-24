@@ -200,12 +200,7 @@ class PluginTypeChecker extends Logging {
         // check if any of the not supported types are in the schema
         val nsFiltered = dtSupMap(NS).filter(t => schemaLower.contains(t.toLowerCase()))
         if (nsFiltered.nonEmpty) {
-          val deDuped = if (nsFiltered.contains("dec") && nsFiltered.contains("decimal")) {
-            nsFiltered.filterNot(_.equals("dec"))
-          } else {
-            nsFiltered
-          }
-          (0.0, deDuped.toSet)
+          (0.0, nsFiltered.toSet)
         } else {
           // Started out giving different weights based on partial support and so forth
           // but decided to be optimistic and not penalize if we don't know, perhaps

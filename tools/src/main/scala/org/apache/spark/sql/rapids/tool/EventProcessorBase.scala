@@ -318,6 +318,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
     )
     app.jobIdToInfo.put(event.jobId, thisJob)
+    sqlID.foreach(app.jobIdToSqlID(event.jobId) = _)
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {

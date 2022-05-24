@@ -671,28 +671,28 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // `[^a\r\n]` => `[^a]`
     // `[^\r\n]`  => `[^\r\n]`
 
-    val linefeedCharsInPattern = components.flatMap {
+    val distinctComponents = components.distinct
+    val linefeedCharsInPattern = distinctComponents.flatMap {
       case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
       case RegexEscaped(ch) if ch == 'n' => Seq('\n')
       case RegexEscaped(ch) if ch == 'r' => Seq('\r')
       case _ => Seq.empty
     }
 
-    val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
-
+    val onlyLinefeedChars = distinctComponents.length == linefeedCharsInPattern.length
     val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
 
     if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
       // special case for `[^\r\n]` and `[^\\r\\n]`
-      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
     } else if (negatedNewlines.isEmpty) {
-      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
     } else {
       RegexGroup(capture = false,
         RegexChoice(
           RegexCharacterClass(negated = false,
             characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
-          RegexCharacterClass(negated = true, ListBuffer(components: _*))))
+          RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))))
     }
   }
 
@@ -887,6 +887,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
 
       case RegexEscaped(ch) => ch match {
+        case 'd' =>
+          // cuDF is not compatible with Java for \d  so we transpile to Java's definition
+          // of [0-9]
+          // https://github.com/rapidsai/cudf/issues/10894
+          RegexCharacterClass(negated = false, ListBuffer(RegexCharacterRange('0', '9')))
+        case 'w' =>
+          // cuDF is not compatible with Java for \w so we transpile to Java's definition
+          // of `[a-zA-Z_0-9]`
+          RegexCharacterClass(negated = false, ListBuffer(
+            RegexCharacterRange('a', 'z'),
+            RegexCharacterRange('A', 'Z'),
+            RegexChar('_'),
+            RegexCharacterRange('0', '9')))
         case 'D' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4475
           throw new RegexUnsupportedException("non-digit class \\D is not supported")

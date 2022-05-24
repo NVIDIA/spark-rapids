@@ -507,9 +507,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("compare CPU and GPU: regexp replace negated character class") {
-    val inputs = Seq("a", "b", "a\nb", "a\r\nb\n\rc\rd")
+    val inputs = Seq("a", "b", "a\nb", "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
     val patterns = Seq("[^z]", "[^\r]", "[^\n]", "[^\r]", "[^\r\n]",
-      "[^a\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]")
+      "[^a\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
