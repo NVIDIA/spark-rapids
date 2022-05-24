@@ -699,9 +699,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
       previous: Option[RegexAST]): RegexAST = {
 
-    def isMaybeEndAnchor(regex: RegexAST): Boolean = {
+    def isMaybeAnchor(regex: RegexAST): Boolean = {
       contains(regex, {
-        case RegexChar('$') | RegexEscaped('z') | RegexEscaped('Z') => true
+        case RegexChar('^') | RegexChar('$') |
+             RegexEscaped('A') | RegexEscaped('z') | RegexEscaped('Z') => true
         case _ => false
       })
     }
@@ -736,11 +737,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     def checkUnsupported(r1: RegexAST, r2: RegexAST): Unit = {
 //      println(s"checkUnsupported $r1 and $r2")
-      if (isMaybeEndAnchor(r1)) {
+      if (isMaybeAnchor(r1)) {
 //        println("r1 is anchor")
         val a = isMaybeEmpty(r2)
         val b = isMaybeNewline(r2)
-        val c = isMaybeEndAnchor(r2)
+        val c = isMaybeAnchor(r2)
 //        println(s"r2 isMaybeEmpty: $a, isMaybeNewline, isMaybeEndAnchor: $c")
         if (a || b || c) {
           //TODO we should throw a more specific error
@@ -748,11 +749,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
             "End of line/string anchor is not supported in this context")
         }
       }
-      if (isMaybeEndAnchor(r2)) {
+      if (isMaybeAnchor(r2)) {
 //        println("r2 is anchor")
         val a = isMaybeEmpty(r1)
         val b = isMaybeNewline(r1)
-        val c = isMaybeEndAnchor(r1)
+        val c = isMaybeAnchor(r1)
 //        println(s"r1 isMaybeEmpty: $a, isMaybeNewline: $b, isMaybeEndAnchor: $c")
         if (a || b || c) {
           //TODO we should throw a more specific error
@@ -776,6 +777,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
           checkEndAnchorNearNewline(r)
         case RegexGroup(_, term) => checkEndAnchorNearNewline(term)
         case RegexRepetition(ast, _) => checkEndAnchorNearNewline(ast)
+        case RegexCharacterClass(_, components) =>
+          for (i <- 1 until components.length) {
+            checkUnsupported(components(i - 1), components(i))
+          }
         case _ =>
           // ignore
       }
