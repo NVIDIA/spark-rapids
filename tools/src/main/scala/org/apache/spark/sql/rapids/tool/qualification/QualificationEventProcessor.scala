@@ -107,7 +107,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     super.doSparkListenerSQLExecutionEnd(app, event)
     logDebug("Processing event: " + event.getClass)
     app.lastSQLEndTime = Some(event.time)
-    val sqlInfo = app.sqlStart.get(event.executionId)
     // only include duration if it contains no jobs that failed
     val failures = app.sqlIDtoFailures.get(event.executionId)
     if (event.executionFailure.isDefined || failures.isDefined) {
