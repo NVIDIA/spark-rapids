@@ -770,13 +770,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
     def checkEndAnchorNearNewline(regex: RegexAST): Unit = {
       regex match {
         case RegexSequence(parts) =>
-          parts.indices.foreach { i =>
-            if (i > 0) {
-              checkUnsupported(parts(i - 1), parts(i))
-            }
-            if (i + 1 < parts.length) {
-              checkUnsupported(parts(i), parts(i+1))
-            }
+          // check each pair of regex ast nodes for unsupported combinations
+          // of end string/line anchors and newlines or optional items
+          for (i <- 1 until parts.length) {
+            checkUnsupported(parts(i - 1), parts(i))
           }
         case RegexChoice(l, r) =>
           checkEndAnchorNearNewline(l)
