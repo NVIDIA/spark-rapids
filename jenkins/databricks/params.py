@@ -89,7 +89,7 @@ for opt, arg in opts:
         source_tgz = arg
     elif opt in ('-v', '--basesparkpomversion'):
         base_spark_pom_version = arg
-    elif opt in ('-b', '--bulidprofiles'):
+    elif opt in ('-b', '--mvnoptions'):
         mvn_opt = arg
     elif opt in ('-j', '--jarpath'):
         jar_path = arg
