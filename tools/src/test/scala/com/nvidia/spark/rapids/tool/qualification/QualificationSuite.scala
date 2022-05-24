@@ -610,7 +610,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   // TODO - update the running qualification app once everything else done
-  /*
   test("running qualification app join") {
     val qualApp = new RunningQualificationApp()
     ToolTestUtils.runAndCollect("streaming") { spark =>
@@ -641,9 +640,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(headers.size ==
       QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
     assert(values.size == headers.size)
-    // 2 should be the SQL DF Duration
-    assert(headers(2).contains("SQL DF"))
-    assert(values(2).toInt > 0)
+    // 3 should be the SQL DF Duration
+    assert(headers(3).contains("SQL DF"))
+    assert(values(3).toInt > 0)
     val csvDetailedOut = qualApp.getDetailed(",", false)
     val rowsDetailedOut = csvDetailedOut.split("\n")
     assert(rowsDetailedOut.size == 2)
@@ -652,9 +651,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(headersDetailed.size == QualOutputWriter
       .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
     assert(valuesDetailed.size == headersDetailed.size)
-    // 2 should be the Score
-    assert(headersDetailed(2).contains("Score"))
-    assert(valuesDetailed(2).toDouble > 0)
+    // 5 should be the Gpu Opportunity
+    assert(headersDetailed(5).contains("GPU Opportunity"))
+    assert(valuesDetailed(5).toDouble > 0)
   }
 
   test("running qualification app files") {
@@ -684,19 +683,15 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(headers.size ==
           QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
         assert(values.size == headers.size)
-        // 2 should be the SQL DF Duration
-        assert(headers(2).contains("SQL DF"))
-        assert(values(2).toInt > 0)
+        // 3 should be the SQL DF Duration
+        assert(headers(3).contains("SQL DF"))
+        assert(values(3).toInt > 0)
         val detailedOut = qualApp.getDetailed(":", prettyPrint = false, reportReadSchema = true)
         val rowsDetailedOut = detailedOut.split("\n")
         assert(rowsDetailedOut.size == 2)
         val headersDetailed = rowsDetailedOut(0).split(":")
         val valuesDetailed = rowsDetailedOut(1).split(":")
-        // Read File Format Score
-        assert(headersDetailed(12).contains("Read File Format Score"))
-        assert(valuesDetailed(12).toDouble == 50.0)
-        assert(headersDetailed(13).contains("Read File Formats"))
-        assert(valuesDetailed(13).contains("JSON"))
+        // Check Read Schema contains json and parquet
         val readSchemaIndex = headersDetailed.length - 1
         assert(headersDetailed(readSchemaIndex).contains("Read Schema"))
         assert(
@@ -705,7 +700,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
-   */
 }
 
 class ToolTestListener extends SparkListener {
