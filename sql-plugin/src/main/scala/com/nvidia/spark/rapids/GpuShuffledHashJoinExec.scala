@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{HostConcatResultUtil, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
@@ -345,7 +345,7 @@ object GpuShuffledHashJoinExec extends Arm {
     // we can bring the build batch to the GPU now
     withResource(hostConcatResult) { _ =>
       buildTime.ns {
-        HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
+        cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
       }
     }
   }

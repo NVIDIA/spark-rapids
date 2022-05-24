@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package ai.rapids.cudf
+package com.nvidia.spark.rapids.cudf_utils
 
-import ai.rapids.cudf.JCudfSerialization.HostConcatResult
+import ai.rapids.cudf
 import com.nvidia.spark.rapids.{Arm,  GpuColumnVectorFromBuffer}
 
 import org.apache.spark.sql.types.DataType
@@ -26,11 +26,10 @@ object HostConcatResultUtil extends Arm {
   /**
    * Create a rows-only `HostConcatResult`.
    */
-  def rowsOnlyHostConcatResult(numRows: Int): HostConcatResult = {
-    new HostConcatResult(
-      new JCudfSerialization.SerializedTableHeader(
-        Array.empty, numRows, 0L),
-      HostMemoryBuffer.allocate(0, false))
+  def rowsOnlyHostConcatResult(numRows: Int): cudf.JCudfSerialization.HostConcatResult = {
+    new cudf.JCudfSerialization.HostConcatResult(
+      new cudf.JCudfSerialization.SerializedTableHeader(numRows),
+      cudf.HostMemoryBuffer.allocate(0, false))
   }
 
   /**
@@ -41,7 +40,7 @@ object HostConcatResultUtil extends Arm {
    *       callers are responsible for closing the resulting `ColumnarBatch`
    */
   def getColumnarBatch(
-      hostConcatResult: HostConcatResult,
+      hostConcatResult: cudf.JCudfSerialization.HostConcatResult,
       sparkSchema: Array[DataType]): ColumnarBatch = {
     if (hostConcatResult.getTableHeader.getNumColumns == 0) {
       // We expect the caller to have acquired the GPU unconditionally before calling
