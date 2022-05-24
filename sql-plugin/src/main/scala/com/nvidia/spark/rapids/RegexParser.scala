@@ -338,10 +338,6 @@ class RegexParser(pattern: String) {
         throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
         ch match {
-          case 'r' | 'n' | 'f' =>
-            // newlines
-            consumeExpected(ch)
-            RegexEscaped(ch)
           case 'A' | 'Z' | 'z' =>
             // string anchors
             consumeExpected(ch)

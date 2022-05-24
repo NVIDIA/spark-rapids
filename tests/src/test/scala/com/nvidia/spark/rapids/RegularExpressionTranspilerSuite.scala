@@ -400,7 +400,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("fall back to CPU for newline next to line or string anchor") {
     // these patterns were discovered during fuzz testing and resulted in different
     // results between CPU and GPU
-    val patterns = Seq(raw"\w[\r,B]\Z", raw"\s\Z\Z", "^$\\s", "$x*\\r", "$\\r")
+    val patterns = Seq(raw"\w[\r,B]\Z", raw"\s\Z\Z", "^$\\s", "$x*\r", "$\r")
     for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
       patterns.foreach(pattern => {
         assertUnsupported(pattern, mode,
