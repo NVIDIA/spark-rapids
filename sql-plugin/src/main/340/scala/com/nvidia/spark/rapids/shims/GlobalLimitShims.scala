@@ -22,22 +22,14 @@ import org.apache.spark.sql.execution.GlobalLimitExec
 
 object GlobalLimitShims {
 
-  /** If the given plan is a GlobalLimitExec */
-  def isMe(plan: Any): Boolean = plan match {
-    // not use isInstanceOf here, so it can verify the number of parameters.
-    case GlobalLimitExec(_, _, _) => true
-    case _ => false
-  }
-
   /**
    * Estimate the number of rows for a GlobalLimitExec.
-   * It will blow up if the plan is not a GlobalLimitExec.
    */
-  def visit(plan: SparkPlanMeta[_]): Option[BigInt] = plan.wrapped match {
-    case GlobalLimitExec(limit, _, offset) =>
-      // offset is ignored now, but we should support it.
-      RowCountPlanVisitor.visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
-    case op =>
-      throw new IllegalArgumentException("Not a GlobalLimitExec")
+  def visit(plan: SparkPlanMeta[GlobalLimitExec]): Option[BigInt] = {
+    // offset is ignored now, but we should support it.
+    // See https://github.com/NVIDIA/spark-rapids/issues/5589
+    //val offset = plan.wrapped.limit
+    val limit = plan.wrapped.limit
+    RowCountPlanVisitor.visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
   }
 }

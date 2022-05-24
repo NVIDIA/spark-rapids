@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.shims.{GlobalLimitShims, SparkShimImpl}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
-import org.apache.spark.sql.execution.{LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
+import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
@@ -439,8 +439,8 @@ object RowCountPlanVisitor {
   def visit(plan: SparkPlanMeta[_]): Option[BigInt] = plan.wrapped match {
     case p: QueryStageExec =>
       p.getRuntimeStatistics.rowCount
-    case p if GlobalLimitShims.isMe(p) =>
-      GlobalLimitShims.visit(plan)
+    case p: GlobalLimitExec =>
+      GlobalLimitShims.visit(plan.asInstanceOf[SparkPlanMeta[GlobalLimitExec]])
     case LocalLimitExec(limit, _) =>
       // LocalLimit applies the same limit for each partition
       val n = limit * plan.wrapped.asInstanceOf[SparkPlan]
