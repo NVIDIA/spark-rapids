@@ -430,14 +430,13 @@
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>spark-rapids-jni</artifactId>
-                                    <version>${spark-rapids-jni.version}</version>
+                                    <classifier>${cuda.version}</classifier>
                                     <excludes>META-INF</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>org.openucx</groupId>
                                     <artifactId>jucx</artifactId>
-                                    <version>${ucx.version}</version>
                                     <excludes>META-INF</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
                                 </artifactItem>

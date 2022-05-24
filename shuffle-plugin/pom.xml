@@ -35,7 +35,6 @@
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${cuda.version}</classifier>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
@@ -44,7 +43,6 @@
         <dependency>
           <groupId>org.openucx</groupId>
           <artifactId>jucx</artifactId>
-          <version>${ucx.version}</version>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>

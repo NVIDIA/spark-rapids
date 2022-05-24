@@ -59,13 +59,11 @@
         <dependency>
             <groupId>org.openucx</groupId>
             <artifactId>jucx</artifactId>
-            <version>${ucx.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
-            <version>${spark-rapids-jni.version}</version>
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
