@@ -371,7 +371,7 @@ case class EstimatedSummaryInfo(
     estimatedGpuDur: Double, // Predicted runtime for the app if it was run on the GPU
     estimatedGpuSpeedup: Double, // app_duration / estimated_gpu_duration
     estimatedGpuTimeSaved: Double, // app_duration - estimated_gpu_duration
-    recommendation: Recommendation.Recommendation)
+    recommendation: String)
 
 case class SQLStageSummary(
     stageSum: Set[StageQualSummaryInfo],
@@ -436,27 +436,25 @@ case class StageQualSummaryInfo(
     stageTaskTime: Long,
     unsupportedTaskDur: Long)
 
-object Recommendation extends Enumeration {
-  type Recommendation = Value
-
-  val Strongly_Recommended = Value(3, "Strongly_Recommended")
-  val Recommended = Value(2, "Recommended")
-  val Not_Recommended = Value(1, "Not_Recommended")
-  val Not_Applicable = Value(0, "Not_Applicable")
-}
-
 object QualificationAppInfo extends Logging {
+  // define recommendation constants
+  val RECOMMENDED = "Recommended"
+  val NOT_RECOMMENDED = "Not Recommended"
+  val STRONGLY_RECOMMENDED = "Strongly Recommended"
+  val NOT_APPLICABLE = "Not Applicable"
+  val LOWER_BOUND_RECOMMENDED = 1.3
+  val LOWER_BOUND_STRONGLY_RECOMMENDED = 2.5
 
   def getRecommendation(totalSpeedup: Double,
-      hasFailures: Boolean): Recommendation.Recommendation = {
+      hasFailures: Boolean): String = {
     if (hasFailures) {
-      Recommendation.Not_Applicable
-    } else if (totalSpeedup >= 2.5) {
-      Recommendation.Strongly_Recommended
-    } else if (totalSpeedup >= 1.25) {
-      Recommendation.Recommended
+      NOT_APPLICABLE
+    } else if (totalSpeedup >= LOWER_BOUND_STRONGLY_RECOMMENDED) {
+      STRONGLY_RECOMMENDED
+    } else if (totalSpeedup >= LOWER_BOUND_RECOMMENDED) {
+      RECOMMENDED
     } else {
-      Recommendation.Not_Recommended
+      NOT_RECOMMENDED
     }
   }
 

@@ -57,25 +57,25 @@ let toolTipsValues = {
           "Applications in YARN cluster mode can be identified by their \<em\>attempt-id\<\/em\>.",
         "App Duration": "Wall-Clock time measured since the application starts till it is completed. " +
           "If an app is not completed an estimated completion time would be computed.",
-        "GPU Opportunity": "Expected percentage of Sql Task Duration that could be accelerated by the GPU ",
+        "GPU Opportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",
         "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
-        "Estimated Speed-up": "Speed-up factor estimated for the app. Calculated as the ratio between \<em\>App Duration\<\/em\> and \<em\>GPU Estimated Duration\<\/em\>",
+        "Estimated Speed-up": "Speed-up factor estimated for the app. Calculated as the ratio between \<em\>App Duration\<\/em\> and \<em\>Estimated GPU Duration\<\/em\>",
         "details": {
             "mathFormatted": {
                 "totalSpeedup":
                   // math tags inside tooltip does not work on Chrome. Using Sup and Sub as a work-around for now.
                   //"Speed-up factor estimated for the app. Calculated as (<math><mfrac><mn>App Duration</mn><mi>GPU Estimated Duration</mi></mfrac></math>)",
-                  "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
+                  "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>Estimated GPU Duration</sub>)",
             },
             "totalSpeedup":
-              "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
+              "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>Estimated GPU Duration</sub>)",
             "nonSqlTaskDurationAndOverhead": "total duration of the app not involving SQL",
             "estimatedDuration": "Predicted runtime of the app if it was run on GPU",
             "speedupDuration": "Duration of SQL operations that are supported on GPU. It is calculated as (sqlDuration - unsupportedDuration)",
             "unsupportedDuration": "An estimate total duration of SQL operations that are not supported on GPU",
             "sqlDFDuration": "Time duration that includes only SQL-Dataframe queries.",
             "gpuOpportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",
-            "gpuTimeSaved": "Estimated Wall-Clock time saved if it was run on the GPU"
+            "gpuTimeSaved": "Estimated Wall-Clock time saved if it was run on the GPU."
         }
     },
     "rawTable": {
@@ -86,7 +86,6 @@ let toolTipsValues = {
           "Applications in YARN cluster mode can be identified by their \<em\>attempt-id\<\/em\>.",
         "App Duration": "Wall-Clock time measured since the application starts till it is completed. " +
           "If an app is not completed an estimated completion time would be computed.",
-        "GPU Opportunity": "Expected percentage of Sql Task Duration that could be accelerated by the GPU ",
         "Estimated GPU Duration": "Predicted runtime of the app if it was run on GPU",
         "SQL DF Duration": "Wall-Clock time duration that includes only SQL-Dataframe queries.",
         "SQL Dataframe Task Duration": "Sum of time durations that includes parallel SQL-Dataframe queries.",
@@ -103,7 +102,7 @@ let toolTipsValues = {
         "Unsupported Write Data Format": "Reports the data format which we currently don’t support, i.e. if the result " +
           "is written in JSON or CSV format.",
         "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
-        "GPU Time Saved": "Estimated Wall-Clock time saved if it was run on the GPU"
+        "Estimated GPU Time Saved": "Estimated Wall-Clock time saved if it was run on the GPU"
     }
 }
 

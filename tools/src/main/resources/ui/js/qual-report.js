@@ -53,7 +53,7 @@ function getExpandedAppDetails(rowData) {
     '      <td> ' + toolTipsValues.gpuRecommendations["App Duration"] + '</td>' +
     '    </tr>' +
     '    <tr>' +
-    '      <th scope=\"row\">GPU Estimated Duration</th>' +
+    '      <th scope=\"row\">Estimated GPU Duration</th>' +
     '      <td> {{durationCollection.estimatedDurationWallClock}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.estimatedDuration + '</td>' +
     '    </tr>' +
@@ -129,7 +129,7 @@ $(document).ready(function(){
   let attemptArray = processRawData(qualificationRecords);
   let initGpuRecommendationConf = UIConfig[gpuRecommendationTableID];
   // Start implementation of GPU Recommendations Apps
-  let recommendGPUColName = "gpuRecommendation"
+  let recommendGPUColName = "recommendation"
   let totalSpeedupColumnName = "totalSpeedup"
   let sortColumnForGPURecommend = totalSpeedupColumnName
   let gpuRecommendationConf = {
@@ -323,7 +323,7 @@ $(document).ready(function(){
     }
   }
 
-  var gpuRecommendationTable = $('#gpu-recommendation-table').DataTable(gpuRecommendationConf);
+  let gpuRecommendationTable = $('#gpu-recommendation-table').DataTable(gpuRecommendationConf);
 
   definedDataTables[gpuRecommendationTableID] = gpuRecommendationTable;
 
@@ -355,8 +355,8 @@ $(document).ready(function(){
   });
 
   // set the template of the report qualReportSummary
-  var template = $("#qual-report-summary-template").html();
-  var text = Mustache.render(template, qualReportSummary);
+  let template = $("#qual-report-summary-template").html();
+  let text = Mustache.render(template, qualReportSummary);
   $("#qual-report-summary").html(text);
 
   // set the tootTips for the table

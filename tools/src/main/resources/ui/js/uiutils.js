@@ -126,8 +126,7 @@ class GpuRecommendationCategory {
 
   // Method
   isGroupOf(row) {
-    return row.gpuRecommendation >= this.range.low
-      && row.gpuRecommendation < this.range.high;
+    return row.recommendation === this.displayName;
   }
 
   toggleCollapsed() {
@@ -152,6 +151,10 @@ let recommendationContainer = [
       "Not Recommended",
       "[Not-Recommended]: It is not likely that GPU Acceleration will be tangible",
     "badge badge-pill badge-not-recommended"),
+  new GpuRecommendationCategory("D", 2,
+    "Not Applicable",
+    "[Not-Applicable]: The application has job failures.",
+    "badge badge-pill badge-not-applicable")
 ];
 
 function createRecommendationGroups(recommendationsArr) {
@@ -201,11 +204,7 @@ function mapFieldsToUI(rawAppRecord) {
   if (!rawAppRecord.hasOwnProperty("longestSqlDuration")) {
     rawAppRecord["longestSqlDuration"] = 0;
   }
-  // Note that appFieldAccCriterion variable does not work anymore after
-  // the fields became hierarchical
-  rawAppRecord["gpuRecommendation"] =
-    simulateRecommendationEnabled ? getRandomIntInclusive(1, 10)
-      : parseFloat(rawAppRecord.estimatedInfo.estimatedGpuSpeedup);
+  rawAppRecord["recommendation"] = rawAppRecord.estimatedInfo.recommendation;
   rawAppRecord["estimatedGPUDuration"] = parseFloat(rawAppRecord.estimatedInfo.estimatedGpuDur);
   rawAppRecord["totalSpeedup"] = rawAppRecord.estimatedInfo.estimatedGpuSpeedup;
   rawAppRecord["appDuration"] = rawAppRecord.estimatedInfo.appDur;
