@@ -641,7 +641,7 @@ class RowToColumnarIterator(
         }
 
         // enforce RequireSingleBatch limit
-        if (rowIter.hasNext && localGoal == RequireSingleBatch) {
+        if (rowIter.hasNext && localGoal.isInstanceOf[RequireSingleBatchLike]) {
           throw new IllegalStateException("A single batch is required for this operation." +
               " Please try increasing your partition count.")
         }

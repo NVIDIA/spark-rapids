@@ -195,9 +195,6 @@ class ApplicationInfo(
   // resourceprofile id to resource profile info
   val resourceProfIdToInfo = new HashMap[Int, ResourceProfileInfoCase]()
 
-  // sqlId to sql info
-  val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
-
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
      ArrayBuffer[BlockManagerRemovedCase]()
 

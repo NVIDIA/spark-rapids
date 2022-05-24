@@ -18,6 +18,8 @@
 
 $(document).ready(function() {
   let attemptArray = processRawData(qualificationRecords);
+  let totalSpeedupColumnName = "totalSpeedup"
+  let sortColumnForGPURecommend = totalSpeedupColumnName
   let rawDataTableConf = {
     // TODO: To use horizontal scroll for wide table
     //"scrollX": true,
@@ -72,7 +74,7 @@ $(document).ready(function() {
           return data;
         },
         fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-          if (oData.estimated) {
+          if (oData.endDurationEstimated) {
             $(nTd).css('color', 'blue');
           }
         }
@@ -88,12 +90,25 @@ $(document).ready(function() {
         }
       },
       {
-        data: "sqlDurationForProblematic",
-        searchable: false,
+        data: "durationCollection.estimatedDurationWallClock",
+      },
+      {
+        data: "unsupportedTaskDuration",
+      },
+      {
+        data: "estimatedInfo.gpuOpportunity",
+      },
+      {
+        name: "totalSpeedup",
+        data: "estimatedInfo.estimatedGpuSpeedup",
+      },
+      {
+        data: "gpuCategory",
+      },
+      {
+        data: "longestSqlDuration",
       },
       {data: "failedSQLIds"},
-      {data: "readScorePercent"},
-      {data: "readFileFormatScore"},
       {data: "readFileFormatAndTypesNotSupported"},
       {
         data: "writeDataFormat",
@@ -106,27 +121,6 @@ $(document).ready(function() {
       {
         data: "nestedComplexTypes",
         orderable: false,
-      },
-      {
-        data: "estimatedDuration",
-      },
-      {
-        data: "unsupportedDuration",
-      },
-      {
-        data: "speedupDuration",
-      },
-      {
-        data: "speedupFactor",
-      },
-      {
-        data: "totalSpeedup",
-      },
-      {
-        data: "speedupBucket",
-      },
-      {
-        data: "longestSqlDuration",
       }
     ],
     // dom: "<'row'<'col-sm-12 col-md-6'B><'col-sm-12 col-md-6'>>" +
@@ -139,6 +133,8 @@ $(document).ready(function() {
       text: 'Export'
     }]
   };
+  rawDataTableConf.order =
+    [[getColumnIndex(rawDataTableConf.columns, sortColumnForGPURecommend), "desc"]];
   var rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
   $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip();
 
