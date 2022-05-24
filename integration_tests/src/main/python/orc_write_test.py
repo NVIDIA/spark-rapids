@@ -185,7 +185,7 @@ def test_orc_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory, 
             writer.option("orc.mask", mask)
         writer.format("orc").mode('overwrite').option("path", write_path).saveAsTable(spark_tmp_table_factory.get())
     if path == "" and provider == "" and encrypt == "" and mask == "":
-        pytest.xfail("Expected to fail as non-encrypted write will not fallback to CPU")
+        pytest.skip("Skip this test when none of the encryption confs are set")
     gen = IntegerGen()
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_fallback_write(write_func,
