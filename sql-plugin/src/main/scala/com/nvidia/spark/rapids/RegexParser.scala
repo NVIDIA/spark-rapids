@@ -338,6 +338,10 @@ class RegexParser(pattern: String) {
         throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
         ch match {
+          case 'r' | 'n' | 'f' =>
+            // newlines
+            consumeExpected(ch)
+            RegexEscaped(ch)
           case 'A' | 'Z' | 'z' =>
             // string anchors
             consumeExpected(ch)
@@ -559,7 +563,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, replacement, None)
+    val cudfRegex = transpile(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     (cudfRegex.toRegexString, replacement.map(_.toRegexString))
@@ -694,6 +698,99 @@ class CudfRegexTranspiler(mode: RegexMode) {
             characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
           RegexCharacterClass(negated = true, ListBuffer(components: _*))))
     }
+  }
+
+  private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
+      previous: Option[RegexAST]): RegexAST = {
+
+    def isMaybeEndAnchor(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexChar('$') | RegexEscaped('z') | RegexEscaped('Z') => true
+        case _ => false
+      })
+    }
+
+    def isMaybeNewline(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexChar('\r') | RegexEscaped('r') => true
+        case RegexChar('\n') | RegexEscaped('n') => true
+        case RegexChar('\f') | RegexEscaped('f') => true
+        case RegexEscaped('s') => true
+        case RegexEscaped('W') | RegexEscaped('D') =>
+          // these would get transpiled to negated character classes
+          // that include newlines
+          true
+        case RegexCharacterClass(true, _) => true
+        //TODO others?
+        case _ => false
+      })
+    }
+
+    def isMaybeEmpty(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case _ => false
+      })
+    }
+
+    def checkUnsupported(r1: RegexAST, r2: RegexAST): Unit = {
+//      println(s"checkUnsupported $r1 and $r2")
+      if (isMaybeEndAnchor(r1)) {
+//        println("r1 is anchor")
+        val a = isMaybeEmpty(r2)
+        val b = isMaybeNewline(r2)
+        val c = isMaybeEndAnchor(r2)
+//        println(s"r2 isMaybeEmpty: $a, isMaybeNewline, isMaybeEndAnchor: $c")
+        if (a || b || c) {
+          //TODO we should throw a more specific error
+          throw new RegexUnsupportedException(
+            "End of line/string anchor is not supported in this context")
+        }
+      }
+      if (isMaybeEndAnchor(r2)) {
+//        println("r2 is anchor")
+        val a = isMaybeEmpty(r1)
+        val b = isMaybeNewline(r1)
+        val c = isMaybeEndAnchor(r1)
+//        println(s"r1 isMaybeEmpty: $a, isMaybeNewline: $b, isMaybeEndAnchor: $c")
+        if (a || b || c) {
+          //TODO we should throw a more specific error
+          throw new RegexUnsupportedException(
+            "End of line/string anchor is not supported in this context")
+        }
+      }
+//      println("everything is fine")
+    }
+
+    def checkEndAnchorNearNewline(regex: RegexAST): Unit = {
+      regex match {
+        case RegexSequence(parts) =>
+          parts.indices.foreach { i =>
+            if (i > 0) {
+              checkUnsupported(parts(i - 1), parts(i))
+            }
+            if (i + 1 > parts.length) {
+              checkUnsupported(parts(i), parts(i+1))
+            }
+          }
+        case RegexChoice(l, r) =>
+          checkEndAnchorNearNewline(l)
+          checkEndAnchorNearNewline(r)
+        case RegexGroup(_, term) => checkEndAnchorNearNewline(term)
+        case RegexRepetition(ast, _) => checkEndAnchorNearNewline(ast)
+        case _ =>
+        // ignore
+      }
+    }
+
+    checkEndAnchorNearNewline(regex)
+
+    rewrite(regex, replacement, previous)
   }
 
   private def rewrite(regex: RegexAST, replacement: Option[RegexReplacement],
@@ -1146,6 +1243,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
+    }
+  }
+
+  private def contains(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    if (f(regex)) {
+      true
+    } else {
+      regex match {
+        case RegexSequence(parts) => parts.exists(x => contains(x, f))
+        case RegexGroup(_, term) => contains(term, f)
+        case RegexChoice(l, r) => contains(l, f) || contains(r, f)
+        case RegexRepetition(term, _) => contains(term, f)
+        case RegexCharacterClass(_, chars) => chars.exists(ch => contains(ch, f))
+        case leaf => f(leaf)
+      }
     }
   }
 
