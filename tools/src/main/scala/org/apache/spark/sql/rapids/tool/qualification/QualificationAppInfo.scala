@@ -149,7 +149,8 @@ class QualificationAppInfo(
   }
 
   private def calculateSpeedupFactor(all: Seq[Set[StageQualSummaryInfo]]): Double = {
-    val allSpeedupFactors = all.flatMap(_.map(_.averageSpeedup))
+    val allSummaries = all.map(_.toSeq).flatten
+    val allSpeedupFactors = allSummaries.filter(_.stageTaskTime > 0).map(_.averageSpeedup)
     val res = SQLPlanParser.averageSpeedup(allSpeedupFactors)
     res
   }
@@ -213,6 +214,28 @@ class QualificationAppInfo(
     }
   }
 
+  private def stageSummary(execInfos: Seq[ExecInfo],
+      stages: Seq[Int], estimated: Boolean): Set[StageQualSummaryInfo] = {
+    val allStageTaskTime = stages.map { stageId =>
+      stageIdToTaskEndSum.get(stageId).map(_.totalTaskDuration).getOrElse(0L)
+    }.sum
+    val allSpeedupFactorAvg = SQLPlanParser.averageSpeedup(execInfos.map(_.speedupFactor))
+    val allFlattenedExecs = flattenedExecs(execInfos)
+    val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
+    // if we have unsupported try to guess at how much time.  For now divide
+    // time by number of execs and give each one equal weight
+    val eachExecTime = allStageTaskTime / allFlattenedExecs.size
+    val unsupportedDur = eachExecTime * numUnsupported.size
+    // split unsupported per stage
+    val eachStageUnsupported = unsupportedDur / stages.size
+    stages.map { stageId =>
+      val stageTaskTime = stageIdToTaskEndSum.get(stageId)
+        .map(_.totalTaskDuration).getOrElse(0L)
+      StageQualSummaryInfo(stageId, allSpeedupFactorAvg, stageTaskTime,
+        eachStageUnsupported, estimated)
+    }.toSet
+  }
+
   def summarizeStageLevel(execInfos: Seq[ExecInfo], sqlID: Long): Set[StageQualSummaryInfo] = {
     val (allStagesToExecs, execsNoStage) = getStageToExec(execInfos)
 
@@ -225,25 +248,7 @@ class QualificationAppInfo(
       } else {
         // we don't know which execs map to each stage so we are going to cheat somewhat and
         // apply equally and then just split apart for per stage reporting
-        val allStageTaskTime = allStagesBasedOnJobs.map { stageId =>
-          stageIdToTaskEndSum.get(stageId)
-            .map(_.totalTaskDuration).getOrElse(0L)
-        }.sum
-        val allSpeedupFactorAvg = SQLPlanParser.averageSpeedup(execInfos.map(_.speedupFactor))
-        val allFlattenedExecs = flattenedExecs(execInfos)
-        val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
-        // if we have unsupported try to guess at how much time.  For now divide
-        // time by number of execs and give each one equal weight
-        val eachExecTime = allStageTaskTime / allFlattenedExecs.size
-        val unsupportedDur = eachExecTime * numUnsupported.size
-        // split unsupported per stage
-        val eachStageUnsupported = unsupportedDur / allStagesBasedOnJobs.size
-        allStagesBasedOnJobs.map { stageId =>
-          val stageTaskTime = stageIdToTaskEndSum.get(stageId)
-            .map(_.totalTaskDuration).getOrElse(0L)
-          StageQualSummaryInfo(stageId, allSpeedupFactorAvg, stageTaskTime,
-            eachStageUnsupported, true)
-        }.toSet
+        stageSummary(execInfos, allStagesBasedOnJobs, true)
       }
     } else {
       val stageIdsWithExecs = allStagesToExecs.keys.toSet
@@ -251,25 +256,7 @@ class QualificationAppInfo(
       val stagesNotAccounted = allStagesBasedOnJobs.toSet -- stageIdsWithExecs
       val stageSummaryNotMapped = if (stagesNotAccounted.nonEmpty) {
         if (execsNoStage.nonEmpty) {
-          val allStageTaskTime = stagesNotAccounted.map { stageId =>
-            stageIdToTaskEndSum.get(stageId)
-              .map(_.totalTaskDuration).getOrElse(0L)
-          }.sum
-          // we had execs without stages so estimate based on stages not accounted for
-          val allSpeedupFactorAvg = SQLPlanParser.averageSpeedup(execsNoStage.map(_.speedupFactor))
-          val allFlattenedExecs = flattenedExecs(execsNoStage)
-          val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
-          val eachExecTime = allStageTaskTime / allFlattenedExecs.size
-          val unsupportedDur = eachExecTime * numUnsupported.size
-          // split unsupported per stage
-          val eachStageUnsupported = unsupportedDur / stagesNotAccounted.size
-
-          stagesNotAccounted.map { stageId =>
-            val stageTaskTime = stageIdToTaskEndSum.get(stageId)
-              .map(_.totalTaskDuration).getOrElse(0L)
-            StageQualSummaryInfo(stageId, allSpeedupFactorAvg, stageTaskTime,
-              eachStageUnsupported, true)
-          }
+          stageSummary(execsNoStage, stagesNotAccounted.toSeq, true)
         } else {
           // weird case, stages but not associated execs, not sure what to do with this so
           // just drop for now
@@ -279,23 +266,12 @@ class QualificationAppInfo(
         Set.empty
       }
 
-
       logWarning(s"execs without stages include: ${execsNoStage.mkString(",")}")
       // if it doesn't have a stage id associated we can't calculate the time spent in that
       // SQL so we just drop it
-      val stagesFromExecs = stageIdsWithExecs.map { stageId =>
-        val stageTaskTime = stageIdToTaskEndSum.get(stageId)
-          .map(_.totalTaskDuration).getOrElse(0L)
+      val stagesFromExecs = stageIdsWithExecs.flatMap { stageId =>
         val execsForStage = allStagesToExecs.getOrElse(stageId, Seq.empty)
-        val speedupFactors = execsForStage.map(_.speedupFactor)
-        val averageSpeedupFactor = SQLPlanParser.averageSpeedup(speedupFactors)
-        val allFlattenedExecs = flattenedExecs(execsForStage)
-        val numUnsupported = allFlattenedExecs.filterNot(_.isSupported)
-        // if we have unsupported try to guess at how much time.  For now divide
-        // time by number of execs and give each one equal weight
-        val eachExecTime = stageTaskTime / allFlattenedExecs.size
-        val unsupportedDur = eachExecTime * numUnsupported.size
-        StageQualSummaryInfo(stageId, averageSpeedupFactor, stageTaskTime, unsupportedDur, false)
+        stageSummary(execsForStage, Seq(stageId), false)
       }
       stagesFromExecs ++ stageSummaryNotMapped
     }
@@ -557,7 +533,7 @@ object QualificationAppInfo extends Logging {
     }
   }
 
-  // Summarize and estimate based on wall clock times
+  // Summarize and estimate based on wall clock times,
   def calculateEstimatedInfoSummary(estimatedRatio: Double, sqlDataFrameDuration: Long,
       appDuration: Long, speedupFactor: Double, appName: String,
       appId: String, hasFailures: Boolean): EstimatedSummaryInfo = {
