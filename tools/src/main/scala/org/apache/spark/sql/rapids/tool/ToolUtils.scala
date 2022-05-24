@@ -46,7 +46,7 @@ object ToolUtils extends Logging {
 
   // given to duration values, calculate a human average
   // rounded to specified number of decimal places.
-  def calculateAverage(first: Long, size: Long, places: Int): Double = {
+  def calculateAverage(first: Double, size: Long, places: Int): Double = {
     val firstDec = BigDecimal.decimal(first)
     val sizeDec = BigDecimal.decimal(size)
     if (firstDec == 0 || sizeDec == 0) {

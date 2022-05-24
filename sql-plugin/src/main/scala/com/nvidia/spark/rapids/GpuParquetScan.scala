@@ -392,17 +392,17 @@ class HMBSeekableInputStream(
   }
 
   private def readHeapBuffer(buf: ByteBuffer) = {
-    val bytesRead = read(buf.array, buf.arrayOffset + buf.position, buf.remaining)
+    val bytesRead = read(buf.array, buf.arrayOffset + buf.position(), buf.remaining)
     if (bytesRead < 0) {
       bytesRead
     } else {
-      buf.position(buf.position + bytesRead)
+      buf.position(buf.position() + bytesRead)
       bytesRead
     }
   }
 
   private def readFullyHeapBuffer(buf: ByteBuffer): Unit = {
-    readFully(buf.array, buf.arrayOffset + buf.position, buf.remaining)
+    readFully(buf.array, buf.arrayOffset + buf.position(), buf.remaining)
     buf.position(buf.limit)
   }
 

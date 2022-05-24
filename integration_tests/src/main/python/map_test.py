@@ -442,13 +442,17 @@ def test_transform_keys_duplicate_fail(data_gen):
             error_message='Duplicate map key')
 
 
-@allow_non_gpu('ProjectExec,Alias,TransformKeys,Literal,LambdaFunction,NamedLambdaVariable')
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
-def test_transform_keys_last_win_fallback(data_gen):
-    assert_gpu_fallback_collect(
+def test_transform_keys_last_win(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> 1)'),
-            'TransformKeys',
             conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False), long_gen)], ids=idfn)
+def test_transform_keys_last_win2(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> key % 2)'),
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 # We add in several types of processing for foldable functions because the output
 # can be different types.
