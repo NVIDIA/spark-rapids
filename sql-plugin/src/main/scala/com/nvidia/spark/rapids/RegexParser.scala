@@ -671,28 +671,28 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // `[^a\r\n]` => `[^a]`
     // `[^\r\n]`  => `[^\r\n]`
 
-    val linefeedCharsInPattern = components.flatMap {
+    val distinctComponents = components.distinct
+    val linefeedCharsInPattern = distinctComponents.flatMap {
       case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
       case RegexEscaped(ch) if ch == 'n' => Seq('\n')
       case RegexEscaped(ch) if ch == 'r' => Seq('\r')
       case _ => Seq.empty
     }
 
-    val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
-
+    val onlyLinefeedChars = distinctComponents.length == linefeedCharsInPattern.length
     val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
 
     if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
       // special case for `[^\r\n]` and `[^\\r\\n]`
-      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
     } else if (negatedNewlines.isEmpty) {
-      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
     } else {
       RegexGroup(capture = false,
         RegexChoice(
           RegexCharacterClass(negated = false,
             characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
-          RegexCharacterClass(negated = true, ListBuffer(components: _*))))
+          RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))))
     }
   }
 
