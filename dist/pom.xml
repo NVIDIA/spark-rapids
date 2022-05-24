@@ -301,7 +301,7 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <phase>generate-sources</phase>
+                        <phase>generate-resources</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
@@ -410,16 +410,17 @@
                 </configuration>
             </plugin>
             <plugin>
-                <!-- The dependency scopes of spark-rapids-jni and jucx are provided in sql-plugin, shuffle-plugin and udf-compiler submodules, -->
-                <!-- this will skip the dedupe processing in `create-parallel-world` -->
-                <!-- Unpack spark-rapids-jni and jucx jars to parallel-world directory after `create-parallel-world`, then `parallel-world` will be packaged -->
-                <!-- Note all Shims use the same version of spark-rapids-jni and jucx -->
+                <!-- The dependency scopes of spark-rapids-jni and jucx are `provided` in aggregator submodule,
+                 this will skip the dedupe processing in `create-parallel-world`.
+                 Unpack spark-rapids-jni and jucx jars to `parallel-world` directory after `create-parallel-world`,
+                 then `parallel-world` will be packaged.
+                 Note all Shims use the same version of spark-rapids-jni and jucx -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
                         <id>unpack-spark-rapids-jni-and-ucx</id>
-                        <!-- after the generate-sources phase of `create-parallel-world` -->
+                        <!-- run after `create-parallel-world`, the phase equals to the phase of the `create-parallel-world` -->
                         <phase>generate-resources</phase>
                         <goals>
                             <goal>unpack</goal>
