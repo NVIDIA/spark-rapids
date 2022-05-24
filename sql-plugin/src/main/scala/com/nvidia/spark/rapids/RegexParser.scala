@@ -715,7 +715,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexChar('\r') | RegexEscaped('r') => true
         case RegexChar('\n') | RegexEscaped('n') => true
         case RegexChar('\f') | RegexEscaped('f') => true
-        case RegexEscaped('s') => true
+        case RegexEscaped('s') | RegexEscaped('v') | RegexEscaped('R') => true
         case RegexEscaped('W') | RegexEscaped('D') =>
           // these would get transpiled to negated character classes
           // that include newlines
