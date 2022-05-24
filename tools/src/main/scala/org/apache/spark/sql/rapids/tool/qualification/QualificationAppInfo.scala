@@ -264,8 +264,6 @@ class QualificationAppInfo(
       } else {
         Set.empty
       }
-
-      logWarning(s"execs without stages include: ${execsNoStage.mkString(",")}")
       // if it doesn't have a stage id associated we can't calculate the time spent in that
       // SQL so we just drop it
       val stagesFromExecs = stageIdsWithExecs.flatMap { stageId =>
@@ -373,9 +371,6 @@ class QualificationAppInfo(
       val sqlDFSupportedWallClockDurationBasedStages = perSqlStageSummary.map { s =>
         s.estimateWallClockSupported
       }.sum
-      logWarning(s"sql df spark duration is $sparkSQLDFWallClockDuration " +
-        s"stages version: $sqlDFSupportedWallClockDurationBasedStages")
-
       val allStagesSummary = perSqlStageSummary.flatMap(_.stageSum)
       val sqlDataframeTaskDuration = allStagesSummary.map(s => s.stageTaskTime).sum
       val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
