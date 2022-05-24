@@ -527,7 +527,7 @@ object QualificationAppInfo extends Logging {
     }
   }
 
-  // Summarize and estimate based on wall clock times,
+  // Summarize and estimate based on wall clock times
   def calculateEstimatedInfoSummary(estimatedRatio: Double, sqlDataFrameDuration: Long,
       appDuration: Long, speedupFactor: Double, appName: String,
       appId: String, hasFailures: Boolean): EstimatedSummaryInfo = {
