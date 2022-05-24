@@ -166,3 +166,29 @@ def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf={'spark.rapids.sql.format.orc.write.enabled': True})
+
+@allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.parametrize("path", ["", "kms://http@localhost:9600/kms"])
+@pytest.mark.parametrize("provider", ["", "hadoop"])
+@pytest.mark.parametrize("encrypt", ["", "pii:a"])
+@pytest.mark.parametrize("mask", ["", "sha256:a"])
+def test_orc_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory, path, provider, encrypt, mask):
+    def write_func(spark, write_path):
+        writer = unary_op_df(spark, gen).coalesce(1).write
+        if path != "":
+            writer.option("hadoop.security.key.provider.path", path)
+        if provider != "":
+            writer.option("orc.key.provider", provider)
+        if encrypt != "":
+            writer.option("orc.encrypt", encrypt)
+        if mask != "":
+            writer.option("orc.mask", mask)
+        writer.format("orc").mode('overwrite').option("path", write_path).saveAsTable(spark_tmp_table_factory.get())
+    if path == "" and provider == "" and encrypt == "" and mask == "":
+        pytest.xfail("Expected to fail as non-encrypted write will not fallback to CPU")
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_fallback_write(write_func,
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        'DataWritingCommandExec')
