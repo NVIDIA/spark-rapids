@@ -774,7 +774,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             if (i > 0) {
               checkUnsupported(parts(i - 1), parts(i))
             }
-            if (i + 1 > parts.length) {
+            if (i + 1 < parts.length) {
               checkUnsupported(parts(i), parts(i+1))
             }
           }
@@ -784,7 +784,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexGroup(_, term) => checkEndAnchorNearNewline(term)
         case RegexRepetition(ast, _) => checkEndAnchorNearNewline(ast)
         case _ =>
-        // ignore
+          // ignore
       }
     }
 
