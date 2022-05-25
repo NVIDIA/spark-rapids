@@ -199,7 +199,7 @@ When there are a large number of columns for file formats like Parquet and ORC t
 contiguous data for each individual column can be very small. This can result in doing lots of very 
 small random reads to the file system to read the data for the subset of columns that are needed.
 
-We would suggest reorder the columns needed by the queries and then rewrite the files to make those
+We suggest reordering the columns needed by the queries and then rewrite the files to make those
 columns adjacent. This could help both Spark on CPU and GPU.
 
 ## Input Partition Size
