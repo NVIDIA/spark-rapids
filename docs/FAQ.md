@@ -313,7 +313,9 @@ the DataFrame API.
 
 ### Are the Java APIs for Spark supported?
 
-Yes, but we don't actively test them.
+Yes, but we don't actively test them. It is because the RAPIDS Accelerator hooks into Spark not at
+the various language APIs but at the Catalyst level after all the various APIs have converged into
+the DataFrame API.
 
 ### Are the Scala APIs for Spark supported?
 
@@ -515,7 +517,7 @@ Below are some troubleshooting tips on GPU query performance issue:
 ### What is the default RMM pool allocator?
 
 Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
-`ARENA` for CUDA 11.5+. For CUDA version < 11.5, it will fall back to `ARENA`.
+`ARENA` for CUDA 11.5+. For CUDA 11.4 and older version, it will fall back to `ARENA`.
 
 ### I have more questions, where do I go? 
 We use github to track bugs, feature requests, and answer questions. File an

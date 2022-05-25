@@ -45,10 +45,10 @@ for your hardware's minimum driver version.
 * Download the [RAPIDS
   Accelerator for Apache Spark 22.06.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.06.0/rapids-4-spark_2.12-22.06.0.jar)
 
-This package is built against CUDA 11.5 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
-do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 is required. Users will
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
@@ -64,7 +64,9 @@ The output if signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Combined cuDF jar and rapids-4-spark jar to a single rapids-4-spark jar
+* Combined cuDF jar and rapids-4-spark jar to a single rapids-4-spark jar. 
+  The RAPIDS Accelerator jar(rapids-4-spark jar) is the only jar that needs to be passed to Spark 
+  and the cuDF jar should not be specified.
 * Add UI for Qualification tool
 * Support function map_filter
 * Support spark.sql.mapKeyDedupPolicy=LAST_WIN for function transform_keys
@@ -105,10 +107,10 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 22.04.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.04.0/rapids-4-spark_2.12-22.04.0.jar)
 * Download the [RAPIDS cuDF 22.04.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/22.04.0/cudf-22.04.0-cuda11.jar)
 
-This package is built against CUDA 11.5 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
-do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 is required. Users will
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
@@ -166,10 +168,10 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 22.02.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.02.0/rapids-4-spark_2.12-22.02.0.jar)
 * Download the [RAPIDS cuDF 22.02.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/22.02.0/cudf-22.02.0-cuda11.jar)
 
-This package is built against CUDA 11.5 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
-do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 is required. Users will
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
@@ -232,10 +234,10 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
 * Download the [RAPIDS cuDF 21.12.2 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.12.2/cudf-21.12.2-cuda11.jar)
 
-This package is built against CUDA 11.5 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
-do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 is required. Users will
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
@@ -299,8 +301,8 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.10.0/rapids-4-spark_2.12-21.10.0.jar)
 * Download the [RAPIDS cuDF 21.10.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.10.0/cudf-21.10.0-cuda11.jar)
 
-This package is built against CUDA 11.2 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.2 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.4.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
@@ -358,8 +360,8 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.08.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.08.0/rapids-4-spark_2.12-21.08.0.jar)
 * Download the [RAPIDS cuDF 21.08.2 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.08.2/cudf-21.08.2-cuda11.jar)
 
-This package is built against CUDA 11.2 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.2 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A30 and A100 GPUs with CUDA 11.0-11.4.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
@@ -414,8 +416,8 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.06.2 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.2/rapids-4-spark_2.12-21.06.2.jar)
 * Download the [RAPIDS cuDF 21.06.1 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.1/cudf-21.06.1-cuda11.jar)
 
-This package is built against CUDA 11.2 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.2 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on Tesla datacenter GPUs with CUDA 11.0 and 11.2.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
@@ -457,8 +459,8 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.06.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.1/rapids-4-spark_2.12-21.06.1.jar)
 * Download the [RAPIDS cuDF 21.06.1 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.1/cudf-21.06.1-cuda11.jar)
 
-This package is built against CUDA 11.2 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.2 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on Tesla datacenter GPUs with CUDA 11.0 and 11.2.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
@@ -504,8 +506,8 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.06.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
 * Download the [RAPIDS cuDF 21.06.1 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.1/cudf-21.06.1-cuda11.jar)
 
-This package is built against CUDA 11.2 and has [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+This package is built against CUDA 11.2 and older CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A30 and A100 GPUs with CUDA 11.0 and 11.2.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
