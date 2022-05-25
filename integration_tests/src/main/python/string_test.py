@@ -890,16 +890,16 @@ def test_regexp_whitespace():
     gen = mk_str_gen('\u001e[abcd]\t\n{1,3} [0-9]\n {1,3}\x0b\t[abcd]\r\f[0-9]{0,10}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'rlike(a, "\\s{2}")',
-                'rlike(a, "\\s{3}")',
-                'rlike(a, "[abcd]+\\s+[0-9]+")',
-                'rlike(a, "\\S{3}")',
-                'rlike(a, "[abcd]+\\s+\\S{2,3}")',
-                'regexp_extract(a, "([a-d]+)([0-9\\s]+)([a-d]+)", 2)',
-                'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 2)',
-                'regexp_extract(a, "([a-d]+)(\\S+)([0-9]+)", 3)',
-                'regexp_replace(a, "(\\s+)", "@")',
-                'regexp_replace(a, "(\\S+)", "#")',
+                'rlike(a, "\\\\s")',
+                'rlike(a, "\\\\s{3}")',
+                'rlike(a, "[abcd]+\\\\s+[0-9]+")',
+                'rlike(a, "\\\\S{3}")',
+                'rlike(a, "[abcd]+\\\\s+\\\\S{2,3}")',
+                'regexp_extract(a, "([a-d]+)(\\\\s[0-9]+)([a-d]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\\\S+)([0-9]+)", 2)',
+                'regexp_extract(a, "([a-d]+)(\\\\S+)([0-9]+)", 3)',
+                'regexp_replace(a, "(\\\\s+)", "@")',
+                'regexp_replace(a, "(\\\\S+)", "#")',
             ),
         conf=_regexp_conf)
 
@@ -947,6 +947,26 @@ def test_regexp_octal_digits():
                 'regexp_replace(a, "\\\\0377", "")',
                 'regexp_replace(a, "\\\\0260", "")',
             ),
+        conf=_regexp_conf)
+
+def test_regexp_replace_digit():
+    gen = mk_str_gen('[a-z]{0,2}[0-9]{0,2}') \
+        .with_special_case('䤫畍킱곂⬡❽ࢅ獰᳌蛫青')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_replace(a, "\\\\d", "x")',
+            'regexp_replace(a, "[0-9]", "x")',
+        ),
+        conf=_regexp_conf)
+
+def test_regexp_replace_word():
+    gen = mk_str_gen('[a-z]{0,2}[_]{0,1}[0-9]{0,2}') \
+        .with_special_case('䤫畍킱곂⬡❽ࢅ獰᳌蛫青')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_replace(a, "\\\\w", "x")',
+            'regexp_replace(a, "[a-zA-Z_0-9]", "x")',
+        ),
         conf=_regexp_conf)
 
 def test_rlike():

@@ -47,6 +47,7 @@ abstract class AppBase(
 
   // jobId to job info
   val jobIdToInfo = new HashMap[Int, JobInfoClass]()
+  val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
 
   // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
   val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()

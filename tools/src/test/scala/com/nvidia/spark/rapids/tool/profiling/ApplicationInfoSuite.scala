@@ -111,7 +111,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test rapids jar") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir//rapids_join_eventlog.zstd"))
+      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {

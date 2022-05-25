@@ -75,7 +75,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       val plans = sums.flatMap(_.planInfo)
       val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
       val headersAndSizes = QualOutputWriter
-        .getDetailedExecsHeaderStringsAndSizes(sums, allExecs)
+        .getDetailedExecsHeaderStringsAndSizes(sums, allExecs.toSeq)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
       sums.foreach { sumInfo =>
         val rows = QualOutputWriter.constructExecsInfo(sumInfo, headersAndSizes, ",", false)
@@ -165,6 +165,7 @@ object QualOutputWriter {
   val ESTIMATED_GPU_DURATION = "Estimated GPU Duration"
   val ESTIMATED_GPU_SPEEDUP = "Estimated GPU Speedup"
   val ESTIMATED_GPU_TIMESAVED = "Estimated GPU Time Saved"
+  val STAGE_ESTIMATED_STR = "Stage Estimated"
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -360,7 +361,8 @@ object QualOutputWriter {
       STAGE_ID_STR -> STAGE_ID_STR.size,
       AVERAGE_SPEEDUP_STR -> AVERAGE_SPEEDUP_STR.size,
       STAGE_DUR_STR -> STAGE_DUR_STR.size,
-      UNSUPPORTED_TASK_DURATION_STR -> UNSUPPORTED_TASK_DURATION_STR.size
+      UNSUPPORTED_TASK_DURATION_STR -> UNSUPPORTED_TASK_DURATION_STR.size,
+      STAGE_ESTIMATED_STR -> STAGE_ESTIMATED_STR.size
     )
     detailedHeadersAndFields
   }
@@ -377,23 +379,24 @@ object QualOutputWriter {
         info.stageId.toString -> headersAndSizes(STAGE_ID_STR),
         f"${info.averageSpeedup}%1.2f"  -> headersAndSizes(AVERAGE_SPEEDUP_STR),
         info.stageTaskTime.toString -> headersAndSizes(STAGE_DUR_STR),
-        info.unsupportedTaskDur.toString -> headersAndSizes(UNSUPPORTED_TASK_DURATION_STR))
+        info.unsupportedTaskDur.toString -> headersAndSizes(UNSUPPORTED_TASK_DURATION_STR),
+        info.estimated.toString -> headersAndSizes(STAGE_ESTIMATED_STR))
       constructOutputRow(data, delimiter, prettyPrint)
     }
   }
 
-  def getAllExecsFromPlan(plans: Seq[PlanInfo]): Seq[ExecInfo] = {
+  def getAllExecsFromPlan(plans: Seq[PlanInfo]): Set[ExecInfo] = {
     val topExecInfo = plans.flatMap(_.execInfo)
     topExecInfo.flatMap { e =>
       e.children.getOrElse(Seq.empty) :+ e
-    }
+    }.toSet
   }
 
   def constructExecsInfo(
       sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
-      prettyPrint: Boolean): Seq[String] = {
+      prettyPrint: Boolean): Set[String] = {
     val allExecs = getAllExecsFromPlan(sumInfo.planInfo)
     val appId = sumInfo.appId
     allExecs.flatMap { info =>
