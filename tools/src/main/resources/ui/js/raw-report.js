@@ -38,8 +38,10 @@ $(document).ready(function() {
       {
         data: "appId",
         render:  (appId, type, row) => {
-          if (type === 'display' || type === 'filter') {
-            return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+          if (type === 'display') {
+            if (UIConfig.fullAppView.enabled) {
+              return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+            }
           }
           return appId;
         }
@@ -71,6 +73,15 @@ $(document).ready(function() {
           }
           return data;
         },
+        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
+          let recommendGroup = recommendationsMap.get(sData);
+          let toolTipVal = recommendGroup.description;
+          $(nTd).attr('data-toggle', "tooltip");
+          $(nTd).attr('data-placement', "top");
+          $(nTd).attr('html', "true");
+          $(nTd).attr('data-html', "true");
+          $(nTd).attr('title', toolTipVal);
+        }
       },
       {
         name: totalSpeedupColumnName,
@@ -124,6 +135,17 @@ $(document).ready(function() {
         },
       },
       {
+        name: "taskSpeedupFactor",
+        data: "taskSpeedupFactor",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.taskSpeedupFactor_display;
+          }
+          return data;
+        },
+      },
+      {
         name: 'sqlDataFrameDuration',
         data: 'sqlDataFrameDuration',
         searchable: false,
@@ -152,6 +174,17 @@ $(document).ready(function() {
         render: function (data, type, row) {
           if (type === 'display') {
             return row.durationCollection.unsupportedDuration
+          }
+          return data;
+        },
+      },
+      {
+        name: 'supportedSQLTaskDuration',
+        data: "supportedSQLTaskDuration",
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.durationCollection.supportedSQLTaskDuration
           }
           return data;
         },
@@ -199,6 +232,11 @@ $(document).ready(function() {
           }
           return data;
         },
+      },
+      {
+        data: "endDurationEstimated",
+        name: "endDurationEstimated",
+        orderable: false,
       },
       {
         name: "failedSQLIds",

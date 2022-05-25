@@ -212,6 +212,7 @@ function mapFieldsToUI(rawAppRecord) {
   rawAppRecord["unsupportedTaskDuration"] = rawAppRecord["unsupportedSQLTaskDuration"];
   rawAppRecord["gpuTimeSaved"] = parseFloat(rawAppRecord.estimatedInfo.estimatedGpuTimeSaved);
   rawAppRecord["gpuOpportunity"] = rawAppRecord.estimatedInfo.gpuOpportunity;
+  rawAppRecord["taskSpeedupFactor_display"] = Math.floor(parseFloat(rawAppRecord["taskSpeedupFactor"]) * 10) / 10;
 }
 
 function processRawData(rawRecords) {
@@ -226,6 +227,7 @@ function processRawData(rawRecords) {
       "sqlDFDuration": formatDuration(appRecord["sqlDataFrameDuration"]),
       "sqlDFTaskDuration": formatDuration(appRecord["sqlDataframeTaskDuration"]),
       "sqlDurationProblems": formatDuration(appRecord["sqlDurationForProblematic"]),
+      "supportedSQLTaskDuration": formatDuration(appRecord["supportedSQLTaskDuration"]),
       "nonSqlTaskDurationAndOverhead": formatDuration(appRecord["nonSqlTaskDurationAndOverhead"]),
       "estimatedGPUDuration": formatDuration(appRecord["estimatedGPUDuration"]),
       "estimatedDurationWallClock":
