@@ -829,6 +829,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
 
       case RegexEscaped(ch) => ch match {
+        case 'd' =>
+          // cuDF is not compatible with Java for \d  so we transpile to Java's definition
+          // of [0-9]
+          // https://github.com/rapidsai/cudf/issues/10894
+          RegexCharacterClass(negated = false, ListBuffer(
+            RegexCharacterRange(RegexChar('0'), RegexChar('9'))))
+        case 'w' =>
+          // cuDF is not compatible with Java for \w so we transpile to Java's definition
+          // of `[a-zA-Z_0-9]`
+          RegexCharacterClass(negated = false, ListBuffer(
+            RegexCharacterRange(RegexChar('a'), RegexChar('z')),
+            RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
+            RegexChar('_'),
+            RegexCharacterRange(RegexChar('0'), RegexChar('9'))))
         case 'D' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4475
           throw new RegexUnsupportedException("non-digit class \\D is not supported")

@@ -290,15 +290,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
   }
 
-  // temporarily skip the test on Spark 3.3.0-https://github.com/NVIDIA/spark-rapids/issues/5496
-  if (spark.SPARK_VERSION_SHORT < "3.3.0") {
-    testExpectedException[AnalysisException](
-        "avg literals bools fail",
-        _.getMessage.startsWith("cannot resolve"),
-        longsFromCSVDf,
-        conf = floatAggConf) {
-      frame => frame.agg(avg(lit(true)),avg(lit(false)))
-    }
+  testExpectedException[AnalysisException](
+      "avg literals bools fail",
+      _.getMessage.startsWith("cannot resolve"),
+      longsFromCSVDf,
+      conf = floatAggConf) {
+    frame => frame.agg(avg(lit(true)).alias("t"), avg(lit(false)).alias("f"))
   }
 
   testSparkResultsAreEqual(

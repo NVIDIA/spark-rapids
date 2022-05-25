@@ -28,11 +28,11 @@ BroadcastNestedLoopJoinExec,2.0
 CartesianProductExec,2.0
 ShuffledHashJoinExec,2.0
 SortMergeJoinExec,14.9
-AggregateInPandasExec,2.0
-ArrowEvalPythonExec,2.0
-FlatMapGroupsInPandasExec,2.0
-MapInPandasExec,2.0
-WindowInPandasExec,2.0
+AggregateInPandasExec,1.2
+ArrowEvalPythonExec,1.2
+FlatMapGroupsInPandasExec,1.2
+MapInPandasExec,1.2
+WindowInPandasExec,1.2
 WindowExec,2.0
 Abs,3
 Acos,3
@@ -144,6 +144,7 @@ Log2,3
 Logarithm,3
 Lower,3
 MakeDecimal,3
+MapConcat,3
 MapEntries,3
 MapFilter,3
 MapKeys,3
@@ -172,6 +173,7 @@ PromotePrecision,3
 PythonUDF,3
 Quarter,3
 RLike,3
+RaiseError,3
 Rand,3
 Rank,3
 RegExpExtract,3
