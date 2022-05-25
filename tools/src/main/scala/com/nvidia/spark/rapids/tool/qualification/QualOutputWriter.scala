@@ -231,6 +231,10 @@ object QualOutputWriter {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE,
+      ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
+      ESTIMATED_GPU_DURATION -> ESTIMATED_GPU_DURATION.size,
+      ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
       SQL_DUR_STR -> SQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       APP_DUR_STR -> APP_DUR_STR.size,
@@ -423,6 +427,10 @@ object QualOutputWriter {
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
+      stringIfempty(appInfo.estimatedInfo.recommendation) -> headersAndSizes(SPEEDUP_BUCKET_STR),
+      f"${appInfo.estimatedInfo.estimatedGpuSpeedup}%1.2f" -> ESTIMATED_GPU_SPEEDUP.size,
+      f"${appInfo.estimatedInfo.estimatedGpuDur}%1.2f" -> ESTIMATED_GPU_DURATION.size,
+      f"${appInfo.estimatedInfo.estimatedGpuTimeSaved}%1.2f" -> ESTIMATED_GPU_TIMESAVED.size,
       appInfo.estimatedInfo.sqlDfDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
       appInfo.estimatedInfo.appDur.toString -> headersAndSizes(APP_DUR_STR),
@@ -433,7 +441,7 @@ object QualOutputWriter {
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
       nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
-      potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
+      stringIfempty(potentialProbs) -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
       appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
       appInfo.unsupportedSQLTaskDuration.toString ->

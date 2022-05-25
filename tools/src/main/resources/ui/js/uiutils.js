@@ -106,6 +106,13 @@ function recommendationTableCellStyle(recommendation) {
   return "hsla("+ recommendation * 10.0 +",100%,50%)";
 }
 
+function trimLongFields(strData) {
+  if (strData.length > 120) {
+    return strData.substring(0, 120) + "...";
+  }
+  return strData;
+}
+
 /* define recommendation grouping */
 const recommendationRanges = {
   "A": {low: 2.5, high: 10.0},

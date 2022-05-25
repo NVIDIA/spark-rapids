@@ -22,8 +22,6 @@ $(document).ready(function() {
   let sortColumnForGPURecommend = totalSpeedupColumnName
   let recommendGPUColName = "gpuRecommendation"
   let rawDataTableConf = {
-    // TODO: To use horizontal scroll for wide table
-    //"scrollX": true,
     responsive: true,
     paging: (attemptArray.length > defaultPageLength),
     pageLength: defaultPageLength,
@@ -34,9 +32,11 @@ $(document).ready(function() {
       {
         name: "appName",
         data: "appName",
+        className: "none",
       },
       {
         data: "appId",
+        className: "all",
         render:  (appId, type, row) => {
           if (type === 'display') {
             if (UIConfig.fullAppView.enabled) {
@@ -49,11 +49,13 @@ $(document).ready(function() {
       {
         name: "sparkUser",
         data: "user",
+        className: "none",
       },
       {
         name: "startTime",
         data: "startTime",
         type: 'numeric',
+        className: "all",
         searchable: false,
         render: function (data, type, row) {
           if (type === 'display') {
@@ -61,10 +63,12 @@ $(document).ready(function() {
           }
           return data;
         },
+        className: "none",
       },
       {
         name: recommendGPUColName,
         data: 'gpuCategory',
+        className: "all",
         render: function (data, type, row) {
           if (type === 'display') {
             let recommendGroup = recommendationsMap.get(data);
@@ -88,6 +92,7 @@ $(document).ready(function() {
         data: "totalSpeedup",
         searchable: false,
         type: 'numeric',
+        className: "all",
         render: function (data, type, row) {
           if (type === 'display') {
             return row.totalSpeedup_display
@@ -158,7 +163,7 @@ $(document).ready(function() {
       },
       {
         name: 'gpuOpportunity',
-        data: "estimatedInfo.gpuOpportunity",
+        data: "gpuOpportunity",
         searchable: false,
         render: function (data, type, row) {
           if (type === 'display') {
@@ -221,6 +226,7 @@ $(document).ready(function() {
           }
           return data;
         },
+        className: "none",
       },
       {
         name: "nonSqlTaskDurationAndOverhead",
@@ -232,38 +238,113 @@ $(document).ready(function() {
           }
           return data;
         },
+        className: "none",
       },
       {
         data: "endDurationEstimated",
         name: "endDurationEstimated",
         orderable: false,
+        className: "none",
       },
       {
         name: "failedSQLIds",
         data: "failedSQLIds",
         searchable: false,
+        className: "none",
+      },
+      {
+        name: "potentialProblems",
+        data: "potentialProblems",
+        searchable: false,
+        className: "none",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return trimLongFields(data);
+          }
+          return data;
+        },
       },
       {
         name: "readFileFormatAndTypesNotSupported",
         data: "readFileFormatAndTypesNotSupported",
         searchable: false,
+        className: "none",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return trimLongFields(data);
+          }
+          return data;
+        },
       },
       {
         data: "writeDataFormat",
         name: "writeDataFormat",
         orderable: false,
+        className: "none",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return trimLongFields(data);
+          }
+          return data;
+        },
       },
       {
         data: "complexTypes",
         name: "complexTypes",
         orderable: false,
+        className: "none",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return trimLongFields(data);
+          }
+          return data;
+        },
       },
       {
         data: "nestedComplexTypes",
         name: "nestedComplexTypes",
         orderable: false,
+        className: "none",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return trimLongFields(data);
+          }
+          return data;
+        },
+      },
+      {
+        data: "readFileFormats",
+        name: "readFileFormats",
+        orderable: false,
+        className: "none",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return trimLongFields(data);
+          }
+          return data;
+        },
       },
     ],
+    responsive: {
+      details: {
+        renderer: function ( api, rowIdx, columns ) {
+          var data = $.map( columns, function ( col, i ) {
+            return col.hidden ?
+              '<tr data-dt-row="'+col.rowIndex+'" data-dt-column="'+col.columnIndex+'">'+
+              '<th scope=\"row\"><span data-toggle=\"tooltip\" data-placement=\"top\"' +
+              '    title=\"' + toolTipsValues.rawTable[col.title] + '\">'+col.title+':'+
+              '</span></th> '+
+              '<td>'+col.data+'</td>'+
+              '</tr>' :
+              '';
+          } ).join('');
+
+          return data ?
+            $('<table/>').append( data ) :
+            false;
+        }
+      }
+    },
     dom: 'Bfrtlip',
     buttons: [{
       extend: 'csv',
@@ -272,8 +353,8 @@ $(document).ready(function() {
     initComplete: function(settings, json) {
       // Add custom Tool Tip to the headers of the table
       $('#all-apps-raw-data-table thead th').each(function () {
-        var $td = $(this);
-        var toolTipVal = toolTipsValues.rawTable[$td.text().trim()];
+        let $td = $(this);
+        let toolTipVal = toolTipsValues.rawTable[$td.text().trim()];
         $td.attr('data-toggle', "tooltip");
         $td.attr('data-placement', "top");
         $td.attr('html', "true");
@@ -284,14 +365,11 @@ $(document).ready(function() {
   };
   rawDataTableConf.order =
     [[getColumnIndex(rawDataTableConf.columns, sortColumnForGPURecommend), "desc"]];
-  var rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
-  // set the tootTips for the table
-  $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip({
-    container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",
-    delay: {show: 0, hide: 10.0}});
+  let rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
 
+  // set the tootTips for the table
+  $('thead th[title]').tooltip({
+    container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
+  });
   setupNavigation();
 });

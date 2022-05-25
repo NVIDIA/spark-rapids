@@ -36,6 +36,10 @@ import org.apache.spark.sql.types._
 case class TestQualificationSummary(
     appName: String,
     appId: String,
+    recommendation: String,
+    estimatedGpuSpeedup: Double,
+    estimatedGpuDur: Double,
+    estimatedGpuTimeSaved: Double,
     sqlDataframeDuration: Long,
     sqlDataframeTaskDuration: Long,
     appDuration: Long,
@@ -73,6 +77,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   val schema = new StructType()
     .add("App Name", StringType, true)
     .add("App ID", StringType, true)
+    .add("Recommendation", StringType, true)
+    .add("Estimated GPU Speedup", DoubleType, true)
+    .add("Estimated GPU Duration", DoubleType, true)
+    .add("Estimated GPU Time Saved", DoubleType, true)
     .add("SQL DF Duration", LongType, true)
     .add("SQL Dataframe Task Duration", LongType, true)
     .add("App Duration", LongType, true)
@@ -100,7 +108,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
     appSums.map { sum =>
-      TestQualificationSummary(sum.appName, sum.appId, sum.estimatedInfo.sqlDfDuration,
+      TestQualificationSummary(sum.appName, sum.appId, sum.estimatedInfo.recommendation,
+        sum.estimatedInfo.estimatedGpuSpeedup, sum.estimatedInfo.estimatedGpuDur,
+        sum.estimatedInfo.estimatedGpuTimeSaved, sum.estimatedInfo.sqlDfDuration,
         sum.sqlDataframeTaskDuration, sum.estimatedInfo.appDur,
         sum.estimatedInfo.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
         sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
@@ -651,9 +661,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(headersDetailed.size == QualOutputWriter
       .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
     assert(valuesDetailed.size == headersDetailed.size)
-    // 5 should be the Gpu Opportunity
-    assert(headersDetailed(5).contains("GPU Opportunity"))
-    assert(valuesDetailed(5).toDouble > 0)
+    // 9 should be the Gpu Opportunity
+    assert(headersDetailed(9).contains("GPU Opportunity"))
+    assert(valuesDetailed(9).toDouble > 0)
   }
 
   test("running qualification app files") {

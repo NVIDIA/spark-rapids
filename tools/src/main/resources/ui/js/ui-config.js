@@ -93,7 +93,7 @@ let toolTipsValues = {
           "This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO. Shaded red when it is below 40%",
         "Unsupported Task Duration": "Sum of task durations for any unsupported operators.",
         "GPU Opportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",
-        "Total Speedup Factor":
+        "Estimated GPU Speedup":
           "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
         "NONSQL Task Duration Plus Overhead": "Time duration that does not span any running SQL task.",
         "Unsupported Read File Formats and Types": "Looks at the Read Schema and reports the file formats along with types " +
@@ -104,8 +104,8 @@ let toolTipsValues = {
         "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
         "Estimated GPU Time Saved": "Estimated Wall-Clock time saved if it was run on the GPU",
         "Supported SQL DF Task Duration": "Sum of task durations that are supported by RAPIDS GPU acceleration.",
-        "End Duration Estimated": "Flag set to true when the application end time was \<em\>estimated\<\/em\> based on the application progress",
-        "Task Speedup Factor": "The average speed-up of all stages."
+        "App Duration Estimated": "Flag set to true when the application end time was \<em\>estimated\<\/em\> based on the application progress",
+        "Task Speed-up Factor": "The average speed-up of all stages."
     }
 }
 
