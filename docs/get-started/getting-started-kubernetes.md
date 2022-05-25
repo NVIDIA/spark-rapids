@@ -19,7 +19,7 @@ image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script. 
 
 You can find other supported base CUDA images for from 
 [CUDA dockerhub](https://hub.docker.com/r/nvidia/cuda). Its source Dockerfile is inside
-[GitLab repoistory](https://gitlab.com/nvidia/container-images/cuda/) which can be used to build
+[GitLab repository](https://gitlab.com/nvidia/container-images/cuda/) which can be used to build
 the docker images from OS base image from scratch.
 
 ## Prerequisites
