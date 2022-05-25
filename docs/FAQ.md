@@ -511,6 +511,12 @@ Below are some troubleshooting tips on GPU query performance issue:
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
 
+
+### What is the default RMM pool allocator?
+
+Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
+`ARENA` for CUDA 11.5+. For CUDA version < 11.5, it will fall back to `ARENA`.
+
 ### I have more questions, where do I go? 
 We use github to track bugs, feature requests, and answer questions. File an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
