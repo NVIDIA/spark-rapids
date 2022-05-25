@@ -172,8 +172,9 @@ class RegexParser(pattern: String) {
         case Some('x') => 
           consumeExpected('x')
           RegexChar(Integer.parseInt(parseHexDigit.a, 16).toChar)
-        case Some('0') => throw new RegexUnsupportedException(
-          "cuDF does not support octal digits in character classes")
+        case Some('0') => 
+          consumeExpected('0')
+          RegexChar(Integer.parseInt(parseOctalDigit.a, 8).toChar)
         case Some(ch) =>
           consumeExpected(ch) match {
             // List of character literals with an escape from here, under "Characters"
@@ -933,12 +934,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
-          case RegexEscaped(ch) if ch == '0' =>
-            // see https://github.com/NVIDIA/spark-rapids/issues/4862
-            // examples
-            // - "[\02] should match the character with code point 2"
-            throw new RegexUnsupportedException(
-              "cuDF does not support octal digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters

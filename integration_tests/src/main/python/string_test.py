@@ -881,6 +881,7 @@ def test_character_classes():
                 'rlike(a, "[\n-\\]")',
                 'rlike(a, "[+--]")',
                 'regexp_extract(a, "[123]", 0)',
+                'regexp_replace(a, "[\\\\0101-\\\\0132]", "@")',
                 'regexp_replace(a, "[\\\\x41-\\\\x5a]", "@")',
             ),
         conf=_regexp_conf)
@@ -959,7 +960,9 @@ def test_regexp_octal_digits():
                 'rlike(a, "\\\\0177")',
                 'rlike(a, "\\\\0200")',
                 'rlike(a, "\\\\0101")',
+                'rlike(a, "[\\\\0240-\\\\0377]")',
                 'regexp_extract(a, "([a-d]+)\\\\0240([a-d]+)", 1)',
+                'regexp_extract(a, "([a-d]+)[\\\\0141-\\\\0172]([a-d]+)", 0)',
                 'regexp_replace(a, "\\\\0377", "")',
                 'regexp_replace(a, "\\\\0260", "")',
             ),
