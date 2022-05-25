@@ -18,30 +18,7 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
-## Release v22.04.0
-Hardware Requirements:
-
-The plugin is tested on the following architectures:
-
-	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
-
-Software Requirements:
-
-	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
-
-	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
-
-	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, Databricks 9.1 ML LTS or 10.4 ML LTS Runtime and GCP Dataproc 2.0
-
-	Python 3.6+, Scala 2.12, Java 8
-
-*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
-for your hardware's minimum driver version.
-
-*For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
-
-## Release v22.04.0
+## Release v22.06.0
 Hardware Requirements:
 
 The plugin is tested on the following architectures:
@@ -98,6 +75,29 @@ New functionality and performance improvements for this release include:
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v22.04.0
+Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
+
+	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
+
+	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, Databricks 9.1 ML LTS or 10.4 ML LTS Runtime and GCP Dataproc 2.0
+
+	Python 3.6+, Scala 2.12, Java 8
+
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.04.0
 * Download the [RAPIDS
