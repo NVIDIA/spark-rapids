@@ -23,11 +23,14 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+//import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.functions.{desc,udf}
+//import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
@@ -475,8 +478,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     dfGen.write.parquet(dir)
   }
 
-  // TODO - need a different way to test this just by being removed
-  /*
+  private def createIntFile(spark:SparkSession, dir:String): Unit = {
+    import spark.implicits._
+    val t1 = Seq((1, 2), (3, 4), (1, 6)).toDF("a", "b")
+    t1.write.parquet(dir)
+  }
+
   test("test generate udf same") {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { eventLogDir =>
@@ -502,7 +509,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(appSum.size == 1)
         val probApp = appSum.head
         assert(probApp.potentialProblems.contains("UDF"))
-        // TODO - add test to make sure UDF taken out of sqlDataFrameDuration
+        assert(probApp.unsupportedSQLTaskDuration > 0) // only UDF is unsupported in the query.
       }
     }
   }
@@ -512,7 +519,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       TrampolineUtil.withTempDir { eventLogDir =>
         val tmpParquet = s"$outpath/decparquet"
+        val grpParquet = s"$outpath/grpParquet"
         createDecFile(sparkSession, tmpParquet)
+        createIntFile(sparkSession, grpParquet)
 
         val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
           val plusOne = udf((x: Int) => x + 1)
@@ -525,10 +534,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           // run a separate sql op using just udf
           spark.sql("SELECT plusOne(5)").collect()
           // Then run another sql op that doesn't use with decimal or udf
-          import spark.implicits._
-          val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
-          t1.createOrReplaceTempView("t1")
-          spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+          val t2 = spark.read.parquet(grpParquet)
+          val res = t2.groupBy("a").max("b").orderBy(desc("a"))
+          res
         }
 
         val allArgs = Array(
@@ -540,12 +548,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(appSum.size == 1)
         val probApp = appSum.head
         assert(probApp.potentialProblems.contains("UDF"))
-        // TODO - add tests for sqlDataFrameDuration with UDF
+        assert(probApp.unsupportedSQLTaskDuration > 0) // only UDF is unsupported in the query.
       }
     }
   }
-
-   */
 
   test("test read datasource v1") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
@@ -609,7 +615,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  // TODO - update the running qualification app once everything else done
   test("running qualification app join") {
     val qualApp = new RunningQualificationApp()
     ToolTestUtils.runAndCollect("streaming") { spark =>

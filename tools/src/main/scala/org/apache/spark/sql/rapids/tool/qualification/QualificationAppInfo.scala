@@ -408,6 +408,14 @@ class QualificationAppInfo(
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       checkGraphNodeForReads(sqlID, node)
+      if (isDataSetOrRDDPlan(node.desc)) {
+        sqlIDToDataSetOrRDDCase += sqlID
+      }
+      val issues = findPotentialIssues(node.desc)
+      if (issues.nonEmpty) {
+        val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
+        sqlIDtoProblematic(sqlID) = existingIssues ++ issues
+      }
       // Get the write data format
       if (node.name.contains("InsertIntoHadoopFsRelationCommand")) {
         val writeFormat = node.desc.split(",")(2)
