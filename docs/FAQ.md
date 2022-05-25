@@ -414,7 +414,7 @@ setting.
 
 #### Optimize a row-based UDF in a GPU operation
 
-If the UDF can not be implemented by RAPIDS Accelerated UDFs or being automatically translated to
+If the UDF can not be implemented by RAPIDS Accelerated UDFs or be automatically translated to
 Apache Spark operations, the RAPIDS Accelerator has an experimental feature to transfer only the
 data it needs between GPU and CPU inside a query operation, instead of falling this operation back 
 to CPU. This feature can be enabled by setting `spark.rapids.sql.rowBasedUDF.enabled` to true.
