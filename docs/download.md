@@ -72,6 +72,7 @@ New functionality and performance improvements for this release include:
 * Enable CSV raed by default
 * Enable regular expression by default
 * Enable some float related configurations by default
+* Changed to ASYNC allocator from ARENA by default
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
