@@ -55,18 +55,6 @@
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
         </dependency>
-        <!-- set provided scope for JNI and ucx to avoid pulling into aggregator jar  -->
-        <dependency>
-            <groupId>org.openucx</groupId>
-            <artifactId>jucx</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>spark-rapids-jni</artifactId>
-            <classifier>${cuda.version}</classifier>
-            <scope>provided</scope>
-        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -92,7 +80,12 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <artifactSet>
-                        <excludes>org.slf4j:*</excludes>
+                        <excludes>
+                            <exclude>org.slf4j:*</exclude>
+                            <!-- excludes spark-rapids-jni and jucx, will package them in the dist submodule -->
+                            <exclude>com.nvidia:spark-rapids-jni:*</exclude>
+                            <exclude>org.openucx:jucx:*</exclude>
+                        </excludes>
                     </artifactSet>
                     <transformers>
                         <transformer
