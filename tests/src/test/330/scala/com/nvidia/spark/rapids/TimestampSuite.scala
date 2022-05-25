@@ -51,7 +51,7 @@ class TimestampSuite extends SparkQueryCompareTestSuite {
    *
    */
   // TODO, blocked by a follow on issue: https://github.com/NVIDIA/spark-rapids/issues/5606
-  if (true) {
+  if (false) {
     testSparkResultsAreEqual("test cast overflowed long seconds to max seconds",
       spark => getOverflowLong(spark)) {
       df => df.repartition(1).selectExpr("cast(a as timestamp)")
@@ -77,21 +77,5 @@ class TimestampSuite extends SparkQueryCompareTestSuite {
       spark => getOverflowDouble(spark)) {
       df => df.selectExpr("cast(a as timestamp)")
     }
-  }
-
-  private def getTimestampDF(spark: SparkSession): DataFrame = {
-    val data = Seq(Row(new java.sql.Timestamp(Int.MaxValue * 1000L + 1)),
-      Row(new java.sql.Timestamp(Int.MinValue * 1000L - 1)))
-    val schema = StructType(Array(StructField("a", TimestampType)))
-    spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
-  }
-
-  // test (long micros / 1000000L) is out of range of Int
-  // In Python, this case throws: ValueError: year -68049078 is out of range
-  testBothCpuGpuExpectedException[Exception]("test overflowed float to timestamp, ansi",
-    expectedException => expectedException.getMessage().contains("overflow"),
-    spark => getTimestampDF(spark),
-    conf = ansiConf) {
-    df => df.selectExpr("cast(a as int)")
   }
 }
