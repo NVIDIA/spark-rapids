@@ -376,8 +376,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
-  //private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abcf123x\\ \t\r\n\f\u000bBsdwSDWzZ_"
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abcf123x\\ \t\r\n\f\u000bBsdwSDWzZ_"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 

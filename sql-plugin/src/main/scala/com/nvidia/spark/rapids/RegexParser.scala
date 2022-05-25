@@ -760,29 +760,33 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // structure such as a character class or group
     def checkPair(r1: RegexAST, r2: RegexAST): Unit = {
       if (isMaybeEndAnchor(r1)) {
-        r2 match {
-          case RegexChar(_) | RegexEscaped(_) =>
-            // fine
-          case _ =>
-            if (isMaybeNewline(r2)) {
-              throw new RegexUnsupportedException(
-                s"End of line/string anchor is not supported in this context: " +
-                  s"${toReadableString(r1.toRegexString)}" +
-                  s"${toReadableString(r2.toRegexString)}")
-            }
+        val possibleUnsupportedNewline = r2 match {
+          case RegexChar('\r') | RegexEscaped('r') => false // direct newline is fine
+          case RegexChar('\n') | RegexEscaped('n') => false // "
+          case RegexChar('\f') | RegexEscaped('f') => false // "
+          //TODO other newlines
+          case _ => isMaybeNewline(r2)
+        }
+        if (possibleUnsupportedNewline) {
+          throw new RegexUnsupportedException(
+            s"End of line/string anchor is not supported in this context: " +
+              s"${toReadableString(r1.toRegexString)}" +
+              s"${toReadableString(r2.toRegexString)}")
         }
       }
       if (isMaybeEndAnchor(r2)) {
-        r1 match {
-          case RegexChar(_) | RegexEscaped(_) =>
-          // fine
-          case _ =>
-            if (isMaybeNewline(r1)) {
-              throw new RegexUnsupportedException(
-                s"End of line/string anchor is not supported in this context: " +
-                  s"${toReadableString(r1.toRegexString)}" +
-                  s"${toReadableString(r2.toRegexString)}")
-            }
+        val possibleUnsupportedNewline = r1 match {
+          case RegexChar('\r') | RegexEscaped('r') => false // direct newline is fine
+          case RegexChar('\n') | RegexEscaped('n') => false // "
+          case RegexChar('\f') | RegexEscaped('f') => false // "
+          //TODO other newlines
+          case _ => isMaybeNewline(r1)
+        }
+        if (possibleUnsupportedNewline) {
+          throw new RegexUnsupportedException(
+            s"End of line/string anchor is not supported in this context: " +
+              s"${toReadableString(r1.toRegexString)}" +
+              s"${toReadableString(r2.toRegexString)}")
         }
       }
     }
