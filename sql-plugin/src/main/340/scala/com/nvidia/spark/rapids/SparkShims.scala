@@ -18,6 +18,58 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
+import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
+import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+
 object SparkShimImpl extends Spark330PlusShims {
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+
+  private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+    GpuOverrides.exec[GlobalLimitExec](
+      "Limiting of results across partitions",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (globalLimit, conf, p, r) =>
+        new SparkPlanMeta[GlobalLimitExec](globalLimit, conf, p, r) {
+          override def tagPlanForGpu(): Unit = {
+            if (globalLimit.offset != 0) {
+              willNotWorkOnGpu("non-zero offset is not support yet")
+            }
+          }
+
+          override def convertToGpu(): GpuExec =
+            GpuGlobalLimitExec(
+              globalLimit.limit, childPlans.head.convertIfNeeded(), globalLimit.offset)
+        }),
+    GpuOverrides.exec[CollectLimitExec](
+      "Reduce to single partition and apply limit",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (collectLimit, conf, p, r) => new GpuCollectLimitMeta(collectLimit, conf, p, r) {
+        override def tagPlanForGpu(): Unit = {
+          if (collectLimit.offset != 0) {
+            willNotWorkOnGpu("non-zero offset is not support yet")
+          }
+        }
+
+        override def convertToGpu(): GpuExec =
+          GpuGlobalLimitExec(collectLimit.limit,
+            GpuShuffleExchangeExec(
+              GpuSinglePartitioning,
+              GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
+              ENSURE_REQUIREMENTS
+            )(SinglePartition), collectLimit.offset)
+      }
+    ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
+        "of rows in a batch it could help by limiting the number of rows transferred from " +
+        "GPU to CPU")
+  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    super.getExecs ++ shimExecs
+
 }
