@@ -160,16 +160,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support hex digits in character classes") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4865
-    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support hex digits in character classes"
-      )
-    )
-  }
-
   test("octal digits - find") {
     val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772", raw"\0200", 
       raw"\0376", raw"\0377", raw"\02002")
@@ -182,6 +172,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
+  }
+
+  test("hex digit character classes") {
+    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]", raw"[\x80]", raw"[\x01-\xff]",
+      raw"[a-\xff]", raw"[\x20-z]")
+    val inputs = Seq("", "\u007f", "a\u007fb", "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", 
+      "\u007f2", "abcd", "\u0000\u007f\u00ff\u0123\u0abc")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: character range with escaped characters") {
+    val inputs = Seq("", "abc", "\r\n", "a[b\t\n \rc]d", "[\r+\n-\t[]")
+    assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]"), 
+      inputs)
+    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"), 
+      inputs)
   }
   
   test("string anchors - find") {
@@ -896,13 +902,13 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   private def characterClassComponent = {
     val baseGenerators = Seq[() => RegexCharacterClassComponent](
         () => char,
-        () => charRange)
+        () => charRange,
+        () => hexDigit,
+        () => escapedChar)
     val generators = if (skipKnownIssues) {
       baseGenerators
     } else {
       baseGenerators ++ Seq(
-        () => escapedChar, // https://github.com/NVIDIA/spark-rapids/issues/4505
-        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4865
         () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4862
     }
     generators(rr.nextInt(generators.length))()
@@ -910,19 +916,19 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
 
   private def charRange: RegexCharacterClassComponent = {
     val baseGenerators = Seq[() => RegexCharacterClassComponent](
-      () => RegexCharacterRange('a', 'z'),
-      () => RegexCharacterRange('A', 'Z'),
-      () => RegexCharacterRange('z', 'a'),
-      () => RegexCharacterRange('Z', 'A'),
-      () => RegexCharacterRange('0', '9'),
-      () => RegexCharacterRange('9', '0')
+      () => RegexCharacterRange(RegexChar('a'), RegexChar('z')),
+      () => RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
+      () => RegexCharacterRange(RegexChar('z'), RegexChar('a')),
+      () => RegexCharacterRange(RegexChar('Z'), RegexChar('A')),
+      () => RegexCharacterRange(RegexChar('0'), RegexChar('9')),
+      () => RegexCharacterRange(RegexChar('9'), RegexChar('0'))
     )
     val generators = if (skipKnownIssues) {
       baseGenerators
     } else {
       // we do not support escaped characters in character ranges yet
       // see https://github.com/NVIDIA/spark-rapids/issues/4505
-      baseGenerators ++ Seq(() => RegexCharacterRange(char.ch, char.ch))
+      baseGenerators ++ Seq(() => RegexCharacterRange(char, char))
     }
     generators(rr.nextInt(generators.length))()
   }
