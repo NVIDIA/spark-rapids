@@ -66,3 +66,8 @@ RUN mkdir -p /tmp/ucx && \
 
 # export JAVA_HOME for mvn option 'source-javadoc'
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
+
+# install locale and use UTF-8
+RUN apt-get install -y locales
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
