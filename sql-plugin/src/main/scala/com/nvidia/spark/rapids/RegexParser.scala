@@ -699,10 +699,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
       previous: Option[RegexAST]): RegexAST = {
 
-    def isMaybeAnchor(regex: RegexAST): Boolean = {
+    def isMaybeBeginAnchor(regex: RegexAST): Boolean = {
       contains(regex, {
-        case RegexChar('^') | RegexChar('$') |
-             RegexEscaped('A') | RegexEscaped('z') | RegexEscaped('Z') => true
+        case RegexChar('^') | RegexEscaped('A') => true
+        case _ => false
+      })
+    }
+
+    def isMaybeEndAnchor(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexChar('$') | RegexEscaped('z') | RegexEscaped('Z') => true
         case _ => false
       })
     }
@@ -718,7 +724,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // that include newlines
           true
         case RegexCharacterClass(true, _) => true
-        //TODO others?
         case _ => false
       })
     }
@@ -735,33 +740,70 @@ class CudfRegexTranspiler(mode: RegexMode) {
       })
     }
 
-    def checkUnsupported(r1: RegexAST, r2: RegexAST): Unit = {
-//      println(s"checkUnsupported $r1 and $r2")
-      if (isMaybeAnchor(r1)) {
-//        println("r1 is anchor")
-        val a = isMaybeEmpty(r2)
-        val b = isMaybeNewline(r2)
-        val c = isMaybeAnchor(r2)
-//        println(s"r2 isMaybeEmpty: $a, isMaybeNewline, isMaybeEndAnchor: $c")
-        if (a || b || c) {
-          //TODO we should throw a more specific error
-          throw new RegexUnsupportedException(
-            "End of line/string anchor is not supported in this context")
+    //TODO copy and pasted from test suite - used in error messages for now
+    def toReadableString(x: String): String = {
+      x.map {
+        case '\r' => "\\r"
+        case '\n' => "\\n"
+        case '\t' => "\\t"
+        case '\f' => "\\f"
+        case '\u000b' => "\\u000b"
+        case '\u0085' => "\\u0085"
+        case '\u2028' => "\\u2028"
+        case '\u2029' => "\\u2029"
+        case other => other
+      }.mkString
+    }
+
+    // we allow a newline directly before or after a $ anchor but we do not
+    // cover the case where there is a newline within a more complex
+    // structure such as a character class or group
+    def checkPair(r1: RegexAST, r2: RegexAST): Unit = {
+      if (isMaybeEndAnchor(r1)) {
+        r2 match {
+          case RegexChar(_) | RegexEscaped(_) =>
+            // fine
+          case _ =>
+            if (isMaybeNewline(r2)) {
+              throw new RegexUnsupportedException(
+                s"End of line/string anchor is not supported in this context: " +
+                  s"${toReadableString(r1.toRegexString)}" +
+                  s"${toReadableString(r2.toRegexString)}")
+            }
         }
       }
-      if (isMaybeAnchor(r2)) {
-//        println("r2 is anchor")
-        val a = isMaybeEmpty(r1)
-        val b = isMaybeNewline(r1)
-        val c = isMaybeAnchor(r1)
-//        println(s"r1 isMaybeEmpty: $a, isMaybeNewline: $b, isMaybeEndAnchor: $c")
-        if (a || b || c) {
-          //TODO we should throw a more specific error
-          throw new RegexUnsupportedException(
-            "End of line/string anchor is not supported in this context")
+      if (isMaybeEndAnchor(r2)) {
+        r1 match {
+          case RegexChar(_) | RegexEscaped(_) =>
+          // fine
+          case _ =>
+            if (isMaybeNewline(r1)) {
+              throw new RegexUnsupportedException(
+                s"End of line/string anchor is not supported in this context: " +
+                  s"${toReadableString(r1.toRegexString)}" +
+                  s"${toReadableString(r2.toRegexString)}")
+            }
         }
       }
-//      println("everything is fine")
+    }
+
+    // we do not support the case where there is an empty quantifier
+    // or ^ anchor between a newline and a $ anchor
+    def checkTriplet(r1: RegexAST, r2: RegexAST, r3: RegexAST): Unit = {
+      if (isMaybeEmpty(r2) || isMaybeBeginAnchor(r2)) {
+        if (isMaybeEndAnchor(r1) && isMaybeNewline(r3)) {
+          throw new RegexUnsupportedException(
+            s"End of line/string anchor is not supported in this context: " +
+              s"${toReadableString(r1.toRegexString)}" +
+              s"${toReadableString(r2.toRegexString)}")
+        }
+        if (isMaybeEndAnchor(r3) && isMaybeNewline(r1)) {
+          throw new RegexUnsupportedException(
+            s"End of line/string anchor is not supported in this context: " +
+              s"${toReadableString(r1.toRegexString)}" +
+              s"${toReadableString(r2.toRegexString)}")
+        }
+      }
     }
 
     def checkEndAnchorNearNewline(regex: RegexAST): Unit = {
@@ -770,7 +812,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // check each pair of regex ast nodes for unsupported combinations
           // of end string/line anchors and newlines or optional items
           for (i <- 1 until parts.length) {
-            checkUnsupported(parts(i - 1), parts(i))
+            checkPair(parts(i - 1), parts(i))
+          }
+          for (i <- 2 until parts.length) {
+            checkTriplet(parts(i - 2), parts(i - 1), parts(i))
           }
         case RegexChoice(l, r) =>
           checkEndAnchorNearNewline(l)
@@ -779,7 +824,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexRepetition(ast, _) => checkEndAnchorNearNewline(ast)
         case RegexCharacterClass(_, components) =>
           for (i <- 1 until components.length) {
-            checkUnsupported(components(i - 1), components(i))
+            checkPair(components(i - 1), components(i))
+          }
+          for (i <- 2 until components.length) {
+            checkTriplet(components(i - 2), components(i - 1), components(i))
           }
         case _ =>
           // ignore
