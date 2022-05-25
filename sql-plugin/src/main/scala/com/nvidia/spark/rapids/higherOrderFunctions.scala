@@ -23,6 +23,7 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -473,6 +474,12 @@ case class GpuTransformKeys(
 
   override def prettyName: String = "transform_keys"
 
+  private def exceptionOnDupKeys = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+    SQLConf.MapKeyDedupPolicy.EXCEPTION.toString
+
+  override lazy val hasSideEffects: Boolean =
+    function.nullable || exceptionOnDupKeys || super.hasSideEffects
+
   override def bind(input: AttributeSeq): GpuExpression = {
     val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
 
@@ -487,10 +494,23 @@ case class GpuTransformKeys(
       }
       withResource(newKeysCol) { newKeysCol =>
         withResource(GpuMapUtils.replaceExplodedKeyAsView(arg.getBase, newKeysCol.getBase)) {
-          updatedMapView =>
+          updatedMapView => {
             GpuMapUtils.assertNoNullKeys(updatedMapView)
-            GpuMapUtils.assertNoDuplicateKeys(updatedMapView)
-            GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+            withResource(updatedMapView.dropListDuplicatesWithKeysValues()) { deduped =>
+              if (exceptionOnDupKeys) {
+                // Compare child data row count before and after removing duplicates to determine
+                // if there were duplicates.
+                withResource(deduped.getChildColumnView(0)) { a =>
+                  withResource(updatedMapView.getChildColumnView(0)) { b =>
+                    if (a.getRowCount != b.getRowCount) {
+                      throw GpuMapUtils.duplicateMapKeyFoundError
+                    }
+                  }
+                }
+              }
+              GpuColumnVector.from(deduped.incRefCount(), dataType)
+            }
+          }
         }
       }
     }
@@ -526,6 +546,48 @@ case class GpuTransformValues(
         withResource(GpuMapUtils.replaceExplodedValueAsView(arg.getBase, newValueCol.getBase)) {
           updatedMapView =>
             GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+        }
+      }
+    }
+  }
+}
+
+case class GpuMapFilter(argument: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty)
+    extends GpuMapSimpleHigherOrderFunction {
+
+  override def dataType: DataType = argument.dataType
+
+  override def prettyName: String = "map_filter"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuMapFilter(boundArg, boundFunc, isBound = true, boundIntermediate)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { mapArg =>
+      // `mapArg` is list of struct(key, value)
+      val plainBoolCol = withResource(makeElementProjectBatch(batch, mapArg.getBase)) { cb =>
+        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+      }
+
+      withResource(plainBoolCol) { plainBoolCol =>
+        assert(plainBoolCol.dataType() == BooleanType, "map_filter should have a predicate filter")
+        withResource(mapArg.getBase.getListOffsetsView) { argOffsetsCv =>
+          // convert the one dimension plain bool column to list of bool column
+          withResource(plainBoolCol.getBase.makeListFromOffsets(mapArg.getRowCount, argOffsetsCv)) {
+            listOfBoolCv =>
+              // extract entries for each map in the `mapArg` column
+              // according to the `listOfBoolCv` column
+              // `mapArg` is a map column containing no duplicate keys and null keys,
+              // so no need to `assertNoNullKeys` and `assertNoDuplicateKeys` after the extraction
+              val retCv = mapArg.getBase.applyBooleanMask(listOfBoolCv)
+              GpuColumnVector.from(retCv, dataType)
+          }
         }
       }
     }

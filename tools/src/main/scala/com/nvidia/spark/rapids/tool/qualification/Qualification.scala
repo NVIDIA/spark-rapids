@@ -26,17 +26,15 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification._
+import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
 
-/**
- * Scores the applications for GPU acceleration and outputs the
- * reports.
- */
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
-    pluginTypeChecker: PluginTypeChecker, readScorePercent: Int,
-    reportReadSchema: Boolean, printStdout: Boolean) extends Logging {
+    pluginTypeChecker: PluginTypeChecker,
+    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
+
   // default is 24 hours
   private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
@@ -67,24 +65,42 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       threadPool.shutdownNow()
     }
 
+    val allAppsSum = allApps.asScala.toSeq
+    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
-    val allAppsSum = allApps.asScala.toSeq
-    val sortedDesc = allAppsSum.sortBy(sum => {
-        (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
-    })
-    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
-    qWriter.writeCSV(sortedDesc)
+    val estimatedSorted = sortForExecutiveSummary(allAppsSum.map(_.estimatedInfo), order)
+    qWriter.writeReport(allAppsSum, estimatedSorted, numRows)
+    val sortedDetailed = sortForCSVDetailedReport(allAppsSum)
+    qWriter.writeDetailedReport(sortedDetailed)
+    qWriter.writeExecReport(allAppsSum, order)
+    qWriter.writeStageReport(allAppsSum, order)
+    if (uiEnabled) {
+      QualificationReportGenerator.generateDashBoard(outputDir, allAppsSum)
+    }
+    sortedDetailed
+  }
 
-    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
-      allAppsSum.sortBy(sum => {
-        (sum.score, sum.sqlDataFrameDuration, sum.appDuration)
+  private def sortForCSVDetailedReport(
+      allAppsSum: Seq[QualificationSummaryInfo]): Seq[QualificationSummaryInfo] = {
+    // Default sorting for of the csv files.
+    allAppsSum.sortBy(sum => {
+      (sum.estimatedInfo.recommendation, sum.estimatedInfo.estimatedGpuSpeedup)
+    }).reverse
+  }
+
+  // Sorting for the pretty printed executive summary
+  private def sortForExecutiveSummary(sumsToWrite: Seq[EstimatedSummaryInfo],
+      order: String): Seq[EstimatedSummaryInfo] = {
+    if (QualificationArgs.isOrderAsc(order)) {
+      sumsToWrite.sortBy(sum => {
+        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       })
     } else {
-      sortedDesc
+      sumsToWrite.sortBy(sum => {
+        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
+      }).reverse
     }
-    qWriter.writeReport(sortedForReport, numRows)
-    sortedDesc
   }
 
   private def qualifyApp(
@@ -92,8 +108,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       hadoopConf: Configuration): Unit = {
     try {
       val startTime = System.currentTimeMillis()
-      val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker,
-        readScorePercent)
+      val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker)
       if (!app.isDefined) {
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
         None

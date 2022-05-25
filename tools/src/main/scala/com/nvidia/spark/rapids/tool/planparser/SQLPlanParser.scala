@@ -23,19 +23,19 @@ import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphCluster, SparkPlanGraphNode}
-import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
-case class ExecInfo(
-    sqlID: Long,
-    exec: String,
-    expr: String,
-    speedupFactor: Int,
-    duration: Option[Long],
-    nodeId: Long,
-    isSupported: Boolean,
-    children: Option[Seq[ExecInfo]], // only one level deep
-    stages: Seq[Int] = Seq.empty,
-    shouldRemove: Boolean = false) {
+class ExecInfo(
+    val sqlID: Long,
+    val exec: String,
+    val expr: String,
+    val speedupFactor: Double,
+    val duration: Option[Long],
+    val nodeId: Long,
+    val isSupported: Boolean,
+    val children: Option[Seq[ExecInfo]], // only one level deep
+    val stages: Seq[Int] = Seq.empty,
+    val shouldRemove: Boolean = false) {
   private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
@@ -50,11 +50,13 @@ case class ExecInfo(
     s"exec: $exec, expr: $expr, sqlID: $sqlID , speedupFactor: $speedupFactor, " +
       s"duration: $duration, nodeId: $nodeId, " +
       s"isSupported: $isSupported, children: " +
-      s"${childrenToString}"
+      s"${childrenToString}, stages: ${stages.mkString(",")}, " +
+      s"shouldRemove: $shouldRemove"
   }
 }
 
 case class PlanInfo(
+    appID: String,
     sqlID: Long,
     execInfo: Seq[ExecInfo]
 )
@@ -62,6 +64,7 @@ case class PlanInfo(
 object SQLPlanParser extends Logging {
 
   def parseSQLPlan(
+      appID: String,
       planInfo: SparkPlanInfo,
       sqlID: Long,
       checker: PluginTypeChecker,
@@ -72,7 +75,7 @@ object SQLPlanParser extends Logging {
     val execInfos = planGraph.nodes.flatMap { node =>
       parsePlanNode(node, sqlID, checker, app)
     }
-    PlanInfo(sqlID, execInfos)
+    PlanInfo(appID, sqlID, execInfos)
   }
 
   def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
@@ -85,6 +88,9 @@ object SQLPlanParser extends Logging {
       }
     }.toSeq
   }
+
+  private val skipUDFCheckExecs = Seq("ArrowEvalPython", "AggregateInPandas",
+    "FlatMapGroupsInPandas", "MapInPandas", "WindowInPandas")
 
   def parsePlanNode(
       node: SparkPlanGraphNode,
@@ -117,12 +123,12 @@ object SQLPlanParser extends Logging {
           CollectLimitExecParser(node, checker, sqlID).parse
         case "ColumnarToRow" =>
           // ignore ColumnarToRow to row for now as assume everything is columnar
-          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None, Seq.empty, shouldRemove=true)
         case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
           // create data source table doesn't show the format so we can't determine
           // if we support it
-          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
         case "CustomShuffleReader" | "AQEShuffleRead" =>
           CustomShuffleReaderExecParser(node, checker, sqlID).parse
@@ -178,23 +184,40 @@ object SQLPlanParser extends Logging {
         case "WindowInPandas" =>
           WindowInPandasExecParser(node, checker, sqlID).parse
         case _ =>
-          logDebug(s"other graph node ${node.name} desc: ${node.desc} id: ${node.id}")
-          ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }
+      // check is the node has a dataset operations and if so change to not supported
+      val ds = app.isDataSetOrRDDPlan(node.desc)
+      // we don't want to mark the *InPandas and ArrowEvalPythonExec as unsupported with UDF
+      val containsUDF = if (skipUDFCheckExecs.contains(node.name)) {
+        false
+      } else {
+        app.containsUDF(node.desc)
+      }
       val stagesInNode = getStagesInSQLNode(node, app)
-      Seq(execInfos.copy(stages = stagesInNode))
+      val supported = execInfos.isSupported && !ds && !containsUDF
+      Seq(new ExecInfo(execInfos.sqlID, execInfos.exec, execInfos.expr, execInfos.speedupFactor,
+        execInfos.duration, execInfos.nodeId, supported, execInfos.children,
+        stagesInNode, execInfos.shouldRemove))
     }
   }
 
   /**
    * This function is used to calculate an average speedup factor. The input
-   * is assumed to an array of ints where each element is >= 1. If the input array
+   * is assumed to an array of doubles where each element is >= 1. If the input array
    * is empty we return 1 because we assume we don't slow things down. Generally
    * the array shouldn't be empty, but if there is some weird case we don't want to
    * blow up, just say we don't speed it up.
    */
-  def averageSpeedup(arr: Seq[Int]): Int = if (arr.isEmpty) 1 else arr.sum / arr.size
+  def averageSpeedup(arr: Seq[Double]): Double = {
+    if (arr.isEmpty) {
+      1.0
+    } else {
+      val sum = arr.sum
+      ToolUtils.calculateAverage(sum, arr.size, 2)
+    }
+  }
 
   /**
    * Get the total duration by finding the accumulator with the largest value.

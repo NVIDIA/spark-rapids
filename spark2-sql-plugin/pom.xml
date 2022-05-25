@@ -147,7 +147,7 @@
                     <scalaVersion>${scala.version}</scalaVersion>
                     <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                     <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                    <recompileMode>incremental</recompileMode>
+                    <recompileMode>${scala.recompileMode}</recompileMode>
                     <args>
                         <arg>-unchecked</arg>
                         <arg>-deprecation</arg>
@@ -161,13 +161,7 @@
                         <jvmArg>-Xms1024m</jvmArg>
                         <jvmArg>-Xmx1024m</jvmArg>
                     </jvmArgs>
-                    <javacArgs>
-                        <javacArg>-source</javacArg>
-                        <javacArg>${maven.compiler.source}</javacArg>
-                        <javacArg>-target</javacArg>
-                        <javacArg>${maven.compiler.target}</javacArg>
-                        <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
-                    </javacArgs>
+                    <addJavacArgs>${scala.javac.args}</addJavacArgs>
                 </configuration>
             </plugin>
             <plugin>

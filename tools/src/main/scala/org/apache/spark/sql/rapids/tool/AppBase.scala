@@ -24,7 +24,7 @@ import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
 import com.nvidia.spark.rapids.tool.planparser.ReadParser
-import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, DriverAccumCase, JobInfoClass, StageInfoClass, TaskStageAccumCase}
+import com.nvidia.spark.rapids.tool.profiling.{DataSourceCase, DriverAccumCase, JobInfoClass, SQLExecutionInfoClass, StageInfoClass, TaskStageAccumCase}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
@@ -47,10 +47,13 @@ abstract class AppBase(
 
   // jobId to job info
   val jobIdToInfo = new HashMap[Int, JobInfoClass]()
+  val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
 
   // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
   val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
+  // sqlId to sql info
+  val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
 
   // accum id to task stage accum info
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
@@ -141,7 +144,7 @@ abstract class AppBase(
     }
   }
 
-  protected def isDataSetOrRDDPlan(desc: String): Boolean = {
+  def isDataSetOrRDDPlan(desc: String): Boolean = {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => true
       case a if a.endsWith(".apply") => true
@@ -150,7 +153,12 @@ abstract class AppBase(
     }
   }
 
-  private val UDFKeywords = Map(".*UDF.*" -> "UDF")
+  private val UDFRegex = ".*UDF.*"
+  private val UDFKeywords = Map(UDFRegex -> "UDF")
+
+  def containsUDF(desc: String): Boolean = {
+    desc.matches(UDFRegex)
+  }
 
   protected def findPotentialIssues(desc: String): Set[String] =  {
     val potentialIssuesRegexs = UDFKeywords

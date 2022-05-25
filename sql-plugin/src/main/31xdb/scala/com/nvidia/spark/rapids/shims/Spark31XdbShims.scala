@@ -59,9 +59,12 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
+        // 312db supports Ansi mode when casting string to date, this means that an exception
+        // will be thrown when casting an invalid value to date in Ansi mode.
+        // Set `stringToAnsiDate` = true
         (cast, conf, p, r) => new CastExprMeta[Cast](cast,
           SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-          doFloatToIntCheck = true, stringToAnsiDate = false)),
+          doFloatToIntCheck = true, stringToAnsiDate = true)),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
       new CastChecks {
@@ -112,8 +115,11 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
+      // 312db supports Ansi mode when casting string to date, this means that an exception
+      // will be thrown when casting an invalid value to date in Ansi mode.
+      // Set `stringToAnsiDate` = true
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
-        parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = false)),
+        parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = true)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(

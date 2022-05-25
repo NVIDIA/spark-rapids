@@ -63,6 +63,10 @@ trait GpuPartitioning extends Partitioning with Arm {
               cts.foreach { ct => splits.append(GpuPackedTableColumn.from(ct)) }
             }
         }
+        // synchronize our stream to ensure we have caught up with contiguous split
+        // as downstream consumers (RapidsShuffleManager) will add hundreds of buffers
+        // to the spill framework, this makes it so here we synchronize once.
+        Cuda.DEFAULT_STREAM.sync()
         splits.toArray
       }
     } else {

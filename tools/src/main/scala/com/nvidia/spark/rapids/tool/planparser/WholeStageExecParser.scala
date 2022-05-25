@@ -39,17 +39,20 @@ case class WholeStageExecParser(
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
     val stagesInNode = SQLPlanParser.getStagesInSQLNode(node, app)
 
-    val childNodeRes = node.nodes.flatMap { c =>
+    val childNodes = node.nodes.flatMap { c =>
       SQLPlanParser.parsePlanNode(c, sqlID, checker, app)
     }
     // if any of the execs in WholeStageCodegen supported mark this entire thing
     // as supported
-    val anySupported = childNodeRes.exists(_.isSupported == true)
+    val anySupported = childNodes.exists(_.isSupported == true)
     // average speedup across the execs in the WholeStageCodegen for now
-    val supportedChildren = childNodeRes.filterNot(_.shouldRemove)
+    val supportedChildren = childNodes.filterNot(_.shouldRemove)
     val avSpeedupFactor = SQLPlanParser.averageSpeedup(supportedChildren.map(_.speedupFactor))
-    val execInfo = ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
-      node.id, anySupported, Some(childNodeRes), stagesInNode)
+    // can't rely on the wholeStagecodeGen having a stage if children do so aggregate them together
+    // for now
+    val allStagesIncludingChildren = childNodes.flatMap(_.stages).toSet ++ stagesInNode.toSet
+    val execInfo = new ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
+      node.id, anySupported, Some(childNodes), allStagesIncludingChildren.toSeq)
     Seq(execInfo)
   }
 }

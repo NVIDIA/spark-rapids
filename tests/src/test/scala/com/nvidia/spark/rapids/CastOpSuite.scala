@@ -160,19 +160,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
 
-  test("Cast from string to date ANSI mode with valid values") {
-    testCastStringTo(DataTypes.DateType, Seq("2021-01-01", "2021-02-01"),
-      ansiMode = AnsiExpectSuccess)
-  }
-
-  test("Cast from string to date ANSI mode with invalid values") {
-    assumeSpark320orLater
-    // test the values individually
-    Seq("2021-20-60", "not numbers", "666666666").foreach { value =>
-      testCastStringTo(DataTypes.DateType, Seq(value), ansiMode = AnsiExpectFailure)
-    }
-  }
-
   test("Cast from string to timestamp") {
     testCastStringTo(DataTypes.TimestampType,
       timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
