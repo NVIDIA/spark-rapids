@@ -307,7 +307,9 @@ Yes
 
 ### Are the R APIs for Spark supported?
 
-Yes, but we don't actively test them.
+Yes, but we don't actively test them. It is because the RAPIDS Accelerator hooks into Spark not at 
+the various language APIs but at the Catalyst level after all the various APIs have converged into 
+the DataFrame API.
 
 ### Are the Java APIs for Spark supported?
 
@@ -409,6 +411,14 @@ translates these operations into GPU operations just like other query plan opera
 The Scala UDF byte-code analyzer is disabled by default and must be enabled by the user via the
 [`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
 setting.
+
+#### Optimize a row-based UDF in a GPU operation
+
+If the UDF can not be implemented by RAPIDS Accelerated UDFs or being automatically translated to
+Apache Spark operations, the RAPIDS Accelerator has an experimental feature to transfer only the
+data it needs between GPU and CPU inside a query operation, instead of falling this operation back 
+to CPU. This feature can be enabled by setting `spark.rapids.sql.rowBasedUDF.enabled` to true.
+
 
 ### Why is the size of my output Parquet/ORC file different?
 
