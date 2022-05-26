@@ -408,9 +408,6 @@ class QualificationAppInfo(
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       checkGraphNodeForReads(sqlID, node)
-      if (isDataSetOrRDDPlan(node.desc)) {
-        sqlIDToDataSetOrRDDCase += sqlID
-      }
       val issues = findPotentialIssues(node.desc)
       if (issues.nonEmpty) {
         val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
