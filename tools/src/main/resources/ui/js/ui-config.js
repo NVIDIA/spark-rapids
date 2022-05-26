@@ -71,7 +71,6 @@ let toolTipsValues = {
               "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>Estimated GPU Duration</sub>)",
             "nonSqlTaskDurationAndOverhead": "total duration of the app not involving SQL",
             "estimatedDuration": "Predicted runtime of the app if it was run on GPU",
-            "speedupDuration": "Duration of SQL operations that are supported on GPU. It is calculated as (\<em\>SQL Task Duration\<\/em\> - \<em\>Unsupported Task Duration\<\/em\>)",
             "unsupportedDuration": "An estimate total duration of SQL operations that are not supported on GPU",
             "sqlDFDuration": "Time duration that includes only SQL-Dataframe queries.",
             "gpuOpportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",

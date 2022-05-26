@@ -16,10 +16,6 @@
 
 /* global $, Mustache, formatDuration, jQuery, qualificationRecords, qualReportSummary */
 
-function resetCollapsableGrps(groupArr, flag) {
-  groupArr.forEach(grpElemnt => grpElemnt.collapsed = flag);
-}
-
 /*
  * HTML template used to render the application details in the collapsible
  * rows of the GPURecommendationTable.
@@ -81,10 +77,8 @@ function getExpandedAppDetails(rowData) {
   return tableContent ;
 }
 
-
 function formatAppGPURecommendation ( rowData) {
-  var text = Mustache.render(getExpandedAppDetails(rowData), rowData);
-  return text;
+  return Mustache.render(getExpandedAppDetails(rowData), rowData);
 }
 
 let definedDataTables = {};

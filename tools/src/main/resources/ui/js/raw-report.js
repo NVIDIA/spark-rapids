@@ -22,7 +22,6 @@ $(document).ready(function() {
   let sortColumnForGPURecommend = totalSpeedupColumnName
   let recommendGPUColName = "gpuRecommendation"
   let rawDataTableConf = {
-    responsive: true,
     paging: (attemptArray.length > defaultPageLength),
     pageLength: defaultPageLength,
     lengthMenu: defaultLengthMenu,
@@ -55,7 +54,6 @@ $(document).ready(function() {
         name: "startTime",
         data: "startTime",
         type: 'numeric',
-        className: "all",
         searchable: false,
         render: function (data, type, row) {
           if (type === 'display') {
@@ -173,12 +171,12 @@ $(document).ready(function() {
         },
       },
       {
-        name: 'unsupportedTaskDuration',
-        data: "unsupportedTaskDuration",
+        name: 'unsupportedSQLTaskDuration',
+        data: "unsupportedSQLTaskDuration",
         searchable: false,
         render: function (data, type, row) {
           if (type === 'display') {
-            return row.durationCollection.unsupportedDuration
+            return row.durationCollection.unsupportedSQLTaskDuration
           }
           return data;
         },
@@ -328,7 +326,7 @@ $(document).ready(function() {
     responsive: {
       details: {
         renderer: function ( api, rowIdx, columns ) {
-          var data = $.map( columns, function ( col, i ) {
+          let data = $.map( columns, function ( col, i ) {
             return col.hidden ?
               '<tr data-dt-row="'+col.rowIndex+'" data-dt-column="'+col.columnIndex+'">'+
               '<th scope=\"row\"><span data-toggle=\"tooltip\" data-placement=\"top\"' +
