@@ -36,7 +36,7 @@ object SparkShimImpl extends Spark330PlusShims {
         new SparkPlanMeta[GlobalLimitExec](globalLimit, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (globalLimit.offset != 0) {
-              willNotWorkOnGpu("non-zero offset is not support yet")
+              willNotWorkOnGpu("non-zero offset is not supported")
             }
           }
 
@@ -52,7 +52,7 @@ object SparkShimImpl extends Spark330PlusShims {
       (collectLimit, conf, p, r) => new GpuCollectLimitMeta(collectLimit, conf, p, r) {
         override def tagPlanForGpu(): Unit = {
           if (collectLimit.offset != 0) {
-            willNotWorkOnGpu("non-zero offset is not support yet")
+            willNotWorkOnGpu("non-zero offset is not supported")
           }
         }
 
