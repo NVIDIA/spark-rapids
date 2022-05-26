@@ -233,6 +233,14 @@ class RegexParser(pattern: String) {
                   RegexEscaped(ch)
                 case other => other
               }
+            case '&' => 
+              peek() match {
+                case Some('&') => 
+                  throw new RegexUnsupportedException("" +
+                    "cuDF does not support class intersection operator &&", Some(pos))
+                case _ => // ignore
+              }
+              RegexChar('&')
             case ch =>
               RegexChar(ch)
           }

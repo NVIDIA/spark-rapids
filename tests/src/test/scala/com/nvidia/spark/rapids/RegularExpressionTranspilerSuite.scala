@@ -150,6 +150,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support null characters in regular expressions"))
   }
 
+  test("cuDF does not support class intersection &&") {
+    val patterns = Seq("[a&&b]", "[&&1]")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support class intersection operator &&"))
+
+    assertCpuGpuMatchesRegexpReplace(Seq("a&&b", "[a&b&c]"), Seq("a&&b", "b&c"))
+  }
+
   test("cuDF does not support octal digits in character classes") {
     // see https://github.com/NVIDIA/spark-rapids/issues/4862
     val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
