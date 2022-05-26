@@ -788,7 +788,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
           }
         case _ =>
           // ignore
-        }
       }
     }
 
