@@ -81,6 +81,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support terms ending with line anchors on one side of a choice") {
+    val patterns = Seq(",\u000b\u000b$$|,\u000bz\f", "1|2$$", "a$\\Z|b", "a|b^^")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support terms ending with line anchors on one side of a choice")
+    )
+  }
+
   test("cuDF unsupported choice cases") {
     val input = Seq("cat", "dog")
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
