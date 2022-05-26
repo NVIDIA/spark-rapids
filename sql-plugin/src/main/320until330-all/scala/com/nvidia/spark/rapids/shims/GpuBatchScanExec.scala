@@ -37,11 +37,6 @@ case class GpuBatchScanExec(
     extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
-  scan match {
-    case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
-    case _ =>
-  }
-
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
     case other: GpuBatchScanExec =>
@@ -89,6 +84,11 @@ case class GpuBatchScanExec(
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   override lazy val inputRDD: RDD[InternalRow] = {
+    scan match {
+      case s: ScanWithMetrics => s.metrics = allMetrics
+      case _ =>
+    }
+
     if (filteredPartitions.isEmpty && outputPartitioning == SinglePartition) {
       // return an empty RDD with 1 partition if dynamic filtering removed the only split
       sparkContext.parallelize(Array.empty[InternalRow], 1)
