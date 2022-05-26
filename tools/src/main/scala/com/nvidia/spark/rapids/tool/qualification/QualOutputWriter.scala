@@ -420,6 +420,7 @@ object QualOutputWriter {
       stringIfempty(replaceDelimiter(appInfo.readFileFormatAndTypesNotSupported, delimiter))
     val dataWriteFormat = stringIfempty(replaceDelimiter(appInfo.writeDataFormat, delimiter))
     val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems, delimiter))
+    val failedSQLIds =  stringIfempty(replaceDelimiter(appInfo.failedSQLIds, delimiter))
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
@@ -428,7 +429,7 @@ object QualOutputWriter {
       appInfo.estimatedInfo.appDur.toString -> headersAndSizes(APP_DUR_STR),
       appInfo.estimatedInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
-      stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
+      failedSQLIds -> headersAndSizes(SQL_IDS_FAILURES_STR),
       readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
       dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
