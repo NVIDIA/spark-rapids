@@ -39,8 +39,7 @@ object ToolUtils extends Logging {
       0.toDouble
     } else {
       val res = (firstDec / totalDec) * 100
-      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
-      resScale.toDouble
+      formatDoubleValue(res, 2)
     }
   }
 
@@ -53,9 +52,26 @@ object ToolUtils extends Logging {
       0.toDouble
     } else {
       val res = (firstDec / sizeDec)
-      val resScale = res.setScale(places, BigDecimal.RoundingMode.HALF_UP)
-      resScale.toDouble
+      formatDoubleValue(res, places)
     }
+  }
+
+  def formatDoubleValue(bigValNum: BigDecimal, places: Int): Double = {
+    bigValNum.setScale(places, BigDecimal.RoundingMode.HALF_UP).toDouble
+  }
+
+  def formatDoublePrecision(valNum: Double): String = {
+    // Not that there is a performance trade-off by doing indirect formatting.
+    // However, this guarantees that string formatting and double values are consistent with each
+    // other.
+    f"${truncateDoubleToTwoDecimal(valNum)}%.2f"
+  }
+
+  def truncateDoubleToTwoDecimal(valNum: Double): Double = {
+    // Note that this method does not use ceiling or floor to prevent altering the classifications.
+    // For instance, altering the value of some fields will eventually change the classification of
+    // an application.
+    (math floor valNum * 100) / 100
   }
 }
 

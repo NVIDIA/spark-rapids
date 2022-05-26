@@ -29,7 +29,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
+import org.apache.spark.sql.rapids.tool.qualification.{QualificationAppInfo, QualificationSummaryInfo}
 import org.apache.spark.sql.types._
 
 // drop the fields that won't go to DataFrame without encoders
@@ -65,6 +65,35 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
+  private val csvDetailedFields = Seq(
+    ("App Name", StringType),
+    ("App ID", StringType),
+    ("Recommendation", StringType),
+    ("Estimated GPU Speedup", DoubleType),
+    ("Estimated GPU Duration", DoubleType),
+    ("Estimated GPU Time Saved", DoubleType),
+    ("SQL DF Duration", LongType),
+    ("SQL Dataframe Task Duration", LongType),
+    ("App Duration", LongType),
+    ("GPU Opportunity", LongType),
+    ("Executor CPU Time Percent", DoubleType),
+    ("SQL Ids with Failures", StringType),
+    ("Unsupported Read File Formats and Types", StringType),
+    ("Unsupported Write Data Format", StringType),
+    ("Complex Types", StringType),
+    ("Nested Complex Types", StringType),
+    ("Potential Problems", StringType),
+    ("Longest SQL Duration", LongType),
+    ("NONSQL Task Duration Plus Overhead", LongType),
+    ("Unsupported Task Duration", LongType),
+    ("Supported SQL DF Task Duration", LongType),
+    ("Task Speedup Factor", DoubleType),
+    ("App Duration Estimated", BooleanType))
+
+  val schema = new StructType(csvDetailedFields.map(f => StructField(f._1, f._2, true)).toArray)
+
+  def csvDetailedHeader(ind: Int) = csvDetailedFields(ind)._1
+
   override protected def beforeEach(): Unit = {
     TrampolineUtil.cleanupAnyExistingSession()
     sparkSession = SparkSession
@@ -73,32 +102,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .appName("Rapids Spark Profiling Tool Unit Tests")
       .getOrCreate()
   }
-
-  val schema = new StructType()
-    .add("App Name", StringType, true)
-    .add("App ID", StringType, true)
-    .add("Recommendation", StringType, true)
-    .add("Estimated GPU Speedup", DoubleType, true)
-    .add("Estimated GPU Duration", DoubleType, true)
-    .add("Estimated GPU Time Saved", DoubleType, true)
-    .add("SQL DF Duration", LongType, true)
-    .add("SQL Dataframe Task Duration", LongType, true)
-    .add("App Duration", LongType, true)
-    .add("GPU Opportunity", LongType, true)
-    .add("Executor CPU Time Percent", DoubleType, true)
-    .add("SQL Ids with Failures", StringType, true)
-    .add("Unsupported Read File Formats and Types", StringType, true)
-    .add("Unsupported Write Data Format", StringType, true)
-    .add("Complex Types", StringType, true)
-    .add("Nested Complex Types", StringType, true)
-    .add("Potential Problems", StringType, true)
-    .add("Longest SQL Duration", LongType, true)
-    .add("NONSQL Task Duration Plus Overhead", LongType, true)
-    .add("Unsupported Task Duration", LongType, true)
-    .add("Supported DF Task Duration", LongType, true)
-    .add("Speedup Factor", DoubleType, true)
-    .add("App Duration Estimated", BooleanType, true)
-
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -619,7 +622,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  // TODO - update the running qualification app once everything else done
   test("running qualification app join") {
     val qualApp = new RunningQualificationApp()
     ToolTestUtils.runAndCollect("streaming") { spark =>
@@ -660,10 +662,46 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val valuesDetailed = rowsDetailedOut(1).split(",")
     assert(headersDetailed.size == QualOutputWriter
       .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
-    assert(valuesDetailed.size == headersDetailed.size)
-    // 9 should be the Gpu Opportunity
-    assert(headersDetailed(9).contains("GPU Opportunity"))
-    assert(valuesDetailed(9).toDouble > 0)
+    assert(headersDetailed.size == csvDetailedFields.size)
+    assert(valuesDetailed.size == csvDetailedFields.size)
+    // check all headers exists
+    for (ind <- 0 until csvDetailedFields.size) {
+      assert(csvDetailedHeader(ind).equals(headersDetailed(ind)))
+    }
+    // check that recommendation field is relevant to GPU Speed-up
+    val estimatedFieldsIndStart = 2
+    if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        QualificationAppInfo.LOWER_BOUND_STRONGLY_RECOMMENDED) {
+      assert(
+        valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
+    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        QualificationAppInfo.LOWER_BOUND_RECOMMENDED) {
+      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
+    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0) {
+      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
+    } else {
+      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE))
+    }
+    // check numeric fields skipping "Estimated Speed-up" on purpose
+    for (ind <- estimatedFieldsIndStart + 2  until csvDetailedFields.size) {
+      if (csvDetailedFields(ind)._1.equals(DoubleType)
+        || csvDetailedFields(ind)._1.equals(LongType)) {
+        val numValue = valuesDetailed(ind).toDouble
+        if (headersDetailed(ind).equals(csvDetailedHeader(19))) {
+          // unsupported task duration can be 0
+          assert(numValue >= 0)
+        } else if (headersDetailed(ind).equals(csvDetailedHeader(10))) {
+          // cpu percentage 0-100
+          assert(numValue >= 0.0 && numValue <= 100.0)
+        } else if (headersDetailed(ind).equals(csvDetailedHeader(6)) ||
+          headersDetailed(ind).equals(csvDetailedHeader(9))) {
+          // "SQL DF Duration" and "GPU Opportunity" cannot be larger than App Duration
+          assert(numValue >= 0 && numValue <= valuesDetailed(8).toDouble)
+        } else {
+          assert(valuesDetailed(ind).toDouble > 0)
+        }
+      }
+    }
   }
 
   test("running qualification app files") {

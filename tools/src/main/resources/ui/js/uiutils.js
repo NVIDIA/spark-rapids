@@ -101,19 +101,10 @@ function trimLongFields(strData) {
   return strData;
 }
 
-/* define recommendation grouping */
-const recommendationRanges = {
-  "A": {low: 2.5, high: 10.0},
-  "B": {low: 1.3, high: 2.5},
-  "C": {low: 1.0, high: 1.3},
-  "D": {low: -1000.0, high: 1.0},
-}
-
 class GpuRecommendationCategory {
   constructor(id, relRate, printName, descr, displayClass, initCollapsed = false) {
     this.id = id;
     this.displayName = printName;
-    this.range = recommendationRanges[id];
     this.collapsed = initCollapsed;
     this.description = descr;
     this.rate = relRate;
@@ -149,7 +140,7 @@ let recommendationContainer = [
     "badge badge-pill badge-not-recommended"),
   new GpuRecommendationCategory("D", 2,
     "Not Applicable",
-    "[Not-Applicable]: The application has job failures.",
+    "[Not-Applicable]: The application has job or stage failures.",
     "badge badge-pill badge-not-applicable")
 ];
 
@@ -168,9 +159,6 @@ let sparkUsers = new Map();
 /* define constants for the tables configurations */
 let defaultPageLength = 20;
 let defaultLengthMenu = [[20, 40, 60, 100, -1], [20, 40, 60, 100, "All"]];
-
-// let appFieldAccCriterion = UIConfig.dataProcessing["gpuRecommendation.appColumn"];
-// let simulateRecommendationEnabled = UIConfig.dataProcessing["simulateRecommendation"];
 
 // bind the raw data top the GPU recommendations
 function setGPURecommendations(appsArray) {
