@@ -103,8 +103,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\r$", "\n$", "\r\n$", "\u0085$", "\u2028$", "\u2029$")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
-        "Regex sequences with a line terminator character followed by " +
-          "'$' are not supported in replace mode")
+        "End of line/string anchor is not supported in this context")
     )
   }
 
