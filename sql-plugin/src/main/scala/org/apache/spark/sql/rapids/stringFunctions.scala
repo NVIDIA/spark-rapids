@@ -835,6 +835,14 @@ object GpuRegExpUtils {
       meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
     }
+    sys.env.get("LANG") match {
+      case Some("en_US.UTF-8") =>
+        // supported
+      case _ => meta.willNotWorkOnGpu(
+        "regular expression support is disabled because environment variable 'LANG' " +
+          "is not set to 'en_US.UTF-8' and this would result in incorrect handling of " +
+          "Unicode data")
+    }
   }
 
 }

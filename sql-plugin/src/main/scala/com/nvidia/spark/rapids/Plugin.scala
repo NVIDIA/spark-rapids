@@ -137,7 +137,8 @@ object RapidsPluginUtils extends Logging {
           s"the RAPIDS Accelerator. Please disable the RAPIDS Accelerator or use a supported " +
           s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
-    // set driver timezone
+    // set driver language & timezone
+    conf.set(RapidsConf.DRIVER_LANG.key, sys.env.getOrElse("LANG", ""))
     conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
   }
 
@@ -209,6 +210,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
+
+      // Validate driver and executor LANG are the same
+      val executorLang = sys.env.get("LANG")
+      if (conf.driverLang != executorLang) {
+        throw new RuntimeException("Driver and executor LANG mismatch. " +
+          s"Driver LANG is ${conf.driverLang} and executor LANG is $executorLang.")
+      }
 
       // Validate driver and executor time zone are same if the driver time zone is supported by
       // the plugin.
