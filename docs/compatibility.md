@@ -587,6 +587,8 @@ Here are some examples of regular expression patterns that are not supported on 
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported by `regexp_replace`
+- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+  or more results
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Non-digit character class `\D`
 - Non-word character class `\W`
