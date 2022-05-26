@@ -736,7 +736,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexChar('\n') | RegexEscaped('n') => true
         case RegexChar('\u0085') | RegexChar('\u2028') | RegexChar('\u2029') => true
         case RegexEscaped('s') | RegexEscaped('v') | RegexEscaped('R') => true
-        case RegexEscaped('W') | RegexEscaped('D') =>
+        case RegexEscaped('W') | RegexEscaped('D') | RegexEscaped('S') | RegexEscaped('V') =>
           // these would get transpiled to negated character classes
           // that include newlines
           true
@@ -788,6 +788,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           }
         case _ =>
           // ignore
+        }
       }
     }
 
