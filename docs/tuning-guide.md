@@ -302,6 +302,9 @@ performance.
 - [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
 - [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)
 
+NOTE: If your data doesn't contain NaNs set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to get the 
+benefit of running on the GPU
+
 ## Metrics
 
 Custom Spark SQL Metrics are available which can help identify performance bottlenecks in a query.
