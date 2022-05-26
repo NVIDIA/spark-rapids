@@ -19,6 +19,8 @@ import java.sql.SQLException
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.RegexParser.toReadableString
+
 /**
  * Regular expression parser based on a Pratt Parser design.
  *
@@ -509,6 +511,21 @@ object RegexParser {
         true
     }
   }
+
+  def toReadableString(x: String): String = {
+    x.map {
+      case '\r' => "\\r"
+      case '\n' => "\\n"
+      case '\t' => "\\t"
+      case '\f' => "\\f"
+      case '\u000b' => "\\u000b"
+      case '\u0085' => "\\u0085"
+      case '\u2028' => "\\u2028"
+      case '\u2029' => "\\u2029"
+      case other => other
+    }.mkString
+  }
+
 }
 
 sealed trait RegexMode
@@ -718,6 +735,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexChar('\r') | RegexEscaped('r') => true
         case RegexChar('\n') | RegexEscaped('n') => true
         case RegexChar('\f') | RegexEscaped('f') => true
+        case RegexChar('\u0085') | RegexChar('\u2028') | RegexChar('\u2029') => true
         case RegexEscaped('s') | RegexEscaped('v') | RegexEscaped('R') => true
         case RegexEscaped('W') | RegexEscaped('D') =>
           // these would get transpiled to negated character classes
@@ -740,77 +758,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
       })
     }
 
-    //TODO copy and pasted from test suite - used in error messages for now
-    def toReadableString(x: String): String = {
-      x.map {
-        case '\r' => "\\r"
-        case '\n' => "\\n"
-        case '\t' => "\\t"
-        case '\f' => "\\f"
-        case '\u000b' => "\\u000b"
-        case '\u0085' => "\\u0085"
-        case '\u2028' => "\\u2028"
-        case '\u2029' => "\\u2029"
-        case other => other
-      }.mkString
-    }
-
-    // we allow a newline directly before or after a $ anchor but we do not
-    // cover the case where there is a newline within a more complex
-    // structure such as a character class or group
     def checkPair(r1: RegexAST, r2: RegexAST): Unit = {
-      if (isMaybeEndAnchor(r1)) {
-        val possibleUnsupportedNewline = r2 match {
-          case RegexChar('\r') | RegexEscaped('r') => false // direct newline is fine
-          case RegexChar('\n') | RegexEscaped('n') => false // "
-          case RegexChar('\f') | RegexEscaped('f') => false // "
-          //TODO other newlines
-          case _ => isMaybeNewline(r2)
-        }
-        if (possibleUnsupportedNewline) {
-          throw new RegexUnsupportedException(
-            s"End of line/string anchor is not supported in this context: " +
-              s"${toReadableString(r1.toRegexString)}" +
-              s"${toReadableString(r2.toRegexString)}")
-        }
-      }
-      if (isMaybeEndAnchor(r2)) {
-        val possibleUnsupportedNewline = r1 match {
-          case RegexChar('\r') | RegexEscaped('r') => false // direct newline is fine
-          case RegexChar('\n') | RegexEscaped('n') => false // "
-          case RegexChar('\f') | RegexEscaped('f') => false // "
-          //TODO other newlines
-          case _ => isMaybeNewline(r1)
-        }
-        if (possibleUnsupportedNewline) {
-          throw new RegexUnsupportedException(
-            s"End of line/string anchor is not supported in this context: " +
-              s"${toReadableString(r1.toRegexString)}" +
-              s"${toReadableString(r2.toRegexString)}")
-        }
+      if ((isMaybeEndAnchor(r1) &&
+          (isMaybeNewline(r2) || isMaybeEmpty(r2) || isMaybeBeginAnchor(r2))) ||
+        (isMaybeEndAnchor(r2) &&
+          (isMaybeNewline(r1) || isMaybeEmpty(r1) || isMaybeBeginAnchor(r1)))) {
+        throw new RegexUnsupportedException(
+          s"End of line/string anchor is not supported in this context: " +
+            s"${toReadableString(r1.toRegexString)}" +
+            s"${toReadableString(r2.toRegexString)}")
       }
     }
 
-    // we do not support the case where there is an empty quantifier
-    // or ^ anchor between a newline and a $ anchor
-    def checkTriplet(r1: RegexAST, r2: RegexAST, r3: RegexAST): Unit = {
-      if (isMaybeEmpty(r2) || isMaybeBeginAnchor(r2)) {
-        if (isMaybeEndAnchor(r1) && isMaybeNewline(r3)) {
-          throw new RegexUnsupportedException(
-            s"End of line/string anchor is not supported in this context: " +
-              s"${toReadableString(r1.toRegexString)}" +
-              s"${toReadableString(r2.toRegexString)}")
-        }
-        if (isMaybeEndAnchor(r3) && isMaybeNewline(r1)) {
-          throw new RegexUnsupportedException(
-            s"End of line/string anchor is not supported in this context: " +
-              s"${toReadableString(r1.toRegexString)}" +
-              s"${toReadableString(r2.toRegexString)}")
-        }
-      }
-    }
-
-    def checkEndAnchorNearNewline(regex: RegexAST): Unit = {
+    def checkUnsupported(regex: RegexAST): Unit = {
       regex match {
         case RegexSequence(parts) =>
           // check each pair of regex ast nodes for unsupported combinations
@@ -818,27 +778,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
           for (i <- 1 until parts.length) {
             checkPair(parts(i - 1), parts(i))
           }
-          for (i <- 2 until parts.length) {
-            checkTriplet(parts(i - 2), parts(i - 1), parts(i))
-          }
         case RegexChoice(l, r) =>
-          checkEndAnchorNearNewline(l)
-          checkEndAnchorNearNewline(r)
-        case RegexGroup(_, term) => checkEndAnchorNearNewline(term)
-        case RegexRepetition(ast, _) => checkEndAnchorNearNewline(ast)
+          checkUnsupported(l)
+          checkUnsupported(r)
+        case RegexGroup(_, term) => checkUnsupported(term)
+        case RegexRepetition(ast, _) => checkUnsupported(ast)
         case RegexCharacterClass(_, components) =>
           for (i <- 1 until components.length) {
             checkPair(components(i - 1), components(i))
-          }
-          for (i <- 2 until components.length) {
-            checkTriplet(components(i - 2), components(i - 1), components(i))
           }
         case _ =>
           // ignore
       }
     }
 
-    checkEndAnchorNearNewline(regex)
+    checkUnsupported(regex)
 
     rewrite(regex, replacement, previous)
   }
