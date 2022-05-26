@@ -734,7 +734,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
       contains(regex, {
         case RegexChar('\r') | RegexEscaped('r') => true
         case RegexChar('\n') | RegexEscaped('n') => true
-        case RegexChar('\f') | RegexEscaped('f') => true
         case RegexChar('\u0085') | RegexChar('\u2028') | RegexChar('\u2029') => true
         case RegexEscaped('s') | RegexEscaped('v') | RegexEscaped('R') => true
         case RegexEscaped('W') | RegexEscaped('D') =>
@@ -758,7 +757,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
       })
     }
 
-    def checkPair(r1: RegexAST, r2: RegexAST): Unit = {
+    // check a pair of regex ast nodes for unsupported combinations
+    // of end string/line anchors and newlines or optional items
+    def checkEndAnchorContext(r1: RegexAST, r2: RegexAST): Unit = {
       if ((containsEndAnchor(r1) &&
           (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
         (containsEndAnchor(r2) &&
@@ -773,10 +774,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
     def checkUnsupported(regex: RegexAST): Unit = {
       regex match {
         case RegexSequence(parts) =>
-          // check each pair of regex ast nodes for unsupported combinations
-          // of end string/line anchors and newlines or optional items
           for (i <- 1 until parts.length) {
-            checkPair(parts(i - 1), parts(i))
+            checkEndAnchorContext(parts(i - 1), parts(i))
           }
         case RegexChoice(l, r) =>
           checkUnsupported(l)
@@ -785,7 +784,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexRepetition(ast, _) => checkUnsupported(ast)
         case RegexCharacterClass(_, components) =>
           for (i <- 1 until components.length) {
-            checkPair(components(i - 1), components(i))
+            checkEndAnchorContext(components(i - 1), components(i))
           }
         case _ =>
           // ignore
