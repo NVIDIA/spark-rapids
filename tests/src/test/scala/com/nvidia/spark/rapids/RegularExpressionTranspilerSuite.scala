@@ -243,12 +243,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchor $ - find") {
-    val patterns = Seq("a$", "a$b")
+    val patterns = Seq("a$", "a$b", "\f$", "$\f")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
-    val unsupportedPatterns = Seq("[\r\n]?$", "$\r", "\r$", "\f$", "$\f",
+    val unsupportedPatterns = Seq("[\r\n]?$", "$\r", "\r$",
       "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$", "\\00*[D$3]$")
     for (pattern <- unsupportedPatterns) {
       assertUnsupported(pattern, RegexFindMode,
@@ -257,12 +257,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchor \\Z - find") {
-    val patterns = Seq("a\\Z", "a\\Zb", "a\\Z+")
+    val patterns = Seq("a\\Z", "a\\Zb", "a\\Z+", "\f\\Z", "\\Z\f")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
-    val unsupportedPatterns = Seq("[\r\n]?\\Z", "\\Z\r", "\r\\Z", "\f\\Z", "\\Z\f",
+    val unsupportedPatterns = Seq("[\r\n]?\\Z", "\\Z\r", "\r\\Z",
       "\u0085\\Z", "\u2028\\Z", "\u2029\\Z", "\n\\Z", "\r\n\\Z", "\\00*[D$3]\\Z")
     for (pattern <- unsupportedPatterns) {
       assertUnsupported(pattern, RegexFindMode,
