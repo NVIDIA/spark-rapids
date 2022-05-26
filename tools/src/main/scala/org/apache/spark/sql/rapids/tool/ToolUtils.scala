@@ -61,16 +61,11 @@ object ToolUtils extends Logging {
   }
 
   def formatDoublePrecision(valNum: Double): String = {
-    // Not that there is a performance trade-off by doing indirect formatting.
-    // However, this guarantees that string formatting and double values are consistent with each
-    // other.
-    f"${truncateDoubleToTwoDecimal(valNum)}%.2f"
+    truncateDoubleToTwoDecimal(valNum).toString
   }
 
   def truncateDoubleToTwoDecimal(valNum: Double): Double = {
-    // Note that this method does not use ceiling or floor to prevent altering the classifications.
-    // For instance, altering the value of some fields will eventually change the classification of
-    // an application.
+    // floor is applied after multiplying by 100. This keeps the number "as is" up-to two decimal.
     (math floor valNum * 100) / 100
   }
 }
