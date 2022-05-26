@@ -710,7 +710,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
-          println(s"javaPattern[$patternIndex]=${toReadableString(javaPattern)}, " +
+          fail(s"javaPattern[$patternIndex]=${toReadableString(javaPattern)}, " +
             s"cudfPattern=${toReadableString(cudfPattern)}, " +
             s"input='${toReadableString(input(i))}', " +
             s"cpu=${cpu(i)}, gpu=${gpu(i)}")
@@ -737,7 +737,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
-          println(s"javaPattern[$patternIndex]=${toReadableString(javaPattern)}, " +
+          fail(s"javaPattern[$patternIndex]=${toReadableString(javaPattern)}, " +
             s"cudfPattern=${toReadableString(cudfPattern)}, " +
             s"input='${toReadableString(input(i))}', " +
             s"cpu=${toReadableString(cpu(i))}, " +
