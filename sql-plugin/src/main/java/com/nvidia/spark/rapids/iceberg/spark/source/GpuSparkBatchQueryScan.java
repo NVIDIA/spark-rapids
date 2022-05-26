@@ -39,6 +39,7 @@ import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TableScan;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.expressions.Binder;
@@ -81,11 +82,71 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
 
   public static GpuSparkBatchQueryScan fromCpu(Scan cpuInstance, RapidsConf rapidsConf) throws IllegalAccessException {
     Table table = (Table) FieldUtils.readField(cpuInstance, "table", true);
-    TableScan scan = (TableScan) FieldUtils.readField(cpuInstance, "scan", true);
     SparkReadConf readConf = SparkReadConf.fromReflect(FieldUtils.readField(cpuInstance, "readConf", true));
     Schema expectedSchema = (Schema) FieldUtils.readField(cpuInstance, "expectedSchema", true);
     List<Expression> filters = (List<Expression>) FieldUtils.readField(cpuInstance, "filterExpressions", true);
+    TableScan scan;
+    try {
+      scan = (TableScan) FieldUtils.readField(cpuInstance, "scan", true);
+    } catch (IllegalArgumentException ignored) {
+      // No TableScan instance, so try to build one now
+      scan = buildScan(cpuInstance, table, readConf, expectedSchema, filters);
+    }
     return new GpuSparkBatchQueryScan(SparkSession.active(), table, scan, readConf, expectedSchema, filters, rapidsConf);
+  }
+
+  // Try to build an Iceberg TableScan when one was not found in the CPU instance
+  private static TableScan buildScan(Scan cpuInstance,
+                                     Table table,
+                                     SparkReadConf readConf,
+                                     Schema expectedSchema,
+                                     List<Expression> filterExpressions) throws IllegalAccessException {
+    Long snapshotId = (Long) FieldUtils.readField(cpuInstance, "snapshotId", true);
+    Long startSnapshotId = (Long) FieldUtils.readField(cpuInstance, "startSnapshotId", true);
+    Long endSnapshotId = (Long) FieldUtils.readField(cpuInstance, "endSnapshotId", true);
+    Long asOfTimestamp = (Long) FieldUtils.readField(cpuInstance, "asOfTimestamp", true);
+    Long splitSize = (Long) FieldUtils.readField(cpuInstance, "splitSize", true);
+    Integer splitLookback = (Integer) FieldUtils.readField(cpuInstance, "splitLookback", true);
+    Long splitOpenFileCost = (Long) FieldUtils.readField(cpuInstance, "splitOpenFileCost", true);
+
+    TableScan scan = table
+        .newScan()
+        .caseSensitive(readConf.caseSensitive())
+        .project(expectedSchema);
+
+    if (snapshotId != null) {
+      scan = scan.useSnapshot(snapshotId);
+    }
+
+    if (asOfTimestamp != null) {
+      scan = scan.asOfTime(asOfTimestamp);
+    }
+
+    if (startSnapshotId != null) {
+      if (endSnapshotId != null) {
+        scan = scan.appendsBetween(startSnapshotId, endSnapshotId);
+      } else {
+        scan = scan.appendsAfter(startSnapshotId);
+      }
+    }
+
+    if (splitSize != null) {
+      scan = scan.option(TableProperties.SPLIT_SIZE, splitSize.toString());
+    }
+
+    if (splitLookback != null) {
+      scan = scan.option(TableProperties.SPLIT_LOOKBACK, splitLookback.toString());
+    }
+
+    if (splitOpenFileCost != null) {
+      scan = scan.option(TableProperties.SPLIT_OPEN_FILE_COST, splitOpenFileCost.toString());
+    }
+
+    for (Expression filter : filterExpressions) {
+      scan = scan.filter(filter);
+    }
+
+    return scan;
   }
 
   GpuSparkBatchQueryScan(SparkSession spark, Table table, TableScan scan, SparkReadConf readConf,

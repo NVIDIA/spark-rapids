@@ -53,7 +53,7 @@ public class SparkReadConf {
   private final SparkConfParser confParser;
 
   public static SparkReadConf fromReflect(Object obj) throws IllegalAccessException {
-    SparkSession spark = (SparkSession) FieldUtils.readField(obj, "spark", true);
+    SparkSession spark = SparkSession.active();
     Table table = (Table) FieldUtils.readField(obj, "table", true);
     Map<String, String> readOptions = (Map<String, String>) FieldUtils.readField(obj, "readOptions", true);
     return new SparkReadConf(spark, table, readOptions);
