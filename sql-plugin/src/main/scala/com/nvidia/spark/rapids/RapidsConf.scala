@@ -1404,14 +1404,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val FORCE_SHIMCALLER_CLASSLOADER = conf("spark.rapids.force.caller.classloader")
-    .doc("Option to statically add shim's parallel world classloader URLs to " +
-      "the classloader of the ShimLoader class, typically Bootstrap classloader. This option" +
-      " uses reflection with setAccessible true on a classloader that is not created by Spark.")
-    .internal()
-    .booleanConf
-    .createWithDefault(value = true)
-
   val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
     .doc("The name of the Spark resource that represents a GPU that you want the plugin to use " +
       "if using custom resources with Spark.")

@@ -105,10 +105,6 @@ You can build against different versions of the CUDA Toolkit by using qone of th
 We support JDK8 as our main JDK version. However, it's possible to build and run with more modern
 JDK versions as well. To this end set `JAVA_HOME` in the environment to your JDK root directory.
 
-With JDK9+, you need to disable the default classloader manipulation option and set
-spark.rapids.force.caller.classloader=false in your Spark application configuration. There are, however,
-known issues with it, e.g. see #5513.
-
 At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
 a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
 

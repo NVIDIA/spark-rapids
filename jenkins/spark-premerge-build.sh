@@ -73,14 +73,6 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
-
-    # non-caller classloader smoke test in pseudo-distributed
-    # standalone cluster
-    echo "Running test_cartesian_join_special_case_count with spark.rapids.force.caller.classloader=false"
-    PYSP_TEST_spark_rapids_force_caller_classloader=false \
-        NUM_LOCAL_EXECS=1 \
-        TEST_PARALLEL=0 \
-        ./integration_tests/run_pyspark_from_build.sh -k 'test_cartesian_join_special_case_count[100]'
 }
 
 rapids_shuffle_smoke_test() {

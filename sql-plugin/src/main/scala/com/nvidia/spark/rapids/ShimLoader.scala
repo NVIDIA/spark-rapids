@@ -21,7 +21,7 @@ import java.net.URL
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
@@ -30,6 +30,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
+import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.util.MutableURLClassLoader
 
 /*
@@ -127,52 +128,6 @@ object ShimLoader extends Logging {
     s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
   }
 
-  private def serializerClassloader(): Option[ClassLoader] = {
-    // Hypothesis: serializer is the most universal way to intercept classloaders
-
-    // https://github.com/apache/spark/blob/master/core/src/main/scala/
-    // org/apache/spark/serializer/JavaSerializer.scala#L147
-
-    // https://github.com/apache/spark/blob/master/core/src/main/scala/
-    // org/apache/spark/serializer/KryoSerializer.scala#L134
-
-    Option(SparkEnv.get)
-      .flatMap {
-        case env if !env.conf.get("spark.rapids.force.caller.classloader",
-          true.toString).toBoolean => Option(env.serializer)
-        case _ if (conventionalSingleShimJarDetected) => None
-        case _ =>
-          logInfo("Forcing shim caller classloader update (default behavior). " +
-            "If it causes issues with userClassPathFirst, set " +
-            "spark.rapids.force.caller.classloader to false!")
-          None
-      }
-      .flatMap { serializer =>
-        logInfo("Looking for a mutable classloader (defaultClassLoader) in SparkEnv.serializer " +
-          serializer)
-        // scalac generates accessor methods
-        val serdeClassLoader = MethodUtils
-          .invokeMethod(serializer, true, "defaultClassLoader")
-          .asInstanceOf[Option[ClassLoader]]
-          .getOrElse {
-            val threadContextClassLoader = Thread.currentThread().getContextClassLoader
-            logInfo(s"No defaultClassLoader found in $serializer, falling back " +
-              s"on Thread context classloader: " + threadContextClassLoader)
-            threadContextClassLoader
-          }
-
-        logInfo("Extracted Spark classloader from SparkEnv.serializer " + serdeClassLoader)
-        findURLClassLoader(serdeClassLoader)
-      }.orElse {
-        val shimLoaderCallerCl = getClass.getClassLoader
-        if (!conventionalSingleShimJarDetected) {
-          logInfo("Falling back on ShimLoader caller's classloader " + shimLoaderCallerCl)
-        }
-        Option(shimLoaderCallerCl)
-      }
-  }
-
-
   @tailrec
   private def findURLClassLoader(classLoader: ClassLoader): Option[ClassLoader] = {
     // walk up the classloader hierarchy until we hit a classloader we can mutate
@@ -212,23 +167,12 @@ object ShimLoader extends Logging {
   }
 
   private def updateSparkClassLoader(): Unit = {
-    // TODO propose a proper addClassPathURL API to Spark similar to addJar but
-    //  accepting non-file-based URI
-    serializerClassloader().foreach { urlAddable =>
+    findURLClassLoader(UnshimmedTrampolineUtil.sparkClassLoader).foreach { urlAddable =>
       urlsForSparkClassLoader.foreach { url =>
         if (!conventionalSingleShimJarDetected) {
           logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
             urlsForSparkClassLoader.mkString(", "))
-          Try(MethodUtils.invokeMethod(urlAddable, true, "addURL", url))
-            .recoverWith {
-              case nsm: NoSuchMethodException =>
-                logWarning("JDK8+ detected, consider setting " +
-                  "spark.rapids.force.caller.classloader to false as a workaround")
-                logDebug(s"JDK8+ detected by catching ${nsm}", nsm)
-                Success(Unit)
-              case t => Failure(t)
-            }.get
-
+          MethodUtils.invokeMethod(urlAddable, true, "addURL", url)
           logInfo(s"Spark classLoader $urlAddable updated successfully")
           urlAddable match {
             case urlCl: java.net.URLClassLoader =>
@@ -238,7 +182,7 @@ object ShimLoader extends Logging {
                   s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
                   s"parent classloader ${urlCl.getParent}")
               }
-            case _ => ()
+            case _ => Unit
           }
         }
       }
