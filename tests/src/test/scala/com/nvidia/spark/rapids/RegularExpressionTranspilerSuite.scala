@@ -158,6 +158,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support null characters in regular expressions"))
   }
 
+  test("cuDF does not support class intersection &&") {
+    val patterns = Seq("[a&&b]", "[&&1]")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support class intersection operator &&"))
+
+    assertCpuGpuMatchesRegexpReplace(Seq("a&&b", "[a&b&c]"), Seq("a&&b", "b&c"))
+  }
+
   test("octal digits - find") {
     val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772", raw"\0200", 
       raw"\0376", raw"\0377", raw"\02002")
