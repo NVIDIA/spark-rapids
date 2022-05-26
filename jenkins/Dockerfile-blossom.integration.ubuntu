@@ -60,3 +60,7 @@ RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     conda clean -ay
 
 RUN apt install -y inetutils-ping expect
+
+# install locale and generate UTF-8, but don't set it as default, the test cases should specify it somehow
+RUN apt-get install -y locales
+RUN locale-gen en_US.UTF-8
