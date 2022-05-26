@@ -37,6 +37,6 @@ case class CustomShuffleReaderExecParser(
     } else {
       (1.0, false)
     }
-    ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    new ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
   }
 }

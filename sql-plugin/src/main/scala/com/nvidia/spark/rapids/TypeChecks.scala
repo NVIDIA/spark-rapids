@@ -2222,7 +2222,13 @@ object SupportedOpsForTools {
       ("FilterExec", "2.4"),
       ("HashAggregateExec", "3.4"),
       ("SortExec", "6.0"),
-      ("SortMergeJoinExec", "14.9"))
+      ("SortMergeJoinExec", "14.9"),
+      ("ArrowEvalPythonExec", "1.2"),
+      ("AggregateInPandasExec", "1.2"),
+      ("FlatMapGroupsInPandasExec", "1.2"),
+      ("MapInPandasExec", "1.2"),
+      ("WindowInPandasExec", "1.2")
+    )
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
       if (rule.isVisible && checks.forall(_.shown)) {

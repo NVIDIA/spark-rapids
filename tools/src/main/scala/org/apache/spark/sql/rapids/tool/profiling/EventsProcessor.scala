@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.spark.TaskFailedReason
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.execution.ui.{SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
+import org.apache.spark.sql.execution.ui.{SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionStart}
 import org.apache.spark.sql.rapids.tool.EventProcessorBase
 
 /**
@@ -242,30 +242,9 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
   override def doSparkListenerSQLExecutionStart(
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    val sqlExecution = new SQLExecutionInfoClass(
-      event.executionId,
-      event.description,
-      event.details,
-      event.time,
-      None,
-      None,
-      hasDatasetOrRDD = false,
-      ""
-    )
-    app.sqlIdToInfo.put(event.executionId, sqlExecution)
+    super.doSparkListenerSQLExecutionStart(app, event)
     app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
-  }
-
-  override def doSparkListenerSQLExecutionEnd(
-      app: ApplicationInfo,
-      event: SparkListenerSQLExecutionEnd): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    app.sqlIdToInfo.get(event.executionId).foreach { sql =>
-      sql.endTime = Some(event.time)
-      sql.duration = ProfileUtils.OptionLongMinusLong(sql.endTime, sql.startTime)
-    }
   }
 
   override def doSparkListenerStageCompleted(
