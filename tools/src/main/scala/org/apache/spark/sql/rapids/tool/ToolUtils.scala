@@ -66,7 +66,7 @@ object ToolUtils extends Logging {
 
   def truncateDoubleToTwoDecimal(valNum: Double): Double = {
     // floor is applied after multiplying by 100. This keeps the number "as is" up-to two decimal.
-    (math floor valNum * 100) / 100
+    math.floor(valNum * 100) / 100
   }
 }
 

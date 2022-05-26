@@ -541,6 +541,9 @@ object QualificationAppInfo extends Logging {
     val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
     val recommendation = getRecommendation(estimated_gpu_speedup, hasFailures)
 
+    // truncate the double fields to double precision to ensure that unit-tests do not explicitly
+    // set the format to match the output. Removing the truncation from here requires modifying
+    // TestQualificationSummary to truncate the same fields to match the CSV static samples.
     EstimatedSummaryInfo(appName, appId, appDuration,
       sqlDataFrameDurationToUse,
       speedupOpportunityWallClock.toLong,
