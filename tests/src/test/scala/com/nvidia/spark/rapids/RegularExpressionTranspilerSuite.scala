@@ -319,9 +319,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assert(transpiled === expected)
   }
 
-  // TODO
   // this was a test for transpiling but we did not ever try to run the
   // resulting regex to see if it produced valid results
+  // see https://github.com/NVIDIA/spark-rapids/issues/5656
   ignore("transpile complex regex 2") {
     val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
