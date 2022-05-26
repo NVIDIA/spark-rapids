@@ -243,7 +243,6 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.sql.explain                   |null      |NOT_ON_GPU|
 |spark.rapids.sql.hasNans                   |null      |FALSE     |
 |spark.rapids.sql.incompatibleOps.enabled   |null      |true      |
-|spark.rapids.sql.variableFloatAgg.enabled  |null      |TRUE      |
 +-------------------------------------------+----------+----------+
 ```
  
