@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.iceberg.spark.source;
 import java.util.List;
 import java.util.Objects;
 
-import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.CombinedScanTask;
@@ -47,13 +46,11 @@ public class SparkBatch implements Batch {
   private final boolean caseSensitive;
   private final boolean localityEnabled;
   private final RapidsConf rapidsConf;
-  private final scala.collection.immutable.Map<String, GpuMetric> metrics;
   private final GpuSparkScan parentScan;
 
   SparkBatch(JavaSparkContext sparkContext, Table table, SparkReadConf readConf,
              List<CombinedScanTask> tasks, Schema expectedSchema,
              RapidsConf rapidsConf,
-             scala.collection.immutable.Map<String, GpuMetric> metrics,
              GpuSparkScan parentScan) {
     this.sparkContext = sparkContext;
     this.table = table;
@@ -63,7 +60,6 @@ public class SparkBatch implements Batch {
     this.caseSensitive = readConf.caseSensitive();
     this.localityEnabled = readConf.localityEnabled();
     this.rapidsConf = rapidsConf;
-    this.metrics = metrics;
     this.parentScan = parentScan;
   }
 
@@ -83,7 +79,7 @@ public class SparkBatch implements Batch {
         .run(index -> readTasks[index] = new GpuSparkScan.ReadTask(
             tasks.get(index), tableBroadcast, expectedSchemaString,
             caseSensitive, localityEnabled, rapidsConf, confBroadcast,
-            metrics));
+            parentScan.metrics()));
 
     return readTasks;
   }
