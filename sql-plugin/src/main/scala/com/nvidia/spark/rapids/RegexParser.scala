@@ -716,21 +716,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
       previous: Option[RegexAST]): RegexAST = {
 
-    def isMaybeBeginAnchor(regex: RegexAST): Boolean = {
+    def containsBeginAnchor(regex: RegexAST): Boolean = {
       contains(regex, {
         case RegexChar('^') | RegexEscaped('A') => true
         case _ => false
       })
     }
 
-    def isMaybeEndAnchor(regex: RegexAST): Boolean = {
+    def containsEndAnchor(regex: RegexAST): Boolean = {
       contains(regex, {
         case RegexChar('$') | RegexEscaped('z') | RegexEscaped('Z') => true
         case _ => false
       })
     }
 
-    def isMaybeNewline(regex: RegexAST): Boolean = {
+    def containsNewline(regex: RegexAST): Boolean = {
       contains(regex, {
         case RegexChar('\r') | RegexEscaped('r') => true
         case RegexChar('\n') | RegexEscaped('n') => true
@@ -746,7 +746,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       })
     }
 
-    def isMaybeEmpty(regex: RegexAST): Boolean = {
+    def containsEmpty(regex: RegexAST): Boolean = {
       contains(regex, {
         case RegexRepetition(_, term) => term match {
           case SimpleQuantifier('*') | SimpleQuantifier('?') => true
@@ -759,10 +759,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
 
     def checkPair(r1: RegexAST, r2: RegexAST): Unit = {
-      if ((isMaybeEndAnchor(r1) &&
-          (isMaybeNewline(r2) || isMaybeEmpty(r2) || isMaybeBeginAnchor(r2))) ||
-        (isMaybeEndAnchor(r2) &&
-          (isMaybeNewline(r1) || isMaybeEmpty(r1) || isMaybeBeginAnchor(r1)))) {
+      if ((containsEndAnchor(r1) &&
+          (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
+        (containsEndAnchor(r2) &&
+          (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
         throw new RegexUnsupportedException(
           s"End of line/string anchor is not supported in this context: " +
             s"${toReadableString(r1.toRegexString)}" +
