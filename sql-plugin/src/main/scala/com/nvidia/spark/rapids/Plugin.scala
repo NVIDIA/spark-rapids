@@ -212,10 +212,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       checkCudfVersion(conf)
 
       // Validate driver and executor LANG are the same
-      val executorLang = sys.env.get("LANG")
-      if (conf.driverLang != executorLang) {
+      // Note that driverLang is never set to None and defaults to empty string when set
+      val driverLang = conf.driverLang.getOrElse("")
+      val executorLang = sys.env.getOrElse("LANG", "")
+      if (driverLang != executorLang) {
         throw new RuntimeException("Driver and executor LANG mismatch. " +
-          s"Driver LANG is ${conf.driverLang} and executor LANG is $executorLang.")
+          s"Driver LANG is ${driverLang} and executor LANG is $executorLang.")
       }
 
       // Validate driver and executor time zone are same if the driver time zone is supported by
