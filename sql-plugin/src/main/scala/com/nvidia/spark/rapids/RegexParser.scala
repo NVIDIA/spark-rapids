@@ -1069,13 +1069,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
                   case RegexEscaped('B') if mode == RegexReplaceMode =>
-                    r(j) = RegexSequence(
-                      ListBuffer(
-                      RegexEscaped('B'),
-                      RegexRepetition(lineTerminatorMatcher(
-                        Set.empty, false, mode == RegexReplaceMode), SimpleQuantifier('?')), 
-                      RegexChar('$')))
-                    popBackrefIfNecessary(false)
+                    throw new RegexUnsupportedException(
+                      "regex sequence $\\B is not supported in replace mode")
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
