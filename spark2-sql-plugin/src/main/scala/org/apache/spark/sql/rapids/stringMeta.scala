@@ -39,7 +39,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString))
+            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString, None)._1)
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -63,6 +63,12 @@ class GpuRegExpExtractMeta(
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
 
+    ShimLoader.getShimVersion match {
+      case _: DatabricksShimVersion if expr.subject.isInstanceOf[InputFileName] =>
+        willNotWorkOnGpu("avoiding Databricks Delta problem with regexp extract")
+      case _ =>
+    }
+
     def countGroups(regexp: RegexAST): Int = {
       regexp match {
         case RegexGroup(_, term) => 1 + countGroups(term)
@@ -75,9 +81,8 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val cudfRegexPattern = new CudfRegexTranspiler(RegexFindMode)
-            .transpile(javaRegexpPattern)
-          pattern = Some(cudfRegexPattern)
+          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
+            .transpile(javaRegexpPattern, None)._1)
           numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
         } catch {
           case e: RegexUnsupportedException =>
