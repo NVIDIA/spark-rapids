@@ -166,7 +166,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="card-body ">
+                <div class="card-body">
                   <div id="gpu-recommendation-card">
                     <table id="gpu-recommendation-table" class="table display" style="width:100%">
                       <thead>
@@ -231,7 +231,7 @@
               </svg>
             </div>
             <div class="stats-data">
-              <div class="stats-number"> {{candidates.numeric}}</div>
+              <div class="stats-number"> {{candidates.numeric}} </div>
               <div class="stats-change">
                 <span class="stats-percentage"> {{candidates.statsPercentage}} </span>
                 <span class="stats-timeframe"> {{candidates.statsTimeFrame}} </span>
@@ -246,11 +246,19 @@
           <div class="stats-content">
             <div class="stats-icon">
               <svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.5 7.50001L8.5 4.50001M6 10L3.5 12.5M7.74264 5.25736L3.5 9.50001L6.5 12.5L10.7426 8.25737C12.0432 6.95682 13 5.00005 12.5 3.50001C11 3.00005 9.04319 3.95682 7.74264 5.25736ZM2.5 8.50001L1.5 9.50001L2.5 10.5L4.5 8.50001H2.5ZM7.5 13.5L6.5 14.5L5.5 13.5L7.5 11.5V13.5Z" stroke="white"/>
+                <g clip-path="url(#clip0_2_1921)">
+                  <path d="M8.5 7.99V8L2.5 11.5V4.5L8.5 7.99Z" stroke="white"/>
+                  <path d="M14.5 8L8.5 11.5V4.5L14.5 8Z" stroke="white"/>
+                </g>
+                <defs>
+                  <clipPath id="clip0_2_1921">
+                    <rect width="1.05em" height="1.05em" fill="white"/>
+                  </clipPath>
+                </defs>
               </svg>
             </div>
             <div class="stats-data">
-              <div class="stats-number"> {{speedups.numeric}}</div>
+              <div class="stats-number"> {{speedups.numeric}} </div>
               <div class="stats-change">
                 <span class="stats-percentage"> {{speedups.totalSqlDataframeTaskDuration}} </span>
                 <span class="stats-timeframe"> {{speedups.totalSqlDFDurationsLabel}} </span>
@@ -262,41 +270,6 @@
             </div>
           </div>
         </div>
-      </div>
-      {{#config.showTLCSummary}}
-      <div class="col-xl-3">
-        <div class="stats stats-danger">
-          <h3 class="stats-title"> {{tlc.header}} </h3>
-          <div class="stats-content">
-            <div class="stats-icon">
-              <i class="fas fa-hand-holding-heart"></i>
-            </div>
-            <div class="stats-data">
-              <div class="stats-number"> {{tlc.numeric}}</div>
-              <span class="stats-percentage"> {{tlc.statsPercentage}} </span>
-              <span class="stats-timeframe"> {{tlc.statsTimeFrame}} </span>
-            </div>
-          </div>
-        </div>
-      </div>
-      {{/config.showTLCSummary}}
-    </div>
-  </script>
-
-  <script id="qual-report-runtime-information-template" type="text/template">
-    <table class="table compact dataTable style=padding-left:50px;">
-      <tr>
-        <td>Property1:</td>
-        <td>Value1</td>
-      </tr>
-      <tr>
-        <td>Property2:</td>
-        <td>Value2</td>
-      </tr>
-    </table>
-    <div class="row dash-row">
-      <div class="col-xl-3">
-        <div class="alert alert-primary" role="alert"> A simple primary alert—check it out!</div>
       </div>
     </div>
   </script>

@@ -16,10 +16,16 @@
 
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.ColumnView
+import ai.rapids.cudf.{ColumnVector, ColumnView}
 
-object AnsiCheckUtil {
-  def checkAnsiCastFloatToTimestamp(input: ColumnView): Unit = {
-    // noop
+import org.apache.spark.sql.types.DataType
+
+object AnsiUtil {
+
+  // Spark 330+ supports Ansi cast from float/double to timestamp
+  def supportsAnsiCastFloatToTimestamp(): Boolean = false
+
+  def castFloatToTimestampAnsi(floatInput: ColumnView, toType: DataType): ColumnVector = {
+    throw new IllegalArgumentException("Unsupported operation in this Shim")
   }
 }
