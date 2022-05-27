@@ -299,6 +299,26 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_orc_read_multiple_schema(spark_tmp_path, v1_enabled_list, reader_confs):
+    first_gen_list = [('a', int_gen), ('b', int_gen)]
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
+    with_cpu_session(
+        lambda spark: gen_df(spark, first_gen_list, num_slices=10).write.orc(first_data_path))
+    second_gen_list = [('a', int_gen), ('b', int_gen), ('c', int_gen)]
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1'
+    with_cpu_session(
+        lambda spark: gen_df(spark, second_gen_list, num_slices=10).write.orc(second_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    read_schema = StructType([StructField("a", IntegerType()),
+                              StructField("b", IntegerType()),
+                              StructField("c", IntegerType())])
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).orc(data_path),
+        conf=all_confs)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
     with_cpu_session(
