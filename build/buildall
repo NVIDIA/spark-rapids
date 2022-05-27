@@ -160,6 +160,7 @@ case $DIST_PROFILE in
       321
       322
       330
+      340
     )
     ;;
 

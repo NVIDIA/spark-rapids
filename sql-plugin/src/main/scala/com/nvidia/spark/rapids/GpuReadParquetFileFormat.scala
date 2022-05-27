@@ -52,7 +52,8 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       partitionSchema,
       filters.toArray,
       new RapidsConf(sqlConf),
-      metrics)
+      metrics,
+      options)
     PartitionReaderIterator.buildReader(factory)
   }
 }
