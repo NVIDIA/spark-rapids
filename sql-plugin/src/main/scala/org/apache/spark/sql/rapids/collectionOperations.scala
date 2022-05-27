@@ -21,7 +21,7 @@ import java.util.Optional
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByAggregation, GroupByOptions, Scalar, SegmentedReductionAggregation, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
@@ -78,6 +78,57 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
       }
       // run list concatenate
       GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(buffer: _*), dataType)
+    }
+  }
+}
+
+case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
+
+  override lazy val hasSideEffects: Boolean =
+    GpuCreateMap.exceptionOnDupKeys || super.hasSideEffects
+
+  @transient override lazy val dataType: MapType = {
+    if (children.isEmpty) {
+      MapType(StringType, StringType)
+    } else {
+      super.dataType.asInstanceOf[MapType]
+    }
+  }
+
+  override def nullable: Boolean = children.exists(_.nullable)
+
+  override def columnarEval(batch: ColumnarBatch): Any = (dataType, children.length) match {
+    // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
+    case (dt, 0) => GpuColumnVector.fromNull(batch.numRows(), dt)
+    // For single column concat, we pass the result of child node to avoid extra cuDF call.
+    case (_, 1) => children.head.columnarEval(batch)
+    case (dt, _) => {
+      val cols = children.safeMap(columnarEvalToColumn(_, batch))
+      // concatenate keys and values
+      val (key_list, value_list) = withResource(cols) { cols =>
+        withResource(ArrayBuffer[ColumnView]()) { keys => 
+          withResource(ArrayBuffer[ColumnView]()) { values =>
+            cols.foreach{ col =>
+              keys.append(GpuMapUtils.getKeysAsListView(col.getBase))
+              values.append(GpuMapUtils.getValuesAsListView(col.getBase))
+            }    
+            closeOnExcept(ColumnVector.listConcatenateByRow(keys: _*)) {key_list =>
+              (key_list, ColumnVector.listConcatenateByRow(values: _*))
+            }
+          }
+        }
+      }
+      // build map column from concatenated keys and values
+      withResource(Seq(key_list, value_list)) { case Seq(keys, values) =>
+        withResource(Seq(keys.getChildColumnView(0), values.getChildColumnView(0))) { 
+          case Seq(k_child, v_chlid) =>
+            withResource(ColumnView.makeStructView(k_child, v_chlid)) {structs =>
+              withResource(keys.replaceListChild(structs)) { struct_list =>
+                GpuCreateMap.createMapFromKeysValuesAsStructs(dt, struct_list)
+              }
+            }
+        }
+      }
     }
   }
 }
@@ -395,56 +446,6 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
   }
 }
 
-// TODO switch over to array aggregations once
-//  https://github.com/rapidsai/cudf/issues/10417 is done
-object SlowGpuArrayAgg extends Arm{
-  def reallySlow(input: GpuColumnVector, agg: GroupByAggregation): cudf.ColumnVector = {
-    val baseInput = input.getBase
-    val inputTab = withResource(Scalar.fromInt(0)) { zero =>
-      withResource(cudf.ColumnVector.sequence(zero, input.getRowCount.toInt)) { rowNums =>
-        new cudf.Table(rowNums, baseInput)
-      }
-    }
-
-    val explodedTab = withResource(inputTab) { inputTab =>
-      inputTab.explodeOuter(1)
-    }
-
-    val retTab = withResource(explodedTab) { explodedTab =>
-      explodedTab.groupBy(GroupByOptions.builder()
-          .withKeysSorted(true)
-          .withIgnoreNullKeys(true)
-          .build(), 0)
-          .aggregate(agg.onColumn(1))
-    }
-
-    withResource(retTab) { retTab =>
-      assert(retTab.getRowCount == baseInput.getRowCount)
-      retTab.getColumn(1).incRefCount()
-    }
-  }
-
-  def bitCastDecimal(
-      input: GpuColumnVector,
-      agg: SegmentedReductionAggregation,
-      tmpType: DType,
-      resultType: DType): cudf.ColumnVector = {
-    val base = input.getBase
-    val tmpResult = withResource(base.getChildColumnView(0)) { dataCol =>
-      withResource(dataCol.bitCastTo(tmpType)) { castDataCol =>
-        withResource(base.replaceListChild(castDataCol)) { bitCastInput =>
-          bitCastInput.listReduce(agg)
-        }
-      }
-    }
-    withResource(tmpResult) { tmpResult =>
-      withResource(tmpResult.bitCastTo(resultType)) { bitCastResult =>
-        bitCastResult.copyToColumnVector()
-      }
-    }
-  }
-}
-
 case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
 
   override def nullable: Boolean = true
@@ -459,22 +460,7 @@ case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with Implic
   override def prettyName: String = "array_min"
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
-    dataType match {
-      case StringType =>
-        SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.min())
-      case dt: DecimalType =>
-        if (dt.precision > Decimal.MAX_LONG_DIGITS) {
-          SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.min())
-        } else if (dt.precision > Decimal.MAX_INT_DIGITS) {
-          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.min(),
-            DType.INT64, GpuColumnVector.getNonNestedRapidsType(dataType))
-        } else {
-          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.min(),
-            DType.INT32, GpuColumnVector.getNonNestedRapidsType(dataType))
-        }
-      case _ =>
-        input.getBase.listReduce(SegmentedReductionAggregation.min())
-    }
+    input.getBase.listReduce(SegmentedReductionAggregation.min())
 }
 
 case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
@@ -491,22 +477,92 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
   override def prettyName: String = "array_max"
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
-    dataType match {
-      case StringType =>
-        SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.max())
-      case dt: DecimalType =>
-        if (dt.precision > Decimal.MAX_LONG_DIGITS) {
-          SlowGpuArrayAgg.reallySlow(input, GroupByAggregation.max())
-        } else if (dt.precision > Decimal.MAX_INT_DIGITS) {
-          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.max(),
-            DType.INT64, GpuColumnVector.getNonNestedRapidsType(dataType))
-        } else {
-          SlowGpuArrayAgg.bitCastDecimal(input, SegmentedReductionAggregation.max(),
-            DType.INT32, GpuColumnVector.getNonNestedRapidsType(dataType))
+    input.getBase.listReduce(SegmentedReductionAggregation.max())
+}
+
+case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = ArrayType(left.dataType, left.nullable)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // The primary issue of array_repeat is to workaround the null and negative count.
+    // Spark returns a null (list) when encountering a null count, while cudf::repeat simply
+    // throws an exception.
+    // Spark returns a empty list when encountering a negative count, while cudf::repeat simply
+    // throws an exception.
+
+    // Step 1. replace invalid counts
+    //  null -> 0
+    //  negative values -> 0
+    val refinedCount = withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+      withResource(rhs.getBase.replaceNulls(zero)) { notNull =>
+        withResource(notNull.lessThan(zero)) { lessThanZero =>
+          lessThanZero.ifElse(zero, notNull)
         }
-      case _ =>
-        input.getBase.listReduce(SegmentedReductionAggregation.max())
+      }
     }
+    // Step 2. perform cuDF repeat
+    val repeated = closeOnExcept(refinedCount) { cnt =>
+      withResource(new Table(lhs.getBase)) { table =>
+        table.repeat(cnt, true).getColumn(0)
+      }
+    }
+    // Step 3. generate list offsets from refined counts
+    val offsets = closeOnExcept(repeated) { _ =>
+      withResource(refinedCount) { cnt =>
+        cnt.generateListOffsets()
+      }
+    }
+    // Step 4. make the result list column with offsets and child column
+    val list = withResource(offsets) { offsets =>
+      withResource(repeated) { repeated =>
+        repeated.makeListFromOffsets(lhs.getRowCount, offsets)
+      }
+    }
+    // Step 5. merge the validity of count column to the result
+    withResource(list) { list =>
+      list.mergeAndSetValidity(BinaryOp.BITWISE_AND, rhs.getBase)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val numRows = lhs.getRowCount.toInt
+    if (!rhs.isValid) {
+      GpuColumnVector.fromNull(numRows, dataType).getBase
+    } else {
+      val count = rhs.getValue.asInstanceOf[Int] max 0
+
+      val offsets = withResource(GpuScalar.from(count, IntegerType)) { cntScalar =>
+        withResource(GpuColumnVector.from(cntScalar, numRows, rhs.dataType)) { cnt =>
+          cnt.getBase.generateListOffsets()
+        }
+      }
+
+      withResource(offsets) { offsets =>
+        withResource(new Table(lhs.getBase)) { table =>
+          withResource(table.repeat(count).getColumn(0)) { repeated =>
+            repeated.makeListFromOffsets(lhs.getRowCount, offsets)
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    if (!rhs.isValid) {
+      GpuColumnVector.fromNull(numRows, dataType).getBase
+    } else {
+      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+        doColumnar(left, rhs)
+      }
+    }
+  }
 }
 
 case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with ShimExpression

@@ -492,6 +492,33 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       parent: Option[RapidsMeta[_, _, _]],
       rule: DataFromReplacementRule)
       extends SparkPlanMeta[BatchScanExec](p, conf, parent, rule) {
+    // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+    // if possible. Instead regarding filters as childExprs of current Meta, we create
+    // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+    // BatchScanExec is independent from the replacement of the runtime filters. It is
+    // possible that the BatchScanExec is on the CPU, while the dynamic runtime filters
+    // are on the GPU. And vice versa.
+    private lazy val runtimeFilters = {
+      val convertBroadcast = (bc: SubqueryBroadcastExec) => {
+        val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
+        meta.tagForExplain()
+        meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+      }
+      wrapped.runtimeFilters.map { filter =>
+        filter.transformDown {
+          case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+            inSub.plan match {
+              case bc: SubqueryBroadcastExec =>
+                dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+              case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
+                dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+              case _ =>
+                dpe
+            }
+        }
+      }
+    }
+
     override val childScans: scala.Seq[ScanMeta[_]] =
       Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
@@ -501,7 +528,11 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       }
     }
 
+    override def convertToCpu(): SparkPlan = {
+      wrapped.copy(runtimeFilters = runtimeFilters)
+    }
+
     override def convertToGpu(): GpuExec =
-      GpuBatchScanExec(p.output, childScans.head.convertToGpu(), p.runtimeFilters)
+      GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters)
   }
 }

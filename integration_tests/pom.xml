@@ -69,47 +69,60 @@
 
     <profiles>
         <profile>
-            <id>release311cdh</id>
+            <id>release321cdh</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>311cdh</value>
+                    <value>321cdh</value>
                 </property>
             </activation>
             <dependencies>
                 <dependency>
-                    <!-- it seems CDH jars pull an old version of Guava but need new version
-                         to run with, so here we override Guava version for testing -->
-                    <groupId>com.google.guava</groupId>
-                    <artifactId>guava</artifactId>
-                    <version>${guava.cdh.version}</version>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
                         <exclusion>
-                            <groupId>org.apache.curator</groupId>
-                            <artifactId>curator-recipes</artifactId>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
                         </exclusion>
                     </exclusions>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.curator</groupId>
-                    <artifactId>curator-recipes</artifactId>
-                    <version>4.3.0.7.2.7.0-184</version>
-                </dependency>
-                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
                         <exclusion>
                             <groupId>org.apache.spark</groupId>
                             <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>${arrow.cdh.version}</version>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-core</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-annotations</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>io.netty</groupId>
+                            <artifactId>netty-common</artifactId>
                         </exclusion>
                     </exclusions>
                 </dependency>

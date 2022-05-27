@@ -112,6 +112,14 @@ object GpuTypeShims {
 
   def typesDayTimeCanCastTo: TypeSig = TypeSig.none
 
+  def typesYearMonthCanCastTo: TypeSig = TypeSig.none
+
+  def typesDayTimeCanCastToOnSpark: TypeSig = TypeSig.DAYTIME + TypeSig.STRING
+
+  def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING
+
+  def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.none
+
   def additionalTypesStringCanCastTo: TypeSig = TypeSig.none
 
   /**
@@ -125,4 +133,9 @@ object GpuTypeShims {
    */
   def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.none
 
+  def hasSideEffectsIfCastIntToYearMonth(ym: DataType): Boolean = false
+
+  def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean = false
+
+  def hasSideEffectsIfCastFloatToTimestamp: Boolean = false
 }

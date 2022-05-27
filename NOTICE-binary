@@ -411,4 +411,29 @@ misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
 
 Mark Adler    madler@alumni.caltech.edu
+
 ---------------------------------------------------------------------
+This product bundles various third-party components under other open source licenses.
+
+Boostrap V4.6.1 - The MIT License (MIT)
+    License Text ( https://github.com/twbs/bootstrap/blob/v4.6.1/LICENSE )
+    Copyright (c) 2011-2021 Twitter, Inc.
+    Copyright (c) 2011-2021 The Bootstrap Authors
+
+DataTablesSrc V1.12 - The MIT License (MIT)
+    License Text ( https://datatables.net/license/ )
+    Copyright (C) 2008-present, SpryMedia Ltd.
+
+jQuery V3.6.0 - The MIT License (MIT)
+    License Text ( https://jquery.org/license/ )
+    Copyright OpenJS Foundation and other contributors, https://openjsf.org/
+
+Mustache.js V4.10 - The MIT License (MIT)
+    License Text ( https://github.com/janl/mustache.js/blob/master/LICENSE )
+    Copyright (c) 2009 Chris Wanstrath (Ruby)
+    Copyright (c) 2010-2014 Jan Lehnardt (JavaScript)
+    Copyright (c) 2010-2015 The mustache.js community
+
+Spur Dashboard V1.1.0 - The MIT License (MIT)
+    License Text ( https://github.com/HackerThemes/spur-template/blob/master/LICENSE )
+    Copyright 2016 - 2019 Alexander Rechsteiner

@@ -19,13 +19,15 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer,HashMap}
 import scala.io.{BufferedSource, Source}
 
+import org.apache.spark.internal.Logging
+
 /**
  * This class is used to check what the RAPIDS Accelerator for Apache Spark
  * supports for data formats and data types.
  * By default it relies on a csv file included in the jar which is generated
  * by the plugin which lists the formats and types supported.
  */
-class PluginTypeChecker {
+class PluginTypeChecker extends Logging {
 
   private val NS = "NS"
   private val PS = "PS"
@@ -63,7 +65,7 @@ class PluginTypeChecker {
 
   def setOperatorScore(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    supportedOperatorsScore = readSupportedOperators(source).map(x => (x._1, x._2.toInt))
+    supportedOperatorsScore = readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
   }
 
   def setSupportedExecs(filePath: String): Unit = {
@@ -78,15 +80,11 @@ class PluginTypeChecker {
     supportedExprs = readSupportedOperators(source)
   }
 
-  def getOperatorScore: Map[String, Int] = supportedOperatorsScore
-
-  def getSupportedExecs: Map[String, String] = supportedExecs
-
   def getSupportedExprs: Map[String, String] = supportedExprs
 
-  private def readOperatorsScore: Map[String, Int] = {
+  private def readOperatorsScore: Map[String, Double] = {
     val source = Source.fromResource(OPERATORS_SCORE_FILE)
-    readSupportedOperators(source).map(x => (x._1, x._2.toInt))
+    readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
   }
 
   private def readSupportedExecs: Map[String, String] = {
@@ -202,12 +200,7 @@ class PluginTypeChecker {
         // check if any of the not supported types are in the schema
         val nsFiltered = dtSupMap(NS).filter(t => schemaLower.contains(t.toLowerCase()))
         if (nsFiltered.nonEmpty) {
-          val deDuped = if (nsFiltered.contains("dec") && nsFiltered.contains("decimal")) {
-            nsFiltered.filterNot(_.equals("dec"))
-          } else {
-            nsFiltered
-          }
-          (0.0, deDuped.toSet)
+          (0.0, nsFiltered.toSet)
         } else {
           // Started out giving different weights based on partial support and so forth
           // but decided to be optimistic and not penalize if we don't know, perhaps
@@ -223,8 +216,38 @@ class PluginTypeChecker {
     score
   }
 
+  def isWriteFormatsupported(writeFormat: String): Boolean = {
+    val format = writeFormat.toLowerCase.trim
+    writeFormats.map(x => x.trim).contains(format)
+  }
+
   def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
       writeFormats.map(x => x.trim).contains(_))
+  }
+
+  def getSpeedupFactor(execOrExpr: String): Double = {
+    supportedOperatorsScore.get(execOrExpr).getOrElse(-1)
+  }
+
+  def isExecSupported(exec: String): Boolean = {
+    // special case ColumnarToRow and assume it will be removed or will we replace
+    // with GPUColumnarToRow. TODO - we can add more logic here to look at operator
+    //  before and after
+    if (exec == "ColumnarToRow") {
+      return true
+    }
+    if (supportedExecs.contains(exec)) {
+      val execSupported = supportedExecs.getOrElse(exec, "NS")
+      if (execSupported == "S") {
+        true
+      } else {
+        logDebug(s"Exec explicitly not supported, value: $execSupported")
+        false
+      }
+    } else {
+      logDebug(s"Exec $exec does not exist in supported execs file")
+      false
+    }
   }
 }

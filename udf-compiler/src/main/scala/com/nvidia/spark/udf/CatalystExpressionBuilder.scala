@@ -176,7 +176,36 @@ case class CatalystExpressionBuilder(private val function: AnyRef) extends Loggi
     // A basic block can have other branching instructions as the last instruction,
     // otherwise.
     if (basicBlock.lastInstruction.isReturn) {
-      newStates(basicBlock).expr
+      // When the compiled method throws exceptions, we combine the returned
+      // expression (expr) with exceptions (except0, except1, except2.., exceptn)
+      // based on exception conditions (cond0, cond1, cond2, .., condn) as follows:
+      //         If
+      //         |
+      //  +------+------+
+      //  |      |      |
+      // cond0 except0  If
+      //                |
+      //         +------+------+
+      //         |      |      |
+      //        cond1 except1  If
+      //                       |
+      //                +------+------+
+      //                |      |      |
+      //               cond2 except2  If
+      //                              |
+      //                              .
+      //                              .
+      //                              .
+      //                       +------+------+
+      //                       |      |      |
+      //                      condn exceptn  expr
+      newStates.foldRight(newStates(basicBlock).expr) { case ((bb, s), expr) =>
+        if (bb.lastInstruction.isThrow) {
+          Some(If(s.cond, s.stack.head, expr.get))
+        } else {
+          expr
+        }
+      }
     } else {
       // account for this block in visited
       val newVisited = visited + basicBlock
@@ -311,6 +340,24 @@ object CatalystExpressionBuilder extends Logging {
         }
         case And(c1@GreaterThan(s1, Literal(v1, t1)),
         c2@GreaterThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+          t1 match {
+            case IntegerType =>
+              if (v1.asInstanceOf[Int] > v2.asInstanceOf[Int]) {
+                c1
+              } else {
+                c2
+              }
+            case LongType =>
+              if (v1.asInstanceOf[Long] > v2.asInstanceOf[Long]) {
+                c1
+              } else {
+                c2
+              }
+            case _ => expr
+          }
+        }
+        case And(c1@GreaterThanOrEqual(s1, Literal(v1, t1)),
+        c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
           t1 match {
             case IntegerType =>
               if (v1.asInstanceOf[Int] > v2.asInstanceOf[Int]) {
