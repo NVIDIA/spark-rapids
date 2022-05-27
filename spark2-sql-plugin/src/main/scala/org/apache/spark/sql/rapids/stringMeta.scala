@@ -289,11 +289,24 @@ class GpuStringSplitMeta(
     extends StringSplitRegBinaryExpMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private var delimInfo: Option[(String, Boolean)] = None
+  private var pattern = ""
+  private var isRegExp = false
 
   override def tagExprForGpu(): Unit = {
-    // 2.x uses expr.pattern not expr.regex
-    delimInfo = checkRegExp(expr.pattern)
+    // if this is a valid regular expression, then we should check the configuration
+    // whether to run this on the GPU
+    checkRegExp(expr.pattern) match {
+      case Some((p, isRe)) =>
+        pattern = p
+        isRegExp = isRe
+      case _ => throwUncheckedDelimiterException()
+    }
+
+    // if this is a valid regular expression, then we should check the configuration
+    // whether to run this on the GPU
+    if (isRegExp) {
+      GpuRegExpUtils.tagForRegExpEnabled(this)
+    }
 
     // 2.x has no limit parameter
     /*
