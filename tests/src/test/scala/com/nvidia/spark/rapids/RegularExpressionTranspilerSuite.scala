@@ -74,6 +74,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("Detect unsupported combinations of line anchors and \\W and \\D") {
+    val patterns = Seq("\\W\\Z\\D", "\\W$", "$\\D")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Combination of \\W or \\D with line anchor $ " +
+          "or string anchors \\z or \\Z is not supported")
+    )
+  }
+
   test("cuDF does not support choice with nothing to repeat") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
@@ -392,20 +401,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
-  }
-
-  test("fall back to CPU for \\D") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4475
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("\\D", mode, "non-digit class \\D is not supported")
-    }
-  }
-
-  test("fall back to CPU for \\W") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4475
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("\\W", mode, "non-word class \\W is not supported")
-    }
   }
 
   test("compare CPU and GPU: replace digits") {
