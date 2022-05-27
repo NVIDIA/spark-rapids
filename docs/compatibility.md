@@ -895,6 +895,10 @@ be statically evaluated with their equivalent literal values. The RAPIDS Acceler
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
 
+### long/double to Timestamp
+Spark 330+ has an issue when casting a big enough long/double as timestamp, refer to https://issues.apache.org/jira/browse/SPARK-39209.
+Spark 330+ throws errors while the RAPIDS Accelerator can handle correctly when casting a big enough long/double as timestamp.
+
 ## JSON string handling
 The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows
 double quotes around strings in JSON data, whereas Spark allows single quotes around strings in JSON
