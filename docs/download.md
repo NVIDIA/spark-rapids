@@ -65,8 +65,8 @@ The output if signature verify:
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Combined cuDF jar and rapids-4-spark jar to a single rapids-4-spark jar. 
-  The RAPIDS Accelerator jar (rapids-4-spark jar) is the only jar that needs to be passed to Spark 
-  and the cuDF jar should not be specified.
+  The RAPIDS Accelerator jar (rapids-4-spark jar) is the only jar that needs to be passed to Spark.  
+  The cuDF jar is now bundled with the rapids-4-spark jar and should not be specified.
 * Add UI for Qualification tool
 * Support function map_filter
 * Support spark.sql.mapKeyDedupPolicy=LAST_WIN for function transform_keys
