@@ -1,4 +1,4 @@
-#  Copyright (c) 2020, NVIDIA CORPORATION.
+#  Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,5 +10,5 @@
 #  limitations under the License.
 
 
-/jenkins/	@jlowe @revans2 @tgravescs @GaryShen2008 @NvTimLiu
-pom.xml		@jlowe @revans2 @tgravescs @GaryShen2008 @NvTimLiu
+/jenkins/	@jlowe @revans2 @tgravescs @GaryShen2008 @NvTimLiu @zhanga5
+pom.xml		@jlowe @revans2 @tgravescs @GaryShen2008 @NvTimLiu @zhanga5
