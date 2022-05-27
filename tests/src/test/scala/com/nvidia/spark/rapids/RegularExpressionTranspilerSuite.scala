@@ -79,8 +79,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\W\\Z\\D", "\\W$", "$\\D")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode,
-        "Combination of \\W or \\D with line anchor $ " +
-          "or string anchors \\z or \\Z is not supported")
+        "End of line/string anchor is not supported in this context")
     )
   }
 
