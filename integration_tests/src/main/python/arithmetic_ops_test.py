@@ -798,25 +798,19 @@ def _test_div_by_zero(ansi_mode, expr):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
-    err_exp = 'java.lang.ArithmeticException' if is_before_spark_320() else \
-        'SparkArithmeticException'
-    # 3.3.0
-    #      org.apache.spark.SparkArithmeticException: divide by zero. XXXX
-    # 3.3.1
-    #      org.apache.spark.SparkArithmeticException: Division by zero. XXXX
-    # 3.4.0
-    #      org.apache.spark.SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero. XXXX
+    if is_before_spark_320():
+        err_message = 'java.lang.ArithmeticException: divide by zero'
     if is_before_spark_331():
-        err_mess = ': divide by zero'
-    elif not is_before_spark_331() and is_before_spark_340():
-        err_mess = ': Division by zero'
+        err_message = 'SparkArithmeticException: divide by zero'
+    elif is_before_spark_340():
+        err_message = 'SparkArithmeticException: Division by zero'
     else:
-        err_mess = ': [DIVIDE_BY_ZERO] Division by zero'
+        err_message = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
 
     if ansi_mode == 'ansi':
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
                                  conf=ansi_conf,
-                                 error_message=err_exp + err_mess)
+                                 error_message=err_message)
     else:
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
