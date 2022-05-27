@@ -67,7 +67,7 @@ New functionality and performance improvements for this release include:
 * Combined cuDF jar and rapids-4-spark jar to a single rapids-4-spark jar. 
   The RAPIDS Accelerator jar (rapids-4-spark jar) is the only jar that needs to be passed to Spark.  
   The cuDF jar is now bundled with the rapids-4-spark jar and should not be specified.
-* Add UI for Qualification tool
+* Add a UI for the Qualification tool
 * Support function map_filter
 * Support spark.sql.mapKeyDedupPolicy=LAST_WIN for function transform_keys
 * Enable MIG with YARN on Dataproc 2.0
