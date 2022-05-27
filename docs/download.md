@@ -71,7 +71,7 @@ New functionality and performance improvements for this release include:
 * Support function map_filter
 * Support spark.sql.mapKeyDedupPolicy=LAST_WIN for function transform_keys
 * Enable MIG with YARN on Dataproc 2.0
-* Enable CSV raed by default
+* Enable CSV read by default
 * Enable regular expression by default
 * Enable some float related configurations by default
 * Changed to ASYNC allocator from ARENA by default
