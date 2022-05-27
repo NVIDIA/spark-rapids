@@ -1068,6 +1068,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
+                  case RegexEscaped('B') if mode == RegexReplaceMode =>
+                    r(j) = RegexSequence(
+                      ListBuffer(
+                      RegexEscaped('B'),
+                      RegexRepetition(lineTerminatorMatcher(
+                        Set.empty, false, mode == RegexReplaceMode), SimpleQuantifier('?')), 
+                      RegexChar('$')))
+                    popBackrefIfNecessary(false)
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
