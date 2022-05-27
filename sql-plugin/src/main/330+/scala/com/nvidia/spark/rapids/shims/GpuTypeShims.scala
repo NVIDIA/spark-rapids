@@ -233,4 +233,9 @@ object GpuTypeShims {
   def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean =
       // if cast(int as interval day), multiplication by (86400 * 1000000) can cause overflow
       dt.asInstanceOf[DayTimeIntervalType].endField == DayTimeIntervalType.DAY
+
+  /**
+   * throws exception if floor(float value)  > Long.Max when cast(float as timestamp)
+   */
+  def hasSideEffectsIfCastFloatToTimestamp: Boolean = true
 }
