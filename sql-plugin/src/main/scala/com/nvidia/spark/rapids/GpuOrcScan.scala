@@ -64,7 +64,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
 
 case class GpuOrcScan(
@@ -664,10 +664,19 @@ class GpuOrcPartitionReader(
     withResource(new NvtxRange("ORC readBatch", NvtxColor.GREEN)) { _ =>
       val currentStripes = populateCurrentBlockChunk(ctx.blockIterator, maxReadBatchSizeRows,
         maxReadBatchSizeBytes)
-      if (readDataSchema.isEmpty) {
+      if (ctx.updatedReadSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
-        val numRows = currentStripes.map(_.infoBuilder.getNumberOfRows).sum
-        Some(new ColumnarBatch(Array.empty, numRows.toInt))
+        val numRows = currentStripes.map(_.infoBuilder.getNumberOfRows).sum.toInt
+        if (numRows == 0) {
+          None
+        } else if (readDataSchema.isEmpty) {
+          Some(new ColumnarBatch(Array.empty, numRows))
+        } else {
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          val nullColumns = readDataSchema.safeMap(f =>
+            GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
+          Some(new ColumnarBatch(nullColumns.toArray, numRows))
+        }
       } else {
         val table = readToTable(currentStripes)
         try {
@@ -1387,12 +1396,24 @@ class MultiFileCloudOrcPartitionReader(
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
+  private case class HostMemoryEmptyMetaData(
+    override val partitionedFile: PartitionedFile,
+    bufferSize: Long,
+    override val bytesRead: Long,
+    updatedReadSchema: TypeDescription,
+    readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
+
+    override def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)] =
+      Array(null.asInstanceOf[HostMemoryBuffer] -> bufferSize)
+  }
+
   private case class HostMemoryBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
     override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
     override val bytesRead: Long,
     updatedReadSchema: TypeDescription,
     requestedMapping: Option[Array[Int]]) extends HostMemoryBuffersWithMetaDataBase
+
 
   private class ReadBatchRunner(
       taskContext: TaskContext,
@@ -1409,13 +1430,13 @@ class MultiFileCloudOrcPartitionReader(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${partFile.filePath}", e)
-          HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), 0, null, None)
+          HostMemoryEmptyMetaData(partFile, 0, 0, null, null)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
-          HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), 0, null, None)
+          HostMemoryEmptyMetaData(partFile, 0, 0, null, null)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
@@ -1431,22 +1452,21 @@ class MultiFileCloudOrcPartitionReader(
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          return HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), bytesRead,
-            ctx.updatedReadSchema, ctx.requestedMapping)
+          return HostMemoryEmptyMetaData(partFile, 0, bytesRead,
+            ctx.updatedReadSchema, readDataSchema)
         }
         blockChunkIter = ctx.blockIterator
         if (isDone) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // got close before finishing
-          HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), bytesRead,
-            ctx.updatedReadSchema, ctx.requestedMapping)
+          HostMemoryEmptyMetaData(partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
         } else {
-          if (readDataSchema.isEmpty) {
+          if (ctx.updatedReadSchema.isEmpty) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
             // overload size to be number of rows with null buffer
-            HostMemoryBuffersWithMetaData(partFile, Array((null, numRows)), bytesRead,
-              ctx.updatedReadSchema, ctx.requestedMapping)
+            HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
+              ctx.updatedReadSchema, readDataSchema)
           } else {
             while (blockChunkIter.hasNext) {
               val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
@@ -1457,8 +1477,7 @@ class MultiFileCloudOrcPartitionReader(
             if (isDone) {
               // got close before finishing
               hostBuffers.foreach(_._1.safeClose())
-              HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), bytesRead,
-                ctx.updatedReadSchema, ctx.requestedMapping)
+              HostMemoryEmptyMetaData(partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
             } else {
               HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
                 ctx.updatedReadSchema, ctx.requestedMapping)
@@ -1522,6 +1541,20 @@ class MultiFileCloudOrcPartitionReader(
   override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
       Option[ColumnarBatch] = {
     fileBufsAndMeta match {
+      case meta: HostMemoryEmptyMetaData =>
+        // Not reading any data, but add in partition data if needed
+        // Someone is going to process this data, even if it is just a row count
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        val rows = meta.bufferSize.toInt
+        val batch = if (rows == 0) {
+          new ColumnarBatch(Array.empty, 0)
+        } else {
+          val nullColumns = meta.readSchema.fields.safeMap(f =>
+            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+          new ColumnarBatch(nullColumns, rows)
+        }
+        addPartitionValues(Some(batch), meta.partitionedFile.partitionValues, partitionSchema)
+
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val (hostBuffer, size) = memBuffersAndSize.head
@@ -1534,6 +1567,7 @@ class MultiFileCloudOrcPartitionReader(
           currentFileHostBuffers = None
         }
         nextBatch
+
       case _ => throw new RuntimeException("Wrong HostMemoryBuffersWithMetaData")
     }
   }
@@ -1546,14 +1580,6 @@ class MultiFileCloudOrcPartitionReader(
       fileName: String,
       updatedReadSchema: TypeDescription,
       requestedMapping: Option[Array[Int]] = None): Option[ColumnarBatch] = {
-    // Not reading any data, but add in partition data if needed
-    if (hostBuffer == null) {
-      // Someone is going to process this data, even if it is just a row count
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
-      return addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
-    }
-
     val table = withResource(hostBuffer) { _ =>
       // Dump ORC data into a file
       dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("orc"))
@@ -1635,7 +1661,10 @@ trait OrcCodecWritingHelper extends Arm {
 }
 
 // Orc schema wrapper
-private case class OrcSchemaWrapper(schema: TypeDescription) extends SchemaBase
+private case class OrcSchemaWrapper(schema: TypeDescription) extends SchemaBase {
+
+  override def fieldNames: Array[String] = schema.getFieldNames.asScala.toArray
+}
 
 case class OrcStripeWithMeta(stripe: OrcOutputStripe, ctx: OrcPartitionReaderContext)
 // OrcOutputStripe wrapper

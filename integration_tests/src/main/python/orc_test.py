@@ -299,6 +299,17 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_read_orc_with_empty_clipped_schema(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', int_gen)], length=100).write.orc(data_path))
+    schema = StructType([StructField('b', IntegerType()), StructField('c', StringType())])
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).orc(data_path), conf=all_confs)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
     with_cpu_session(
