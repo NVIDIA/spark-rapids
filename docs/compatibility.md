@@ -575,13 +575,18 @@ The following Apache Spark regular expression functions and expressions are supp
 - `string_split`
 - `str_to_map`
 
-Regular expression evaluation on the GPU is enabled by default. However, there are some edge cases where GPU 
-evaluation will produce different results to the CPU. To disable regular expressions on the GPU, 
+Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
+regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
+still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
 set `spark.rapids.sql.regexp.enabled=false`.
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- TBD
+- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
+ to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
+ next to a newline or a repetition that produces zero or more results
+ ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
