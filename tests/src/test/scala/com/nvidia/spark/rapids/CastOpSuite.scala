@@ -401,6 +401,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.FloatType, DataTypes.LongType) if ansiEnabled => longsAsFloats(spark)
       case (DataTypes.DoubleType, DataTypes.LongType) if ansiEnabled => longsAsDoubles(spark)
 
+      case (DataTypes.LongType, DataTypes.TimestampType) => longsDivideByMicrosPerSecond(spark)
+
       case _ => FuzzerUtils.createDataFrame(from)(spark)
     }
   }
@@ -473,7 +475,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
-      col("longs").cast(TimestampType))
+      col("more_longs").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf,
@@ -1386,6 +1388,11 @@ object CastOpSuite {
     val valuesWithWhitespace = values.map(s => s"\t\n\t$s\r\n")
 
     values ++ valuesWithWhitespace
+  }
+
+  def longsDivideByMicrosPerSecond(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(_ / 10000000L).toDF("c0")
   }
 
   def timestampsAsStrings(

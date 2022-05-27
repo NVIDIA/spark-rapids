@@ -408,6 +408,11 @@ class QualificationAppInfo(
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       checkGraphNodeForReads(sqlID, node)
+      val issues = findPotentialIssues(node.desc)
+      if (issues.nonEmpty) {
+        val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
+        sqlIDtoProblematic(sqlID) = existingIssues ++ issues
+      }
       // Get the write data format
       if (node.name.contains("InsertIntoHadoopFsRelationCommand")) {
         val writeFormat = node.desc.split(",")(2)
@@ -433,7 +438,7 @@ case class EstimatedSummaryInfo(
     estimatedGpuDur: Double, // Predicted runtime for the app if it was run on the GPU
     estimatedGpuSpeedup: Double, // app_duration / estimated_gpu_duration
     estimatedGpuTimeSaved: Double, // app_duration - estimated_gpu_duration
-    recommendation: Recommendation.Recommendation)
+    recommendation: String)
 
 case class SQLStageSummary(
     stageSum: Set[StageQualSummaryInfo],
@@ -499,27 +504,25 @@ case class StageQualSummaryInfo(
     unsupportedTaskDur: Long,
     estimated: Boolean = false)
 
-object Recommendation extends Enumeration {
-  type Recommendation = Value
-
-  val Strongly_Recommended = Value(3, "Strongly_Recommended")
-  val Recommended = Value(2, "Recommended")
-  val Not_Recommended = Value(1, "Not_Recommended")
-  val Not_Applicable = Value(0, "Not_Applicable")
-}
-
 object QualificationAppInfo extends Logging {
+  // define recommendation constants
+  val RECOMMENDED = "Recommended"
+  val NOT_RECOMMENDED = "Not Recommended"
+  val STRONGLY_RECOMMENDED = "Strongly Recommended"
+  val NOT_APPLICABLE = "Not Applicable"
+  val LOWER_BOUND_RECOMMENDED = 1.3
+  val LOWER_BOUND_STRONGLY_RECOMMENDED = 2.5
 
   def getRecommendation(totalSpeedup: Double,
-      hasFailures: Boolean): Recommendation.Recommendation = {
+      hasFailures: Boolean): String = {
     if (hasFailures) {
-      Recommendation.Not_Applicable
-    } else if (totalSpeedup >= 2.5) {
-      Recommendation.Strongly_Recommended
-    } else if (totalSpeedup >= 1.25) {
-      Recommendation.Recommended
+      NOT_APPLICABLE
+    } else if (totalSpeedup >= LOWER_BOUND_STRONGLY_RECOMMENDED) {
+      STRONGLY_RECOMMENDED
+    } else if (totalSpeedup >= LOWER_BOUND_RECOMMENDED) {
+      RECOMMENDED
     } else {
-      Recommendation.Not_Recommended
+      NOT_RECOMMENDED
     }
   }
 
@@ -538,14 +541,21 @@ object QualificationAppInfo extends Logging {
     val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
     val estimated_gpu_duration =
       (speedupOpportunityWallClock / speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-    val estimated_gpu_speedup = appDuration / estimated_gpu_duration
+    // force GPU speedup to be -1.0 if the application is not applicable
+    val estimated_gpu_speedup = if (hasFailures) -1.0 else appDuration / estimated_gpu_duration
     val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
     val recommendation = getRecommendation(estimated_gpu_speedup, hasFailures)
 
+    // truncate the double fields to double precision to ensure that unit-tests do not explicitly
+    // set the format to match the output. Removing the truncation from here requires modifying
+    // TestQualificationSummary to truncate the same fields to match the CSV static samples.
     EstimatedSummaryInfo(appName, appId, appDuration,
-      sqlDataFrameDurationToUse, speedupOpportunityWallClock.toLong,
-      estimated_gpu_duration, estimated_gpu_speedup,
-      estimated_gpu_timesaved, recommendation)
+      sqlDataFrameDurationToUse,
+      speedupOpportunityWallClock.toLong,
+      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_duration),
+      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_speedup),
+      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_timesaved),
+      recommendation)
   }
 
   def createApp(

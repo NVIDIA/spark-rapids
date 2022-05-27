@@ -63,8 +63,8 @@ conditions within the computation itself the result may not be the same each tim
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. Because of this most floating point aggregations are off by default but can
-be enabled with the config
+worked with plain Spark. As of 22.06 this is behavior is enabled by default but can be disabled with 
+the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
 Additionally, some aggregations on floating point columns that contain `NaN` can produce results
@@ -590,8 +590,6 @@ Here are some examples of regular expression patterns that are not supported on 
 - Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
   or more results
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Non-digit character class `\D`
-- Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
 - Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
@@ -795,13 +793,12 @@ disabled on the GPU by default and require configuration options to be specified
 
 The GPU will use a different strategy from Java's BigDecimal to handle/store decimal values, which
 leads to restrictions:
-* It is only available when `ansiMode` is on.
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `true`
-and set `spark.sql.ansi.enabled` to `true`.
+As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
+later, set
+[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
 
 ### Float to Integral Types
 
@@ -811,9 +808,9 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-To enable this operation on the GPU when using Spark 3.1.0 or later, set
+As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
-to `true`.
+to `false`.
 
 This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
@@ -823,8 +820,8 @@ The GPU will use different precision than Java's toString method when converting
 types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.
+As of 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
 
@@ -837,8 +834,8 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `true`.
+As of 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
 
@@ -897,6 +894,10 @@ ConstantFolding is an operator optimization rule in Catalyst that replaces expre
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
+
+### long/double to Timestamp
+Spark 330+ has an issue when casting a big enough long/double as timestamp, refer to https://issues.apache.org/jira/browse/SPARK-39209.
+Spark 330+ throws errors while the RAPIDS Accelerator can handle correctly when casting a big enough long/double as timestamp.
 
 ## JSON string handling
 The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows

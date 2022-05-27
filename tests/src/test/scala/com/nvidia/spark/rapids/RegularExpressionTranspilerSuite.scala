@@ -75,6 +75,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("Detect unsupported combinations of line anchors and \\W and \\D") {
+    val patterns = Seq("\\W\\Z\\D", "\\W$", "$\\D")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Combination of \\W or \\D with line anchor $ " +
+          "or string anchors \\z or \\Z is not supported")
+    )
+  }
+
   test("cuDF does not support choice with nothing to repeat") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
@@ -150,24 +159,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "cuDF does not support null characters in regular expressions"))
   }
 
-  test("cuDF does not support octal digits in character classes") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4862
-    val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]")
+  test("cuDF does not support class intersection &&") {
+    val patterns = Seq("[a&&b]", "[&&1]")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support octal digits in character classes"
-      )
-    )
-  }
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support class intersection operator &&"))
 
-  test("cuDF does not support hex digits in character classes") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4865
-    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support hex digits in character classes"
-      )
-    )
+    assertCpuGpuMatchesRegexpReplace(Seq("a&&b", "[a&b&c]"), Seq("a&&b", "b&c"))
   }
 
   test("octal digits - find") {
@@ -177,11 +175,33 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "\u0007\u003f\u007f", "\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
   }
 
+  test("octal digit character classes") {
+    val patterns = Seq(raw"[\02]", raw"[\012]", raw"[\0177]", raw"[a-\0377]", raw"[\01-\0777]")
+    val inputs = Seq("", "\u0002", "a\u0012b\n\u0177c", "a[+\u00fe23z")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
   test("hex digits - find") {
     val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}",
       raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
+  }
+
+  test("hex digit character classes") {
+    val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]", raw"[\x80]", raw"[\x01-\xff]",
+      raw"[a-\xff]", raw"[\x20-z]")
+    val inputs = Seq("", "\u007f", "a\u007fb", "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", 
+      "\u007f2", "abcd", "\u0000\u007f\u00ff\u0123\u0abc")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: character range with escaped characters") {
+    val inputs = Seq("", "abc", "\r\n", "a[b\t\n \rc]d", "[\r+\n-\t[]")
+    assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]"), 
+      inputs)
+    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"), 
+      inputs)
   }
   
   test("string anchors - find") {
@@ -388,20 +408,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\d", "\\d+", "\\d*", "\\d?")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
-  }
-
-  test("fall back to CPU for \\D") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4475
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("\\D", mode, "non-digit class \\D is not supported")
-    }
-  }
-
-  test("fall back to CPU for \\W") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4475
-    for (mode <- Seq(RegexFindMode, RegexReplaceMode)) {
-      assertUnsupported("\\W", mode, "non-word class \\W is not supported")
-    }
   }
 
   test("compare CPU and GPU: replace digits") {
@@ -906,13 +912,13 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   private def characterClassComponent = {
     val baseGenerators = Seq[() => RegexCharacterClassComponent](
         () => char,
-        () => charRange)
+        () => charRange,
+        () => hexDigit,
+        () => escapedChar)
     val generators = if (skipKnownIssues) {
       baseGenerators
     } else {
       baseGenerators ++ Seq(
-        () => escapedChar, // https://github.com/NVIDIA/spark-rapids/issues/4505
-        () => hexDigit, // https://github.com/NVIDIA/spark-rapids/issues/4865
         () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4862
     }
     generators(rr.nextInt(generators.length))()
@@ -920,19 +926,19 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
 
   private def charRange: RegexCharacterClassComponent = {
     val baseGenerators = Seq[() => RegexCharacterClassComponent](
-      () => RegexCharacterRange('a', 'z'),
-      () => RegexCharacterRange('A', 'Z'),
-      () => RegexCharacterRange('z', 'a'),
-      () => RegexCharacterRange('Z', 'A'),
-      () => RegexCharacterRange('0', '9'),
-      () => RegexCharacterRange('9', '0')
+      () => RegexCharacterRange(RegexChar('a'), RegexChar('z')),
+      () => RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
+      () => RegexCharacterRange(RegexChar('z'), RegexChar('a')),
+      () => RegexCharacterRange(RegexChar('Z'), RegexChar('A')),
+      () => RegexCharacterRange(RegexChar('0'), RegexChar('9')),
+      () => RegexCharacterRange(RegexChar('9'), RegexChar('0'))
     )
     val generators = if (skipKnownIssues) {
       baseGenerators
     } else {
       // we do not support escaped characters in character ranges yet
       // see https://github.com/NVIDIA/spark-rapids/issues/4505
-      baseGenerators ++ Seq(() => RegexCharacterRange(char.ch, char.ch))
+      baseGenerators ++ Seq(() => RegexCharacterRange(char, char))
     }
     generators(rr.nextInt(generators.length))()
   }

@@ -167,6 +167,42 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
+    val supportedMetaCharacters = "\\^-]+"
+
+    def getEscapedComponent(): RegexCharacterClassComponent = {
+      peek() match {
+        case Some('x') => 
+          consumeExpected('x')
+          RegexChar(Integer.parseInt(parseHexDigit.a, 16).toChar)
+        case Some('0') => 
+          consumeExpected('0')
+          RegexChar(Integer.parseInt(parseOctalDigit.a, 8).toChar)
+        case Some(ch) =>
+          consumeExpected(ch) match {
+            // List of character literals with an escape from here, under "Characters"
+            // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+            case 'n' => RegexChar('\n')
+            case 'r' => RegexChar('\r')
+            case 't' => RegexChar('\t')
+            case 'f' => RegexChar('\f')
+            case 'a' => RegexChar('\u0007')
+            case 'b' => RegexChar('\b')
+            case 'e' => RegexChar('\u001b')
+            case ch => 
+              if (supportedMetaCharacters.contains(ch)) {
+                // an escaped metacharacter ('\\', '^', '-', ']', '+')
+                RegexEscaped(ch) 
+              } else {
+                throw new RegexUnsupportedException(
+                  s"Unsupported escaped character in character class", Some(pos))
+              }
+          }
+        case None =>
+          throw new RegexUnsupportedException(
+                s"Unclosed character class", Some(pos))
+      }
+    }
+
     val start = pos
     val characterClass = RegexCharacterClass(negated = false, characters = ListBuffer())
     // loop until the end of the character class or EOF
@@ -187,44 +223,51 @@ class RegexParser(pattern: String) {
           // Negates the character class, causing it to match a single character not listed in
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
-        case '\n' | '\r' | '\t' | '\b' | '\f' | '\u0007' =>
-          // treat as a literal character and add to the character class
-          characterClass.append(ch)
-        case '\\' =>
-          peek() match {
-            case None =>
-              throw new RegexUnsupportedException(
-                s"Unclosed character class", Some(pos))
-            case Some(ch) =>
-              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
-              // within the character class, but could be any escaped character
-              characterClass.appendEscaped(consumeExpected(ch))
-          }
         case '\u0000' =>
           throw new RegexUnsupportedException(
             "cuDF does not support null characters in regular expressions", Some(pos))
-        case _ =>
-          // check for range
-          val start = ch
+        case ch => 
+          val nextChar: RegexCharacterClassComponent = ch match {
+            case '\\' =>
+              getEscapedComponent() match {
+                case RegexChar(ch) if supportedMetaCharacters.contains(ch) =>
+                  // A hex or octal representation of a meta character gets treated as an escaped 
+                  // char. Example: [\x5ea] is treated as [\^a], not just [^a]
+                  RegexEscaped(ch)
+                case other => other
+              }
+            case '&' => 
+              peek() match {
+                case Some('&') => 
+                  throw new RegexUnsupportedException("" +
+                    "cuDF does not support class intersection operator &&", Some(pos))
+                case _ => // ignore
+              }
+              RegexChar('&')
+            case ch =>
+              RegexChar(ch)
+          }
           peek() match {
             case Some('-') =>
               consumeExpected('-')
               peek() match {
                 case Some(']') =>
                   // '-' at end of class e.g. "[abc-]"
-                  characterClass.append(ch)
+                  characterClass.append(nextChar)
                   characterClass.append('-')
+                case Some('\\') =>
+                  consumeExpected('\\')
+                  characterClass.appendRange(nextChar, getEscapedComponent())
                 case Some(end) =>
                   skip()
-                  characterClass.appendRange(start, end)
+                  characterClass.appendRange(nextChar, RegexChar(end))
                 case _ =>
                   throw new RegexUnsupportedException(
                     "unexpected EOF while parsing character range",
                     Some(pos))
               }
             case _ =>
-              // treat as supported literal character
-              characterClass.append(ch)
+              characterClass.append(nextChar)
           }
       }
     }
@@ -395,6 +438,9 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
+    } else if (value == 0) {
+      throw new RegexUnsupportedException(s"cuDF does not support null characters " +
+        s"in regular expressions", Some(pos))
     }
 
     RegexHexDigit(hexDigit)
@@ -892,25 +938,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
 
       case RegexEscaped(ch) => ch match {
-        case 'd' =>
+        case 'd' | 'D' =>
           // cuDF is not compatible with Java for \d  so we transpile to Java's definition
           // of [0-9]
           // https://github.com/rapidsai/cudf/issues/10894
-          RegexCharacterClass(negated = false, ListBuffer(RegexCharacterRange('0', '9')))
-        case 'w' =>
+          val components = ListBuffer[RegexCharacterClassComponent](
+            RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+          if (ch.isUpper) {
+            negateCharacterClass(components)
+          } else {
+            RegexCharacterClass(negated = false, components)
+          }
+        case 'w' | 'W' =>
           // cuDF is not compatible with Java for \w so we transpile to Java's definition
           // of `[a-zA-Z_0-9]`
-          RegexCharacterClass(negated = false, ListBuffer(
-            RegexCharacterRange('a', 'z'),
-            RegexCharacterRange('A', 'Z'),
+          val components = ListBuffer[RegexCharacterClassComponent](
+            RegexCharacterRange(RegexChar('a'), RegexChar('z')),
+            RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
             RegexChar('_'),
-            RegexCharacterRange('0', '9')))
-        case 'D' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4475
-          throw new RegexUnsupportedException("non-digit class \\D is not supported")
-        case 'W' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4475
-          throw new RegexUnsupportedException("non-word class \\W is not supported")
+            RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+          if (ch.isUpper) {
+            negateCharacterClass(components)
+          } else {
+            RegexCharacterClass(negated = false, components)
+          }
         case 'b' | 'B' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4517
           throw new RegexUnsupportedException("word boundaries are not supported")
@@ -952,7 +1003,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
           )
           chars += RegexEscaped('t')
-          chars += RegexCharacterRange('\u2000', '\u200a')
+          chars += RegexCharacterRange(RegexChar('\u2000'), RegexChar('\u200a'))
           if (ch.isUpper) {
             negateCharacterClass(chars) 
           } else {
@@ -995,17 +1046,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
-          case RegexEscaped(ch) if ch == '0' =>
-            // see https://github.com/NVIDIA/spark-rapids/issues/4862
-            // examples
-            // - "[\02] should match the character with code point 2"
-            throw new RegexUnsupportedException(
-              "cuDF does not support octal digits in character classes")
-          case RegexEscaped(ch) if ch == 'x' =>
-            // examples
-            // - "[\x02] should match the character with code point 2"
-            throw new RegexUnsupportedException(
-              "cuDF does not support hex digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
@@ -1383,10 +1423,11 @@ sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
   override def toRegexString: String = s"\\$a"
 }
 
-sealed case class RegexCharacterRange(start: Char, end: Char)
+sealed case class RegexCharacterRange(start: RegexCharacterClassComponent, 
+    end: RegexCharacterClassComponent)
   extends RegexCharacterClassComponent{
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$start-$end"
+  override def toRegexString: String =  s"${start.toRegexString}-${end.toRegexString}"
 }
 
 sealed case class RegexCharacterClass(
@@ -1399,11 +1440,16 @@ sealed case class RegexCharacterClass(
     characters += RegexChar(ch)
   }
 
+  def append(component: RegexCharacterClassComponent): Unit = {
+    characters += component
+  }
+
   def appendEscaped(ch: Char): Unit = {
     characters += RegexEscaped(ch)
   }
 
-  def appendRange(start: Char, end: Char): Unit = {
+  def appendRange(start: RegexCharacterClassComponent, 
+      end: RegexCharacterClassComponent): Unit = {
     characters += RegexCharacterRange(start, end)
   }
 

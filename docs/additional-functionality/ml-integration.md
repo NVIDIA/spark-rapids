@@ -40,7 +40,7 @@ access to any of the memory that RMM is holding.
 ## Spark ML Algorithms Supported by RAPIDS Accelerator
 
 The [spark-rapids-examples repository](https://github.com/NVIDIA/spark-rapids-examples) provides a
-[working example](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/Spark-cuML/pca)
+[working example](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.06/examples/ML+DL-Examples/Spark-cuML/pca)
 of accelerating the `transform` API for
 [Principal Component Analysis (PCA)](https://spark.apache.org/docs/latest/mllib-dimensionality-reduction#principal-component-analysis-pca).
 The example leverages the [RAPIDS accelerated UDF interface](rapids-udfs.md) to provide a native
