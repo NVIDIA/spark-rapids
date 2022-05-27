@@ -80,7 +80,12 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <artifactSet>
-                        <excludes>org.slf4j:*</excludes>
+                        <excludes>
+                            <exclude>org.slf4j:*</exclude>
+                            <!-- excludes spark-rapids-jni and jucx, will package them in the dist submodule -->
+                            <exclude>com.nvidia:spark-rapids-jni:*</exclude>
+                            <exclude>org.openucx:jucx:*</exclude>
+                        </excludes>
                     </artifactSet>
                     <transformers>
                         <transformer

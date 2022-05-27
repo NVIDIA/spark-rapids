@@ -894,6 +894,7 @@
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
         <scala.javac.args>-Xlint:all,-serial,-path,-try</scala.javac.args>
+        <ucx.version>1.12.1</ucx.version>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
@@ -947,6 +948,11 @@
               <artifactId>spark-rapids-jni</artifactId>
               <version>${spark-rapids-jni.version}</version>
               <classifier>${cuda.version}</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.openucx</groupId>
+                <artifactId>jucx</artifactId>
+                <version>${ucx.version}</version>
             </dependency>
             <dependency>
               <groupId>org.slf4j</groupId>
