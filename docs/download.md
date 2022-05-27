@@ -45,7 +45,7 @@ for your hardware's minimum driver version.
 * Download the [RAPIDS
   Accelerator for Apache Spark 22.06.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.06.0/rapids-4-spark_2.12-22.06.0.jar)
 
-This package is built against CUDA 11.5 all CUDA 11.x versions are supported through [CUDA forward
+This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
@@ -67,13 +67,13 @@ New functionality and performance improvements for this release include:
 * Combined cuDF jar and rapids-4-spark jar to a single rapids-4-spark jar. 
   The RAPIDS Accelerator jar (rapids-4-spark jar) is the only jar that needs to be passed to Spark.  
   The cuDF jar is now bundled with the rapids-4-spark jar and should not be specified.
-* Add a UI for the Qualification tool
-* Support function map_filter
-* Support spark.sql.mapKeyDedupPolicy=LAST_WIN for function transform_keys
-* Enable MIG with YARN on Dataproc 2.0
 * Enable CSV read by default
 * Enable regular expression by default
 * Enable some float related configurations by default
+* Improved ANSI support
+* Add a UI for the Qualification tool
+* Support function map_filter
+* Enable MIG with YARN on Dataproc 2.0
 * Changed to ASYNC allocator from ARENA by default
 
 For a detailed list of changes, please refer to the
@@ -107,7 +107,7 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 22.04.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.04.0/rapids-4-spark_2.12-22.04.0.jar)
 * Download the [RAPIDS cuDF 22.04.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/22.04.0/cudf-22.04.0-cuda11.jar)
 
-This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
@@ -168,7 +168,7 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 22.02.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.02.0/rapids-4-spark_2.12-22.02.0.jar)
 * Download the [RAPIDS cuDF 22.02.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/22.02.0/cudf-22.02.0-cuda11.jar)
 
-This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
@@ -234,7 +234,7 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
 * Download the [RAPIDS cuDF 21.12.2 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.12.2/cudf-21.12.2-cuda11.jar)
 
-This package is built against CUDA 11.5 and older CUDA 11.x versions are supported through [CUDA forward
+This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
