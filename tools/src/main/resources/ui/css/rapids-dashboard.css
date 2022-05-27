@@ -73,3 +73,14 @@ a.badge-not-recommended:focus, a.badge-not-recommended.focus {
     outline: 0;
     -webkit-box-shadow: 0 0 0 0.2rem rgba(252, 174, 63, 0.5);
     box-shadow: 0 0 0 0.2rem rgba(252, 174, 63, 0.5); }
+
+.badge-not-applicable {
+    color: #fff;
+    background-color: #727F94; }
+a.badge-not-applicable:hover, a.badge-not-applicable:focus {
+    color: #fff;
+    background-color: #5b6678; }
+a.badge-not-applicable:focus, a.badge-not-applicable.focus {
+    outline: 0;
+    -webkit-box-shadow: 0 0 0 0.2rem rgba(114, 127, 148, 0.5);
+    box-shadow: 0 0 0 0.2rem rgba(114, 127, 148, 0.5); }
