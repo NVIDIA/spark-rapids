@@ -217,7 +217,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val executorLang = sys.env.getOrElse("LANG", "")
       if (driverLang != executorLang) {
         throw new RuntimeException("Driver and executor LANG mismatch. " +
-          s"Driver LANG is ${driverLang} and executor LANG is $executorLang.")
+          s"Driver LANG is '${driverLang}' and executor LANG is '$executorLang'.")
       }
 
       // Validate driver and executor time zone are same if the driver time zone is supported by
