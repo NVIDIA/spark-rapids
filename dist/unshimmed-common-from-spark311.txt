@@ -28,6 +28,5 @@ com/nvidia/spark/udf/Plugin*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/VisibleShuffleManager*
 org/apache/spark/sql/rapids/execution/Unshimmed*
-org/openucx/**
 rapids/*.py
 rapids4spark-version-info.properties
