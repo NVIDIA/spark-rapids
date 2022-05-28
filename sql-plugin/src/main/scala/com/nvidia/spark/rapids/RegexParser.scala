@@ -1068,9 +1068,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
-                  case RegexEscaped('B') if mode == RegexReplaceMode =>
+                  case RegexEscaped('b') | RegexEscaped('B') if mode == RegexReplaceMode =>
                     throw new RegexUnsupportedException(
-                      "regex sequence $\\B is not supported in replace mode")
+                      "regex sequence $\\b or $\\B is not supported in replace mode")
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
