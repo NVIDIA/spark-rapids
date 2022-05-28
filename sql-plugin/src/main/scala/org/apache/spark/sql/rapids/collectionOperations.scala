@@ -103,30 +103,9 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
     // For single column concat, we pass the result of child node to avoid extra cuDF call.
     case (_, 1) => children.head.columnarEval(batch)
     case (dt, _) => {
-      val cols = children.safeMap(columnarEvalToColumn(_, batch))
-      // concatenate keys and values
-      val (key_list, value_list) = withResource(cols) { cols =>
-        withResource(ArrayBuffer[ColumnView]()) { keys => 
-          withResource(ArrayBuffer[ColumnView]()) { values =>
-            cols.foreach{ col =>
-              keys.append(GpuMapUtils.getKeysAsListView(col.getBase))
-              values.append(GpuMapUtils.getValuesAsListView(col.getBase))
-            }    
-            closeOnExcept(ColumnVector.listConcatenateByRow(keys: _*)) {key_list =>
-              (key_list, ColumnVector.listConcatenateByRow(values: _*))
-            }
-          }
-        }
-      }
-      // build map column from concatenated keys and values
-      withResource(Seq(key_list, value_list)) { case Seq(keys, values) =>
-        withResource(Seq(keys.getChildColumnView(0), values.getChildColumnView(0))) { 
-          case Seq(k_child, v_chlid) =>
-            withResource(ColumnView.makeStructView(k_child, v_chlid)) {structs =>
-              withResource(keys.replaceListChild(structs)) { struct_list =>
-                GpuCreateMap.createMapFromKeysValuesAsStructs(dt, struct_list)
-              }
-            }
+      withResource(children.safeMap(columnarEvalToColumn(_, batch)).safeMap(_.getBase)) {cols =>
+        withResource(cudf.ColumnVector.listConcatenateByRow(cols: _*)) {structs =>
+          GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, structs)
         }
       }
     }
