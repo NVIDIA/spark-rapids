@@ -969,7 +969,10 @@ decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for g
 # Some map gens, but not all because of nesting
 map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+        MapGen(IntegerGen(False), ArrayGen(int_gen)),
+        MapGen(BooleanGen(False), StructGen([['child0', byte_gen], ['child1', double_gen]])),
+        MapGen(ByteGen(False), MapGen(FloatGen(False), date_gen))]
 
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
