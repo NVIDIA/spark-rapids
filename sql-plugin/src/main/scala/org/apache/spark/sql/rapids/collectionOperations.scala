@@ -103,7 +103,7 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
     // For single column concat, we pass the result of child node to avoid extra cuDF call.
     case (_, 1) => children.head.columnarEval(batch)
     case (dt, _) => {
-      withResource(children.safeMap(columnarEvalToColumn(_, batch)).safeMap(_.getBase)) {cols =>
+      withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
         withResource(cudf.ColumnVector.listConcatenateByRow(cols: _*)) {structs =>
           GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, structs)
         }

@@ -971,8 +971,8 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
         MapGen(IntegerGen(False), ArrayGen(int_gen)),
-        MapGen(BooleanGen(False), StructGen([['child0', byte_gen], ['child1', double_gen]])),
-        MapGen(ByteGen(False), MapGen(FloatGen(False), date_gen))]
+        MapGen(BooleanGen(False), StructGen([['child0', byte_gen], ['child1', double_gen]]), max_length=10),
+        MapGen(ByteGen(False), MapGen(FloatGen(False), date_gen, max_length=10), max_length=10)]
 
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
