@@ -59,25 +59,17 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   }
 
   private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(ArrayBuffer.empty[cudf.ColumnVector]) { buffer =>
-      // build input buffer
-      children.foreach {
-        buffer += columnarEvalToColumn(_, batch).getBase
-      }
+    withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
       // run string concatenate
       GpuColumnVector.from(
-        cudf.ColumnVector.stringConcatenate(buffer.toArray[ColumnView]), StringType)
+        cudf.ColumnVector.stringConcatenate(cols.toArray[ColumnView]), StringType)  
     }
   }
 
   private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(ArrayBuffer[cudf.ColumnVector]()) { buffer =>
-      // build input buffer
-      children.foreach {
-        buffer += columnarEvalToColumn(_, batch).getBase
-      }
+    withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
       // run list concatenate
-      GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(buffer: _*), dataType)
+      GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(cols: _*), dataType)
     }
   }
 }
