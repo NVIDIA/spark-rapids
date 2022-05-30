@@ -1931,12 +1931,12 @@ class MultiFileCloudParquetPartitionReader(
     fileBufsAndMeta match {
       case meta: HostMemoryEmptyMetaData =>
         // Not reading any data, but add in partition data if needed
-        // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
         val rows = meta.bufferSize.toInt
         val batch = if (rows == 0) {
           new ColumnarBatch(Array.empty, 0)
         } else {
+          // Someone is going to process this data, even if it is just a row count
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
           val nullColumns = meta.readSchema.fields.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
@@ -2081,9 +2081,8 @@ class ParquetPartitionReader(
         val numRows = currentChunkedBlocks.map(_.getRowCount).sum.toInt
         if (numRows == 0) {
           None
-        } else if (readDataSchema.isEmpty) {
-          Some(new ColumnarBatch(Array.empty, numRows))
         } else {
+          // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])

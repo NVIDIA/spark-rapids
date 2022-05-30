@@ -804,9 +804,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-          val nullColumns = readDataSchema.safeMap { f =>
-            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector]
-          }
+          val nullColumns = readDataSchema.safeMap(f =>
+            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
           addAllPartitionValues(Some(emptyBatch), currentChunkMeta.allPartValues,
             currentChunkMeta.rowsPerPartition, partitionSchema)
