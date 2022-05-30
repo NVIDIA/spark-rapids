@@ -994,6 +994,26 @@ def test_regexp_replace_word():
         ),
         conf=_regexp_conf)
 
+def test_predefined_character_classes():
+    gen = mk_str_gen('[a-zA-Z]{0,2}[\r\n!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]{0,2}[0-9]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_replace(a, "\\\\p{Lower}", "x")',
+            'regexp_replace(a, "\\\\p{Upper}", "x")',
+            'regexp_replace(a, "\\\\p{ASCII}", "x")',
+            'regexp_replace(a, "\\\\p{Alpha}", "x")',
+            'regexp_replace(a, "\\\\p{Digit}", "x")',
+            'regexp_replace(a, "\\\\p{Alnum}", "x")',
+            'regexp_replace(a, "\\\\p{Punct}", "x")',
+            'regexp_replace(a, "\\\\p{Graph}", "x")',
+            'regexp_replace(a, "\\\\p{Print}", "x")',
+            'regexp_replace(a, "\\\\p{Blank}", "x")',
+            'regexp_replace(a, "\\\\p{Cntrl}", "x")',
+            'regexp_replace(a, "\\\\p{XDigit}", "x")',
+            'regexp_replace(a, "\\\\p{Space}", "x")',
+        ),
+        conf=_regexp_conf)
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(

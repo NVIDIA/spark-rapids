@@ -381,6 +381,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$[^\u000B\u0085\u2028\u2029\n\f\r]")
   }
 
+  test("transpile predefined character classes") {
+    doTranspileTest("\\p{Lower}", "[a-z]")
+    doTranspileTest("\\p{Alpha}", "[a-zA-Z]")
+    doTranspileTest("\\p{Alnum}", "[a-zA-Z0-9]")
+    doTranspileTest("\\p{Punct}", "[!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]]")
+    doTranspileTest("\\p{Print}", "[a-zA-Z0-9!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]\u0020]")
+  }
+
   test("compare CPU and GPU: character range including unescaped + and -") {
     val patterns = Seq("a[-]+", "a[a-b-]+", "a[-a-b]", "a[-+]", "a[+-]")
     val inputs = Seq("a+", "a-", "a", "a-+", "a[a-b-]")
