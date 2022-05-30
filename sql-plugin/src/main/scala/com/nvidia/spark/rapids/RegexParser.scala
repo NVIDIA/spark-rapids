@@ -813,6 +813,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexRepetition(lineTerminatorMatcher(Set(ch), true,
                     mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
+            case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
+              throw new RegexUnsupportedException(
+                      "regex sequences with \\b or \\B not supported around $")
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
@@ -1068,9 +1071,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
-                  case RegexEscaped('b') | RegexEscaped('B') if mode == RegexReplaceMode =>
+                  case RegexEscaped('b') | RegexEscaped('B') =>
                     throw new RegexUnsupportedException(
-                      "regex sequence $\\b or $\\B is not supported in replace mode")
+                      "regex sequences with \\b or \\B not supported around $")
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
