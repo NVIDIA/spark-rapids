@@ -51,8 +51,12 @@
         <snapshot.buildvers>
             314,
             322,
-            330,
-            340
+            330
+            <!--
+                Remove 340 now due to https://github.com/NVIDIA/spark-rapids/issues/5688.
+                Need to add it back when #5688 is fixed
+            -->
+            <!-- 340 -->
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
