@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later, is_databricks104_or_later, is_spark_330_or_later
+from spark_session import is_spark_314, is_spark_322, with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later, is_databricks104_or_later, is_spark_330_or_later
 import pyspark.sql.functions as f
 from datetime import timedelta
 
@@ -294,6 +294,7 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
         ansi_enabled_conf,
         exception_str)
 
+@pytest.mark.skipif(is_spark_314() or is_spark_322(), reason="Spark 3.1.4 and 3.2.2 will return null instead of throwing exception")
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
