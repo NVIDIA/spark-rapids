@@ -62,7 +62,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
     withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
       // run string concatenate
       GpuColumnVector.from(
-        cudf.ColumnVector.stringConcatenate(cols.toArray[ColumnView]), StringType)  
+        cudf.ColumnVector.stringConcatenate(cols.toArray[ColumnView]), StringType)
     }
   }
 
