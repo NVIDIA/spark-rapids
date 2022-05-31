@@ -58,7 +58,7 @@ object GpuOrcFileFormat extends Logging {
         s"${RapidsConf.ENABLE_ORC_WRITE} to true")
     }
 
-    val keyProviderPath= options.getOrElse("hadoop.security.key.provider.path", "")
+    val keyProviderPath = options.getOrElse("hadoop.security.key.provider.path", "")
     val keyProvider = options.getOrElse("orc.key.provider", "")
     val encrypt = options.getOrElse("orc.encrypt", "")
     val mask = options.getOrElse("orc.mask", "")
