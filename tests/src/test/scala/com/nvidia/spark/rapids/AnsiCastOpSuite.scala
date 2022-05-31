@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, CastBase, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, CastBase, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -470,7 +470,16 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
-    val checks = GpuOverrides.expressions(classOf[AnsiCast]).getChecks.get.asInstanceOf[CastChecks]
+    // AnsiCast is merged into Cast from Spark 3.4.0.
+    // Use reflection to avoid shims.
+    val key = Class.forName {
+      if (cmpSparkVersion(3, 4, 0) < 0) {
+        "org.apache.spark.sql.catalyst.expressions.AnsiCast"
+      } else {
+        "org.apache.spark.sql.catalyst.expressions.Cast"
+      }
+    }.asInstanceOf[Class[Expression]]
+    val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
     assert(checks.gpuCanCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference =

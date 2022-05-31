@@ -3499,8 +3499,9 @@ object GpuOverrides extends Logging {
         TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
-      })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+      }),
+    SparkShimImpl.ansiCastRule
+  ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =

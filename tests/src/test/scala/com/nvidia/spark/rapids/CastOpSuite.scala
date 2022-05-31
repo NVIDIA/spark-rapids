@@ -28,7 +28,7 @@ import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -269,7 +269,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
-      val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
+      val key = getCastKey(ansiEnabled)
       val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
 
       typeMatrix.foreach {
@@ -333,8 +333,20 @@ class CastOpSuite extends GpuExpressionTestSuite {
     assert(unsupported == expected)
   }
 
+  private def getCastKey(ansiEnabled: Boolean): Class[Expression] = {
+    // AnsiCast is merged into Cast from Spark 3.4.0.
+    // Use reflection to avoid shims.
+    val keyString = if (cmpSparkVersion(3, 4, 0) < 0 && ansiEnabled) {
+      "org.apache.spark.sql.catalyst.expressions.AnsiCast"
+    } else {
+      "org.apache.spark.sql.catalyst.expressions.Cast"
+    }
+    Class.forName(keyString).asInstanceOf[Class[Expression]]
+    //Class.forName(keyString)
+  }
+
   private def getUnsupportedCasts(ansiEnabled: Boolean): Seq[(DataType, DataType)] = {
-    val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
+    val key = getCastKey(ansiEnabled)
     val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
 
     val unsupported = typeMatrix.flatMap {

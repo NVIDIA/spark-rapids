@@ -599,6 +599,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
   }
 
+  @scala.annotation.nowarn(
+    "msg=method readFooter in class ParquetFileReader is deprecated"
+  )
   def readAndSimpleFilterFooter(
       file: PartitionedFile,
       conf : Configuration,
