@@ -358,6 +358,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile \\z") {
     doTranspileTest("abc\\z", "abc$")
+    doTranspileTest("abc\\Z\\z", "abc$")
+    doTranspileTest("abc$\\z", "abc$")
   }
 
   test("transpile $") {
@@ -407,7 +409,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},-./;:!^$#%&*+?<=>@\"'~_`" +
+    "abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 
@@ -731,6 +734,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuReplace(cudfPattern, replaceString.get, input)
       } catch {
         case e: CudfException =>
+          println(e)
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}, " +
               s"original: ${toReadableString(javaPattern)}, " +
               s"replacement: ${toReadableString(replaceString.get)}", e)

@@ -1124,6 +1124,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
+                  case RegexEscaped('z') =>
+                    // \Z\z or $\z transpiles to $
+                    r(j) = RegexChar('$')
+                    popBackrefIfNecessary(false)
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
