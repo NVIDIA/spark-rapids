@@ -537,7 +537,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
     // generate patterns that are valid on both CPU and GPU
     val patterns = HashSet[String]()
-    while (patterns.size < 15000) {
+    while (patterns.size < 5000) {
       val pattern = r.nextString()
       if (!patterns.contains(pattern)) {
         if (Try(Pattern.compile(pattern)).isSuccess && Try(transpile(pattern, mode)).isSuccess) {
