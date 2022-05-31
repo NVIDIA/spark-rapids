@@ -354,6 +354,7 @@ if the application is run on the GPU. Beside sending the summary to `STDOUT`, th
 generates _text_ as `rapids_4_spark_qualification_output.log`
 
 The summary report outputs the following information:
+
 1. App Name
 2. App ID 
 3. App Duration: Wall-Clock time measured since the application starts till it is completed.
@@ -506,7 +507,7 @@ The following sections describe the HTML views.
    download folder.
 
 Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while saving infrastructure costs.
-![Qualification-HTML-Recommendation-View](/docs/img/Tools/qualification-tool-recommendation-header-01.png)
+![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-header-01.png)
 
 #### Raw Data
 
