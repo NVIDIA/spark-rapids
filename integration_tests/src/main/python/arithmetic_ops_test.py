@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import is_before_spark_314, is_before_spark_322, is_spark_320_or_later, with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later, is_databricks104_or_later
+from spark_session import *
 import pyspark.sql.functions as f
 from datetime import timedelta
 
@@ -800,13 +800,19 @@ def _test_div_by_zero(ansi_mode, expr):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
+    if is_before_spark_320():
+        err_message = 'java.lang.ArithmeticException: divide by zero'
+    elif is_before_spark_331():
+        err_message = 'SparkArithmeticException: divide by zero'
+    elif is_before_spark_340():
+        err_message = 'SparkArithmeticException: Division by zero'
+    else:
+        err_message = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
 
     if ansi_mode == 'ansi':
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
                                  conf=ansi_conf,
-                                 error_message=
-                                    'java.lang.ArithmeticException: divide by zero' if is_before_spark_320() else 
-                                    'SparkArithmeticException: divide by zero')
+                                 error_message=err_message)
     else:
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
@@ -838,13 +844,15 @@ div_overflow_exprs = [
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    exception_str = "java.lang.ArithmeticException: Overflow in integral divide" if is_before_spark_330() \
-        else "org.apache.spark.SparkArithmeticException: Overflow in integral divide"
+    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() \
+        else 'org.apache.spark.SparkArithmeticException'
+    err_mess = ': Overflow in integral divide' if is_before_spark_340() \
+        else ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
     if ansi_enabled == 'true':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
-            error_message=exception_str)
+            error_message=err_exp + err_mess)
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_div_overflow_df(spark, expr),
