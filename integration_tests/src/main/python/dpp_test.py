@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import spark_tmp_table_factory, is_databricks_runtime
 from data_gen import *
-from marks import ignore_order
+from marks import ignore_order, allow_non_gpu
 from spark_session import is_before_spark_320, with_cpu_session
 
 
@@ -264,3 +264,46 @@ def test_dpp_skip_aqe_off(store_format, s_index, spark_tmp_table_factory):
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
 def test_dpp_skip_aqe_on(store_format, s_index, spark_tmp_table_factory):
     __dpp_skip(store_format, s_index, spark_tmp_table_factory, 'true')
+
+
+# GPU verification on https://issues.apache.org/jira/browse/SPARK-34436
+def _test_dpp_like_any(store_format, is_aqe_on, spark_tmp_table_factory):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format)
+
+    def create_dim_table_for_like(spark):
+        df = gen_df(spark, [
+            ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
+            ('filter', StringGen(pattern='[0-9]{2,10}')),
+        ], 100)
+        df.write.format(store_format).mode("overwrite").saveAsTable(dim_table)
+    with_cpu_session(create_dim_table_for_like)
+
+    statement = """
+    SELECT f.key, f.skey, f.value
+    FROM {0} f JOIN {1} s
+    ON f.key = s.key
+    WHERE s.filter LIKE ANY ('%00%', '%01%', '%10%', '%11%')
+    """.format(fact_table, dim_table)
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        conf={'spark.sql.adaptive.enabled': is_aqe_on})
+
+
+@ignore_order
+@allow_non_gpu('FilterExec')
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
+def test_dpp_like_any_aqe_off(store_format, spark_tmp_table_factory):
+    _test_dpp_like_any(store_format, False, spark_tmp_table_factory)
+
+
+@ignore_order
+@allow_non_gpu('FilterExec')
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
+def test_dpp_like_any_aqe_on(store_format, spark_tmp_table_factory):
+    _test_dpp_like_any(store_format, True, spark_tmp_table_factory)
