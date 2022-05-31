@@ -404,11 +404,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   // Patterns are generated from these characters
   // '&' is absent due to https://github.com/NVIDIA/spark-rapids/issues/5655
-  // TODO: removed these in an effort to get CI to pass
-  // - \u2028 and \u2029
-  // - '@', `f`, "_'"%#!;:|/<>`~"
-  private val REGEXP_LIMITED_CHARS_COMMON =
-    "|()[]{},.^$*+?abc123x\\ \t\r\n\f\u000b\u0085BsdwSDWzZ"
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 
