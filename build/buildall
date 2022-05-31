@@ -71,18 +71,6 @@ function bloopInstall() {
         -Dmaven.javadoc.skip \
         -Dmaven.scalastyle.skip=true \
         -Dmaven.updateconfig.skip=true
-
-      specifier="spark$bv"
-      for bloop_json in $(echo $bloop_config_dir/*.json); do
-        IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
-        last_idx=$((${#bloop_json_parts[@]} - 1))
-        file="${bloop_json_parts[$last_idx]}"
-        project="${file%.json}-$specifier"
-        < $bloop_json jq \
-          --arg specifier "$specifier" \
-          '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' \
-           > "$BLOOP_DIR/$project.json"
-      done
     done
 
     echo "Generated Bloop files under $BLOOP_DIR"

@@ -11,7 +11,9 @@ com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/ClouderaShimVersion*
 com/nvidia/spark/rapids/DatabricksShimVersion*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
-com/nvidia/spark/rapids/ExplainPlan*
+com/nvidia/spark/rapids/ExplainPlan.class
+com/nvidia/spark/rapids/ExplainPlan$.class
+com/nvidia/spark/rapids/ExplainPlanBase.class
 com/nvidia/spark/rapids/GpuKryoRegistrator*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
