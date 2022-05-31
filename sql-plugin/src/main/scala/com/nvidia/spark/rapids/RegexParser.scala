@@ -1273,13 +1273,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
         def endsWithLineAnchor(e: RegexAST): Boolean = {
           e match {
             case RegexSequence(parts) if parts.nonEmpty =>
-              endsWithLineAnchor(parts.last)
+              val j = parts.lastIndexWhere {
+                  case RegexEmpty() => false
+                  case _ => true
+              }
+              endsWithLineAnchor(parts(j))
             case RegexEscaped('A') => true
             case _ => isBeginOrEndLineAnchor(e)
           }
         }
         if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
-          throw new RegexUnsupportedException(nothingToRepeat)
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with line anchors on one side of a choice")
         }
 
         RegexChoice(ll, rr)

@@ -565,9 +565,6 @@ The boolean, byte, short, int, long, float, double, string are supported in curr
 
 ## Regular Expressions
 
-Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors so
-this is disabled by default. To enable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=true`.
-
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
 - `RLIKE`
@@ -578,10 +575,20 @@ The following Apache Spark regular expression functions and expressions are supp
 - `string_split`
 - `str_to_map`
 
-There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
-that a pattern is either unsupported or would produce incorrect results on the GPU.
+Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
+regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
+still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
+set `spark.rapids.sql.regexp.enabled=false`.
 
-Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
+These are the known edge cases where running on the GPU will produce different results to the CPU:
+
+- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
+ to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
+ next to a newline or a repetition that produces zero or more results
+ ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+
+The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
