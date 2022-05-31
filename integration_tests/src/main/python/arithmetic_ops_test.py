@@ -800,8 +800,6 @@ def _test_div_by_zero(ansi_mode, expr):
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
     if is_before_spark_320():
         err_message = 'java.lang.ArithmeticException: divide by zero'
-    elif is_before_spark_331():
-        err_message = 'SparkArithmeticException: divide by zero'
     elif is_before_spark_340():
         err_message = 'SparkArithmeticException: Division by zero'
     else:
