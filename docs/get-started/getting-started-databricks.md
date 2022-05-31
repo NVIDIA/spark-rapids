@@ -160,7 +160,7 @@ cluster.
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
-8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark with RAPIDS and cuDF.
+8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your
