@@ -11,18 +11,19 @@ the expected acceleration of migrating a Spark application to GPU.
 
 The tool first analyzes the operators executed from the CPU log and determines which ones would be qualified to run on
 GPU.  
-The tool then uses estimates from historical queries and benchmarks to estimate a speedup at an individual operator
+The tool then uses estimates from historical queries and benchmarks to estimate a speed-up at an individual operator
 level to calculate how much a specific operator would accelerate on GPU for the specific application.  
 To calculate the _"Estimated GPU App Duration"_, it will add up the accelerated operator durations along with durations
 that could not run on CPU because they are unsupported operators or not SQL operations.
 
 This tool is intended to give the users a starting point and does not guarantee the
-applications with the highest  _recommendation_ will actually be accelerated the most. Currently,
+applications with the highest _recommendation_ will actually be accelerated the most. Currently,
 it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
 
 > **Disclaimer!**  
-> Estimates provided by the Qualification tool are given assuming supported data formats  
-> and expressions are used in the application.
+> Estimates provided by the Qualification tool are given assuming supported "_SparkPlan_" or "_Executor Nodes_"
+> are used in the application and does not yet look at the expressions or datatypes.  
+> For more details, please refer to the [Supported Operators](./supported_ops.md) section.
 
 This document covers below topics:
 
@@ -50,6 +51,7 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 more information.
 
 ### Step 1 Download the tools jar and Apache Spark 3 Distribution
+
 The Qualification tool require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, you can download the Spark distribution to 
 any machine and include the jars in the classpath.
@@ -57,7 +59,15 @@ any machine and include the jars in the classpath.
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2 Run the Qualification tool
-1. Event logs stored on a local machine:
+
+1. The Qualification tool reads the log files and process them in-memory. So the heap memory should be increased when
+   processing large volume of events. It is recommended to pass VM options `-Xmx10g` and adjust according to the
+   number-of-apps / size-of-logs being processed.
+   ```
+    export QUALIFICATION_HEAP=-Xmx10g
+   ```
+
+2. Event logs stored on a local machine:
     - Extract the Spark distribution into a local directory if necessary.
     - Either set SPARK_HOME to point to that directory or just put the path inside of the classpath
        `java -cp toolsJar:pathToSparkJars/*:...` when you run the Qualification tool.
@@ -66,23 +76,26 @@ any machine and include the jars in the classpath.
     multiple event logs files or directories containing spark event logs in the local filesystem, HDFS, S3 or mixed.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
-           com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
-           <eventlogs | eventlog directories ...>
+    Usage: java ${QUALIFICATION_HEAP}
+             -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
+             com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+             <eventlogs | eventlog directories ...>
     ```
 
     ```bash
-    Sample: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
-           com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
+    Sample: java ${QUALIFICATION_HEAP} \
+              -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+              com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
     ```
 
-2. Event logs stored on an on-premises HDFS cluster:
+3. Event logs stored on an on-premises HDFS cluster:
 
     Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
     
     ```bash
-    Usage: java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
-     com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
+    Usage: java ${QUALIFICATION_HEAP} \
+             -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+             com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
     ```
     
     Note, on an HDFS cluster, the default filesystem is likely HDFS for both the input and output
@@ -207,41 +220,37 @@ Example commands:
 - Process the 10 newest logs, and only output the top 3 in the output:
 
 ```bash
-java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
- com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 10-newest -n 3 /eventlogDir
+java ${QUALIFICATION_HEAP} \
+  -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+  com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 10-newest -n 3 /eventlogDir
 ```
 
 - Process last 100 days' logs:
 
 ```bash
-java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
- com.nvidia.spark.rapids.tool.qualification.QualificationMain -s 100d /eventlogDir
+java ${QUALIFICATION_HEAP} \
+  -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+  com.nvidia.spark.rapids.tool.qualification.QualificationMain -s 100d /eventlogDir
 ```
 
 - Process only the newest log with the same application name: 
 
 ```bash
-java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
- com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 1-newest-per-app-name /eventlogDir
+java ${QUALIFICATION_HEAP} \
+  -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+  com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 1-newest-per-app-name /eventlogDir
 ```
 
 Note: The “regular expression” used by -a option is based on
 [java.util.regex.Pattern](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html).
 
 ### The Qualification tool output
+
 After the above command is executed, the summary report goes to STDOUT and by default it outputs
 log/CSV files under `./rapids_4_spark_qualification_output/` that contain the processed applications.
 The output will go into your default filesystem and it supports both local filesystem and HDFS. 
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output.
 If you want to point to the local filesystem be sure to include `file:` in the path.
-
-The Qualification tool generates two main outputs to help quantify the expected acceleration of migrating a Spark
-application to GPU.
-
-1. `Estimated GPU Duration`: Predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
-   operator durations along with durations that could not run on CPU because they are unsupported operators or not SQL operations.
-2. `Estimated Speed-up factor`: The estimated speedup factor is simply the original CPU duration of the app divided by the
-   estimated GPU duration.  That will estimate how much faster the application would run on GPU.
 
 The Qualification tool generates a brief summary on the STDOUT, which also gets saved as a text file.
 The detailed report of the processed apps is saved as a set of CSV files that can be used for post-processing.
@@ -251,9 +260,9 @@ _app execution_; _stages_; and _execs_.
 Starting with release "_22.06_", the default is to generate the report into two different formats:
 text files; and HTML.
 
-For more information on processing the Qualification report and the recommendation, please refer
-to [Understanding the Qualification tool output](#understanding-the-qualification-tool-output) section
-below.
+For information on the files content and processing the Qualification report and the recommendation, please refer
+to [Understanding the Qualification tool output](#understanding-the-qualification-tool-output) and
+[Output Formats](#output-formats) sections below.
 
 ## Running the Qualification tool inside a running Spark application
 
@@ -339,12 +348,176 @@ $SPARK_HOME/bin/spark-shell --jars rapids-4-spark-tools_2.12-<version>.jar
 
 ## Understanding the Qualification tool output
 
-The Qualification tool generates the output as CSV/log files. Starting from `version-22.06`, the default
+For each processed Spark application, the Qualification tool generates two main fields to help quantify the expected
+acceleration of migrating a Spark application to GPU.
+
+1. `Estimated GPU Duration`: Predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
+   operator durations along with durations that could not run on CPU because they are unsupported operators or not SQL operations.
+2. `Estimated Speed-up factor`: The estimated speed-up factor is simply the original CPU duration of the app divided by the
+   estimated GPU duration.  That will estimate how much faster the application would run on GPU.
+
+The lower the estimated GPU duration, the higher the "_Estimated Speed-up_".
+The processed applications are ranked by the "_Estimated Speed-up_". Based on how high the speed-up factor,
+the tool classifies the applications into the following different categories:
+
+- `Strongly Recommended`
+- `Recommended`
+- `Not Recommended`
+- `Not Applicable`: Indicates that the app has job or stage failures.
+
+As mentioned before, the tool does not guarantee the applications with the highest _recommendation_ will actually be
+accelerated the most. Please refer to [Supported Operators](./supported_ops.md) section.
+
+In addition to the _recommendation_, the Qualification tool reports a set of metrics in tasks of SQL Dataframe operations
+within the scope of: "_Entire App_"; "_Stages_"; and "_Execs_". The list of fields are described in details in
+[Fields Interpretations](#fields-interpretations) section. Then we describe the output formats and their file
+locations in [Output Formats](#output-formats) section.
+
+### Detailed App Report
+
+The report represents the entire app execution, including unsupported operators and non-SQL operations. 
+
+1. App Name
+2. App ID
+3. Recommendation: Recommendation based on `Estimated Speed-up Factor`, where
+   an app can be "_Strongly Recommended_", "_Recommended_", "_Not Recommended_",
+   or "_Not Applicable_". The latter indicates that the app has job or stage failures.
+4. App Duration: Wall-Clock time measured since the application starts till it is completed.
+   If an app is not completed an estimated completion time would be computed.
+5. SQL DF duration: Wall-Clock time duration that includes only SQL-Dataframe queries.
+6. GPU Opportunity: Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.
+7. Estimated GPU Duration: Predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
+   operator durations along with durations that could not run on CPU because they are unsupported operators or not SQL operations.
+8. Estimated GPU Speed-up: The speed-up factor is simply the original CPU duration of the app divided by the
+   estimated GPU duration.  That will estimate how much faster the application would run on GPU.
+9. Estimated GPU Time Saved: Estimated Wall-Clock time saved if it was run on the GPU.
+10. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
+11. Executor CPU Time Percent: This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO.
+    This is not always a good indicator because sometimes the IO that is encrypted and the CPU has to do work to decrypt it,
+    so the environment you are running on needs to be taken into account.
+12. SQL Ids with Failures: SQL Ids of queries with failed jobs.
+13. Unsupported Read File Formats and Types: Looks at the Read Schema and
+    reports the file formats along with types which may not be fully supported.
+    Example: `JDBC[*]`. Note that this is based on the current version of the plugin and
+    future versions may add support for more file formats and types.
+14. Unsupported Write Data Format: Reports the data format which we currently don’t support, i.e.
+    if the result is written in JSON or CSV format.
+15. Complex Types: Looks at the Read Schema and reports if there are any complex types(array, struct or maps) in the schema.
+16. Nested Complex Types: Nested complex types are complex types which
+    contain other complex types (Example: `array<struct<string,string>>`).
+    Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema,
+    so if you see `...`, then the full schema is not available.
+    For such schemas we read until `...` and report if there are any complex types and nested complex types in that.
+17. Potential Problems: Some UDFs and nested complex types. Please keep in mind that the tool is only able to detect certain issues.
+18. Longest SQL Duration: The maximum amount of time spent in a single task of SQL Dataframe operations.
+19. NONSQL Task Duration Plus Overhead: Time duration that does not span any running SQL task.
+20. Unsupported Task Duration: Sum of task durations for any unsupported operators.
+21. Supported SQL DF Task Duration: Sum of task durations that are supported by RAPIDS GPU acceleration.
+22. Task Speedup Factor: The average speed-up of all stages.
+23. App Duration Estimated: True or False indicates if we had to estimate the application duration.
+    If we had to estimate it, the value will be `True` and it means the event log was missing the application finished
+    event, so we will use the last job or sql execution time we find as the end time used to calculate the duration.
+24. Read Schema: Shows the datatypes and read formats. This field is only listed when the argument `--report-read-schema`
+    is passed to the CLI.
+
+**Note:** the Qualification tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
+Please refer to [Supported Operators](./supported_ops.md) for more details on UDF.
+
+### Stages report
+
+For each step in a physical execution plan, the Qualification tool generates the following information:
+
+1. App ID
+2. Stage ID
+3. Average Speedup Factor: The average estimated speed-up of all the operators in the given stage.
+4. Stage Task Duration: Amount of time spent in tasks of SQL Dataframe operations for the given stage.
+5. Unsupported Task Duration: Sum of task durations for the unsupported operators. For more details,
+   see [Supported Operators](./supported_ops.md).
+6. Stage Estimated: True or False indicates if we had to estimate the stage duration.
+
+Note that this report is currently limited to the CSV file format and not supported in the HTML report.
+
+### Execs report
+
+The Qualification tool generates a report of the "Exec" in each SQL Dataframe operations along with the estimated
+acceleration on the GPU. Please refer to the [Supported Operators](./supported_ops.md) section for more
+details on limitations on UDFs and unsupported operators.
+
+1. App ID
+2. SQL ID
+3. Exec Name: example `Filter`, `HashAggregate`
+4. Expression Name
+5. Task Speedup Factor: It is simply the average acceleration of the operators based on th original CPU duration of the
+   operator divided by the GPU duration. The tool uses historical queries and benchmarks to estimate a speed-up at
+   an individual operator level to calculate how much a specific operator would accelerate on GPU.
+6. Exec Duration: Wall-Clock time measured since the operator starts till it is completed.
+7. SQL Node Id
+8. Exec Is Supported: Whether the Exec is supported by RAPIDS or not. Please refer to the
+  [Supported Operators](./supported_ops.md) section.
+9. Exec Stages: An array of stage IDs
+10. Exec Children
+11. Exec Children Node Ids
+12. Exec Should Remove
+
+Note that this report is currently limited to the CSV file format and not supported in the HTML report.
+
+## Output Formats
+
+The Qualification tool generates the output as CSV/log files. Starting from "_22.06_", the default
 is to generate the report into two different formats:  CSV/log files; and HTML.
+
+### HTML Report
+
+Starting with release _"22.06"_, the HTML report is generated by default under the output directory `${OUTPUT_FOLDER}/ui`.
+The HTML report is disabled by passing `--no-html-report` as described in the
+[Qualification tool options](#Qualification-tool-options) section above.  
+To browse the content of the html report:
+
+1. For HDFS or remote node, copy the directory of `${OUTPUT_FOLDER}/ui` to your local node.
+2. Open `ui/index.html` in your local machine's web-browser (Chrome/Firefox are recommended).
+
+The HTML view renders the detailed information into tables that allow following features:
+
+- searching
+- ordering by specific column
+- exporting table into CSV file
+- interactive filter by recommendations and/or user-name.
+
+The following sections describe the HTML views.
+
+#### Recommendations Summary
+
+`index.html` shows the summary of the estimated GPU performance.
+
+1. At the top of the page, the report shows a global summary of statistics, including: total number of apps analyzed;
+   the number of apps that are recommended to run on the GPU; and the estimated time saved if the apps were run on the GPU.
+2. Filter panes with the capability to search the result table by selecting rows in the panes.
+   The "_Recommendations_" and "_Spark User_" filters are cascaded which allows the panes to be filtered based on the values
+   selected in the other pane.
+3. Text Search field that allows further filtering, removing data from the result set as keywords are entered. The search
+   box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_"
+   - The GPU recommendation table lists the estimated GPU performance along with the ability to search, and filter the
+   results.
+4. The `Raw Data` link in the left navigation bar redirects to a detailed report.
+5. HTML5 export button saves the table to CSV file named `Qualification Tool Dashboard.csv` into the browser's default
+   download folder.
+
+
+![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-header-01.png)
+
+#### Raw Data
+
+`raw.html` displays the same all the fields listed in "_Detailed App Report_" in more readable format.
+Columns representing "_time duration_" are rounded to nearest "ms", "seconds", "minutes", and "hours".  
+The search box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_",
+"_User Name_", "_Unsupported Write Data Format_", "_Complex Types_", "_Nested Complex Types_", and "_Read Schema_".
+The detailed table can also be exported as `Qualification Tool Dashboard – Raw Data.csv`.
+
 
 ### Text and CSV files
 
-The Qualification tool generates a set of log/CSV files in the output folder. The content of each
+The Qualification tool generates a set of log/CSV files in the output folder
+`${OUTPUT_FOLDER}/rapids_4_spark_qualification_output`. The content of each
 file is summarized in the following two sections.
 
 #### Report Summary
@@ -353,23 +526,11 @@ The Qualification tool generates a brief summary that includes the projected app
 if the application is run on the GPU. Beside sending the summary to `STDOUT`, the Qualification tool
 generates _text_ as `rapids_4_spark_qualification_output.log`
 
-The summary report outputs the following information:
+The summary report outputs the following information: App Name, App ID, App Duration, SQL DF duration,
+GPU Opportunity,  Estimated GPU Duration, Estimated GPU Speed-up, Estimated GPU Time Saved, and
+Recommendation.
 
-1. App Name
-2. App ID 
-3. App Duration: Wall-Clock time measured since the application starts till it is completed.
-   If an app is not completed an estimated completion time would be computed.
-4. SQL DF duration: Wall-Clock time duration that includes only SQL-Dataframe queries.
-5. GPU Opportunity: Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.
-6. Estimated GPU Duration: Predicted runtime of the app if it was run on GPU.
-7. Estimated GPU Speed-up: Speed-up factor estimated for the app. Calculated as the ratio between
-   `App Duration` and `Estimated GPU Duration`.
-8. Estimated GPU Time Saved: Estimated Wall-Clock time saved if it was run on the GPU.
-9. Recommendation: Recommendation based on `Estimated Speed-up Factor`, where
-   an app can be "_Strongly Recommended_", "_Recommended_", "_Not Recommended_",
-   or "_Not Applicable_". The latter indicates that the app has job or stage failures.
-
-Note: the duration(s) reported are in milli-seconds.
+Note: the duration(s) reported are in milliseconds.
 Sample output in text:
 
 ```
@@ -395,44 +556,15 @@ because `Estimated GPU Speedup` is ~3.27. On the other hand, the estimated accel
 
 The first part of the detailed report is saved as `rapids_4_spark_qualification_output.csv`. 
 The apps  are processed and ranked by the `Estimated GPU Speed-up`.
-In addition to the fields listed in the "_Report Summary_", it shows the following fields:
+In addition to the fields listed in the "_Report Summary_", it shows all the app fields.
+The duration(s) are reported are in milliseconds.
 
-1. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
-2. Executor CPU Time Percent: This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO.
-   This is not always a good indicator because sometimes the IO that is encrypted and the CPU has to do work to decrypt it,
-   so the environment you are running on needs to be taken into account.
-3. SQL Ids with Failures: SQL Ids of queries with failed jobs.
-4. Unsupported Read File Formats and Types: Looks at the Read Schema and
-   reports the file formats along with types which may not be fully supported.
-   Example: `Parquet[decimal]`, `JDBC[*]`. Note that this is based on the current version of the plugin and
-   future versions may add support for more file formats and types.
-5. Unsupported Write Data Format: Reports the data format which we currently don’t support, i.e.
-   if the result is written in JSON or CSV format.
-6. Complex Types: Looks at the Read Schema and reports if there are any complex types(array, struct or maps) in the schema.
-7. Nested Complex Types: Nested complex types are complex types which
-   contain other complex types (Example: `array<struct<string,string>>`).
-   Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema,
-   so if you see `...`, then the full schema is not available.
-   For such schemas we read until `...` and report if there are any complex types and nested complex types in that.
-8. Potential Problems: Some UDFs and nested complex types. Please keep in mind that the tool is only able to detect certain issues.
-9. Longest SQL Duration: The maximum amount of time spent in a single task of SQL Dataframe operations.
-10. NONSQL Task Duration Plus Overhead: Time duration that does not span any running SQL task.
-11. Unsupported Task Duration: Sum of task durations for any unsupported operators.
-12. Supported SQL DF Task Duration: Sum of task durations that are supported by RAPIDS GPU acceleration.
-13. Task Speedup Factor: The average speed-up of all stages.
-14. App Duration Estimated: True or False indicates if we had to estimate the application duration.
-    If we had to estimate it, the value will be `True` and it means the event log was missing the application finished
-    event, so we will use the last job or sql execution time we find as the end time used to calculate the duration.
-15. Read Schema: Shows the datatypes and read formats. This field is only listed when the argument `--report-read-schema`
-    is passed to the CLI.
-
-**Note:** the Qualification tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
-Please refer to [supported_ops.md](./supported_ops.md) for more details on UDF.
 
 **2. Stages report**
 
-The second file is saved as `rapids_4_spark_qualification_output_stages.csv` and it includes the following information:
+The second file is saved as `rapids_4_spark_qualification_output_stages.csv`.
 
+Sample output in text:
 ```
 +--------------+----------+-----------------+------------+---------------+-----------+
 |    App ID    | Stage ID | Average Speedup | Stage Task |  Unsupported  |   Stage   |
@@ -444,17 +576,12 @@ The second file is saved as `rapids_4_spark_qualification_output_stages.csv` and
 +--------------+----------+-----------------+------------+---------------+-----------+
 ```
 
-1. Average Speedup Factor: The average estimated speed-up of all the operators in the given stage.
-2. Stage Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
-3. Unsupported Task Duration: Sum of task durations for the unsupported operators. For more details,
-   see [supported_ops.md](./supported_ops.md).
-4. Stage Estimated: True or False indicates if we had to estimate the stage duration.
-
 **3. Execs report**
 
 The last file is saved `rapids_4_spark_qualification_output_execs.csv`. Similar to the app and stage information,
 the table shows  estimated GPU performance of the SQL Dataframe operations.
 
+Sample output in text:
 ```
 +--------------+--------+---------------------------+-----------------------+--------------+----------+----------+-----------+--------+----------------------------+---------------+-------------+
 |    App ID    | SQL ID |         Exec Name         |    Expression Name    | Task Speedup |   Exec   | SQL Node |  Exec Is  |  Exec  |        Exec Children       | Exec Children | Exec Should |
@@ -474,48 +601,6 @@ the table shows  estimated GPU performance of the SQL Dataframe operations.
 |              |        |                           |                       |              |          |          |           |        |              HashAggregate |               |             |
 +--------------+--------+---------------------------+-----------------------+--------------+----------+----------+-----------+--------+----------------------------+---------------+-------------+
 ```
-
-### HTML Report
-
-Starting from Version-22.06, the Qualification tool generates HTML formatted report. The HTML report can be disabled by
-passing `--no-html-report` as described in the [Qualification tool options](#Qualification-tool-options) section above.
-The report can be accessed by opening `${OUTPUT_FOLDER}/ui/html/index.html`.
-The HTML view renders the detailed information into tables that allow following features:
-
-- searching
-- ordering by specific column
-- exporting table into CSV file
-- interactive filter by recommendations and/or user-name.
-
-The following sections describe the HTML views.
-
-#### Recommendations Summary
-
-`index.html` shows the summary of the estimated GPU performance.
-
-1. At the top of the page, the report shows a global summary of statistics, including: total number of apps analyzed;
-   the number of apps that are recommended to run on the GPU; and the estimated time saved if the apps were run on the GPU.
-2. Filter panes with the capability to search the result table by selecting rows in the panes.
-   The "_Recommendations_" and "_Spark User_" filters are cascaded which allows the panes to be filtered based on the values
-   selected in the other pane.
-3. Text Search field that allows further filtering, removing data from the result set as keywords are entered. The search
-   box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_" 
-       - The GPU recommendation table lists the estimated GPU performance along with the ability to search, and filter the
-        results.
-4. The `Raw Data` link in the left navigation bar redirects to a detailed report.
-5. HTML5 export button saves the table to CSV file named `Qualification Tool Dashboard.csv` into the browser's default
-   download folder.
-
-Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while saving infrastructure costs.
-![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-header-01.png)
-
-#### Raw Data
-
-`raw.html` displays the same all the fields listed in `rapids_4_spark_qualification_output.csv` in more readable format.
-Columns representing "_time duration_" are rounded to nearest "ms", "seconds", "minutes", and "hours".  
-The search box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_",
-"_User Name_", "_Unsupported Write Data Format_", "_Complex Types_", "_Nested Complex Types_", and "_Read Schema_".
-The detailed table can also be exported as `Qualification Tool Dashboard – Raw Data.csv`.
 
 ## How to compile the tools jar
 Note: This step is optional.
