@@ -258,6 +258,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Test all supported casts with in-range values") {
+    // Temporarily disable it for Spark 340.
+    // Tracked by 
+    assume(cmpSparkVersion(3, 4, 0) < 0)
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
