@@ -308,6 +308,8 @@ def test_read_orc_with_empty_clipped_schema(spark_tmp_path, v1_enabled_list, rea
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema).orc(data_path), conf=all_confs)
 
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_orc_read_multiple_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     first_gen_list = [('a', int_gen), ('b', int_gen)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
