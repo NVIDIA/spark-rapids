@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
-import org.apache.spark.util.SerializableConfiguration
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 object ExternalSource {
 
@@ -38,6 +38,16 @@ object ExternalSource {
       case Failure(_) => false
       case Success(_) => true
     }
+  }
+
+  lazy val showErrorMessage: Boolean = {
+    val loader = Utils.getContextOrSparkClassLoader
+    val hasAvroInSparkContext =
+      Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
+      case Failure(_) => false
+      case Success(_) => true
+    }
+    hasAvroInSparkContext && !hasSparkAvroJar
   }
 
   /** If the file format is supported as an external source */
@@ -119,6 +129,10 @@ object ExternalSource {
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
+    if (showErrorMessage) {
+      println("WARNING: Avro library isn't loaded by the RAPIDS plugin. Please use --jars to " +
+          "load the plugin if you haven't done so")
+    }
     if (hasSparkAvroJar) {
       Seq(
         GpuOverrides.scan[AvroScan](
