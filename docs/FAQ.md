@@ -307,13 +307,13 @@ Yes
 
 ### Are the R APIs for Spark supported?
 
-Yes, but we don't actively test them. It is because the RAPIDS Accelerator hooks into Spark not at 
+Yes, but we don't actively test them, because the RAPIDS Accelerator hooks into Spark not at 
 the various language APIs but at the Catalyst level after all the various APIs have converged into 
 the DataFrame API.
 
 ### Are the Java APIs for Spark supported?
 
-Yes, but we don't actively test them. It is because the RAPIDS Accelerator hooks into Spark not at
+Yes, but we don't actively test them, because the RAPIDS Accelerator hooks into Spark not at
 the various language APIs but at the Catalyst level after all the various APIs have converged into
 the DataFrame API.
 
