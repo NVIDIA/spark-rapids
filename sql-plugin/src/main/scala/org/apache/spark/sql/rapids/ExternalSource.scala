@@ -27,16 +27,14 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
-import org.apache.spark.util.{SerializableConfiguration, Utils}
+import org.apache.spark.util.SerializableConfiguration
 
 object ExternalSource {
 
   lazy val hasSparkAvroJar = {
-    val loader = Utils.getContextOrSparkClassLoader
-
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
-    Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
+    Try(ShimLoader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
       case Failure(_) => false
       case Success(_) => true
     }
