@@ -342,7 +342,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       "org.apache.spark.sql.catalyst.expressions.Cast"
     }
     Class.forName(keyString).asInstanceOf[Class[Expression]]
-    //Class.forName(keyString)
   }
 
   private def getUnsupportedCasts(ansiEnabled: Boolean): Seq[(DataType, DataType)] = {
