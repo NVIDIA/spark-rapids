@@ -289,7 +289,7 @@ def _test_dpp_like_any(store_format, is_aqe_on, spark_tmp_table_factory):
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
         exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
-        conf={'spark.sql.adaptive.enabled': is_aqe_on})
+        conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', is_aqe_on)]))
 
 
 @ignore_order
