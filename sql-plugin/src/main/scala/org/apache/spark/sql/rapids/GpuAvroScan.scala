@@ -21,7 +21,7 @@ import java.net.URI
 import java.util.concurrent.{Callable, ThreadPoolExecutor}
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 import scala.math.max
@@ -992,7 +992,10 @@ private case class CopyRange(offset: Long, length: Long)
 case class AvroExtraInfo() extends ExtraInfo
 
 /** avro schema wrapper */
-case class AvroSchemaWrapper(schema: Schema) extends SchemaBase
+case class AvroSchemaWrapper(schema: Schema) extends SchemaBase {
+
+  override def fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
+}
 
 /** avro BlockInfo wrapper */
 case class AvroDataBlock(blockInfo: BlockInfo) extends DataBlockBase {
