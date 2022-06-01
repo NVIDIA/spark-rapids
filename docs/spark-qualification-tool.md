@@ -9,21 +9,21 @@ nav_order: 8
 The Qualification tool analyzes Spark events generated from CPU based Spark applications to help quantify
 the expected acceleration of migrating a Spark application to GPU.
 
-The tool first analyzes the operators executed from the CPU log and determines which ones would be qualified to run on
-GPU.  
+The tool first analyzes the CPU event log and determine which operators are likely to run on the GPU.  
 The tool then uses estimates from historical queries and benchmarks to estimate a speed-up at an individual operator
 level to calculate how much a specific operator would accelerate on GPU for the specific application.  
-To calculate the _"Estimated GPU App Duration"_, it will add up the accelerated operator durations along with durations
-that could not run on CPU because they are unsupported operators or not SQL operations.
+It calculates an _"Estimated GPU App Duration"_ by adding up the accelerated operator durations along with durations
+that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
 
 This tool is intended to give the users a starting point and does not guarantee the
 applications with the highest _recommendation_ will actually be accelerated the most. Currently,
 it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
 
 > **Disclaimer!**  
-> Estimates provided by the Qualification tool are given assuming supported "_SparkPlan_" or "_Executor Nodes_"
-> are used in the application and does not yet look at the expressions or datatypes.  
-> For more details, please refer to the [Supported Operators](./supported_ops.md) section.
+> Estimates provided by the Qualification tool are based on the currently supported "_SparkPlan_" or "_Executor Nodes_"
+> used in the application. It currently does not look at the expressions or datatypes used.  
+> Please refer to the [Supported Operators](./supported_ops.md) guide to check the types and expressions you are using
+> are supported.
 
 This document covers below topics:
 
@@ -352,9 +352,9 @@ For each processed Spark application, the Qualification tool generates two main 
 acceleration of migrating a Spark application to GPU.
 
 1. `Estimated GPU Duration`: Predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
-   operator durations along with durations that could not run on CPU because they are unsupported operators or not SQL operations.
+   operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
 2. `Estimated Speed-up factor`: The estimated speed-up factor is simply the original CPU duration of the app divided by the
-   estimated GPU duration.  That will estimate how much faster the application would run on GPU.
+   estimated GPU duration. That will estimate how much faster the application would run on GPU.
 
 The lower the estimated GPU duration, the higher the "_Estimated Speed-up_".
 The processed applications are ranked by the "_Estimated Speed-up_". Based on how high the speed-up factor,
@@ -386,10 +386,10 @@ The report represents the entire app execution, including unsupported operators 
    If an app is not completed an estimated completion time would be computed.
 5. SQL DF duration: Wall-Clock time duration that includes only SQL-Dataframe queries.
 6. GPU Opportunity: Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.
-7. Estimated GPU Duration: Predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
-   operator durations along with durations that could not run on CPU because they are unsupported operators or not SQL operations.
+7. Estimated GPU Duration: Predicted runtime of the app if it was run on GPU. It is the sum of the accelerated
+   operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
 8. Estimated GPU Speed-up: The speed-up factor is simply the original CPU duration of the app divided by the
-   estimated GPU duration.  That will estimate how much faster the application would run on GPU.
+   estimated GPU duration. That will estimate how much faster the application would run on GPU.
 9. Estimated GPU Time Saved: Estimated Wall-Clock time saved if it was run on the GPU.
 10. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
 11. Executor CPU Time Percent: This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO.
@@ -425,7 +425,7 @@ Please refer to [Supported Operators](./supported_ops.md) for more details on UD
 
 ### Stages report
 
-For each step in a physical execution plan, the Qualification tool generates the following information:
+For each stage used in SQL operations, the Qualification tool generates the following information:
 
 1. App ID
 2. Stage ID
@@ -439,8 +439,8 @@ Note that this report is currently limited to the CSV file format and not suppor
 
 ### Execs report
 
-The Qualification tool generates a report of the "Exec" in each SQL Dataframe operations along with the estimated
-acceleration on the GPU. Please refer to the [Supported Operators](./supported_ops.md) section for more
+The Qualification tool generates a report of the "Exec" in the "_SparkPlan_" or "_Executor Nodes_" along with the estimated
+acceleration on the GPU. Please refer to the [Supported Operators](./supported_ops.md) guide for more
 details on limitations on UDFs and unsupported operators.
 
 1. App ID
@@ -464,7 +464,7 @@ Note that this report is currently limited to the CSV file format and not suppor
 ## Output Formats
 
 The Qualification tool generates the output as CSV/log files. Starting from "_22.06_", the default
-is to generate the report into two different formats:  CSV/log files; and HTML.
+is to generate the report into two different formats: CSV/log files; and HTML.
 
 ### HTML Report
 
@@ -487,7 +487,9 @@ The following sections describe the HTML views.
 
 #### Recommendations Summary
 
-`index.html` shows the summary of the estimated GPU performance.
+`index.html` shows the summary of the estimated GPU performance. The "_GPU Recommendations Table_"
+lists the processed applications ranked by the "_Estimated GPU Speed-up_" along with the ability to search, and filter
+the results.
 
 1. At the top of the page, the report shows a global summary of statistics, including: total number of apps analyzed;
    the number of apps that are recommended to run on the GPU; and the estimated time saved if the apps were run on the GPU.
@@ -496,12 +498,9 @@ The following sections describe the HTML views.
    selected in the other pane.
 3. Text Search field that allows further filtering, removing data from the result set as keywords are entered. The search
    box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_"
-   - The GPU recommendation table lists the estimated GPU performance along with the ability to search, and filter the
-   results.
 4. The `Raw Data` link in the left navigation bar redirects to a detailed report.
 5. HTML5 export button saves the table to CSV file named `Qualification Tool Dashboard.csv` into the browser's default
    download folder.
-
 
 ![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-header-01.png)
 
@@ -527,7 +526,7 @@ if the application is run on the GPU. Beside sending the summary to `STDOUT`, th
 generates _text_ as `rapids_4_spark_qualification_output.log`
 
 The summary report outputs the following information: App Name, App ID, App Duration, SQL DF duration,
-GPU Opportunity,  Estimated GPU Duration, Estimated GPU Speed-up, Estimated GPU Time Saved, and
+GPU Opportunity, Estimated GPU Duration, Estimated GPU Speed-up, Estimated GPU Time Saved, and
 Recommendation.
 
 Note: the duration(s) reported are in milliseconds.
@@ -555,7 +554,7 @@ because `Estimated GPU Speedup` is ~3.27. On the other hand, the estimated accel
 **1. Entire App report**
 
 The first part of the detailed report is saved as `rapids_4_spark_qualification_output.csv`. 
-The apps  are processed and ranked by the `Estimated GPU Speed-up`.
+The apps are processed and ranked by the `Estimated GPU Speed-up`.
 In addition to the fields listed in the "_Report Summary_", it shows all the app fields.
 The duration(s) are reported are in milliseconds.
 
@@ -579,7 +578,7 @@ Sample output in text:
 **3. Execs report**
 
 The last file is saved `rapids_4_spark_qualification_output_execs.csv`. Similar to the app and stage information,
-the table shows  estimated GPU performance of the SQL Dataframe operations.
+the table shows estimated GPU performance of the SQL Dataframe operations.
 
 Sample output in text:
 ```
@@ -619,7 +618,7 @@ If any input is a S3 file path or directory path, 2 extra steps are needed to ac
 1. Download the matched jars based on the Hadoop version:
    - `hadoop-aws-<version>.jar`
    - `aws-java-sdk-<version>.jar`
-     
+
 2. Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
    [hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
    [aws-java-sdk-1.7.4.jar](https://repo.maven.apache.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar)
