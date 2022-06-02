@@ -165,6 +165,42 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
+    val supportedMetaCharacters = "\\^-]+"
+
+    def getEscapedComponent(): RegexCharacterClassComponent = {
+      peek() match {
+        case Some('x') => 
+          consumeExpected('x')
+          RegexChar(Integer.parseInt(parseHexDigit.a, 16).toChar)
+        case Some('0') => 
+          consumeExpected('0')
+          RegexChar(Integer.parseInt(parseOctalDigit.a, 8).toChar)
+        case Some(ch) =>
+          consumeExpected(ch) match {
+            // List of character literals with an escape from here, under "Characters"
+            // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+            case 'n' => RegexChar('\n')
+            case 'r' => RegexChar('\r')
+            case 't' => RegexChar('\t')
+            case 'f' => RegexChar('\f')
+            case 'a' => RegexChar('\u0007')
+            case 'b' => RegexChar('\b')
+            case 'e' => RegexChar('\u001b')
+            case ch => 
+              if (supportedMetaCharacters.contains(ch)) {
+                // an escaped metacharacter ('\\', '^', '-', ']', '+')
+                RegexEscaped(ch) 
+              } else {
+                throw new RegexUnsupportedException(
+                  s"Unsupported escaped character in character class", Some(pos))
+              }
+          }
+        case None =>
+          throw new RegexUnsupportedException(
+                s"Unclosed character class", Some(pos))
+      }
+    }
+
     val start = pos
     val characterClass = RegexCharacterClass(negated = false, characters = ListBuffer())
     // loop until the end of the character class or EOF
@@ -185,44 +221,51 @@ class RegexParser(pattern: String) {
           // Negates the character class, causing it to match a single character not listed in
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
-        case '\n' | '\r' | '\t' | '\b' | '\f' | '\u0007' =>
-          // treat as a literal character and add to the character class
-          characterClass.append(ch)
-        case '\\' =>
-          peek() match {
-            case None =>
-              throw new RegexUnsupportedException(
-                s"Unclosed character class", Some(pos))
-            case Some(ch) =>
-              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
-              // within the character class, but could be any escaped character
-              characterClass.appendEscaped(consumeExpected(ch))
-          }
         case '\u0000' =>
           throw new RegexUnsupportedException(
             "cuDF does not support null characters in regular expressions", Some(pos))
-        case _ =>
-          // check for range
-          val start = ch
+        case ch => 
+          val nextChar: RegexCharacterClassComponent = ch match {
+            case '\\' =>
+              getEscapedComponent() match {
+                case RegexChar(ch) if supportedMetaCharacters.contains(ch) =>
+                  // A hex or octal representation of a meta character gets treated as an escaped 
+                  // char. Example: [\x5ea] is treated as [\^a], not just [^a]
+                  RegexEscaped(ch)
+                case other => other
+              }
+            case '&' => 
+              peek() match {
+                case Some('&') => 
+                  throw new RegexUnsupportedException("" +
+                    "cuDF does not support class intersection operator &&", Some(pos))
+                case _ => // ignore
+              }
+              RegexChar('&')
+            case ch =>
+              RegexChar(ch)
+          }
           peek() match {
             case Some('-') =>
               consumeExpected('-')
               peek() match {
                 case Some(']') =>
                   // '-' at end of class e.g. "[abc-]"
-                  characterClass.append(ch)
+                  characterClass.append(nextChar)
                   characterClass.append('-')
+                case Some('\\') =>
+                  consumeExpected('\\')
+                  characterClass.appendRange(nextChar, getEscapedComponent())
                 case Some(end) =>
                   skip()
-                  characterClass.appendRange(start, end)
+                  characterClass.appendRange(nextChar, RegexChar(end))
                 case _ =>
                   throw new RegexUnsupportedException(
                     "unexpected EOF while parsing character range",
                     Some(pos))
               }
             case _ =>
-              // treat as supported literal character
-              characterClass.append(ch)
+              characterClass.append(nextChar)
           }
       }
     }
@@ -342,40 +385,7 @@ class RegexParser(pattern: String) {
             // string anchors
             consumeExpected(ch)
             RegexEscaped(ch)
-          case 'h' | 'H' =>
-            // horizontal whitespace
-            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
-            // under "Predefined character classes"
-            val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
-              RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
-              RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
-            )
-            chars += RegexEscaped('t')
-            chars += RegexCharacterRange('\u2000', '\u200a')
-            consumeExpected(ch)
-            RegexCharacterClass(negated = ch.isUpper, characters = chars)
-          case 'v' | 'V' =>
-            // vertical whitespace
-            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
-            // under "Predefined character classes"
-            val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
-              RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
-            )
-            chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
-            consumeExpected(ch)
-            RegexCharacterClass(negated = ch.isUpper, characters = chars)
-          case 'R' =>
-            // linebreak sequence
-            // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
-            // under "Linebreak matcher"
-            val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
-            val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
-              RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
-              RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
-            ))
-            consumeExpected(ch)
-            RegexGroup(true, RegexChoice(l, r))
-          case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
+          case 's' | 'S' | 'd' | 'D' | 'w' | 'W' | 'v' | 'V' | 'h' | 'H' | 'R' =>
             // meta sequences
             consumeExpected(ch)
             RegexEscaped(ch)
@@ -426,6 +436,9 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
+    } else if (value == 0) {
+      throw new RegexUnsupportedException(s"cuDF does not support null characters " +
+        s"in regular expressions", Some(pos))
     }
 
     RegexHexDigit(hexDigit)
@@ -581,28 +594,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * Parse Java regular expression and translate into cuDF regular expression.
    *
    * @param pattern Regular expression that is valid in Java's engine
-   * @return Regular expression in cuDF format
+   * @param repl Optional replacement pattern
+   * @return Regular expression and optional replacement in cuDF format
    */
-  def transpile(pattern: String, repl: Option[String]): (Option[String], Option[String]) = {
+  def transpile(pattern: String, repl: Option[String]): (String, Option[String]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
-    val replacement = repl match {
-      case Some(s) => Some(new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
-      case None => None
-    }
+    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, replacement, None)
+    val cudfRegex = transpile(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
-    replacement match {
-      case Some(replaceAST) =>
-        (Some(cudfRegex.toRegexString), Some(replaceAST.toRegexString))
-      case _ =>
-        (Some(cudfRegex.toRegexString), None)
-    }
+    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
@@ -647,7 +653,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
     e match {
       case RegexEscaped(ch) => ch match {
-        case 'd' | 'w' | 'h' | 'H' | 'v' | 'V' => true
+        case 'd' | 'w' | 's' | 'S' | 'h' | 'H' | 'v' | 'V' => true
         case _ => false
       }
 
@@ -694,6 +700,70 @@ class CudfRegexTranspiler(mode: RegexMode) {
           RegexCharacterClass(negated = false, characters = terminatorChars),
           RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))))
     }
+  }
+
+  private def negateCharacterClass(components: Seq[RegexCharacterClassComponent]): RegexAST = {
+    // There are differences between cuDF and Java handling of newlines
+    // for negative character matches. The expression `[^a]` will match
+    // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
+    // `(?:[\r\n]|[^a])`. We also have to take into account whether any
+    // newline characters are included in the character range.
+    //
+    // Examples:
+    //
+    // `[^a]`     => `(?:[\r\n]|[^a])`
+    // `[^a\r]`   => `(?:[\n]|[^a])`
+    // `[^a\n]`   => `(?:[\r]|[^a])`
+    // `[^a\r\n]` => `[^a]`
+    // `[^\r\n]`  => `[^\r\n]`
+
+    val distinctComponents = components.distinct
+    val linefeedCharsInPattern = distinctComponents.flatMap {
+      case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
+      case RegexEscaped(ch) if ch == 'n' => Seq('\n')
+      case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+      case _ => Seq.empty
+    }
+
+    val onlyLinefeedChars = distinctComponents.length == linefeedCharsInPattern.length
+    val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
+
+    if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
+      // special case for `[^\r\n]` and `[^\\r\\n]`
+      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
+    } else if (negatedNewlines.isEmpty) {
+      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
+    } else {
+      RegexGroup(capture = false,
+        RegexChoice(
+          RegexCharacterClass(negated = false,
+            characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
+          RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))))
+    }
+  }
+
+  private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
+      previous: Option[RegexAST]): RegexAST = {
+
+    // look for patterns that we know are problematic before we attempt to rewrite the expression
+    val negatedWordOrDigit = contains(regex, {
+      case RegexEscaped('W') | RegexEscaped('D') => true
+      case _ => false
+    })
+    val endOfLineAnchor = contains(regex, {
+      case RegexChar('$') | RegexEscaped('Z') | RegexEscaped('z') => true
+      case _ => false
+    })
+
+    // this check is quite broad and could potentially be refined to look for \W or \D
+    // immediately next to a line anchor
+    if (negatedWordOrDigit && endOfLineAnchor) {
+      throw new RegexUnsupportedException(
+        "Combination of \\W or \\D with line anchor $ " +
+          "or string anchors \\z or \\Z is not supported")
+    }
+
+    rewrite(regex, replacement, previous)
   }
 
   private def rewrite(regex: RegexAST, replacement: Option[RegexReplacement],
@@ -792,12 +862,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
 
       case RegexEscaped(ch) => ch match {
-        case 'D' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4475
-          throw new RegexUnsupportedException("non-digit class \\D is not supported")
-        case 'W' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4475
-          throw new RegexUnsupportedException("non-word class \\W is not supported")
+        case 'd' | 'D' =>
+          // cuDF is not compatible with Java for \d  so we transpile to Java's definition
+          // of [0-9]
+          // https://github.com/rapidsai/cudf/issues/10894
+          val components = ListBuffer[RegexCharacterClassComponent](
+            RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+          if (ch.isUpper) {
+            negateCharacterClass(components)
+          } else {
+            RegexCharacterClass(negated = false, components)
+          }
+        case 'w' | 'W' =>
+          // cuDF is not compatible with Java for \w so we transpile to Java's definition
+          // of `[a-zA-Z_0-9]`
+          val components = ListBuffer[RegexCharacterClassComponent](
+            RegexCharacterRange(RegexChar('a'), RegexChar('z')),
+            RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
+            RegexChar('_'),
+            RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+          if (ch.isUpper) {
+            negateCharacterClass(components)
+          } else {
+            RegexCharacterClass(negated = false, components)
+          }
         case 'b' | 'B' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4517
           throw new RegexUnsupportedException("word boundaries are not supported")
@@ -821,10 +909,53 @@ class CudfRegexTranspiler(mode: RegexMode) {
               rewrite(RegexChar('$'), replacement, previous)
           }
         case 's' | 'S' =>
+          // whitespace characters
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar(' '), RegexChar('\u000b'))
           chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped)
-          RegexCharacterClass(negated = ch.isUpper, characters = chars)
+          if (ch.isUpper) {
+            negateCharacterClass(chars) 
+          } else {
+            RegexCharacterClass(negated = false, characters = chars)
+          }
+        case 'h' | 'H' =>
+          // horizontal whitespace
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+          // under "Predefined character classes"
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar(' '), RegexChar('\u00A0'), RegexChar('\u1680'), RegexChar('\u180e'), 
+            RegexChar('\u202f'), RegexChar('\u205f'), RegexChar('\u3000')
+          )
+          chars += RegexEscaped('t')
+          chars += RegexCharacterRange(RegexChar('\u2000'), RegexChar('\u200a'))
+          if (ch.isUpper) {
+            negateCharacterClass(chars) 
+          } else {
+            RegexCharacterClass(negated = false, characters = chars)
+          }
+        case 'v' | 'V' =>
+          // vertical whitespace
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html 
+          // under "Predefined character classes"
+          val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
+            RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+          )
+          chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
+          if (ch.isUpper) {
+            negateCharacterClass(chars) 
+          } else {
+            RegexCharacterClass(negated = false, characters = chars)
+          }
+        case 'R' =>
+          // linebreak sequence
+          // see https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+          // under "Linebreak matcher"
+          val l = RegexSequence(ListBuffer(RegexChar('\u000D'), RegexChar('\u000A')))
+          val r = RegexCharacterClass(false, ListBuffer[RegexCharacterClassComponent](
+            RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'), 
+            RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
+          ))
+          RegexGroup(true, RegexChoice(l, r))
         case _ =>
           regex
       }
@@ -839,63 +970,23 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
-          case RegexEscaped(ch) if ch == '0' =>
-            // see https://github.com/NVIDIA/spark-rapids/issues/4862
-            // examples
-            // - "[\02] should match the character with code point 2"
-            throw new RegexUnsupportedException(
-              "cuDF does not support octal digits in character classes")
-          case RegexEscaped(ch) if ch == 'x' =>
-            // examples
-            // - "[\x02] should match the character with code point 2"
-            throw new RegexUnsupportedException(
-              "cuDF does not support hex digits in character classes")
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
-          .map(x => x match {
-            case RegexChar(ch) if "^$".contains(ch) => x
-            case _ => rewrite(x, replacement, None).asInstanceOf[RegexCharacterClassComponent]
-          })
+          .map {
+            case r @ RegexChar(ch) if "^$".contains(ch) => r
+            case ch => rewrite(ch, replacement, None) match {
+              case valid: RegexCharacterClassComponent => valid
+              case _ =>
+                // this can happen when a character class contains a meta-sequence such as
+                // `\s` that gets transpiled into another character class
+                throw new RegexUnsupportedException("Character class contains one or more " +
+                  "characters that cannot be transpiled to supported character-class components")
+            }
+          }
 
         if (negated) {
-          // There are differences between cuDF and Java handling of newlines
-          // for negative character matches. The expression `[^a]` will match
-          // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
-          // `(?:[\r\n]|[^a])`. We also have to take into account whether any
-          // newline characters are included in the character range.
-          //
-          // Examples:
-          //
-          // `[^a]`     => `(?:[\r\n]|[^a])`
-          // `[^a\r]`   => `(?:[\n]|[^a])`
-          // `[^a\n]`   => `(?:[\r]|[^a])`
-          // `[^a\r\n]` => `[^a]`
-          // `[^\r\n]`  => `[^\r\n]`
-
-          val linefeedCharsInPattern = components.flatMap {
-            case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
-            case RegexEscaped(ch) if ch == 'n' => Seq('\n')
-            case RegexEscaped(ch) if ch == 'r' => Seq('\r')
-            case _ => Seq.empty
-          }
-
-          val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
-
-          val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
-
-          if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
-            // special case for `[^\r\n]` and `[^\\r\\n]`
-            RegexCharacterClass(negated = true, ListBuffer(components: _*))
-          } else if (negatedNewlines.isEmpty) {
-            RegexCharacterClass(negated = true, ListBuffer(components: _*))
-          } else {
-            RegexGroup(capture = false,
-              RegexChoice(
-                RegexCharacterClass(negated = false,
-                  characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
-                RegexCharacterClass(negated = true, ListBuffer(components: _*))))
-          }
+          negateCharacterClass(components)
         } else {
           RegexCharacterClass(negated, ListBuffer(components: _*))
         }
@@ -1096,13 +1187,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
         def endsWithLineAnchor(e: RegexAST): Boolean = {
           e match {
             case RegexSequence(parts) if parts.nonEmpty =>
-              endsWithLineAnchor(parts.last)
+              val j = parts.lastIndexWhere {
+                  case RegexEmpty() => false
+                  case _ => true
+              }
+              endsWithLineAnchor(parts(j))
             case RegexEscaped('A') => true
             case _ => isBeginOrEndLineAnchor(e)
           }
         }
         if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
-          throw new RegexUnsupportedException(nothingToRepeat)
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with line anchors on one side of a choice")
         }
 
         RegexChoice(ll, rr)
@@ -1123,6 +1219,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
     }
+  }
+
+  private def contains(regex: RegexAST, f: RegexAST => Boolean): Boolean = regex match {
+    case RegexSequence(parts) => parts.exists(x => contains(x, f))
+    case RegexGroup(_, term) => contains(term, f)
+    case RegexChoice(l, r) => contains(l, f) || contains(r, f)
+    case RegexRepetition(term, _) => contains(term, f)
+    case RegexCharacterClass(_, chars) => chars.exists(ch => contains(ch, f))
+    case leaf => f(leaf)
   }
 
   private def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
@@ -1231,10 +1336,11 @@ sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
   override def toRegexString: String = s"\\$a"
 }
 
-sealed case class RegexCharacterRange(start: Char, end: Char)
+sealed case class RegexCharacterRange(start: RegexCharacterClassComponent, 
+    end: RegexCharacterClassComponent)
   extends RegexCharacterClassComponent{
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$start-$end"
+  override def toRegexString: String =  s"${start.toRegexString}-${end.toRegexString}"
 }
 
 sealed case class RegexCharacterClass(
@@ -1247,11 +1353,16 @@ sealed case class RegexCharacterClass(
     characters += RegexChar(ch)
   }
 
+  def append(component: RegexCharacterClassComponent): Unit = {
+    characters += component
+  }
+
   def appendEscaped(ch: Char): Unit = {
     characters += RegexEscaped(ch)
   }
 
-  def appendRange(start: Char, end: Char): Unit = {
+  def appendRange(start: RegexCharacterClassComponent, 
+      end: RegexCharacterClassComponent): Unit = {
     characters += RegexCharacterRange(start, end)
   }
 

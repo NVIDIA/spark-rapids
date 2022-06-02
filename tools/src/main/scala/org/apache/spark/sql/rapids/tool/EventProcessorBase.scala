@@ -20,7 +20,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.tool.profiling.{DriverAccumCase, JobInfoClass, ProfileUtils, TaskStageAccumCase}
+import com.nvidia.spark.rapids.tool.profiling.{DriverAccumCase, JobInfoClass, ProfileUtils, SQLExecutionInfoClass, TaskStageAccumCase}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
@@ -126,11 +126,30 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
 
   def doSparkListenerSQLExecutionStart(
       app: T,
-      event: SparkListenerSQLExecutionStart): Unit = {}
+      event: SparkListenerSQLExecutionStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val sqlExecution = new SQLExecutionInfoClass(
+      event.executionId,
+      event.description,
+      event.details,
+      event.time,
+      None,
+      None,
+      hasDatasetOrRDD = false,
+      ""
+    )
+    app.sqlIdToInfo.put(event.executionId, sqlExecution)
+  }
 
   def doSparkListenerSQLExecutionEnd(
       app: T,
-      event: SparkListenerSQLExecutionEnd): Unit = {}
+      event: SparkListenerSQLExecutionEnd): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    app.sqlIdToInfo.get(event.executionId).foreach { sql =>
+      sql.endTime = Some(event.time)
+      sql.duration = ProfileUtils.OptionLongMinusLong(sql.endTime, sql.startTime)
+    }
+  }
 
   def doSparkListenerDriverAccumUpdates(
       app: T,
@@ -299,6 +318,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
     )
     app.jobIdToInfo.put(event.jobId, thisJob)
+    sqlID.foreach(app.jobIdToSqlID(event.jobId) = _)
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {

@@ -73,7 +73,7 @@ object EventLogPathProcessor extends Logging {
   }
 
   // Databricks has the latest events in file named eventlog and then any rolled in format
-  // eventlog-2021-06-14--20-00.gz, here we assume that is any files start with eventlog
+  // eventlog-2021-06-14--20-00.gz, here we assume that if any files start with eventlog
   // then the directory is a Databricks event log directory.
   def isDatabricksEventLogDir(dir: FileStatus, fs: FileSystem): Boolean = {
     val dbLogFiles = fs.listStatus(dir.getPath, new PathFilter {

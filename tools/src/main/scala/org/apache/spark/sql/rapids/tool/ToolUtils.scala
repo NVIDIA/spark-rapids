@@ -39,23 +39,34 @@ object ToolUtils extends Logging {
       0.toDouble
     } else {
       val res = (firstDec / totalDec) * 100
-      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
-      resScale.toDouble
+      formatDoubleValue(res, 2)
     }
   }
 
   // given to duration values, calculate a human average
   // rounded to specified number of decimal places.
-  def calculateAverage(first: Long, size: Long, places: Int): Double = {
+  def calculateAverage(first: Double, size: Long, places: Int): Double = {
     val firstDec = BigDecimal.decimal(first)
     val sizeDec = BigDecimal.decimal(size)
     if (firstDec == 0 || sizeDec == 0) {
       0.toDouble
     } else {
       val res = (firstDec / sizeDec)
-      val resScale = res.setScale(places, BigDecimal.RoundingMode.HALF_UP)
-      resScale.toDouble
+      formatDoubleValue(res, places)
     }
+  }
+
+  def formatDoubleValue(bigValNum: BigDecimal, places: Int): Double = {
+    bigValNum.setScale(places, BigDecimal.RoundingMode.HALF_UP).toDouble
+  }
+
+  def formatDoublePrecision(valNum: Double): String = {
+    truncateDoubleToTwoDecimal(valNum).toString
+  }
+
+  def truncateDoubleToTwoDecimal(valNum: Double): Double = {
+    // floor is applied after multiplying by 100. This keeps the number "as is" up-to two decimal.
+    math.floor(valNum * 100) / 100
   }
 }
 

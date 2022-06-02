@@ -28,24 +28,19 @@ non_nested_array_gens = [ArrayGen(sub_gen, nullable=nullable)
                          for nullable in [True, False]
                          for sub_gen in all_gen + [null_gen]]
 
-@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', non_nested_array_gens + nested_array_gens_sample, ids=idfn)
 def test_concat_list(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr('concat(a)'))
+        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen).selectExpr(
+            'concat()',
+            'concat(a)',
+            'concat(a, b)',
+            'concat(a, b, c)')
+        )
 
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr('concat(a, b)'))
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen
-                                   ).selectExpr('concat(a, b, c)'))
-
-def test_empty_concat_list():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, ArrayGen(LongGen())).selectExpr('concat()'))
-
-@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
-def test_concat_list_with_lit(data_gen):
+@pytest.mark.parametrize('dg', non_nested_array_gens, ids=idfn)
+def test_concat_double_list_with_lit(dg):
+    data_gen = ArrayGen(dg, max_length=2)
     array_lit = gen_scalar(data_gen)
     array_lit2 = gen_scalar(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
@@ -65,6 +60,18 @@ def test_concat_list_with_lit(data_gen):
             f.concat(f.lit(array_lit).cast(data_gen.data_type),
                      f.lit(array_lit2).cast(data_gen.data_type))))
 
+
+@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
+def test_concat_list_with_lit(data_gen):
+    lit_col1 = f.lit(gen_scalar(data_gen)).cast(data_gen.data_type)
+    lit_col2 = f.lit(gen_scalar(data_gen)).cast(data_gen.data_type)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen).select(
+            f.concat(f.col('a'), f.col('b'), lit_col1),
+            f.concat(lit_col1, f.col('a'), lit_col2),
+            f.concat(lit_col1, lit_col2)))
+
 def test_concat_string():
     gen = mk_str_gen('.{0,5}')
     (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
@@ -81,6 +88,29 @@ def test_concat_string():
                 f.concat(f.col('a'), f.lit(None).cast('string')),
                 f.concat(f.lit(''), f.col('b')),
                 f.concat(f.col('a'), f.lit(''))))
+
+@pytest.mark.parametrize('data_gen', all_basic_map_gens + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+def test_map_concat(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, data_gen, data_gen, data_gen
+                                   ).selectExpr('map_concat()',
+                                                'map_concat(a)',
+                                                'map_concat(b, c)',
+                                                'map_concat(a, b, c)'),
+        {"spark.sql.mapKeyDedupPolicy": "LAST_WIN"}
+    )
+
+@pytest.mark.parametrize('data_gen', all_basic_map_gens + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+def test_map_concat_with_lit(data_gen):
+    lit_col1 = f.lit(gen_scalar(data_gen)).cast(data_gen.data_type)
+    lit_col2 = f.lit(gen_scalar(data_gen)).cast(data_gen.data_type)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen).select(
+            f.map_concat(f.col('a'), f.col('b'), lit_col1),
+            f.map_concat(lit_col1, f.col('a'), lit_col2),
+            f.map_concat(lit_col1, lit_col2)),
+        {"spark.sql.mapKeyDedupPolicy": "LAST_WIN"}
+    )
 
 @pytest.mark.parametrize('data_gen', all_gen + nested_gens, ids=idfn)
 @pytest.mark.parametrize('size_of_null', ['true', 'false'], ids=idfn)

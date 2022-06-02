@@ -139,9 +139,9 @@ val (xgbClassificationModel, _) = benchmark("train") {
 ## Submit Spark jobs to a Dataproc Cluster Accelerated by GPUs
 Similar to spark-submit for on-prem clusters, Dataproc supports a Spark application job to be
 submitted as a Dataproc job.  The mortgage examples we use above are also available as a [spark
-application](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/Spark-ETL+XGBoost).
+application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.08/examples/XGBoost-Examples).
 After [building the jar
-files](https://github.com/NVIDIA/spark-rapids-examples/tree/main/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
+files](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
 .
 
 Place the jar file `sample_xgboost_apps-<version>-jar-with-dependencies.jar` under the

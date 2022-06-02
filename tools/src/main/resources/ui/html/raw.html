@@ -149,40 +149,37 @@
                 </div>
                 <div class="spur-card-title">Raw Data of all Applications</div>
               </div>
-              <div class="card-body ">
+              <div class="card-body">
                 <div id="all-apps-raw-data">
-                  <table id="all-apps-raw-data-table" class="table data-table display datatable" style="width:100%">
+                  <table id="all-apps-raw-data-table" class="table data-table display wrap" style="width:100%">
                     <thead>
                     <tr>
                       <th>App Name</th>
                       <th>App ID</th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="Time duration that includes only SQL/Dataframe queries">
-                                        SQL DF Duration</span></th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="Amount of time spent in tasks of SQL Dataframe operations measured in Wall-Clock">
-                                        SQL Dataframe Task Duration</span></th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="Highlighted in blue are apps that were missing application finished event from the log">
-                                        App Duration</span></th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO. Shaded red when it is below 40%">
-                                        Executor CPU Time Percent</span></th>
-                      <th>SQL Duration with Potential Problems</th>
+                      <th>User</th>
+                      <th>Start Time</th>
+                      <th>Recommendation</th>
+                      <th>Estimated GPU Speedup</th>
+                      <th>App Duration</th>
+                      <th>Estimated GPU Duration</th>
+                      <th>Estimated GPU Time Saved</th>
+                      <th>Task Speed-up Factor</th>
+                      <th>SQL DF Duration</th>
+                      <th>GPU Opportunity</th>
+                      <th>Unsupported Task Duration</th>
+                      <th>Supported SQL DF Task Duration</th>
+                      <th>SQL Dataframe Task Duration</th>
+                      <th>Executor CPU Time Percent</th>
+                      <th>Longest SQL Duration</th>
+                      <th>NONSQL Task Duration Plus Overhead</th>
+                      <th>App Duration Estimated</th>
                       <th>SQL Ids with Failures</th>
-                      <th>Read Score Percent</th>
-                      <th>Read File Format Score</th>
+                      <th>Potential Problems</th>
                       <th>Unsupported Read File Formats and Types</th>
-                      <th>Write Data Format</th>
+                      <th>Unsupported Write Data Format</th>
                       <th>Complex Types</th>
                       <th>Nested Complex Types</th>
-                      <th>Estimated Duration</th>
-                      <th>Unsupported Duration</th>
-                      <th>Speed-up Duration</th>
-                      <th>Speed-up Factor</th>
-                      <th>Total Speed-up</th>
-                      <th>Speed-up Bucket</th>
-                      <th>Longest SqlDuration</th>
+                      <th>Read Schema</th>
                     </tr>
                     </thead>
                   </table>

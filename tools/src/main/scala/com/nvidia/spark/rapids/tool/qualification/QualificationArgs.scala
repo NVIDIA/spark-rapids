@@ -101,11 +101,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
         "number of cores on host divided by 4.")
-  val readScorePercent: ScallopOption[Int] =
-    opt[Int](required = false,
-      descr = "The percent the read format and datatypes apply to the score. Default is " +
-        "20 percent.",
-      default = Some(QualificationArgs.DEFAULT_READ_SCORE_PERCENT))
   val reportReadSchema: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Whether to output the read formats and datatypes to the CSV file. This can " +
@@ -130,10 +125,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val userName: ScallopOption[String] =
     opt[String](required = false,
       descr = "Applications which a particular user has submitted." )
-  val uiEnabled: ScallopOption[Boolean] =
-    opt[Boolean](required = false,
-      descr = "Whether to render the report into HTML pages. Default is false",
-      default = Some(QualificationArgs.DEFAULT_UI_ENABLED))
+  val htmlReport : ScallopOption[Boolean] =
+    toggle("html-report",
+      default = Some(true),
+      prefix = "no-",
+      descrYes = "Generates an HTML Report. Enabled by default.",
+      descrNo = "Disables generating the HTML report.")
 
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
@@ -153,11 +150,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     case _ => Left("Error, timeout must be greater than 3 seconds.")
   }
 
-  validate(readScorePercent) {
-    case percent if (percent >= 0) && (percent <= 100) => Right(Unit)
-    case _ => Left("Error, read score percent must be between 0 and 100.")
-  }
-
   validate(startAppTime) {
     case time if (AppFilterImpl.parseAppTimePeriod(time) > 0L) => Right(Unit)
     case _ => Left("Time period specified, must be greater than 0 and valid periods " +
@@ -168,9 +160,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 }
 
 object QualificationArgs {
-  val DEFAULT_READ_SCORE_PERCENT = 20
-  val DEFAULT_UI_ENABLED = false
-
   def isOrderAsc(order: String): Boolean = {
     order.toLowerCase.startsWith("asc")
   }

@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-package ai.rapids.cudf
+package com.nvidia.spark.rapids.cudf_utils
 
+import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.{Arm,  GpuColumnVectorFromBuffer}
 
@@ -28,8 +29,7 @@ object HostConcatResultUtil extends Arm {
    */
   def rowsOnlyHostConcatResult(numRows: Int): HostConcatResult = {
     new HostConcatResult(
-      new JCudfSerialization.SerializedTableHeader(
-        Array.empty, numRows, 0L),
+      new JCudfSerialization.SerializedTableHeader(numRows),
       HostMemoryBuffer.allocate(0, false))
   }
 
