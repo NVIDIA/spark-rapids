@@ -392,7 +392,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z\\V", 
-      "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$[^\u000B\u0085\u2028\u2029\n\f\r]")
+      "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$[^\u000B\u0085\u2028\u2029\\n\\f\\r]")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
