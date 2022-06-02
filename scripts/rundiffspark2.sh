@@ -205,8 +205,8 @@ sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/})/{/})/!p}'  ../spark2-sql-
 sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/WindowInPandasExec_old.out
 diff -c -w --ignore-blank-lines $tmp_dir/WindowInPandasExec_new.out $tmp_dir/WindowInPandasExec_old.out
 
-sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > $tmp_dir/GpuOrcScanBase_new.out
-sed -n  '/object GpuOrcScanBase/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScanBase.scala > $tmp_dir/GpuOrcScanBase_old.out
+sed -n  '/object GpuOrcScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_new.out
+sed -n  '/object GpuOrcScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_old.out
 diff  $tmp_dir/GpuOrcScanBase_new.out $tmp_dir/GpuOrcScanBase_old.out > $tmp_dir/GpuOrcScanBase.newdiff || true
 diff -c spark2diffs/GpuOrcScanBase.diff $tmp_dir/GpuOrcScanBase.newdiff
 
