@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -1072,6 +1072,138 @@ case class GpuRegExpExtract(
   override def third: Expression = idx
 
   override def prettyName: String = "regexp_extract"
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      regexp: GpuScalar,
+      idx: GpuScalar): ColumnVector = {
+
+    // When group index is 0, it means extract the entire pattern including those parts which
+    // don't belong to any group. For instance,
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 0) => 123abcE
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 1) => 123
+    // regexp_extract('123abcEfg', '([0-9]+)[a-z]+([A-Z])', 2) => E
+    //
+    // To support the full match (group index 0), we wrap a pair of parentheses on the original
+    // cudfRegexPattern.
+    val (extractPattern, groupIndex) = idx.getValue match {
+      case i: Int if i == 0 =>
+        ("(" + cudfRegexPattern + ")", 0)
+      case i =>
+        (cudfRegexPattern, i.asInstanceOf[Int] - 1)
+    }
+
+    // There are some differences in behavior between cuDF and Java so we have
+    // to handle those cases here.
+    //
+    // Given the pattern `^([a-z]*)([0-9]*)([a-z]*)$` the following table
+    // shows the value that would be extracted for group index 2 given a range
+    // of inputs. The behavior is mostly consistent except for the case where
+    // the input is non-null and does not match the pattern.
+    //
+    // | Input  | Java  | cuDF  |
+    // |--------|-------|-------|
+    // | ''     | ''    | ''    |
+    // | NULL   | NULL  | NULL  |
+    // | 'a1a'  | '1'   | '1'   |
+    // | '1a1'  | ''    | NULL  |
+
+    withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+        withResource(str.getBase.containsRe(cudfRegexPattern)) { matches =>
+          withResource(str.getBase.isNull) { isNull =>
+            withResource(str.getBase.extractRe(extractPattern)) { extract =>
+              withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
+                isNull.ifElse(nullString, _)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+class GpuRegExpExtractAllMeta(
+    expr: RegExpExtractAll,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends TernaryExprMeta[RegExpExtractAll](expr, conf, parent, rule) {
+
+  private var pattern: Option[String] = None
+  private var numGroups = 0
+
+  override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
+
+    ShimLoader.getShimVersion match {
+      case _: DatabricksShimVersion if expr.subject.isInstanceOf[InputFileName] =>
+        willNotWorkOnGpu("avoiding Databricks Delta problem with regexp extract")
+      case _ =>
+    }
+
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+    }
+
+    expr.regexp match {
+      case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+        try {
+          val javaRegexpPattern = str.toString
+          // verify that we support this regex and can transpile it to cuDF format
+          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
+            .transpile(javaRegexpPattern, None)._1)
+          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
+        } catch {
+          case e: RegexUnsupportedException =>
+            willNotWorkOnGpu(e.getMessage)
+        }
+      case _ =>
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
+    }
+
+    expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        if (idx < 0) {
+          willNotWorkOnGpu("the specified group index cannot be less than zero")
+        }
+        if (idx > numGroups) {
+          willNotWorkOnGpu(
+            s"regex group count is $numGroups, but the specified group index is $idx")
+        }
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
+    }
+  }
+
+  override def convertToGpu(
+      str: Expression,
+      regexp: Expression,
+      idx: Expression): GpuExpression = {
+    val cudfPattern = pattern.getOrElse(
+      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
+    GpuRegExpExtractAll(str, regexp, idx, cudfPattern)
+  }
+}
+
+case class GpuRegExpExtractAll(
+    subject: Expression,
+    regexp: Expression,
+    idx: Expression,
+    cudfRegexPattern: String)
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
+  override def first: Expression = subject
+  override def second: Expression = regexp
+  override def third: Expression = idx
+
+  override def prettyName: String = "regexp_extract_all"
 
   override def doColumnar(
       str: GpuColumnVector,
