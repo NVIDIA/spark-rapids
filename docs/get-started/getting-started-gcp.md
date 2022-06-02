@@ -310,11 +310,10 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --worker-accelerator=type=nvidia-tesla-t4,count=$NUM_GPUS \
     --worker-machine-type=n1-standard-4 \
     --num-worker-local-ssds=1 \
-    --initialization-actions=gs://$GCS_BUCKET/addon.sh \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata=rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
-    --enable-component-gateway 
+    --enable-component-gateway \
     --subnetwork=default 
 ```
 
