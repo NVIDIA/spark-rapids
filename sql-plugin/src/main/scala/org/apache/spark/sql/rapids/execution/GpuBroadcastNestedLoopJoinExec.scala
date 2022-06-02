@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Table}
+import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
@@ -54,7 +55,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     JoinTypeChecks.tagForGpu(join.joinType, this)
     join.joinType match {
       case _: InnerLike =>
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
+      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         conditionMeta.foreach(requireAstForGpuOn)
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }
@@ -99,7 +100,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
       case RightOuter if gpuBuildSide == GpuBuildRight =>
         throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
+      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         // Cannot post-filter these types of joins
         assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
       case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
@@ -326,9 +327,15 @@ object GpuBroadcastNestedLoopJoinExec extends Arm {
       new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, opTime, joinTime)
     } else {
       val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
-      new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
-        stream, streamAttributes, targetSize, compiledAst, spillCallback,
-        opTime = opTime, joinTime = joinTime)
+      if (joinType.isInstanceOf[ExistenceJoin]) {
+        // existence join
+        new ConditionalNestedLoopExistenceJoinIterator(
+          builtBatch, stream, compiledAst, opTime, joinTime)
+      } else {
+        new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
+          stream, streamAttributes, targetSize, compiledAst, spillCallback,
+          opTime = opTime, joinTime = joinTime)
+      }
     }
     joinIterator.map { cb =>
         joinOutputRows += cb.numRows()
@@ -505,6 +512,9 @@ case class GpuBroadcastNestedLoopJoinExec(
   }
 
   private def doUnconditionalJoin(broadcastRelation: Broadcast[Any]): RDD[ColumnarBatch] = {
+    // Existence join should have a condition
+    assert(!joinType.isInstanceOf[ExistenceJoin])
+
     if (output.isEmpty) {
       doUnconditionalJoinRowCount(broadcastRelation)
     } else {
@@ -634,6 +644,28 @@ case class GpuBroadcastNestedLoopJoinExec(
         numOutputBatches = numOutputBatches,
         opTime = opTime,
         joinTime = joinTime)
+    }
+  }
+}
+
+class ConditionalNestedLoopExistenceJoinIterator(
+    spillableBuiltBatch: LazySpillableColumnarBatch,
+    lazyStream: Iterator[LazySpillableColumnarBatch],
+    condition: CompiledExpression,
+    opTime: GpuMetric,
+    joinTime: GpuMetric
+) extends ExistenceJoinIterator(spillableBuiltBatch, lazyStream, opTime, joinTime) {
+
+  use(condition)
+
+  override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
+    withResource(
+      new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)) { _ =>
+      withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
+        withResource(GpuColumnVector.from(spillableBuiltBatch.getBatch)) { rightTab =>
+          leftTab.conditionalLeftSemiJoinGatherMap(rightTab, condition)
+        }
+      }
     }
   }
 }

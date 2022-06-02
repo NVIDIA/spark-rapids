@@ -35,6 +35,9 @@ ARG UBUNTU_VER
 ARG UCX_VER
 ARG UCX_CUDA_VER
 
+# https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
+RUN UB_VER=$(echo ${UBUNTU_VER} | tr -d '.') && apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UB_VER}/x86_64/3bf863cc.pub
+
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync
@@ -63,3 +66,7 @@ RUN mkdir -p /tmp/ucx && \
 
 # export JAVA_HOME for mvn option 'source-javadoc'
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
+
+# install locale and generate UTF-8, but don't set it as default, the test cases should specify it somehow
+RUN apt-get install -y locales
+RUN locale-gen en_US.UTF-8

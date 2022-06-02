@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -31,13 +32,20 @@ object RapidsErrorUtils {
 
   def mapKeyNotExistError(
       key: String,
-      isElementAtFunction: Boolean,
+      keyType: DataType,
       origin: Origin): NoSuchElementException = {
-    // For now, the default argument is false. The caller sets the correct value accordingly.
-    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtFunction, origin.context)
+    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+  }
+
+  def divByZeroError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.divideByZeroError(origin.context)
+  }
+
+  def divOverflowError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
   }
 }

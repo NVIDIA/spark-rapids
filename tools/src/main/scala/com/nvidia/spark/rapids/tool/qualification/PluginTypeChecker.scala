@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,15 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer,HashMap}
 import scala.io.{BufferedSource, Source}
 
+import org.apache.spark.internal.Logging
+
 /**
  * This class is used to check what the RAPIDS Accelerator for Apache Spark
  * supports for data formats and data types.
  * By default it relies on a csv file included in the jar which is generated
  * by the plugin which lists the formats and types supported.
  */
-class PluginTypeChecker {
+class PluginTypeChecker extends Logging {
 
   private val NS = "NS"
   private val PS = "PS"
@@ -36,6 +38,9 @@ class PluginTypeChecker {
   private val NA = "NA"
 
   private val DEFAULT_DS_FILE = "supportedDataSource.csv"
+  private val OPERATORS_SCORE_FILE = "operatorsScore.csv"
+  private val SUPPORTED_EXECS_FILE = "supportedExecs.csv"
+  private val SUPPORTED_EXPRS_FILE = "supportedExprs.csv"
 
   // map of file format => Map[support category => Seq[Datatypes for that category]]
   // contains the details of formats to which ones have datatypes not supported.
@@ -43,6 +48,12 @@ class PluginTypeChecker {
   // from event logs for write formats.
   // var for testing purposes
   private var (readFormatsAndTypes, writeFormats) = readSupportedTypesForPlugin
+
+  private var supportedOperatorsScore = readOperatorsScore
+
+  private var supportedExecs = readSupportedExecs
+
+  private var supportedExprs = readSupportedExprs
 
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
@@ -52,10 +63,70 @@ class PluginTypeChecker {
     writeFormats = writeFormatsTest
   }
 
+  def setOperatorScore(filePath: String): Unit = {
+    val source = Source.fromFile(filePath)
+    supportedOperatorsScore = readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
+  }
+
+  def setSupportedExecs(filePath: String): Unit = {
+    val source = Source.fromFile(filePath)
+    // We are reading only first 2 columns for now and other columns are ignored intentionally.
+    supportedExecs = readSupportedOperators(source)
+  }
+
+  def setSupportedExprs(filePath: String): Unit = {
+    val source = Source.fromFile(filePath)
+    // We are reading only first 2 columns for now and other columns are ignored intentionally.
+    supportedExprs = readSupportedOperators(source)
+  }
+
+  def getSupportedExprs: Map[String, String] = supportedExprs
+
+  private def readOperatorsScore: Map[String, Double] = {
+    val source = Source.fromResource(OPERATORS_SCORE_FILE)
+    readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
+  }
+
+  private def readSupportedExecs: Map[String, String] = {
+    val source = Source.fromResource(SUPPORTED_EXECS_FILE)
+    readSupportedOperators(source)
+  }
+
+  private def readSupportedExprs: Map[String, String] = {
+    val source = Source.fromResource(SUPPORTED_EXPRS_FILE)
+    readSupportedOperators(source)
+  }
+
   private def readSupportedTypesForPlugin: (
       Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     val source = Source.fromResource(DEFAULT_DS_FILE)
     readSupportedTypesForPlugin(source)
+  }
+
+  private def readSupportedOperators(source: BufferedSource): Map[String, String] = {
+    val supportedOperators = HashMap.empty[String, String]
+    try {
+      val fileContents = source.getLines().toSeq
+      if (fileContents.size < 2) {
+        throw new IllegalStateException(s"${source.toString} file appears corrupt," +
+            " must have at least the header and one line")
+      }
+      // first line is header
+      val header = fileContents.head.split(",").map(_.toLowerCase)
+      // the rest of the rows are operators with additional info
+      fileContents.tail.foreach { line =>
+        val cols = line.split(",")
+        if (header.size != cols.size) {
+          throw new IllegalStateException(s"${source.toString} file appears corrupt," +
+              s" header length doesn't match rows length. Row that doesn't match is " +
+              s"${cols.mkString(",")}")
+        }
+        supportedOperators.put(cols(0), cols(1))
+      }
+    } finally {
+      source.close()
+    }
+    supportedOperators.toMap
   }
 
   // file format should be like this:
@@ -129,12 +200,7 @@ class PluginTypeChecker {
         // check if any of the not supported types are in the schema
         val nsFiltered = dtSupMap(NS).filter(t => schemaLower.contains(t.toLowerCase()))
         if (nsFiltered.nonEmpty) {
-          val deDuped = if (nsFiltered.contains("dec") && nsFiltered.contains("decimal")) {
-            nsFiltered.filterNot(_.equals("dec"))
-          } else {
-            nsFiltered
-          }
-          (0.0, deDuped.toSet)
+          (0.0, nsFiltered.toSet)
         } else {
           // Started out giving different weights based on partial support and so forth
           // but decided to be optimistic and not penalize if we don't know, perhaps
@@ -150,8 +216,38 @@ class PluginTypeChecker {
     score
   }
 
+  def isWriteFormatsupported(writeFormat: String): Boolean = {
+    val format = writeFormat.toLowerCase.trim
+    writeFormats.map(x => x.trim).contains(format)
+  }
+
   def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
       writeFormats.map(x => x.trim).contains(_))
+  }
+
+  def getSpeedupFactor(execOrExpr: String): Double = {
+    supportedOperatorsScore.get(execOrExpr).getOrElse(-1)
+  }
+
+  def isExecSupported(exec: String): Boolean = {
+    // special case ColumnarToRow and assume it will be removed or will we replace
+    // with GPUColumnarToRow. TODO - we can add more logic here to look at operator
+    //  before and after
+    if (exec == "ColumnarToRow") {
+      return true
+    }
+    if (supportedExecs.contains(exec)) {
+      val execSupported = supportedExecs.getOrElse(exec, "NS")
+      if (execSupported == "S") {
+        true
+      } else {
+        logDebug(s"Exec explicitly not supported, value: $execSupported")
+        false
+      }
+    } else {
+      logDebug(s"Exec $exec does not exist in supported execs file")
+      false
+    }
   }
 }

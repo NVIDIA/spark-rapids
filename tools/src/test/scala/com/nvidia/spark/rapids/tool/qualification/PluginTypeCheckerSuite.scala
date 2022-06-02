@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,5 +96,41 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
     assert(score == 1.0)
     assert(nsTypes.isEmpty)
+  }
+
+  test("supported operator score") {
+    val checker = new PluginTypeChecker
+    TrampolineUtil.withTempDir { outpath =>
+      val header = "CPUOperator,Score\n"
+      val supText = (header + "FilterExec,3\n").getBytes(StandardCharsets.UTF_8)
+      val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testScore.txt")
+      Files.write(csvSupportedFile, supText)
+      checker.setOperatorScore(csvSupportedFile.toString)
+      assert(checker.getSpeedupFactor("FilterExec") == 3)
+      assert(checker.getSpeedupFactor("ProjectExec") == -1)
+    }
+  }
+
+  test("supported operator score from default file") {
+    val checker = new PluginTypeChecker
+    assert(checker.getSpeedupFactor("FilterExec") == 2.4)
+    assert(checker.getSpeedupFactor("Ceil") == 3)
+  }
+
+  test("supported Execs") {
+    val checker = new PluginTypeChecker
+    assert(checker.isExecSupported("ShuffledHashJoinExec"))
+    assert(checker.isExecSupported("ShuffledHashJoinExec"))
+    assert(checker.isExecSupported("CollectLimitExec") == false)
+    assert(checker.isExecSupported("ColumnarToRow"))
+
+  }
+
+  test("supported Expressions") {
+    val checker = new PluginTypeChecker
+    val result = checker.getSupportedExprs
+    assert(result.contains("Add"))
+    assert(result("Add") == "S")
+    assert(result.contains("IsNull"))
   }
 }

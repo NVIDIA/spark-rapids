@@ -50,17 +50,14 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
-    val parsedOptions = new AvroOptions(options, hadoopConf)
-    val ignoreExtension = parsedOptions.ignoreExtension
-
     val factory = GpuAvroPartitionReaderFactory(
       sqlConf,
+      new RapidsConf(sqlConf),
       broadcastedHadoopConf,
       dataSchema,
       requiredSchema,
       partitionSchema,
-      new RapidsConf(sqlConf),
-      ignoreExtension,
+      new AvroOptions(options, hadoopConf),
       metrics)
     PartitionReaderIterator.buildReader(factory)
   }

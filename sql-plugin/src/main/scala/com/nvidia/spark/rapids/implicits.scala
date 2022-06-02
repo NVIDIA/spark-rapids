@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 object RapidsPluginImplicits {
 
-  implicit class ReallyAGpuExpression[A <: Expression](exp: Expression) {
+  implicit class ReallyAGpuExpression(exp: Expression) {
     def columnarEval(batch: ColumnarBatch): Any = {
       exp.asInstanceOf[GpuExpression].columnarEval(batch)
     }
   }
 
-  implicit class AutoCloseableColumn[A <: AutoCloseable](autoCloseable: AutoCloseable) {
+  implicit class AutoCloseableColumn(autoCloseable: AutoCloseable) {
 
     /**
      * safeClose: Is an implicit on AutoCloseable class that tries to close the resource, if an
@@ -54,6 +54,26 @@ object RapidsPluginImplicits {
           }
         } else {
           autoCloseable.close()
+        }
+      }
+    }
+  }
+
+  implicit class RapidsBufferColumn(rapidsBuffer: RapidsBuffer) {
+
+    /**
+     * safeFree: Is an implicit on RapidsBuffer class that tries to free the resource, if an
+     * Exception was thrown prior to this free, it adds the new exception to the suppressed
+     * exceptions, otherwise just throws
+     *
+     * @param e Exception which we don't want to suppress
+     */
+    def safeFree(e: Throwable = null): Unit = {
+      if (rapidsBuffer != null) {
+        try {
+          rapidsBuffer.free()
+        } catch {
+          case suppressed: Throwable if e != null => e.addSuppressed(suppressed)
         }
       }
     }
@@ -87,9 +107,43 @@ object RapidsPluginImplicits {
     }
   }
 
+  implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: SeqLike[A, _]) {
+    /**
+     * safeFree: Is an implicit on a sequence of RapidsBuffer classes that tries to free each
+     * element of the sequence, even if prior free calls fail. In case of failure in any of the
+     * free calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
+     * if any.
+     */
+    def safeFree(error: Throwable = null): Unit = if (in != null) {
+      var freeException: Throwable = null
+      in.foreach { element =>
+        if (element != null) {
+          try {
+            element.free()
+          } catch {
+            case e: Throwable if error != null => error.addSuppressed(e)
+            case e: Throwable if freeException == null => freeException = e
+            case e: Throwable => freeException.addSuppressed(e)
+          }
+        }
+      }
+      if (freeException != null) {
+        // an exception happened while we were trying to safely free
+        // resources, throw the exception to alert the caller
+        throw freeException
+      }
+    }
+  }
+
   implicit class AutoCloseableArray[A <: AutoCloseable](val in: Array[A]) {
     def safeClose(e: Throwable = null): Unit = if (in != null) {
       in.toSeq.safeClose(e)
+    }
+  }
+
+  implicit class RapidsBufferArray[A <: RapidsBuffer](val in: Array[A]) {
+    def safeFree(e: Throwable = null): Unit = if (in != null) {
+      in.toSeq.safeFree(e)
     }
   }
 

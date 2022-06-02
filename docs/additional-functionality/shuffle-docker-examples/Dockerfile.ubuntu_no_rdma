@@ -29,6 +29,9 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu18.04
 ARG UCX_VER
 ARG UCX_CUDA_VER
 
+# https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+
 RUN apt update
 RUN apt-get install -y wget
 RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5-cuda$UCX_CUDA_VER.deb

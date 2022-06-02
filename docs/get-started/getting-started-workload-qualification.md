@@ -31,7 +31,7 @@ This article describes the tools we provide and how to do gap analysis and workl
 
 If you have Spark event logs from prior runs of the applications on Spark 2.x or 3.x, you can use
 the [Qualification tool](../spark-qualification-tool.md) and 
-[Profiling tool](../spark-profiling-tool.md) to analyze them.  The qualification tool outputs the score, rank
+[Profiling tool](../spark-profiling-tool.md) to analyze them.  The Qualification tool outputs the score, rank
 and some of the potentially not-supported features for each Spark application.  For example, the CSV
 output can print `Unsupported Read File Formats and Types`, `Unsupported Write Data Format` and
 `Potential Problems` which are the indication of some not-supported features.  Its output can help
@@ -101,15 +101,9 @@ the driver logs with `spark.rapids.sql.explain=all`.
    [configuration documentation](../configs.md) for details of RAPIDS Accelerator
    parameters.
 
-   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
-   UDFs, you can set the following parameters:
+   For example, if your jobs Scala UDFs, you can set the following parameters:
 
   ```scala
-   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
-   spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
-   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
-   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 
@@ -220,15 +214,9 @@ Throws:
    the meaning and risk of above parameters before enabling it. Please refer to the
    [configuration documentation](../configs.md) for details of RAPIDS Accelerator parameters.
    
-   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
-   UDFs, you can set the following parameters:
+   For example, if your jobs have Scala UDFs, you can set the following parameters:
    
    ```scala
-   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
-   spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
-   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
-   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 

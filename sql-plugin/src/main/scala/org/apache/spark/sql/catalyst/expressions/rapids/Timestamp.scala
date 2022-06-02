@@ -20,7 +20,6 @@ package org.apache.spark.sql.catalyst.expressions.rapids
 import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
 
 /**
@@ -39,8 +38,6 @@ object TimeStamp {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
-        override def shouldFallbackOnAnsiTimestamp: Boolean = SQLConf.get.ansiEnabled
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }

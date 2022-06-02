@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
-import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
+import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 
 /**
@@ -263,7 +263,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case (plan, null) =>
         // No coalesce requested
         insertCoalesce(plan, disableUntilInput)
-      case (plan, goal @ RequireSingleBatch) =>
+      case (plan, goal: RequireSingleBatchLike) =>
         // Even if coalesce is disabled a single batch is required to make this operator work
         // This should not cause bugs because we require a single batch in situations where
         // Spark also buffers data, so any operator that needs coalesce disabled would also
@@ -334,13 +334,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>
       if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
-        batchScan.scan.isInstanceOf[GpuOrcScan]) &&
+           batchScan.scan.isInstanceOf[GpuOrcScan] ||
+           ExternalSource.isSupportedScan(batchScan.scan)) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
         val scanCopy = batchScan.scan match {
           case parquetScan: GpuParquetScan =>
             parquetScan.copy(queryUsesInputFile=true)
           case orcScan: GpuOrcScan =>
             orcScan.copy(queryUsesInputFile=true)
+          case eScan if ExternalSource.isSupportedScan(eScan) =>
+            ExternalSource.copyScanWithInputFileTrue(eScan)
           case _ => throw new RuntimeException("Wrong format") // never reach here
         }
         batchScan.copy(scan=scanCopy)

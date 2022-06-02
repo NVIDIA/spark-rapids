@@ -27,17 +27,18 @@ MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
-# maven download SNAPSHOT jars: rapids-4-spark, Spark
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 
 # TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -Dtransitive=false \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
 if [ "$CUDA_CLASSIFIER"x == x ];then
+    $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
     export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 else
+    $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CUDA_CLASSIFIER
     export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CUDA_CLASSIFIER}.jar"
 fi
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
@@ -81,7 +82,7 @@ set -x
 cat "$tmp_info" || true
 
 SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
-if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
+if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$p_ver"|| \
       "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver") ]]; then
   echo "Artifacts revisions are inconsistent!"
   exit 1
@@ -158,6 +159,25 @@ export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
+run_iceberg_tests() {
+  ICEBERG_VERSION="0.13.1"
+  # get the major/minor version of Spark
+  ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
+
+  # Iceberg does not support Spark 3.3+ yet
+  if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
+    SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
+      --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+      --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+      --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
+      --conf spark.sql.catalog.spark_catalog.type=hadoop \
+      --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$" \
+      ./run_pyspark_from_build.sh -m iceberg --iceberg
+  else
+    echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
+  fi
+}
+
 run_test_not_parallel() {
     local TEST=${1//\.py/}
     local LOG_FILE
@@ -176,6 +196,10 @@ run_test_not_parallel() {
         SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
         --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer" \
           ./run_pyspark_from_build.sh -k cache_test
+        ;;
+
+      iceberg)
+        run_iceberg_tests
         ;;
 
       *)
@@ -273,6 +297,11 @@ fi
 # cudf_udf_test
 if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   run_test_not_parallel cudf_udf_test
+fi
+
+# Iceberg tests
+if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+  run_test_not_parallel iceberg
 fi
 
 popd

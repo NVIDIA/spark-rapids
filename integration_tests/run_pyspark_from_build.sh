@@ -57,13 +57,10 @@ else
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     fi
 
-    # `./run_pyspark_from_build.sh` runs all tests including avro_test.py with spark-avro.jar
-    #                               in the classpath.
+    # `./run_pyspark_from_build.sh` runs all the tests excluding the avro tests in 'avro_test.py'.
     #
-    # `./run_pyspark_from_build.sh -k xxx ` runs all xxx tests with spark-avro.jar in the classpath
-    #
-    # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` run all tests (except the marker skipif())
-    #                                           without spark-avro.jar
+    # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` runs all the tests, including the tests
+    #                                                           in 'avro_test.py'.
     if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr [:upper:] [:lower:] ) == "true" ]];
     then
         export INCLUDE_SPARK_AVRO_JAR=true

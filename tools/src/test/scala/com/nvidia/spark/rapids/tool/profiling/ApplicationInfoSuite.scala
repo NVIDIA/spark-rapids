@@ -111,7 +111,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test rapids jar") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir//rapids_join_eventlog.zstd"))
+      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -676,13 +676,13 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         eventLog))
       val exit = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
-      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/local-1621966649543")
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/local-1651188809790")
 
       // assert that a file was generated
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 11)
+      assert(dotDirs.length === 9)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
