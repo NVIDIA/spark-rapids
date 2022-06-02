@@ -171,6 +171,8 @@ diff -c spark2diffs/RegexParser.diff $tmp_dir/RegexParser.newdiff
 diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala > $tmp_dir/TypeChecks.newdiff || true
 diff -c spark2diffs/TypeChecks.diff  $tmp_dir/TypeChecks.newdiff
 
+diff -c ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuTypeShims.scala ../sql-plugin/src/main/311until330-all/scala/com/nvidia/spark/rapids/shims/GpuTypeShims.scala
+
 diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala > $tmp_dir/DataTypeUtils.newdiff || true
 diff -c spark2diffs/DataTypeUtils.diff $tmp_dir/DataTypeUtils.newdiff
 
