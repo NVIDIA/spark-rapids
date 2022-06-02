@@ -1949,6 +1949,7 @@ object GpuOverrides extends Logging {
         override def noReplacementPossibleMessage(reasons: String): String =
           s"blocks running on GPU because $reasons"
         }),
+    GpuScalaUDFMeta.exprMeta,
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
       ExprChecks.projectOnly(TypeSig.DOUBLE, TypeSig.DOUBLE,

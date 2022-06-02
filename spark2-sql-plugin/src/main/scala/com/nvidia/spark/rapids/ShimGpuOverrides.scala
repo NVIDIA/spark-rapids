@@ -93,17 +93,7 @@ object ShimGpuOverrides extends Logging {
             ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
               .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
               TypeSig.lit(TypeEnum.INT)))),
-        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
-      GpuOverrides.expr[ScalaUDF](
-        "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
-          "to get better performance.",
-        ExprChecks.projectOnly(
-          GpuUserDefinedFunction.udfTypeSig,
-          TypeSig.all,
-          repeatingParamCheck =
-            Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-        (expr, conf, p, r) => new ScalaUDFMetaBase(expr, conf, p, r) {
-        })
+        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(

@@ -132,8 +132,8 @@ sed -n  '/object GpuDataSource/,/val GLOB_PATHS_KEY/{/val GLOB_PATHS_KEY/!p}'  .
 diff  $tmp_dir/GpuDataSource_new.out $tmp_dir/GpuDataSource_old.out > $tmp_dir/GpuDataSource.newdiff || true
 diff -c spark2diffs/GpuDataSource.diff $tmp_dir/GpuDataSource.newdiff
 
-sed -n  '/abstract class ScalaUDFMetaBase/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala> $tmp_dir/ScalaUDFMetaBase_new.out
-sed -n  '/abstract class ScalaUDFMetaBase/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > $tmp_dir/ScalaUDFMetaBase_old.out
+sed -n  '/object GpuScalaUDFMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala> $tmp_dir/ScalaUDFMetaBase_new.out
+sed -n  '/object GpuScalaUDFMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > $tmp_dir/ScalaUDFMetaBase_old.out
 diff $tmp_dir/ScalaUDFMetaBase_new.out $tmp_dir/ScalaUDFMetaBase_old.out > $tmp_dir/ScalaUDFMetaBase.newdiff || true
 diff -c spark2diffs/ScalaUDFMetaBase.diff  $tmp_dir/ScalaUDFMetaBase.newdiff
 
