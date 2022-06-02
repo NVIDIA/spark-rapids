@@ -132,16 +132,6 @@ sed -n  '/object GpuDataSource/,/val GLOB_PATHS_KEY/{/val GLOB_PATHS_KEY/!p}'  .
 diff  $tmp_dir/GpuDataSource_new.out $tmp_dir/GpuDataSource_old.out > $tmp_dir/GpuDataSource.newdiff || true
 diff -c spark2diffs/GpuDataSource.diff $tmp_dir/GpuDataSource.newdiff
 
-sed -n  '/class GpuGetArrayItemMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala  > $tmp_dir/GpuGetArrayItemMeta_new.out
-sed -n  '/class GpuGetArrayItemMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala > $tmp_dir/GpuGetArrayItemMeta_old.out
-diff $tmp_dir/GpuGetArrayItemMeta_new.out $tmp_dir/GpuGetArrayItemMeta_old.out > $tmp_dir/GpuGetArrayItemMeta.newdiff || true
-diff -c spark2diffs/GpuGetArrayItemMeta.diff  $tmp_dir/GpuGetArrayItemMeta.newdiff
-
-sed -n  '/class GpuGetMapValueMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala  > $tmp_dir/GpuGetMapValueMeta_new.out
-sed -n  '/class GpuGetMapValueMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/complexTypeExtractors.scala > $tmp_dir/GpuGetMapValueMeta_old.out
-diff $tmp_dir/GpuGetMapValueMeta_new.out $tmp_dir/GpuGetMapValueMeta_old.out > $tmp_dir/GpuGetMapValueMeta.newdiff || true
-diff -c spark2diffs/GpuGetMapValueMeta.diff  $tmp_dir/GpuGetMapValueMeta.newdiff
-
 sed -n  '/abstract class ScalaUDFMetaBase/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala> $tmp_dir/ScalaUDFMetaBase_new.out
 sed -n  '/abstract class ScalaUDFMetaBase/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > $tmp_dir/ScalaUDFMetaBase_old.out
 diff $tmp_dir/ScalaUDFMetaBase_new.out $tmp_dir/ScalaUDFMetaBase_old.out > $tmp_dir/ScalaUDFMetaBase.newdiff || true
