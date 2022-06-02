@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,18 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RapidsConf, RepeatingParamCheck, ShimLoader, TypeSig}
-import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
+import com.nvidia.spark.rapids.{ExprRule, ShimLoader}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+
+/**
+ * The subclass of HiveProvider imports spark-hive classes. This file should not imports
+ * spark-hive because `class not found` exception may throw if spark-hive does not exist at
+ * runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
+ */
+trait HiveProvider {
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
+}
 
 object GpuHiveOverrides {
   def isSparkHiveAvailable: Boolean = {
@@ -39,94 +45,11 @@ object GpuHiveOverrides {
    * mapping if spark-hive is unavailable.
    */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    if (!isSparkHiveAvailable) {
-      return Map.empty
+    if (isSparkHiveAvailable) {
+      val className = "org.apache.spark.sql.hive.rapids.HiveSourceProvider"
+      ShimLoader.newInstanceOf[HiveProvider](className).getExprs
+    } else {
+      Map.empty
     }
-
-    Seq(
-      GpuOverrides.expr[HiveSimpleUDF](
-        "Hive UDF, the UDF can choose to implement a RAPIDS accelerated interface to" +
-          " get better performance",
-        ExprChecks.projectOnly(
-          udfTypeSig,
-          TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[HiveSimpleUDF](a, conf, p, r) {
-          private val opRapidsFunc = a.function match {
-            case rapidsUDF: RapidsUDF => Some(rapidsUDF)
-            case _ => None
-          }
-
-          override def tagExprForGpu(): Unit = {
-            if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
-              willNotWorkOnGpu(s"Hive SimpleUDF ${a.name} implemented by " +
-                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
-                s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
-            }
-          }
-
-          override def convertToGpu(): GpuExpression = {
-            opRapidsFunc.map { _ =>
-              // We use the original HiveGenericUDF `deterministic` method as a proxy
-              // for simplicity.
-              GpuHiveSimpleUDF(
-                a.name,
-                a.funcWrapper,
-                childExprs.map(_.convertToGpu()),
-                a.dataType,
-                a.deterministic)
-            }.getOrElse {
-              // This `require` is just for double check.
-              require(conf.isCpuBasedUDFEnabled)
-              GpuRowBasedHiveSimpleUDF(
-                a.name,
-                a.funcWrapper,
-                childExprs.map(_.convertToGpu()))
-            }
-          }
-        }),
-      GpuOverrides.expr[HiveGenericUDF](
-        "Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to" +
-          " get better performance",
-        ExprChecks.projectOnly(
-          udfTypeSig,
-          TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[HiveGenericUDF](a, conf, p, r) {
-          private val opRapidsFunc = a.function match {
-            case rapidsUDF: RapidsUDF => Some(rapidsUDF)
-            case _ => None
-          }
-
-          override def tagExprForGpu(): Unit = {
-            if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
-              willNotWorkOnGpu(s"Hive GenericUDF ${a.name} implemented by " +
-                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
-                s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
-            }
-          }
-
-          override def convertToGpu(): GpuExpression = {
-            opRapidsFunc.map { _ =>
-              // We use the original HiveGenericUDF `deterministic` method as a proxy
-              // for simplicity.
-              GpuHiveGenericUDF(
-                a.name,
-                a.funcWrapper,
-                childExprs.map(_.convertToGpu()),
-                a.dataType,
-                a.deterministic,
-                a.foldable)
-            }.getOrElse {
-              // This `require` is just for double check.
-              require(conf.isCpuBasedUDFEnabled)
-              GpuRowBasedHiveGenericUDF(
-                a.name,
-                a.funcWrapper,
-                childExprs.map(_.convertToGpu()))
-            }
-          }
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }
