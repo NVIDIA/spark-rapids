@@ -137,9 +137,11 @@ sed -n  '/object GpuScalaUDFMeta/,/override def convertToGpu/{/override def conv
 diff $tmp_dir/ScalaUDFMetaBase_new.out $tmp_dir/ScalaUDFMetaBase_old.out > $tmp_dir/ScalaUDFMetaBase.newdiff || true
 diff -c spark2diffs/ScalaUDFMetaBase.diff  $tmp_dir/ScalaUDFMetaBase.newdiff
 
-sed -n  '/object GpuScalaUDF/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala > $tmp_dir/GpuScalaUDF_new.out
-sed -n  '/object GpuScalaUDF/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > $tmp_dir/GpuScalaUDF_old.out
-diff  -c $tmp_dir/GpuScalaUDF_new.out $tmp_dir/GpuScalaUDF_old.out > $tmp_dir/GpuScalaUDF.newdiff
+sed -n  '/object GpuScalaUDF /,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDFMeta.scala > $tmp_dir/GpuScalaUDF_new.out
+sed -n  '/object GpuScalaUDF /,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala > $tmp_dir/GpuScalaUDF_old.out
+diff  -c $tmp_dir/GpuScalaUDF_new.out $tmp_dir/GpuScalaUDF_old.out
+
+echo "here"
 
 sed -n  '/object GpuDecimalMultiply/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > $tmp_dir/GpuDecimalMultiply_new.out
 sed -n  '/object GpuDecimalMultiply/,/def checkForOverflow/{/def checkForOverflow/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/arithmetic.scala > $tmp_dir/GpuDecimalMultiply_old.out
