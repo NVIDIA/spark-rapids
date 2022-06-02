@@ -72,17 +72,17 @@ The script below will initialize with the following:
     export NUM_WORKERS=5
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
-    --region $REGION \
+    --region=$REGION \
     --image-version=2.0-ubuntu18 \
-    --master-machine-type n1-standard-16 \
-    --num-workers $NUM_WORKERS \
-    --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
-    --worker-machine-type n1-highmem-32\
-    --num-worker-local-ssds 4 \
-    --initialization-actions gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --master-machine-type=n1-standard-16 \
+    --num-workers=$NUM_WORKERS \
+    --worker-accelerator=type=nvidia-tesla-t4,count=$NUM_GPUS \
+    --worker-machine-type=n1-highmem-32\
+    --num-worker-local-ssds=4 \
+    --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
     --optional-components=JUPYTER,ZEPPELIN \
-    --metadata rapids-runtime=SPARK \
-    --bucket $GCS_BUCKET \
+    --metadata=rapids-runtime=SPARK \
+    --bucket=$GCS_BUCKET \
     --enable-component-gateway
 ```
 
@@ -107,18 +107,18 @@ If you'd like to further accelerate init time to 4-5 minutes, create a custom Da
     export NUM_WORKERS=5
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
-    --region $REGION \
+    --region=$REGION \
     --image-version=2.0-ubuntu18 \
-    --master-machine-type n1-standard-16 \
-    --num-workers $NUM_WORKERS \
-    --worker-accelerator type=nvidia-tesla-a100,count=$NUM_GPUS \
-    --worker-machine-type a2-highgpu-1g \
-    --num-worker-local-ssds 4 \
-    --initialization-actions gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --master-machine-type=n1-standard-16 \
+    --num-workers=$NUM_WORKERS \
+    --worker-accelerator=type=nvidia-tesla-a100,count=$NUM_GPUS \
+    --worker-machine-type=a2-highgpu-1g \
+    --num-worker-local-ssds=4 \
+    --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
     --metadata=startup-script-url=gs://goog-dataproc-initialization-actions-${REGION}/gpu/mig.sh \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata rapids-runtime=SPARK \
-    --bucket $GCS_BUCKET \
+    --bucket=$GCS_BUCKET \
     --enable-component-gateway 
 ``` 
 
@@ -305,17 +305,17 @@ export NUM_GPUS=1
 export NUM_WORKERS=2
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
-    --region $REGION \
+    --region=$REGION \
     --image=sample-2027-ubuntu18-gpu-t4 \
-    --master-machine-type n1-standard-4 \
-    --num-workers $NUM_WORKERS \
-    --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
-    --worker-machine-type n1-standard-4 \
-    --num-worker-local-ssds 1 \
-    --initialization-actions gs://$GCS_BUCKET/addon.sh \
+    --master-machine-type=n1-standard-4 \
+    --num-workers=$NUM_WORKERS \
+    --worker-accelerator=type=nvidia-tesla-t4,count=$NUM_GPUS \
+    --worker-machine-type=n1-standard-4 \
+    --num-worker-local-ssds=1 \
+    --initialization-actions=gs://$GCS_BUCKET/addon.sh \
     --optional-components=JUPYTER,ZEPPELIN \
-    --metadata rapids-runtime=SPARK \
-    --bucket $GCS_BUCKET \
+    --metadata=rapids-runtime=SPARK \
+    --bucket=$GCS_BUCKET \
     --enable-component-gateway 
 ```
 
