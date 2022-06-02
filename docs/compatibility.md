@@ -414,7 +414,7 @@ file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.
 
 **Limitations With RAPIDS**
 
-RAPIDS does not support whole file statistics in ORC file in releases _prior_ to release 22.06.
+RAPIDS does not support whole file statistics in ORC file in releases prior to release 22.06.
 
 *Writing ORC Files*
 
