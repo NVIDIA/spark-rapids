@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
@@ -31,24 +31,19 @@ import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 object ExternalSource extends Logging {
+  val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
 
   lazy val hasSparkAvroJar = {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
-    Try(ShimLoader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
-      case Failure(_) => false
-      case Success(_) => true
+    Utils.classIsLoadable(avroScanClassName) && {
+      Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
+        .getOrElse {
+          logWarning("WARNING: Avro library not found by the RAPIDS plugin. If needed, please use " +
+          "--jars to add it")
+          false
+        }
     }
-  }
-
-  lazy val showErrorMessage: Boolean = {
-    val loader = Utils.getContextOrSparkClassLoader
-    val hasAvroInSparkContext =
-      Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
-      case Failure(_) => false
-      case Success(_) => true
-    }
-    hasAvroInSparkContext && !hasSparkAvroJar
   }
 
   /** If the file format is supported as an external source */
@@ -130,10 +125,6 @@ object ExternalSource extends Logging {
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
-    if (showErrorMessage) {
-      logWarning("WARNING: Avro library not found by the RAPIDS plugin. If needed, please use " +
-          "--jars to add it")
-    }
     if (hasSparkAvroJar) {
       Seq(
         GpuOverrides.scan[AvroScan](
