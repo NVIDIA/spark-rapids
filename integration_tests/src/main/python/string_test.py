@@ -1074,3 +1074,10 @@ def test_rlike_fallback_possessive_quantifier():
                 'a rlike "a*+"'),
                 'RLike',
         conf=_regexp_conf)
+
+def test_replace_empty_string():
+    gen = StringGen('')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "A*", "_REPLACED_")'),
+        conf=_regexp_conf)

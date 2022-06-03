@@ -17,11 +17,13 @@
 package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RLike, RegExpExtract, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -948,6 +950,7 @@ case class GpuRegExpReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression,
+    javaRegexpPattern: String,
     cudfRegexPattern: String,
     cudfReplacementString: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes {
@@ -958,9 +961,11 @@ case class GpuRegExpReplace(
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
 
-  def this(srcExpr: Expression, searchExpr: Expression, cudfRegexPattern: String,
-      cudfReplacementString: String) = {
-    this(srcExpr, searchExpr, GpuLiteral("", StringType), cudfRegexPattern, cudfReplacementString)
+  def this(srcExpr: Expression, searchExpr: Expression, javaRegexpPattern: String,
+    cudfRegexPattern: String, cudfReplacementString: String) = {
+    
+    this(srcExpr, searchExpr, GpuLiteral("", StringType), javaRegexpPattern, 
+      cudfRegexPattern, cudfReplacementString)
   }
 
   override def doColumnar(
@@ -968,15 +973,30 @@ case class GpuRegExpReplace(
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
 
-    if (RegExpShim.reproduceEmptyStringBug()) {
+    val isEmptyRepetition: Boolean = {
+      new RegexParser(javaRegexpPattern).parse() match {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case _ => false
+      }
+    }
+
+    // For empty strings and a regex containing only a zero-match reptition, 
+    // the behaviour on Spark is different. 
+    // see https://github.com/NVIDIA/spark-rapids/issues/5456
+    if (isEmptyRepetition && RegExpShim.reproduceEmptyStringBug()) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
         withResource(Scalar.fromInt(0)) { zero =>
           len.equalTo(zero)
         }
       }
       withResource(isEmpty) { _ =>
-        withResource(Scalar.fromString("")) { emptyString =>
-          withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+        withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+          withResource(GpuScalar.from(cudfReplacementString, DataTypes.StringType)) { rep =>
             withResource(strExpr.getBase.replaceRegex(cudfRegexPattern, rep)) { replacement =>
               isEmpty.ifElse(emptyString, replacement)
             }
