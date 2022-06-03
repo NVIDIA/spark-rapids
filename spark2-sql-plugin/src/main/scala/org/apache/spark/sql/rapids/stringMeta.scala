@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{GpuRegExpUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, Literal, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
@@ -63,11 +62,14 @@ class GpuRegExpExtractMeta(
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
 
+    // Databricks doesn't have 2.x so ignore
+    /*
     ShimLoader.getShimVersion match {
       case _: DatabricksShimVersion if expr.subject.isInstanceOf[InputFileName] =>
         willNotWorkOnGpu("avoiding Databricks Delta problem with regexp extract")
       case _ =>
     }
+    */
 
     def countGroups(regexp: RegexAST): Int = {
       regexp match {
@@ -215,7 +217,7 @@ abstract class StringSplitRegBinaryExpMeta[INPUT <: BinaryExpression](expr: INPU
             pattern = simplified
           case None =>
             try {
-              pattern = transpiler.transpile(utf8Str.toString)
+              pattern = transpiler.transpile(utf8Str.toString, None)._1
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>

@@ -465,6 +465,11 @@ sed -n '/object GpuJsonScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apa
 diff $tmp_dir/GpuJsonScan_new.out $tmp_dir/GpuJsonScan_old.out > $tmp_dir/GpuJsonScan.newdiff || true
 diff -c spark2diffs/GpuJsonScan.diff $tmp_dir/GpuJsonScan.newdiff
 
+sed -n '/object GpuJsonUtils /,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/json/rapids/GpuJsonScan.scala > $tmp_dir/GpuJsonUtils_new.out
+sed -n '/object GpuJsonUtils /,/^}/{/^}/!p}'  ../sql-plugin/src/main/311until330-nondb/scala/org/apache/spark/sql/catalyst/json/GpuJsonUtils.scala > $tmp_dir/GpuJsonUtils_old.out
+diff $tmp_dir/GpuJsonUtils_new.out $tmp_dir/GpuJsonUtils_old.out > $tmp_dir/GpuJsonUtils.newdiff || true
+diff -c spark2diffs/GpuJsonUtils.diff $tmp_dir/GpuJsonUtils.newdiff
+
 sed -n '/object GpuCsvUtils/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/catalyst/csv/GpuCsvUtils.scala > $tmp_dir/GpuCsvUtils_new.out
 sed -n '/object GpuCsvUtils/,/^}/{/^}/!p}'  ../sql-plugin/src/main/311until330-nondb/scala/org/apache/spark/sql/catalyst/csv/GpuCsvUtils.scala > $tmp_dir/GpuCsvUtils_old.out 
 diff $tmp_dir/GpuCsvUtils_new.out $tmp_dir/GpuCsvUtils_old.out > $tmp_dir/GpuCsvUtils.newdiff || true

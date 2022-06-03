@@ -16,7 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims._
+
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
 import org.apache.spark.sql.execution.{FileSourceScanExec, TrampolineUtil}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -40,32 +43,8 @@ object GpuReadParquetFileFormat {
 
 object GpuParquetScan {
 
-  def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
-    val scan = scanMeta.wrapped
-    val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
-    tagSupport(scan.sparkSession, schema, scanMeta)
-  }
-
-  def throwIfNeeded(
-      table: Table,
-      isCorrectedInt96Rebase: Boolean,
-      isCorrectedDateTimeRebase: Boolean,
-      hasInt96Timestamps: Boolean): Unit = {
-    (0 until table.getNumberOfColumns).foreach { i =>
-      val col = table.getColumn(i)
-      // if col is a day
-      if (!isCorrectedDateTimeRebase && RebaseHelper.isDateRebaseNeededInRead(col)) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-      // if col is a time
-      else if (hasInt96Timestamps && !isCorrectedInt96Rebase ||
-          !hasInt96Timestamps && !isCorrectedDateTimeRebase) {
-        if (RebaseHelper.isTimeRebaseNeededInRead(col)) {
-          throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-        }
-      }
-    }
-  }
+  // Spark 2.x doesn't have datasource v2 so ignore ScanMeta
+  // Spark 2.x doesn't have the rebase mode so ignore throwIfNeeded
 
   def tagSupport(
       sparkSession: SparkSession,

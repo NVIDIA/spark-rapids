@@ -20,14 +20,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.StructType
 
 object GpuOrcScan {
-  def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
-    val scan = scanMeta.wrapped
-    val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
-    if (scan.options.getBoolean("mergeSchema", false)) {
-      scanMeta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
-    tagSupport(scan.sparkSession, schema, scanMeta)
-  }
+  // spark 2.x doesn't have data source v2 so not ScanMeta
 
   def tagSupport(
       sparkSession: SparkSession,

@@ -2265,6 +2265,7 @@ object SupportedOpsForTools {
     }
   }
 
+  /*
   private def outputSupportedExecs(): Unit = {
     // TODO Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
@@ -2340,11 +2341,12 @@ object SupportedOpsForTools {
       }
     }
   }
+  */
 
   def help(printType: String): Unit = {
     printType match {
-      case a if a.equals("execs") => outputSupportedExecs()
-      case expr if expr.equals("exprs") => outputSupportedExpressions()
+      // case a if a.equals("execs") => outputSupportedExecs()
+      // case expr if expr.equals("exprs") => outputSupportedExpressions()
       case score if score.equals("operatorScore") => operatorMappingWithScore()
       case io if io.equals("ioOnly") => outputSupportIO()
       case _ => throw new IllegalArgumentException("SupportedOpsForTools: Invalid option. Valid" +

@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.ParquetCachedBatchSerializer
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, RapidsConf, RapidsMeta, SparkPlanMeta}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -33,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class InMemoryTableScanMeta(
     imts: InMemoryTableScanExec,
     conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
+    parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
     extends SparkPlanMeta[InMemoryTableScanExec](imts, conf, parent, rule) {
 
@@ -54,6 +53,8 @@ class InMemoryTableScanMeta(
     if (unsupportedTypes.nonEmpty) {
       willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
+    // user won't actually enable it so assume they could
+    /*
     if (!imts.relation.cacheBuilder.serializer
         .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
       willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
@@ -63,5 +64,6 @@ class InMemoryTableScanMeta(
             "Something went wrong while loading ParquetCachedBatchSerializer class")
       }
     }
+    */
   }
 }

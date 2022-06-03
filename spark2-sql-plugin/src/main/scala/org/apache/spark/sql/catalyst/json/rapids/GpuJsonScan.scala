@@ -26,25 +26,15 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
-import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types._
 
 object GpuJsonUtils {
   // spark 2.x uses FastDateFormat, use getPattern
   def dateFormatInRead(options: JSONOptions): String = options.dateFormat.getPattern
-  def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat
+  def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat.getPattern
 }
 
 object GpuJsonScan {
-
-  def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
-    val scan = scanMeta.wrapped
-    tagSupport(
-      scan.sparkSession,
-      scan.dataSchema,
-      scan.readDataSchema,
-      scan.options.asScala.toMap,
-      scanMeta)
-  }
 
   def tagSupport(
       sparkSession: SparkSession,

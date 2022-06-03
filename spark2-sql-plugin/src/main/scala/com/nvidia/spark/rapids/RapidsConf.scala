@@ -21,8 +21,6 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
-import ai.rapids.cudf.Cuda
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -1462,7 +1460,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar \
+        |$SPARK_HOME/bin/spark --jars rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1517,10 +1515,12 @@ object RapidsConf {
       printToggleHeader("Execution\n")
     }
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
-    if (asTable) {
-      printToggleHeader("Scans\n")
-    }
-    GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    // scana not supported in Spark 2.x
+    // 
+    // if (asTable) {
+    //   printToggleHeader("Scans\n")
+    // }
+    // GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
       printToggleHeader("Partitioning\n")
     }

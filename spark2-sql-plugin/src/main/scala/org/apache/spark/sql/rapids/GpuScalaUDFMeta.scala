@@ -24,21 +24,8 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF, SpecializedGetters}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, MapType, StructType}
-
-case class GpuScalaUDF(
-    function: RapidsUDF,
-    dataType: DataType,
-    children: Seq[Expression],
-    udfName: Option[String],
-    nullable: Boolean,
-    udfDeterministic: Boolean) extends GpuUserDefinedFunction {
-  override def toString: String = s"${udfName.getOrElse("UDF")}(${children.mkString(", ")})"
-
-  /** name of the UDF function */
-  override val name: String = udfName.getOrElse("???")
-}
 
 object GpuScalaUDFMeta {
   def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
@@ -61,6 +48,7 @@ object GpuScalaUDFMeta {
               s"is enabled")
         }
       }
+    })
 }
 
 object GpuScalaUDF {

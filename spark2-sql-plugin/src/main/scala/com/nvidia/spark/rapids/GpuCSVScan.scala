@@ -27,29 +27,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVOptions
 import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 
-object GpuCsvUtils {
-  def dateFormatInRead(csvOpts: CSVOptions): String = {
-    // spark 2.x uses FastDateFormat, use getPattern
-    csvOpts.dateFormat.getPattern
-  }
-
-  def timestampFormatInRead(csvOpts: CSVOptions): String = {
-    // spark 2.x uses FastDateFormat, use getPattern
-    csvOpts.timestampFormat.getPattern
-  }
-}
-
 object GpuCSVScan {
-  def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
-    val scan = scanMeta.wrapped
-    tagSupport(
-      scan.sparkSession,
-      scan.dataSchema,
-      scan.readDataSchema,
-      scan.options.asScala.toMap,
-      scanMeta)
-  }
-
   def tagSupport(
       sparkSession: SparkSession,
       dataSchema: StructType,
@@ -168,7 +146,7 @@ object GpuCSVScan {
 
     if (types.contains(TimestampType)) {
       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.zoneId)) {
+      if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
       GpuTextBasedDateUtils.tagCudfFormat(meta,

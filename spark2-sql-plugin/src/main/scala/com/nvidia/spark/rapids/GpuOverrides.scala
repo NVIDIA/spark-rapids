@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
+import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -37,6 +37,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
 import org.apache.spark.sql.execution.aggregate._
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -44,6 +45,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
@@ -2069,7 +2071,8 @@ object GpuOverrides extends Logging {
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.INT, TypeSig.INT)),
-      (in, conf, p, r) => new BinaryExprMeta[GetArrayItem](expr, conf, parent, rule)),
+      (in, conf, p, r) => new BinaryExprMeta[GetArrayItem](in, conf, p, r) {
+      }),
     expr[GetMapValue](
       "Gets Value from a Map based on a key",
       ExprChecks.binaryProject(
@@ -2079,7 +2082,8 @@ object GpuOverrides extends Logging {
         ("map", TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
-      (in, conf, p, r) => new BinaryExprMeta[GetMapValue](expr, conf, parent, rule)),
+      (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
+      }),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map",
@@ -2325,19 +2329,7 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[ArraysZip](in, conf, p, r) {
       }
     ),
-    expr[MapFilter](
-      "Filters entries in a map using the function",
-      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
-        TypeSig.MAP.nested(TypeSig.all),
-        Seq(
-          ParamCheck("argument",
-            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
-            TypeSig.MAP.nested(TypeSig.all)),
-          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
-      (in, conf, p, r) => new ExprMeta[MapFilter](in, conf, p, r) {
-      }),
+    // spark 2.x doesn't have MapFilter
     expr[StringLocate](
       "Substring search operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
@@ -2711,14 +2703,8 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
-      ),
-    expr[RaiseError](
-      "Throw an exception",
-      ExprChecks.unaryProject(
-        TypeSig.NULL, TypeSig.NULL,
-        TypeSig.STRING, TypeSig.STRING),
-      (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
-      })
+      )
+    // Spark 2.x doesn't have RaiseError
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
@@ -3013,7 +2999,7 @@ object GpuOverrides extends Logging {
         " the Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled.",
       ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
     exec[ArrowEvalPythonExec](
       "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -3026,7 +3012,7 @@ object GpuOverrides extends Logging {
           val udfs: Seq[BaseExprMeta[PythonUDF]] =
             e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
           val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            e.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
           override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
 
           override def replaceMessage: String = "partially run on GPU"

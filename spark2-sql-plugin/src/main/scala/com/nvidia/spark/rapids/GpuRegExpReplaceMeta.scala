@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims
-
-import com.nvidia.spark.rapids._
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.types.DataTypes
@@ -63,15 +61,59 @@ class GpuRegExpReplaceMeta(
       case _ =>
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
+    // Spark 2.x is ternary and doesn't have pos parameter
+    /*
     GpuOverrides.extractLit(expr.pos).foreach { lit =>
       if (lit.value.asInstanceOf[Int] != 1) {
         willNotWorkOnGpu("only a search starting position of 1 is supported")
       }
     }
+    */
   }
 }
 
 object GpuRegExpUtils {
+
+  /**
+   * Convert symbols of back-references if input string contains any.
+   * In spark's regex rule, there are two patterns of back-references:
+   * \group_index and $group_index
+   * This method transforms above two patterns into cuDF pattern ${group_index}, except they are
+   * preceded by escape character.
+   *
+   * @param rep replacement string
+   * @return A pair consists of a boolean indicating whether containing any backref and the
+   *         converted replacement.
+   */
+  def backrefConversion(rep: String): (Boolean, String) = {
+    val b = new StringBuilder
+    var i = 0
+    while (i < rep.length) {
+      // match $group_index or \group_index
+      if (Seq('$', '\\').contains(rep.charAt(i))
+        && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
+
+        b.append("${")
+        var j = i + 1
+        do {
+          b.append(rep.charAt(j))
+          j += 1
+        } while (j < rep.length && rep.charAt(j).isDigit)
+        b.append("}")
+        i = j
+      } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
+        // skip potential \$group_index or \\group_index
+        b.append('\\').append(rep.charAt(i + 1))
+        i += 2
+      } else {
+        b.append(rep.charAt(i))
+        i += 1
+      }
+    }
+
+    val converted = b.toString
+    !rep.equals(converted) -> converted
+  }
 
   /**
    * We need to remove escape characters in the regexp_replace

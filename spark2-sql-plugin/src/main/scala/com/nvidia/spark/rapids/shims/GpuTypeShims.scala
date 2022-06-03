@@ -15,9 +15,6 @@
  */
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf
-import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
 import com.nvidia.spark.rapids.TypeSig
 
 import org.apache.spark.sql.types.DataType
@@ -32,36 +29,8 @@ object GpuTypeShims {
    */
   def hasConverterForType(otherType: DataType) : Boolean = false
 
-  /**
-   * Get the TypeConverter of the data type for this Shim
-   * Note should first calling hasConverterForType
-   * @param t the data type
-   * @param nullable is nullable
-   * @return the row to column convert for the data type
-   */
-  def getConverterForType(t: DataType, nullable: Boolean): TypeConverter = {
-    throw new RuntimeException(s"No converter is found for type $t.")
-  }
-
-  /**
-   * Get the cuDF type for the Spark data type
-   * @param t the Spark data type
-   * @return the cuDF type if the Shim supports
-   */
-  def toRapidsOrNull(t: DataType): DType = null
-
   /** Whether the Shim supports columnar copy for the given type */
   def isColumnarCopySupportedForType(colType: DataType): Boolean = false
-
-  /**
-   * Copy a column for computing on GPU.
-   * Better to check if the type is supported first by calling 'isColumnarCopySupportedForType'
-   */
-  def columnarCopy(cv: ColumnVector,
-      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = {
-    val t = cv.dataType()
-    throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
-  }
 
   def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = false
 
@@ -78,9 +47,6 @@ object GpuTypeShims {
   }
 
   def supportCsvRead(dt: DataType) : Boolean = false
-
-  def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
-    throw new RuntimeException(s"Not support type $dt.")
 
   /**
    * Whether the Shim supports day-time interval type for specific operator

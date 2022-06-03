@@ -21,5 +21,5 @@ import org.apache.spark.sql.execution.datasources.csv.CSVOptions
 object GpuCsvUtils {
   // spark 2.x uses FastDateFormat, use getPattern
   def dateFormatInRead(options: CSVOptions): String = options.dateFormat.getPattern
-  def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat
+  def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat.getPattern
 }
