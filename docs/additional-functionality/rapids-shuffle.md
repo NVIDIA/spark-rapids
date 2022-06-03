@@ -298,7 +298,7 @@ In this section, we are using a docker container built using the sample dockerfi
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
-    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+    --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
     --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
     --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n
     ```
@@ -310,7 +310,7 @@ In this section, we are using a docker container built using the sample dockerfi
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
-    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+    --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
     --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
     --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
     --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \

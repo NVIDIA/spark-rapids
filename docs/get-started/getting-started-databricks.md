@@ -156,11 +156,11 @@ cluster.
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.04.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.06.0.jar:/databricks/spark/python
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
-8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark with RAPIDS and cuDF.
+8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your
