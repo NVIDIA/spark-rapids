@@ -181,7 +181,7 @@ diff -c spark2diffs/GpuOverrides.diff $tmp_dir/GpuOverrides.newdiff
 sed -n  '/class InMemoryTableScanMeta/,/^}/{/^}/!p}' ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuInMemoryTableScanExec.scala > $tmp_dir/InMemoryTableScan_new.out
 sed -n  '/class InMemoryTableScanMeta/,/\/\*\*/{/\/\*\*/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuInMemoryTableScanExec.scala > $tmp_dir/InMemoryTableScan_old.out
 diff $tmp_dir/InMemoryTableScan_new.out $tmp_dir/InMemoryTableScan_old.out > $tmp_dir/InMemoryTableScan.newdiff || true
-diff -c spark2diffs/InMemoryTableScan_new.out $tmp_dir/InMemoryTableScan.newdiff
+diff -c spark2diffs/InMemoryTableScan.diff $tmp_dir/InMemoryTableScan.newdiff
 
 sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimGpuOverrides.scala > $tmp_dir/cast_new.out
 sed -n  '/GpuOverrides.expr\[Cast\]/,/doFloatToIntCheck/p'  ../sql-plugin/src/main/311until320-nondb/scala/com/nvidia/spark/rapids/shims/Spark31XShims.scala > $tmp_dir/cast_old.out
