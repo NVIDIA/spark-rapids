@@ -21,6 +21,7 @@ import scala.util.{Failure, Success, Try}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
 import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.FileSourceScanExec
@@ -29,7 +30,7 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-object ExternalSource {
+object ExternalSource extends Logging {
 
   lazy val hasSparkAvroJar = {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
@@ -130,8 +131,8 @@ object ExternalSource {
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     if (showErrorMessage) {
-      println("WARNING: Avro library isn't loaded by the RAPIDS plugin. Please use --jars to " +
-          "load the plugin if you haven't done so")
+      logWarning("WARNING: Avro library not found by the RAPIDS plugin. If needed, please use " +
+          "--jars to add it")
     }
     if (hasSparkAvroJar) {
       Seq(
