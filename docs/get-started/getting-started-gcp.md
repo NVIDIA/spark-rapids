@@ -156,8 +156,7 @@ rest as a training set, saving to respective GCS locations.  Using the default n
 configuration the first stage should take ~110 seconds (1/3 of CPU execution time with same config)
 and the second stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook
 depends on the pre-compiled [Spark RAPIDS SQL
-plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark) and
-[cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf), which are pre-downloaded by the GCP
+plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark) which is pre-downloaded by the GCP
 Dataproc [RAPIDS init
 script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 

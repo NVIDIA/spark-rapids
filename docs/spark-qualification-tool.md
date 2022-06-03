@@ -3,7 +3,6 @@ layout: page
 title: Qualification Tool
 nav_order: 8
 ---
-
 # Qualification Tool
 
 The Qualification tool analyzes Spark events generated from CPU based Spark applications to help quantify
