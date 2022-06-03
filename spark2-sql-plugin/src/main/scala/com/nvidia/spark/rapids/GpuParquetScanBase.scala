@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
 import org.apache.spark.sql.execution.{FileSourceScanExec, TrampolineUtil}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
