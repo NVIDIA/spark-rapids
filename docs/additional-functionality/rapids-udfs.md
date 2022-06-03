@@ -189,7 +189,7 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
 
     ```shell
     ...
-    --conf spark.rapids.python.gpu.enabled=true \
+    --conf spark.rapids.sql.python.gpu.enabled=true \
     ```
 
 Please note: every type of Pandas UDF on Spark is run by a specific Spark execution plan. RAPIDS
