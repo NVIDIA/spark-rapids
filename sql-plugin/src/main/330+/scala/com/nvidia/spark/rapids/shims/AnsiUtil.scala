@@ -60,9 +60,7 @@ object AnsiUtil extends Arm {
 
     withResource(doubleInput.isNan) { hasNan =>
       if (BoolUtils.isAnyValidTrue(hasNan)) {
-        withResource(FloatUtils.getNanScalar(doubleInput.getType)) { nan =>
-          throwSparkDateTimeException(nan.getDouble.toString)
-        }
+        throwSparkDateTimeException("NaN")
       }
     }
 
@@ -70,9 +68,8 @@ object AnsiUtil extends Arm {
     withResource(FloatUtils.getInfinityVector(doubleInput.getType)) { inf =>
       withResource(doubleInput.contains(inf)) { hasInf =>
         if (BoolUtils.isAnyValidTrue(hasInf)) {
-          withResource(FloatUtils.getPositiveInfinityScalar(doubleInput.getType)) { infinity =>
-            throwSparkDateTimeException(infinity.getDouble.toString)
-          }
+          // We specify as "Infinity" for both "+Infinity" and "-Infinity" in the error message
+          throwSparkDateTimeException("Infinity")
         }
       }
     }
