@@ -17,10 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.util.Random
 
 import com.nvidia.spark.rapids.shims.SparkShimImpl
-import org.apache.orc.impl.HadoopShimsFactory
 
 import org.apache.spark.SparkConf
 
@@ -43,13 +41,13 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
       }
       assume(isValidTestForSparkVersion)
 
-      withCpuSparkSession(session => {
-        val conf = session.sessionState.newHadoopConf()
-        val provider = HadoopShimsFactory.get.getHadoopKeyProvider(conf, new Random)
-        assume(!provider.getKeyNames.isEmpty,
-          s"$provider doesn't has the test keys. ORC shim is created with old Hadoop libraries")
-      }
-      )
+//      withCpuSparkSession(session => {
+//        val conf = session.sessionState.newHadoopConf()
+//        val provider = HadoopShimsFactory.get.getHadoopKeyProvider(conf, new Random)
+//        assume(!provider.getKeyNames.isEmpty,
+//          s"$provider doesn't has the test keys. ORC shim is created with old Hadoop libraries")
+//      }
+//      )
 
       val tempFile = File.createTempFile("orc-encryption-test", "")
       frame.write.mode("overwrite").orc(tempFile.getAbsolutePath)
