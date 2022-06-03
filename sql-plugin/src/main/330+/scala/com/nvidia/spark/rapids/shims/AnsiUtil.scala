@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuColumnVector}
 
-import org.apache.spark.ShimTrampolineUtil
+import org.apache.spark.rapids.ShimTrampolineUtil
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 
@@ -43,16 +43,15 @@ object AnsiUtil extends Arm {
   }
 
   private def castDoubleToTimestampAnsi(doubleInput: ColumnView, toType: DataType): ColumnVector = {
-    val msg = s"The column contains at least a single value that is " +
-        s"NaN, Infinity or out-of-range values. To return NULL instead, use 'try_cast'. " +
-        s"If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
+    val msg = s"The column contains out-of-range values. To return NULL instead, use " +
+        s"'try_cast'. If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
 
     // These are the arguments required by SparkDateTimeException class to create error message.
-    val errorClass= "CAST_INVALID_INPUT"
-    val messageParameters = Array("Nan/Infinity", "DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
+    val errorClass = "CAST_INVALID_INPUT"
+    val messageParameters = Array("DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
 
-    def throwSparkDateTimeException: Unit = {
-      throw ShimTrampolineUtil.dateTimeException(errorClass, messageParameters)
+    def throwSparkDateTimeException(infOrNan: String): Unit = {
+      throw ShimTrampolineUtil.dateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
     }
 
     def throwOverflowException: Unit = {
@@ -61,7 +60,9 @@ object AnsiUtil extends Arm {
 
     withResource(doubleInput.isNan) { hasNan =>
       if (BoolUtils.isAnyValidTrue(hasNan)) {
-        throwSparkDateTimeException
+        withResource(FloatUtils.getNanScalar(doubleInput.getType)) { nan =>
+          throwSparkDateTimeException(nan.getDouble.toString)
+        }
       }
     }
 
@@ -69,7 +70,9 @@ object AnsiUtil extends Arm {
     withResource(FloatUtils.getInfinityVector(doubleInput.getType)) { inf =>
       withResource(doubleInput.contains(inf)) { hasInf =>
         if (BoolUtils.isAnyValidTrue(hasInf)) {
-          throwSparkDateTimeException
+          withResource(FloatUtils.getPositiveInfinityScalar(doubleInput.getType)) { infinity =>
+            throwSparkDateTimeException(infinity.getDouble.toString)
+          }
         }
       }
     }

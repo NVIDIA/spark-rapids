@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-package org.apache.spark
+package org.apache.spark.rapids
+
+import org.apache.spark.SparkDateTimeException
 
 object ShimTrampolineUtil {
-   def dateTimeException (errorClass:String, messageParameters: Array[String]) = {
-     new SparkDateTimeException(errorClass, messageParameters)
-   }
+  def dateTimeException(errorClass: String, messageParameters: Array[String]) = {
+    new SparkDateTimeException(errorClass, messageParameters)
+  }
 }
