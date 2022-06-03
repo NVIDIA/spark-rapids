@@ -20,7 +20,9 @@ import com.nvidia.spark.rapids.SparkShimVersion
 
 object SparkShimServiceProvider {
   val VERSION = SparkShimVersion(3, 3, 0)
-  val VERSIONNAMES = Seq(s"$VERSION", s"$VERSION-SNAPSHOT")
+  // temporarily allow 3.3.1 while 3.3.0 release candidates are being produced
+  private val VERSION331 = SparkShimVersion(3, 3, 1)
+  val VERSIONNAMES = Seq(VERSION, VERSION331).flatMap(v => Seq(s"$v", s"$v-SNAPSHOT"))
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
