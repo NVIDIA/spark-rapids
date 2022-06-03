@@ -1,7 +1,8 @@
-8c8,9
-<       // SPARK 2.x - We leave off Avro and external sources here since its a datasource v2 thing and off by default
+8,9c8,9
+<       // SPARK 2.x - We leave off Avro and external sources here since its a datasource v2
+<       // thing and off by default
 ---
 >       case ef if ExternalSource.isSupportedFormat(ef) =>
 >         ExternalSource.tagSupportForGpuFileSourceScan(meta)
-12a14
+13a14
 > 

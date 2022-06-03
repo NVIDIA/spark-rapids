@@ -1,5 +1,7 @@
-2,3c2
+2,4c2,3
 <   // spark 2.x uses FastDateFormat, use getPattern
 <   def dateFormatInRead(options: CSVOptions): String = options.dateFormat.getPattern
+<   def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat.getPattern
 ---
 >   def dateFormatInRead(options: CSVOptions): String = options.dateFormat
+>   def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat

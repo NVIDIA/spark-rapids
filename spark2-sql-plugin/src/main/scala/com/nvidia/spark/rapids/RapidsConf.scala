@@ -1515,8 +1515,8 @@ object RapidsConf {
       printToggleHeader("Execution\n")
     }
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
-    // scana not supported in Spark 2.x
-    // 
+    // scans not supported in Spark 2.x
+    //
     // if (asTable) {
     //   printToggleHeader("Scans\n")
     // }

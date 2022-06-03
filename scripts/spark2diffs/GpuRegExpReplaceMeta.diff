@@ -10,7 +10,12 @@
 <             val (pat, repl) =
 ---
 >             val (pat, repl) = 
-42a43
+43,44c43
+<     // Spark 2.x is ternary and doesn't have pos parameter
+<     /*
+---
 > 
-48a50
+50d48
+<     */
+51a50
 > 

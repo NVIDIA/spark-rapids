@@ -1,8 +1,19 @@
-18c18
+2a3,12
+>   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
+>     val scan = scanMeta.wrapped
+>     tagSupport(
+>       scan.sparkSession,
+>       scan.dataSchema,
+>       scan.readDataSchema,
+>       scan.options.asScala.toMap,
+>       scanMeta)
+>   }
+> 
+8c18
 <       meta: RapidsMeta[_, _]): Unit = {
 ---
 >       meta: RapidsMeta[_, _, _]): Unit = {
-85,87c85,86
+75,77c85,86
 <    if (types.contains(TimestampType)) {
 <       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
 <       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {

@@ -2,18 +2,37 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
-318c318
+23a24,25
+> import ai.rapids.cudf.Cuda
+> 
+316c318
 <     .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
 ---
 >     .createWithDefault(ByteUnit.GiB.toBytes(1))
-375c375
+373c375
 <       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
 ---
 >       .createWithDefault(ByteUnit.MiB.toBytes(640))
-407c407
+405c407
 <     .createWithDefault(ByteUnit.MiB.toBytes(8).toLong)
 ---
 >     .createWithDefault(ByteUnit.MiB.toBytes(8))
+1463c1465
+<         |$SPARK_HOME/bin/spark --jars rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar \
+---
+>         |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar \
+1518,1523c1520,1523
+<     // scans not supported in Spark 2.x
+<     //
+<     // if (asTable) {
+<     //   printToggleHeader("Scans\n")
+<     // }
+<     // GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+---
+>     if (asTable) {
+>       printToggleHeader("Scans\n")
+>     }
+>     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
 1531c1531
 <     // com.nvidia.spark.rapids.python.PythonConfEntries.init()
 ---
