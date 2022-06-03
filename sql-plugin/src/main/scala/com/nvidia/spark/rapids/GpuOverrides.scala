@@ -3759,7 +3759,7 @@ object GpuOverrides extends Logging {
       (globalLimitExec, conf, p, r) =>
         new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded())
+            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",

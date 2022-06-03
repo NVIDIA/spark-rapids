@@ -380,7 +380,7 @@ There are multiple reasons why this a problematic configuration:
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`, 
-[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.06/examples/MIG-Support) 
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.08/examples/MIG-Support) 
 or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly

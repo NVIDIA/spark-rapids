@@ -592,7 +592,8 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported by `regexp_replace`
-- Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
+- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+  or more results
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Word and non-word boundaries, `\b` and `\B`
 - Whitespace and non-whitespace characters, `\s` and `\S`
