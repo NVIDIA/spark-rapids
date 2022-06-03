@@ -10,22 +10,7 @@ once captured can be visually analyzed using
 [NVIDIA NSight Systems](https://developer.nvidia.com/nsight-systems).
 This document is specific to the RAPIDS Spark Plugin profiling.
 
-### STEP 1:
-
-In order to get NVTX ranges to work you need to recompile your cuDF with NVTX flag enabled:
-
-```
-//from the cpp/build directory
-
-cmake .. -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_CXX11_ABI=ON -DUSE_NVTX=1
-
-make -j <num_threads>
-```
-If you are using the java cuDF layer, recompile your jar as usual using maven.
-```
-mvn clean package -DskipTests
-```
-### STEP 2:
+### STEPS:
 
 We need to pass a flag to the spark executors / driver in order to enable NVTX collection.
 This can be done for spark shell by adding the following configuration keys:

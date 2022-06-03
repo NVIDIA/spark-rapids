@@ -19,6 +19,8 @@ import java.sql.SQLException
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.RegexParser.toReadableString
+
 /**
  * Regular expression parser based on a Pratt Parser design.
  *
@@ -234,6 +236,14 @@ class RegexParser(pattern: String) {
                   RegexEscaped(ch)
                 case other => other
               }
+            case '&' => 
+              peek() match {
+                case Some('&') => 
+                  throw new RegexUnsupportedException("" +
+                    "cuDF does not support class intersection operator &&", Some(pos))
+                case _ => // ignore
+              }
+              RegexChar('&')
             case ch =>
               RegexChar(ch)
           }
@@ -547,6 +557,21 @@ object RegexParser {
         true
     }
   }
+
+  def toReadableString(x: String): String = {
+    x.map {
+      case '\r' => "\\r"
+      case '\n' => "\\n"
+      case '\t' => "\\t"
+      case '\f' => "\\f"
+      case '\u000b' => "\\u000b"
+      case '\u0085' => "\\u0085"
+      case '\u2028' => "\\u2028"
+      case '\u2029' => "\\u2029"
+      case other => other
+    }.mkString
+  }
+
 }
 
 sealed trait RegexMode
@@ -597,7 +622,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
-    val cudfRegex = rewrite(regex, replacement, None)
+    val cudfRegex = transpile(regex, replacement, None)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
     (cudfRegex.toRegexString, replacement.map(_.toRegexString))
@@ -734,6 +759,89 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
+      previous: Option[RegexAST]): RegexAST = {
+
+    def containsBeginAnchor(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexChar('^') | RegexEscaped('A') => true
+        case _ => false
+      })
+    }
+
+    def containsEndAnchor(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexChar('$') | RegexEscaped('z') | RegexEscaped('Z') => true
+        case _ => false
+      })
+    }
+
+    def containsNewline(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexChar('\r') | RegexEscaped('r') => true
+        case RegexChar('\n') | RegexEscaped('n') => true
+        case RegexChar('\u0085') | RegexChar('\u2028') | RegexChar('\u2029') => true
+        case RegexEscaped('s') | RegexEscaped('v') | RegexEscaped('R') => true
+        case RegexEscaped('W') | RegexEscaped('D') | RegexEscaped('S') | RegexEscaped('V') =>
+          // these would get transpiled to negated character classes
+          // that include newlines
+          true
+        case RegexCharacterClass(true, _) => true
+        case _ => false
+      })
+    }
+
+    def containsEmpty(regex: RegexAST): Boolean = {
+      contains(regex, {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case _ => false
+      })
+    }
+
+    // check a pair of regex ast nodes for unsupported combinations
+    // of end string/line anchors and newlines or optional items
+    def checkEndAnchorContext(r1: RegexAST, r2: RegexAST): Unit = {
+      if ((containsEndAnchor(r1) &&
+          (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
+        (containsEndAnchor(r2) &&
+          (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
+        throw new RegexUnsupportedException(
+          s"End of line/string anchor is not supported in this context: " +
+            s"${toReadableString(r1.toRegexString)}" +
+            s"${toReadableString(r2.toRegexString)}")
+      }
+    }
+
+    def checkUnsupported(regex: RegexAST): Unit = {
+      regex match {
+        case RegexSequence(parts) =>
+          for (i <- 1 until parts.length) {
+            checkEndAnchorContext(parts(i - 1), parts(i))
+          }
+        case RegexChoice(l, r) =>
+          checkUnsupported(l)
+          checkUnsupported(r)
+        case RegexGroup(_, term) => checkUnsupported(term)
+        case RegexRepetition(ast, _) => checkUnsupported(ast)
+        case RegexCharacterClass(_, components) =>
+          for (i <- 1 until components.length) {
+            checkEndAnchorContext(components(i - 1), components(i))
+          }
+        case _ =>
+          // ignore
+      }
+    }
+
+    checkUnsupported(regex)
+
+    rewrite(regex, replacement, previous)
+  }
+
   private def rewrite(regex: RegexAST, replacement: Option[RegexReplacement],
       previous: Option[RegexAST]): RegexAST = {
     regex match {
@@ -830,26 +938,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
 
       case RegexEscaped(ch) => ch match {
-        case 'd' =>
+        case 'd' | 'D' =>
           // cuDF is not compatible with Java for \d  so we transpile to Java's definition
           // of [0-9]
           // https://github.com/rapidsai/cudf/issues/10894
-          RegexCharacterClass(negated = false, ListBuffer(
-            RegexCharacterRange(RegexChar('0'), RegexChar('9'))))
-        case 'w' =>
+          val components = ListBuffer[RegexCharacterClassComponent](
+            RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+          if (ch.isUpper) {
+            negateCharacterClass(components)
+          } else {
+            RegexCharacterClass(negated = false, components)
+          }
+        case 'w' | 'W' =>
           // cuDF is not compatible with Java for \w so we transpile to Java's definition
           // of `[a-zA-Z_0-9]`
-          RegexCharacterClass(negated = false, ListBuffer(
+          val components = ListBuffer[RegexCharacterClassComponent](
             RegexCharacterRange(RegexChar('a'), RegexChar('z')),
             RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
             RegexChar('_'),
-            RegexCharacterRange(RegexChar('0'), RegexChar('9'))))
-        case 'D' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4475
-          throw new RegexUnsupportedException("non-digit class \\D is not supported")
-        case 'W' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4475
-          throw new RegexUnsupportedException("non-word class \\W is not supported")
+            RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+          if (ch.isUpper) {
+            negateCharacterClass(components)
+          } else {
+            RegexCharacterClass(negated = false, components)
+          }
         case 'b' | 'B' =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4517
           throw new RegexUnsupportedException("word boundaries are not supported")
@@ -1161,13 +1273,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
         def endsWithLineAnchor(e: RegexAST): Boolean = {
           e match {
             case RegexSequence(parts) if parts.nonEmpty =>
-              endsWithLineAnchor(parts.last)
+              val j = parts.lastIndexWhere {
+                  case RegexEmpty() => false
+                  case _ => true
+              }
+              endsWithLineAnchor(parts(j))
             case RegexEscaped('A') => true
             case _ => isBeginOrEndLineAnchor(e)
           }
         }
         if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
-          throw new RegexUnsupportedException(nothingToRepeat)
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with line anchors on one side of a choice")
         }
 
         RegexChoice(ll, rr)
@@ -1187,6 +1304,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
       case other =>
         throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
+    }
+  }
+
+  private def contains(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    if (f(regex)) {
+      true
+    } else {
+      regex match {
+        case RegexSequence(parts) => parts.exists(x => contains(x, f))
+        case RegexGroup(_, term) => contains(term, f)
+        case RegexChoice(l, r) => contains(l, f) || contains(r, f)
+        case RegexRepetition(term, _) => contains(term, f)
+        case RegexCharacterClass(_, chars) => chars.exists(ch => contains(ch, f))
+        case leaf => f(leaf)
+      }
     }
   }
 

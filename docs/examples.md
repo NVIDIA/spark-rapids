@@ -3,19 +3,13 @@ layout: page
 title: Examples
 nav_order: 14
 ---
-# Demos
+# Examples
 
-Example notebooks allow users to test drive "RAPIDS Accelerator for Apache Spark" with public
-datasets.
+Please visit [spark-rapids-examples](https://github.com/NVIDIA/spark-rapids-examples) repo for ETL, 
+ML/DL, UDF related examples using the RAPIDS Accelerator For Apache Spark.
+It includes Scala/Python source code and related notebooks for different examples.
 
-##### [Mortgage ETL Notebook](demo/gpu-mortgage_accelerated.ipynb)  [(Dataset)](https://docs.rapids.ai/datasets/mortgage-data)
+# Benchmarks
 
-##### About the Mortgage Dataset:
-Dataset is derived from [Fannie Mae’s Single-Family Loan Performance
-Data](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html) with all
-rights reserved by Fannie Mae. This processed dataset is redistributed with permission and consent
-from Fannie Mae.
-
-For the full raw dataset visit [Fannie
-Mae](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html) to register
-for an account and to download.
+Please visit [spark-rapids-benchmarks](https://github.com/NVIDIA/spark-rapids-benchmarks) repo for
+Spark related benchmark sets and utilities using the RAPIDS Accelerator For Apache Spark.

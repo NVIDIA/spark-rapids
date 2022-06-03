@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.06.0-SNAPSHOT</version>
+        <version>22.08.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>22.06.0-SNAPSHOT</version>
+    <version>22.08.0-SNAPSHOT</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -52,6 +52,11 @@
             314,
             322,
             330
+            <!--
+                Remove 340 now due to https://github.com/NVIDIA/spark-rapids/issues/5688.
+                Need to add it back when #5688 is fixed
+            -->
+            <!-- 340 -->
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
@@ -408,6 +413,42 @@
                         <exclude>*.md</exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <plugin>
+                <!-- The dependency scopes of spark-rapids-jni and jucx are `provided` in aggregator submodule,
+                 this will skip the dedupe processing in `create-parallel-world`.
+                 Unpack spark-rapids-jni and jucx jars to `parallel-world` directory after `create-parallel-world`,
+                 then `parallel-world` will be packaged.
+                 Note all Shims use the same version of spark-rapids-jni and jucx -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-spark-rapids-jni-and-ucx</id>
+                        <!-- run after `create-parallel-world`, the phase equals to the phase of the `create-parallel-world` -->
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>spark-rapids-jni</artifactId>
+                                    <classifier>${cuda.version}</classifier>
+                                    <excludes>META-INF</excludes>
+                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.openucx</groupId>
+                                    <artifactId>jucx</artifactId>
+                                    <excludes>META-INF</excludes>
+                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

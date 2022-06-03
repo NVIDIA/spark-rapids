@@ -53,7 +53,7 @@ object QualificationMain extends Logging {
     val timeout = appArgs.timeout.toOption
     val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
     val order = appArgs.order.getOrElse("desc")
-    val uiEnabled = appArgs.uiEnabled.getOrElse(false)
+    val uiEnabled = appArgs.htmlReport.getOrElse(false)
 
     val hadoopConf = new Configuration()
 

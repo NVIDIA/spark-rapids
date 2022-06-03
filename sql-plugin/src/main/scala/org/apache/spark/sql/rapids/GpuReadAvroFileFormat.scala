@@ -58,7 +58,8 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       requiredSchema,
       partitionSchema,
       new AvroOptions(options, hadoopConf),
-      metrics)
+      metrics,
+      options)
     PartitionReaderIterator.buildReader(factory)
   }
 }

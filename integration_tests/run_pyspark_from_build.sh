@@ -14,9 +14,6 @@
 # limitations under the License.
 set -ex
 
-# set LANG so that regular expressions run on GPU
-export LANG=en_US.UTF-8
-
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd "$SCRIPTPATH"
 

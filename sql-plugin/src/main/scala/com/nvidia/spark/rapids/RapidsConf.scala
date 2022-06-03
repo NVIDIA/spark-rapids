@@ -1044,12 +1044,13 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
-    .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
-      "can cause out of memory issues so this is disabled by default. Setting this config to " +
-      "true will make supported regular expressions run on the GPU. See the compatibility " +
-      "guide for more information about which regular expressions are supported on the GPU.")
+    .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
+      "Unsupported expressions will fall back to CPU. However, there are some known edge cases " +
+      "that will still execute on GPU and produce incorrect results and these are documented in " +
+      "the compatibility guide. Setting this config to false will make all regular expressions " +
+      "run on the CPU instead.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -1469,7 +1470,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.06.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```

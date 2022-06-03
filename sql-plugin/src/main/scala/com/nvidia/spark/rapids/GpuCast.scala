@@ -24,10 +24,11 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{AnsiCheckUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
@@ -179,6 +180,8 @@ object GpuCast extends Arm {
 
   val INVALID_INPUT_MESSAGE: String = "Column contains at least one value that is not in the " +
     "required range"
+
+  val OVERFLOW_MESSAGE: String = "overflow occurred"
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
@@ -346,13 +349,13 @@ object GpuCast extends Arm {
                 toDataType match {
                   case IntegerType =>
                     assertValuesInRange(cv, Scalar.fromInt(Int.MinValue),
-                      Scalar.fromInt(Int.MaxValue))
+                      Scalar.fromInt(Int.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
                   case ShortType =>
                     assertValuesInRange(cv, Scalar.fromShort(Short.MinValue),
-                      Scalar.fromShort(Short.MaxValue))
+                      Scalar.fromShort(Short.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
                   case ByteType =>
                     assertValuesInRange(cv, Scalar.fromByte(Byte.MinValue),
-                      Scalar.fromByte(Byte.MaxValue))
+                      Scalar.fromByte(Byte.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
                 }
               }
               cv.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -440,29 +443,32 @@ object GpuCast extends Arm {
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
-        if (ansiMode) {
+        if (ansiMode && AnsiUtil.supportsAnsiCastFloatToTimestamp()) {
           // We are going through a util class because Spark 3.3.0+ throws an
-          // exception if the float value is nan or +/- inf where previously it didn't
-          AnsiCheckUtil.checkAnsiCastFloatToTimestamp(input)
-        }
-        withResource(Scalar.fromInt(1000000)) { microsPerSec =>
-          withResource(input.nansToNulls()) { inputWithNansToNull =>
-            withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
-              inputWithoutNanAndInfinity =>
-                if (fromDataType == FloatType &&
-                    SparkShimImpl.hasCastFloatTimestampUpcast) {
-                  withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
-                    withResource(doubles.mul(microsPerSec, DType.INT64)) {
+          // exception if the float value is nan, +/- inf or out-of-range value,
+          // where previously it didn't
+          AnsiUtil.castFloatToTimestampAnsi(input, toDataType)
+        } else {
+          // non-Ansi mode, convert nan/inf to null
+          withResource(Scalar.fromInt(1000000)) { microsPerSec =>
+            withResource(input.nansToNulls()) { inputWithNansToNull =>
+              withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
+                inputWithoutNanAndInfinity =>
+                  if (fromDataType == FloatType &&
+                      SparkShimImpl.hasCastFloatTimestampUpcast) {
+                    withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
+                      withResource(doubles.mul(microsPerSec, DType.INT64)) {
+                        inputTimesMicrosCv =>
+                          inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
+                      }
+                    }
+                  } else {
+                    withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
                       inputTimesMicrosCv =>
                         inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
                     }
                   }
-                } else {
-                  withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
-                    inputTimesMicrosCv =>
-                      inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
-                  }
-                }
+              }
             }
           }
         }
@@ -482,6 +488,10 @@ object GpuCast extends Arm {
             timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
+      case (_: LongType, TimestampType) =>
+        // Spark casting to timestamp assumes value is in seconds, but timestamps
+        // are tracked in microseconds.
+        castLongToTimestamp(input, toDataType)
       case (_: NumericType, TimestampType) =>
         // Spark casting to timestamp assumes value is in seconds, but timestamps
         // are tracked in microseconds.
@@ -606,19 +616,21 @@ object GpuCast extends Arm {
    * @param maxValue Named parameter for function to create Scalar representing range maximum value
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
+   * @param errorMsg Specify the message in the `IllegalStateException`
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange(values: ColumnView,
       minValue: => Scalar,
       maxValue: => Scalar,
       inclusiveMin: Boolean = true,
-      inclusiveMax: Boolean = true): Unit = {
+      inclusiveMax: Boolean = true,
+      errorMsg:String = GpuCast.INVALID_INPUT_MESSAGE): Unit = {
 
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
         withResource(cv.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+            throw new IllegalStateException(errorMsg)
           }
         }
       }
@@ -1550,6 +1562,43 @@ object GpuCast extends Arm {
       }
     }
   }
+
+  /**
+   * return `longInput` * MICROS_PER_SECOND, the input values are seconds.
+   * return Long.MaxValue if `long value` * MICROS_PER_SECOND > Long.MaxValue
+   * return Long.MinValue if `long value` * MICROS_PER_SECOND < Long.MinValue
+   */
+  def castLongToTimestamp(longInput: ColumnView, toType: DataType): ColumnVector = {
+    // rewrite from `java.util.concurrent.SECONDS.toMicros`
+    val maxSeconds = Long.MaxValue / MICROS_PER_SECOND
+    val minSeconds = -maxSeconds
+
+    val mulRet = withResource(Scalar.fromLong(MICROS_PER_SECOND)) { microsPerSecondS =>
+      longInput.mul(microsPerSecondS)
+    }
+
+    val updatedMaxRet = withResource(mulRet) { mulCv =>
+      withResource(Scalar.fromLong(maxSeconds)) { maxSecondsS =>
+        withResource(longInput.greaterThan(maxSecondsS)) { greaterThanMaxSeconds =>
+          withResource(Scalar.fromLong(Long.MaxValue)) { longMaxS =>
+            greaterThanMaxSeconds.ifElse(longMaxS, mulCv)
+          }
+        }
+      }
+    }
+
+    withResource(updatedMaxRet) { updatedMax =>
+      withResource(Scalar.fromLong(minSeconds)) { minSecondsS =>
+        withResource(longInput.lessThan(minSecondsS)) { lessThanMinSeconds =>
+          withResource(Scalar.fromLong(Long.MinValue)) { longMinS =>
+            withResource(lessThanMinSeconds.ifElse(longMinS, updatedMax)) { cv =>
+              cv.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -1593,6 +1642,8 @@ case class GpuCast(
         GpuTypeShims.hasSideEffectsIfCastIntToYearMonth(yearMonthIntervalType)
       case (yearMonthIntervalType: DataType, _: ShortType | ByteType)
         if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
+      case (FloatType | DoubleType, TimestampType) =>
+        GpuTypeShims.hasSideEffectsIfCastFloatToTimestamp
       case _ => false
     }
   }
@@ -1618,7 +1669,7 @@ case class GpuCast(
   override lazy val resolved: Boolean =
     childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
 
-  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
+  def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
 
   override def sql: String = dataType match {
     // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
