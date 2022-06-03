@@ -17,13 +17,11 @@
 package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.ShimExpression
-
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RLike, RegExpExtract, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -969,8 +967,26 @@ case class GpuRegExpReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    withResource(Scalar.fromString(cudfReplacementString)) { rep =>
-      strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+
+    if (RegExpShim.reproduceEmptyStringBug()) {
+      val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
+        withResource(Scalar.fromInt(0)) { zero =>
+          len.equalTo(zero)
+        }
+      }
+      withResource(isEmpty) { _ =>
+        withResource(Scalar.fromString("")) { emptyString =>
+          withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+            withResource(strExpr.getBase.replaceRegex(cudfRegexPattern, rep)) { replacement =>
+              isEmpty.ifElse(emptyString, replacement)
+            }
+          }
+        }
+      }
+    } else {
+      withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+        strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+      }
     }
   }
 
