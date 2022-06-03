@@ -264,7 +264,7 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
             pattern = simplified
           case None =>
             try {
-              pattern = transpiler.transpile(utf8Str.toString)
+              pattern = transpiler.transpile(utf8Str.toString, None)._1
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>
