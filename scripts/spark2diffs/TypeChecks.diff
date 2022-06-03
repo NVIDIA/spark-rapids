@@ -116,3 +116,13 @@
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
+2268d2258
+<   /*
+2344d2333
+<   */
+2348,2349c2337,2338
+<       // case a if a.equals("execs") => outputSupportedExecs()
+<       // case expr if expr.equals("exprs") => outputSupportedExpressions()
+---
+>       case a if a.equals("execs") => outputSupportedExecs()
+>       case expr if expr.equals("exprs") => outputSupportedExpressions()

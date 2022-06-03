@@ -151,15 +151,15 @@ sed -n  '/object GpuDecimalDivide/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/o
 diff  $tmp_dir/GpuDecimalDivide_new.out $tmp_dir/GpuDecimalDivide_old.out > $tmp_dir/GpuDecimalDivide.newdiff || true
 diff -c spark2diffs/GpuDecimalDivide.diff $tmp_dir/GpuDecimalDivide.newdiff
 
-sed -n  '/def isSupportedRelation/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala > $tmp_dir/isSupportedRelation_new.out
+sed -n  '/def isSupportedRelation/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/execution/TrampolineUtil.scala > $tmp_dir/isSupportedRelation_new.out
 sed -n  '/def isSupportedRelation/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > $tmp_dir/isSupportedRelation_old.out
 diff  -c $tmp_dir/isSupportedRelation_new.out $tmp_dir/isSupportedRelation_old.out 
 
-sed -n  '/def dataTypeExistsRecursively/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala > $tmp_dir/dataTypeExistsRecursively_new.out
+sed -n  '/def dataTypeExistsRecursively/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/execution/TrampolineUtil.scala > $tmp_dir/dataTypeExistsRecursively_new.out
 sed -n  '/def dataTypeExistsRecursively/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > $tmp_dir/dataTypeExistsRecursively_old.out
 diff  -c $tmp_dir/dataTypeExistsRecursively_new.out $tmp_dir/dataTypeExistsRecursively_old.out 
 
-sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/TrampolineUtil.scala > $tmp_dir/getSimpleName_new.out
+sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/execution/TrampolineUtil.scala > $tmp_dir/getSimpleName_new.out
 sed -n  '/def getSimpleName/,/^  }/{/^  }/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/TrampolineUtil.scala > $tmp_dir/getSimpleName_old.out
 diff  -c $tmp_dir/getSimpleName_new.out $tmp_dir/getSimpleName_old.out 
 
@@ -167,9 +167,10 @@ diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexParser.sc
 diff -c spark2diffs/RegexParser.diff $tmp_dir/RegexParser.newdiff
 
 diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/TypeChecks.scala > $tmp_dir/TypeChecks.newdiff || true
-diff -c spark2diffs/TypeChecks.diff  $tmp_dir/TypeChecks.newdiff
+diff -c spark2diffs/TypeChecks.diff $tmp_dir/TypeChecks.newdiff
 
-diff -c ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuTypeShims.scala ../sql-plugin/src/main/311until330-all/scala/com/nvidia/spark/rapids/shims/GpuTypeShims.scala
+diff ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuTypeShims.scala ../sql-plugin/src/main/311until330-all/scala/com/nvidia/spark/rapids/shims/GpuTypeShims.scala > $tmp_dir/GpuTypeShims.newdiff || true
+diff -c spark2diffs/GpuTypeShims.diff $tmp_dir/GpuTypeShims.newdiff
 
 diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/DataTypeUtils.scala > $tmp_dir/DataTypeUtils.newdiff || true
 diff -c spark2diffs/DataTypeUtils.diff $tmp_dir/DataTypeUtils.newdiff
