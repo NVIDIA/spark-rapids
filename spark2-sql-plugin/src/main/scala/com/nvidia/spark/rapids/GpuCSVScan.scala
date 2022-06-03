@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids
 
 import java.nio.charset.StandardCharsets
 
@@ -27,40 +27,27 @@ import org.apache.spark.sql.execution.datasources.csv.CSVOptions
 import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 
-object GpuCSVScan {
-  private val supportedDateFormats = Set(
-    "yyyy-MM-dd",
-    "yyyy/MM/dd",
-    "yyyy-MM",
-    "yyyy/MM",
-    "MM-yyyy",
-    "MM/yyyy",
-    "MM-dd-yyyy",
-    "MM/dd/yyyy"
-    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
-    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
-    // and would need to coordinate with the timestamp format too, because both cannot
-    // coexist
-  )
-
-  private val supportedTsPortionFormats = Set(
-    "HH:mm:ss.SSSXXX",
-    "HH:mm:ss[.SSS][XXX]",
-    "HH:mm",
-    "HH:mm:ss",
-    "HH:mm[:ss]",
-    "HH:mm:ss.SSS",
-    "HH:mm:ss[.SSS]"
-  )
-
-  def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
+object GpuCsvUtils {
+  def dateFormatInRead(csvOpts: CSVOptions): String = {
     // spark 2.x uses FastDateFormat, use getPattern
-    Option(csvOpts.dateFormat.getPattern)
+    csvOpts.dateFormat.getPattern
   }
 
-  def timestampFormatInRead(csvOpts: CSVOptions): Option[String] = {
+  def timestampFormatInRead(csvOpts: CSVOptions): String = {
     // spark 2.x uses FastDateFormat, use getPattern
-    Option(csvOpts.timestampFormat.getPattern)
+    csvOpts.timestampFormat.getPattern
+  }
+}
+
+object GpuCSVScan {
+  def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
+    val scan = scanMeta.wrapped
+    tagSupport(
+      scan.sparkSession,
+      scan.dataSchema,
+      scan.readDataSchema,
+      scan.options.asScala.toMap,
+      scanMeta)
   }
 
   def tagSupport(
@@ -164,41 +151,45 @@ object GpuCSVScan {
 
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
-    if (readSchema.map(_.dataType).contains(DateType)) {
-      if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
-        // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
-        // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
-        // so we fall back to CPU
-        meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
-      }
-      DateUtils.tagAndGetCudfFormat(meta,
+    val types = readSchema.map(_.dataType).toSet
+    if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy &&
+        (types.contains(DateType) ||
+        types.contains(TimestampType))) {
+      // Spark's CSV parser will parse the string "2020-50-16" to the date 2024/02/16 when
+      // timeParserPolicy is set to LEGACY mode and we would reject this as an invalid date
+      // so we fall back to CPU
+      meta.willNotWorkOnGpu(s"GpuCSVScan does not support timeParserPolicy=LEGACY")
+    }
+
+    if (types.contains(DateType)) {
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
-    if (readSchema.map(_.dataType).contains(TimestampType)) {
-      if (!meta.conf.isCsvTimestampReadEnabled) {
-        meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
-          s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
-      }
-
+    if (types.contains(TimestampType)) {
       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
+      if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      timestampFormatInRead(parsedOptions).foreach { tsFormat =>
-        val parts = tsFormat.split("'T'", 2)
-        if (parts.isEmpty) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-      }
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
     // TODO parsedOptions.emptyValueInRead
+
+    if (!meta.conf.isCsvFloatReadEnabled && types.contains(FloatType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
+    }
+
+    if (!meta.conf.isCsvDoubleReadEnabled && types.contains(DoubleType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading doubles. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
+    }
+
+    if (!meta.conf.isCsvDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading decimals. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
+    }
 
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }

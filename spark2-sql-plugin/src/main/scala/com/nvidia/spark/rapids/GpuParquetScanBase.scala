@@ -22,23 +22,58 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 object GpuReadParquetFileFormat {
+  
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
-    GpuParquetScanBase.tagSupport(
-      fsse.sqlContext.sparkSession,
-      fsse.requiredSchema,
-      meta
-    )
+    val session = fsse.sqlContext.sparkSession
+    GpuParquetScan.tagSupport(session, fsse.requiredSchema, meta)
+
+    if (meta.conf.parquetReaderFooterType == RapidsConf.ParquetFooterReaderType.NATIVE) {
+      val options = new ParquetOptions(fsse.relation.options, session.sessionState.conf)
+      if (options.mergeSchema) {
+        meta.willNotWorkOnGpu("Native footer reader for parquet does not work when" +
+          " mergeSchema is enabled")
+      }
+    }
   }
 }
 
-object GpuParquetScanBase {
+object GpuParquetScan {
+
+  def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
+    val scan = scanMeta.wrapped
+    val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
+    tagSupport(scan.sparkSession, schema, scanMeta)
+  }
+
+  def throwIfNeeded(
+      table: Table,
+      isCorrectedInt96Rebase: Boolean,
+      isCorrectedDateTimeRebase: Boolean,
+      hasInt96Timestamps: Boolean): Unit = {
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      // if col is a day
+      if (!isCorrectedDateTimeRebase && RebaseHelper.isDateRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+      // if col is a time
+      else if (hasInt96Timestamps && !isCorrectedInt96Rebase ||
+          !hasInt96Timestamps && !isCorrectedDateTimeRebase) {
+        if (RebaseHelper.isTimeRebaseNeededInRead(col)) {
+          throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+        }
+      }
+    }
+  }
 
   def tagSupport(
       sparkSession: SparkSession,
       readSchema: StructType,
       meta: RapidsMeta[_, _]): Unit = {
     val sqlConf = sparkSession.conf
+
+    ParquetFieldIdShims.tagGpuSupportReadForFieldId(meta, sparkSession.sessionState.conf)
 
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +

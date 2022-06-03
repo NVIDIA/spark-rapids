@@ -30,15 +30,30 @@ class GpuRegExpReplaceMeta(
 
   private var pattern: Option[String] = None
   private var replacement: Option[String] = None
+  private var canUseGpuStringReplace = false
+  private var containsBackref: Boolean = false
 
   override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
+    replacement = expr.rep match {
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null => Some(s.toString)
+      case _ => None
+    }
+
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
-          // use GpuStringReplace
+          canUseGpuStringReplace = true
         } else {
           try {
-            pattern = Some(new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString))
+            val (pat, repl) =
+                new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
+            pattern = Some(pat)
+            repl.map(GpuRegExpUtils.backrefConversion).foreach {
+                case (hasBackref, convertedRep) =>
+                  containsBackref = hasBackref
+                  replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
+            }
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -48,40 +63,15 @@ class GpuRegExpReplaceMeta(
       case _ =>
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
-
-    expr.rep match {
-      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        if (GpuRegExpUtils.containsBackrefs(s.toString)) {
-          willNotWorkOnGpu("regexp_replace with back-references is not supported")
-        }
-        replacement = Some(GpuRegExpUtils.unescapeReplaceString(s.toString))
-      case _ =>
+    GpuOverrides.extractLit(expr.pos).foreach { lit =>
+      if (lit.value.asInstanceOf[Int] != 1) {
+        willNotWorkOnGpu("only a search starting position of 1 is supported")
+      }
     }
   }
 }
 
 object GpuRegExpUtils {
-
-  /**
-   * Determine if a string contains back-references such as `$1` but ignoring
-   * if preceded by escape character.
-   */
-  def containsBackrefs(s: String): Boolean = {
-    var i = 0
-    while (i < s.length) {
-      if (s.charAt(i) == '\\') {
-        i += 2
-      } else {
-        if (s.charAt(i) == '$'  && i+1 < s.length) {
-          if (s.charAt(i+1).isDigit) {
-            return true
-          }
-        }
-        i += 1
-      }
-    }
-    false
-  }
 
   /**
    * We need to remove escape characters in the regexp_replace

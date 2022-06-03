@@ -1,39 +1,11 @@
-3,12d2
-<   // spark 2.x uses FastDateFormat, use getPattern
-<   def dateFormatInRead(options: JSONOptions): String = options.dateFormat.getPattern
-< 
-<   def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
-<     fileOptions match {
-<       case jsonOpts: JSONOptions => Option(jsonOpts.timestampFormat.getPattern)
-<       case _ => throw new RuntimeException("Wrong file options.")
-<     }
-<   }
-< 
-37a28,37
->   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
->     val scan = scanMeta.wrapped
->     tagSupport(
->       scan.sparkSession,
->       scan.dataSchema,
->       scan.readDataSchema,
->       scan.options.asScala.toMap,
->       scanMeta)
->   }
-> 
-43c43
+18c18
 <       meta: RapidsMeta[_, _]): Unit = {
 ---
 >       meta: RapidsMeta[_, _, _]): Unit = {
-106c106
-<           dateFormatInRead(parsedOptions), parseString = true)
----
->         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
-110,111c110
+85,87c85,86
+<    if (types.contains(TimestampType)) {
 <       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
 <       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
 ---
+>     if (types.contains(TimestampType)) {
 >       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
-114c113
-<       timestampFormatInRead(parsedOptions).foreach { tsFormat =>
----
->       FileOptionsShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>

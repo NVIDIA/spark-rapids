@@ -1,0 +1,5 @@
+2,3c2
+<   // spark 2.x uses FastDateFormat, use getPattern
+<   def dateFormatInRead(options: JSONOptions): String = options.dateFormat.getPattern
+---
+>   def dateFormatInRead(options: JSONOptions): String = options.dateFormat

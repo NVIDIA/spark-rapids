@@ -287,8 +287,13 @@ sed -n  '/class GpuBroadcastHashJoinMeta/,/override def convertToGpu/{/override 
 diff $tmp_dir/GpuBroadcastHashJoinMeta_new.out $tmp_dir/GpuBroadcastHashJoinMeta_old.out > $tmp_dir/GpuBroadcastHashJoinMeta.newdiff || true
 diff -c spark2diffs/GpuBroadcastHashJoinMeta.diff  $tmp_dir/GpuBroadcastHashJoinMeta.newdiff
 
-sed -n  '/object GpuCSVScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuCSVScan.scala > $tmp_dir/GpuCSVScan_new.out
-sed -n  '/object GpuCSVScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchScanExec.scala > $tmp_dir/GpuCSVScan_old.out
+sed -n  '/object GpuCSVScan /,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCSVScan.scala > $tmp_dir/GpuCSVScan_new.out
+sed -n  '/object GpuCSVScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCSVScan.scala > $tmp_dir/GpuCSVScan_old.out
+diff  $tmp_dir/GpuCSVScan_new.out $tmp_dir/GpuCSVScan_old.out  > $tmp_dir/GpuCSVScan.newdiff || true
+diff -c spark2diffs/GpuCSVScan.diff $tmp_dir/GpuCSVScan.newdiff
+
+sed -n  '/object GpuCSVScan /,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCSVScan.scala > $tmp_dir/GpuCSVScan_new.out
+sed -n  '/object GpuCSVScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCSVScan.scala > $tmp_dir/GpuCSVScan_old.out
 diff  $tmp_dir/GpuCSVScan_new.out $tmp_dir/GpuCSVScan_old.out  > $tmp_dir/GpuCSVScan.newdiff || true
 diff -c spark2diffs/GpuCSVScan.diff $tmp_dir/GpuCSVScan.newdiff
 
@@ -296,7 +301,7 @@ diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/OffsetWi
 diff -c spark2diffs/OffsetWindowFunctionMeta.diff $tmp_dir/OffsetWindowFunctionMeta.newdiff
 
 sed -n  '/class GpuRegExpReplaceMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GpuRegExpReplaceMeta.scala > $tmp_dir/GpuRegExpReplaceMeta_new.out
-sed -n  '/class GpuRegExpReplaceMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/311+-nondb/scala/com/nvidia/spark/rapids/shims/GpuRegExpReplaceExec.scala > $tmp_dir/GpuRegExpReplaceMeta_old.out
+sed -n  '/class GpuRegExpReplaceMeta/,/override def convertToGpu/{/override def convertToGpu/!p}' ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuRegExpReplaceMeta.scala  > $tmp_dir/GpuRegExpReplaceMeta_old.out
 diff $tmp_dir/GpuRegExpReplaceMeta_new.out $tmp_dir/GpuRegExpReplaceMeta_old.out > $tmp_dir/GpuRegExpReplaceMeta.newdiff || true
 diff -c spark2diffs/GpuRegExpReplaceMeta.diff  $tmp_dir/GpuRegExpReplaceMeta.newdiff
 
@@ -364,8 +369,8 @@ sed -n '/object GpuReadParquetFileFormat/,/^}/{/^}/!p}'  ../sql-plugin/src/main/
 diff $tmp_dir/GpuReadParquetFileFormat_new.out $tmp_dir/GpuReadParquetFileFormat_old.out > $tmp_dir/GpuReadParquetFileFormat.newdiff || true
 diff -c spark2diffs/GpuReadParquetFileFormat.diff $tmp_dir/GpuReadParquetFileFormat.newdiff
 
-sed -n '/object GpuParquetScanBase/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > $tmp_dir/GpuParquetScanBase_new.out
-sed -n '/object GpuParquetScanBase/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > $tmp_dir/GpuParquetScanBase_old.out
+sed -n '/object GpuParquetScan /,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScanBase.scala > $tmp_dir/GpuParquetScanBase_new.out
+sed -n '/object GpuParquetScan /,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuParquetScan.scala > $tmp_dir/GpuParquetScanBase_old.out
 diff $tmp_dir/GpuParquetScanBase_new.out $tmp_dir/GpuParquetScanBase_old.out > $tmp_dir/GpuParquetScanBase.newdiff || true
 diff -c spark2diffs/GpuParquetScanBase.diff $tmp_dir/GpuParquetScanBase.newdiff
 
@@ -446,7 +451,7 @@ sed -n '/object GpuFloorCeil/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/ap
 diff -c $tmp_dir/GpuFloorCeil_new.out $tmp_dir/GpuFloorCeil_old.out
 
 sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_new.out
-sed -n '/object GpuFileSourceScanExec/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_old.out
+sed -n '/object GpuFileSourceScanExec/,/def convertFileFormat/{/def convertFileFormat/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuFileSourceScanExec.scala > $tmp_dir/GpuFileSourceScanExec_old.out
 diff $tmp_dir/GpuFileSourceScanExec_new.out $tmp_dir/GpuFileSourceScanExec_old.out > $tmp_dir/GpuFileSourceScanExec.newdiff || true
 diff -c spark2diffs/GpuFileSourceScanExec.diff $tmp_dir/GpuFileSourceScanExec.newdiff
 
