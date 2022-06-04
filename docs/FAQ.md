@@ -57,7 +57,9 @@ More information about cards that support forward compatibility can be found
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
-Using the `--jars` or `--packages` option followed by the file path or maven path to RAPIDS jar is the preferred way to run RAPIDS accelerator. 
+Using the `--jars` or `--packages` option followed by the file path or maven path to RAPIDS jar is the preferred way to run RAPIDS accelerator.
+If RAPIDS jar is copied directly to the `$SPARK_HOME/jars` folder, it might result in the ClassLoader not setting up classes
+properly to gain full advantage of the GPU.
 
 On startup the RAPIDS Accelerator will log a warning message on the Spark driver showing the
 version with a message that looks something like this:
