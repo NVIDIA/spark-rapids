@@ -14,38 +14,33 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids
 
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.rapids.TrampolineErrorUtils
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 
-object RapidsErrorUtils {
-  def invalidArrayIndexError(index: Int, numElements: Int,
-      isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
-    if (isElementAtF) {
-      TrampolineErrorUtils.invalidElementAtIndexError(index, numElements)
-    } else {
-      TrampolineErrorUtils.invalidArrayIndexError(index, numElements)
-    }
+object TrampolineErrorUtils {
+  def invalidElementAtIndexError(index: Int, numElements: Int) = {
+    QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
+  }
+
+  def invalidArrayIndexError(index: Int, numElements: Int) = {
+    QueryExecutionErrors.invalidArrayIndexError(index, numElements)
   }
 
   def mapKeyNotExistError(
       key: String,
       keyType: DataType,
       origin: Origin): NoSuchElementException = {
-    TrampolineErrorUtils.mapKeyNotExistError(key, keyType, origin)
-  }
-
-  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
-    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
   }
 
   def divByZeroError(origin: Origin): ArithmeticException = {
-    TrampolineErrorUtils.divByZeroError(origin)
+    QueryExecutionErrors.divideByZeroError(origin.context)
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {
-    TrampolineErrorUtils.divOverflowError(origin)
+    QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
   }
 }
