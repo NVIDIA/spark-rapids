@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
@@ -40,11 +39,10 @@ object RapidsErrorUtils {
   }
 
   def divByZeroError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.divideByZeroError()
+    new ArithmeticException("divide by zero")
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.overflowInIntegralDivideError()
+    new ArithmeticException("Overflow in integral divide.")
   }
 }
-
