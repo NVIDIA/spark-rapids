@@ -14,27 +14,24 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
-    if (isElementAtF) {
-      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
-    } else {
-      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
-    }
+    // Follow the Spark string format before 3.3.0
+    new ArrayIndexOutOfBoundsException(s"Invalid index: $index, numElements: $numElements")
   }
 
   def mapKeyNotExistError(
       key: String,
       keyType: DataType,
       origin: Origin): NoSuchElementException = {
-    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
+    // Follow the Spark string format before 3.3.0
+    new NoSuchElementException(s"Key $key does not exist.")
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
@@ -42,10 +39,10 @@ object RapidsErrorUtils {
   }
 
   def divByZeroError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.divideByZeroError(origin.context)
+    new ArithmeticException("divide by zero")
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
+    new ArithmeticException("Overflow in integral divide.")
   }
 }

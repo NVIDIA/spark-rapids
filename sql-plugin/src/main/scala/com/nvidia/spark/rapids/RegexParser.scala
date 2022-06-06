@@ -889,6 +889,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexRepetition(lineTerminatorMatcher(Set(ch), true,
                     mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
+            case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
+              throw new RegexUnsupportedException(
+                      "regex sequences with \\b or \\B not supported around $")
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
@@ -962,9 +965,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
           } else {
             RegexCharacterClass(negated = false, components)
           }
-        case 'b' | 'B' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4517
-          throw new RegexUnsupportedException("word boundaries are not supported")
+        case 'b' | 'B' if mode == RegexSplitMode =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/5478
+          throw new RegexUnsupportedException("word boundaries are not supported in split mode")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
         case 'Z' if mode == RegexSplitMode =>
@@ -1144,6 +1147,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
+                  case RegexEscaped('b') | RegexEscaped('B') =>
+                    throw new RegexUnsupportedException(
+                      "regex sequences with \\b or \\B not supported around $")
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
@@ -1159,14 +1165,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
         })._1)
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
-        case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
-          // example: pattern " ?", input "] b[", replace with "X":
-          // java: X]XXbX[X
-          // cuDF: XXXX] b[
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
-          throw new RegexUnsupportedException(
-            "regexp_replace on GPU does not support repetition with ? or *")
-
         case (_, SimpleQuantifier(ch)) if mode == RegexSplitMode && "?*".contains(ch) =>
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
@@ -1175,19 +1173,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with ? or * consistently with Spark")
 
-        case (_, QuantifierVariableLength(0, _)) if mode == RegexReplaceMode =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
-          throw new RegexUnsupportedException(
-            "regexp_replace on GPU does not support repetition with {0,} or {0,n}")
-
         case (_, QuantifierVariableLength(0, _)) if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4884
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
             "consistently with Spark")
 
-        case (_, QuantifierFixedLength(0))
-          if mode != RegexFindMode =>
+        case (_, QuantifierVariableLength(0, Some(0))) if mode != RegexFindMode =>
+          throw new RegexUnsupportedException(
+            "regex_replace and regex_split on GPU do not support repetition with {0,0}")
+
+        case (_, QuantifierFixedLength(0)) if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
             "regex_replace and regex_split on GPU do not support repetition with {0}")
 
