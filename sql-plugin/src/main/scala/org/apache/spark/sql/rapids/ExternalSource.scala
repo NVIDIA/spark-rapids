@@ -39,8 +39,9 @@ object ExternalSource extends Logging {
     Utils.classIsLoadable(avroScanClassName) && {
       Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
         .getOrElse {
-          logWarning("WARNING: Avro library not found by the RAPIDS plugin. If needed, please use " +
-          "--jars to add it")
+          logWarning("Avro library not found by the RAPIDS plugin. The Plugin jars are " +
+              "likely deployed using a static classpath spark.driver/executor.extraClassPath. " +
+              "Consider using --jars or --packages instead.")
           false
         }
     }
