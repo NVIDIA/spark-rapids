@@ -473,6 +473,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
   private val parquetEncryptionConfs = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
+  private[rapids] val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -560,8 +561,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         val footerLength = readIntLittleEndian(inputStream)
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
-        if (!util.Arrays.equals(MAGIC, magic) {
-          if (!util.Arrays.equals(ParquetPartitionReader.PARQUET_MAGIC_ENCRYPTED, magic)) {
+        if (!util.Arrays.equals(MAGIC, magic)) {
+          if (!util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
             throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
               "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
               s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
@@ -2174,7 +2175,6 @@ class ParquetPartitionReader(
 
 object ParquetPartitionReader {
   private[rapids] val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
-  private[rapids] val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
   private[rapids] val PARQUET_CREATOR = "RAPIDS Spark Plugin"
   private[rapids] val PARQUET_VERSION = 1
 
