@@ -562,7 +562,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
         if (!util.Arrays.equals(MAGIC, magic)) {
-          if (!util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
+          if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
             throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
               "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
               s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
