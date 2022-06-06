@@ -759,7 +759,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         gpuReplace(cudfPattern, replaceString.get, input)
       } catch {
         case e: CudfException =>
-          println(e)
           fail(s"cuDF failed to compile pattern: ${toReadableString(cudfPattern)}, " +
               s"original: ${toReadableString(javaPattern)}, " +
               s"replacement: ${toReadableString(replaceString.get)}", e)
