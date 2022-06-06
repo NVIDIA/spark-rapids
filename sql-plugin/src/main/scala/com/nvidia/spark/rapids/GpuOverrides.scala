@@ -649,7 +649,9 @@ object GpuOverrides extends Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType => TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
+      case TimestampType =>
+        TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
+        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
       case StringType => true
       case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
       case NullType => allowNull
@@ -1696,7 +1698,6 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("interval months isn't supported")
             }
           }
-          checkTimeZoneId(timeAdd.timeZoneId)
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1718,7 +1719,6 @@ object GpuOverrides extends Logging {
                 willNotWorkOnGpu("interval months isn't supported")
               }
             }
-            checkTimeZoneId(dateAddInterval.timeZoneId)
           }
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1779,9 +1779,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(hour.timeZoneId)
-        }
 
         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
       }),
@@ -1790,9 +1787,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-         checkTimeZoneId(minute.timeZoneId)
-        }
 
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuMinute(expr)
@@ -1802,9 +1796,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(second.timeZoneId)
-        }
 
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuSecond(expr)

@@ -377,8 +377,6 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
-    checkTimeZoneId(expr.timeZoneId)
-
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       extractStringLit(expr.right) match {
