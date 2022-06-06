@@ -333,6 +333,20 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val pattern = Seq("a.")
     val inputs = Seq("abc", "a\n\rb", "a\n\u0085b", "a\u2029\u0085b", "a\u2082\rb")
     assertCpuGpuMatchesRegexpFind(pattern, inputs)
+
+  }
+
+  test("replace_replace - ?, *, +, and {0, n} repetitions") {
+    val patterns = Seq("D?", "D*", "D+", "D{0,}", "D{0,1}", "D{0,5}", "[1a-zA-Z]{0,}",
+        "[1a-zA-Z]{0,2}", "A+")
+    val inputs = Seq("SS", "DD", "SDSDSDS", "DDDD", "DDDDDD", "ABCDEFG")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("dot matches CR on GPU but not on CPU") {
+    // see https://github.com/rapidsai/cudf/issues/9619
+    val pattern = "1."
+    assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
   }
 
   test("character class with ranges") {
@@ -429,26 +443,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\d", "\\d+")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
-  }
-
-  test("regexp_replace - character class repetition - ? and * - fall back to CPU") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4468
-    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexReplaceMode,
-        "regexp_replace on GPU does not support repetition with ? or *"
-      )
-    )
-  }
-
-  test("regexp_replace - character class repetition - {0,} or {0,n} - fall back to CPU") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4468
-    val patterns = Seq(raw"[1a-zA-Z]{0,}", raw"[1a-zA-Z]{0,2}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexReplaceMode,
-        "regexp_replace on GPU does not support repetition with {0,} or {0,n}"
-      )
-    )
   }
 
   test("regexp_split - character class repetition - ? and * - fall back to CPU") {
