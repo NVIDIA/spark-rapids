@@ -297,6 +297,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test ("word boundaries will fall back to CPU - split") {
+    val patterns = Seq("\\b", "\\B")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode, "word boundaries are not supported in split mode")
+    )
+  }
+
   test("whitespace boundaries - replace") {
     assertCpuGpuMatchesRegexpReplace(
       Seq("\\s", "\\S"),

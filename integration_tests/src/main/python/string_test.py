@@ -872,6 +872,20 @@ def test_regexp_extract_idx_0():
                 'regexp_extract(a, "^([a-d]*)[0-9]*([a-d]*)\\z", 0)'),
         conf=_regexp_conf)
 
+def test_word_boundaries():
+    gen = StringGen('([abc]{1,3}[\r\n\t \f]{0,2}[123]){1,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "\\\\b")',
+                'rlike(a, "\\\\B")',
+                'rlike(a, "\\\\b\\\\B")',
+                'regexp_extract(a, "([a-d]+)\\\\b([e-h]+)", 1)',
+                'regexp_extract(a, "([a-d]+)\\\\B", 1)',
+                'regexp_replace(a, "\\\\b", "#")',
+                'regexp_replace(a, "\\\\B", "#")',
+            ),
+        conf=_regexp_conf)
+        
 def test_character_classes():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
