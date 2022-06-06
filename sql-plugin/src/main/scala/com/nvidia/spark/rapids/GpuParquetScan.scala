@@ -38,11 +38,13 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ParquetFieldIdShims, SparkShimImpl}
 import java.util
+
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.bytes.BytesUtils.readIntLittleEndian
+import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
@@ -53,7 +55,7 @@ import org.apache.parquet.io.{InputFile, SeekableInputStream}
 import org.apache.parquet.schema.{DecimalMetadata, GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -607,6 +609,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
   }
 
+  private val hadoopParquetEncryptionConfs = Seq("parquet.encryption.kms.client.class",
+    "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
+
   @scala.annotation.nowarn
   def filterBlocks(
       footerReader: ParquetFooterReaderType.Value,
@@ -614,34 +619,47 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       conf : Configuration,
       filters: Array[Filter],
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
+    // for now make sure we aren't trying to read encrypted files, so remove the
+    // hadoop configurations
+    hadoopParquetEncryptionConfs.foreach { encryptConf =>
+      if (conf.get(encryptConf) != null) {
+        conf.unset(encryptConf)
+      }
+    }
     withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
       val filePath = new Path(new URI(file.filePath))
-      val footer = footerReader match {
-        case ParquetFooterReaderType.NATIVE =>
-          val serialized = withResource(readAndFilterFooter(file, conf, readDataSchema, filePath)) {
-            tableFooter =>
-              if (tableFooter.getNumColumns <= 0) {
-                // Special case because java parquet reader does not like having 0 columns.
-                val numRows = tableFooter.getNumRows
-                val block = new BlockMetaData()
-                block.setRowCount(numRows)
-                val schema = new MessageType("root")
-                return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
-                  schema, false, false, false)
-              }
+      try {
+        val footer = footerReader match {
+          case ParquetFooterReaderType.NATIVE =>
+            val serialized = withResource(readAndFilterFooter(file, conf, readDataSchema, filePath)) {
+              tableFooter =>
+                if (tableFooter.getNumColumns <= 0) {
+                  // Special case because java parquet reader does not like having 0 columns.
+                  val numRows = tableFooter.getNumRows
+                  val block = new BlockMetaData()
+                  block.setRowCount(numRows)
+                  val schema = new MessageType("root")
+                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                    schema, false, false, false)
+                }
 
-              tableFooter.serializeThriftFile()
-          }
-          withResource(serialized) { serialized =>
-            withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
-              val inputFile = new HMBInputFile(serialized)
-
-              // We already filtered the ranges so no need to do more here...
-              ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
+                tableFooter.serializeThriftFile()
             }
-          }
-        case _ =>
-          readAndSimpleFilterFooter(file, conf, filePath)
+            withResource(serialized) { serialized =>
+              withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
+                val inputFile = new HMBInputFile(serialized)
+
+                // We already filtered the ranges so no need to do more here...
+                ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
+              }
+            }
+          case _ =>
+            readAndSimpleFilterFooter(file, conf, filePath)
+        }
+      } catch {
+        case e: ParquetCryptoRuntimeException =>
+          throw new SparkException(
+            "GPU does not support reading Parquet columnar encrypted files!", e)
       }
 
       val fileSchema = footer.getFileMetaData.getSchema
