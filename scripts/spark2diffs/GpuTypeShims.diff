@@ -1,0 +1,38 @@
+17a18,20
+> import ai.rapids.cudf
+> import ai.rapids.cudf.DType
+> import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
+31a35,52
+>   /**
+>    * Get the TypeConverter of the data type for this Shim
+>    * Note should first calling hasConverterForType
+>    * @param t the data type
+>    * @param nullable is nullable
+>    * @return the row to column convert for the data type
+>    */
+>   def getConverterForType(t: DataType, nullable: Boolean): TypeConverter = {
+>     throw new RuntimeException(s"No converter is found for type $t.")
+>   }
+> 
+>   /**
+>    * Get the cuDF type for the Spark data type
+>    * @param t the Spark data type
+>    * @return the cuDF type if the Shim supports
+>    */
+>   def toRapidsOrNull(t: DataType): DType = null
+> 
+34a56,65
+>   /**
+>    * Copy a column for computing on GPU.
+>    * Better to check if the type is supported first by calling 'isColumnarCopySupportedForType'
+>    */
+>   def columnarCopy(cv: ColumnVector,
+>       b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = {
+>     val t = cv.dataType()
+>     throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
+>   }
+> 
+49a81,83
+> 
+>   def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
+>     throw new RuntimeException(s"Not support type $dt.")
