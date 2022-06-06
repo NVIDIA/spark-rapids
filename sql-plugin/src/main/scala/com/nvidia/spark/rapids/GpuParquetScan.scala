@@ -628,11 +628,11 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
     withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
       val filePath = new Path(new URI(file.filePath))
-      try {
-        val footer = footerReader match {
+      val footer = try {
+         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
-            val serialized = withResource(readAndFilterFooter(file, conf, readDataSchema, filePath)) {
-              tableFooter =>
+            val serialized = withResource(readAndFilterFooter(file, conf,
+              readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
                   val numRows = tableFooter.getNumRows
@@ -658,8 +658,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         }
       } catch {
         case e: ParquetCryptoRuntimeException =>
-          throw new SparkException(
-            "GPU does not support reading Parquet columnar encrypted files!", e)
+          throw new SparkException("The GPU does not support reading Parquet columnar encrypted " +
+            "files. To read ecnrypted or columnar encrypted files, disable the GPU Parquet reader via " +
+            s"${RapidsConf.ENABLE_PARQUET_READ.key}", e)
       }
 
       val fileSchema = footer.getFileMetaData.getSchema
