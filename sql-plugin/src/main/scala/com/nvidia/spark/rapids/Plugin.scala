@@ -334,21 +334,11 @@ object RapidsExecutorPlugin {
 
   def isCudaException(ef: ExceptionFailure): Boolean = ef.exception match {
     case Some(_: CudaException) => true
-    // This branch is for RMM errors caused by CUDA errors
-    case Some(ex: CudfException) if ex.getMessage.contains("CUDA error") => true
     case _ => false
   }
 
   def isCudaFatalException(ef: ExceptionFailure): Boolean = ef.exception match {
     case Some(_: CudaFatalException) => true
-    // Double check via message scraping, to ensure that we don't miss any fatal CUDA errors.
-    case Some(ex: RuntimeException) if isCudaException(ef) =>
-      val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
-        "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
-        "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
-        "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
-        "cudaErrorECCUncorrectable")
-      unrecoverableErrors.exists(ex.getMessage.contains(_))
     case _ => false
   }
 
