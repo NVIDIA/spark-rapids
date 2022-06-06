@@ -658,9 +658,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         }
       } catch {
         case e: ParquetCryptoRuntimeException =>
-          throw new SparkException("The GPU does not support reading Parquet columnar encrypted " +
-            "files. To read ecnrypted or columnar encrypted files, disable the GPU Parquet reader via " +
-            s"${RapidsConf.ENABLE_PARQUET_READ.key}", e)
+          throw new SparkException("The GPU does not support reading encrypted Parquet " +
+            "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+            s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}", e)
       }
 
       val fileSchema = footer.getFileMetaData.getSchema
