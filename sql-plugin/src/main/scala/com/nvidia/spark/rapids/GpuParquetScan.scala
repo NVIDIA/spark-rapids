@@ -471,9 +471,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
 
-  private val parquetEncryptionConfs = Seq("parquet.encryption.kms.client.class",
+  private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
-  private[rapids] val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
+  private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -629,7 +629,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       // Make sure we aren't trying to read encrypted files. For now, remove the related
       // parquet confs from the hadoop configuration and try to catch the resulting
       // exception and print a useful message
-      parquetEncryptionConfs.foreach { encryptConf =>
+      PARQUET_ENCRYPTION_CONFS.foreach { encryptConf =>
         if (conf.get(encryptConf) != null) {
           conf.unset(encryptConf)
         }
@@ -664,7 +664,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         }
       } catch {
         case e: ParquetCryptoRuntimeException =>
-          throw new SparkException("The GPU does not support reading encrypted Parquet " +
+          throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
             "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
             s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.", e)
       }
