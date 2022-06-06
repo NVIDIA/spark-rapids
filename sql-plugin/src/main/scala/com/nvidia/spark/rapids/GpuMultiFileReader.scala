@@ -27,6 +27,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -43,7 +44,7 @@ import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -301,7 +302,7 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
 
       withResource(out) { _ =>
         withResource(new HostMemoryInputStream(hmb, dataLength)) { in =>
-          logInfo(s"Writing split data for $splits to $path")
+          logInfo(s"Writing split data for ${splits.mkString(", ")} to $path")
           IOUtils.copy(in, out)
         }
       }
@@ -542,7 +543,9 @@ trait DataBlockBase {
  *
  * The sub-class should wrap the real schema for the specific file format
  */
-trait SchemaBase
+trait SchemaBase {
+  def fieldNames: Array[String]
+}
 
 /**
  * A common trait for the extra information for different file format
@@ -793,14 +796,17 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private def readBatch(): Option[ColumnarBatch] = {
     withResource(new NvtxRange(s"$getFileFormatShortName readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkMeta = populateCurrentBlockChunk()
-      if (readDataSchema.isEmpty) {
+      if (currentChunkMeta.clippedSchema.fieldNames.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         if (currentChunkMeta.numTotalRows == 0) {
           None
         } else {
+          val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-          val emptyBatch = new ColumnarBatch(Array.empty, currentChunkMeta.numTotalRows.toInt)
+          val nullColumns = readDataSchema.safeMap(f =>
+            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+          val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
           addAllPartitionValues(Some(emptyBatch), currentChunkMeta.allPartValues,
             currentChunkMeta.rowsPerPartition, partitionSchema)
         }

@@ -63,8 +63,8 @@ conditions within the computation itself the result may not be the same each tim
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. Because of this most floating point aggregations are off by default but can
-be enabled with the config
+worked with plain Spark. As of 22.06 this is behavior is enabled by default but can be disabled with 
+the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
 Additionally, some aggregations on floating point columns that contain `NaN` can produce results
@@ -384,7 +384,7 @@ The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and wr
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
  CPU when reading an unsupported compression format, and will error out in that case.
 
-### Push Down Aggreates for ORC
+### Push Down Aggregates for ORC
 
 Spark-3.3.0+ pushes down certain aggregations (`MIN`/`MAX`/`COUNT`) into ORC when the user-config
 `spark.sql.orc.aggregatePushdown` is set to true.  
@@ -414,16 +414,14 @@ file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.
 
 **Limitations With RAPIDS**
 
-RAPIDS does not support whole file statistics in ORC file. We are working with
-[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
-[here](https://github.com/rapidsai/cudf/issues/5826).
+RAPIDS does not support whole file statistics in ORC file in releases prior to release 22.06.
 
 *Writing ORC Files*
 
-Without CUDF support to file statistics, all ORC files written by
-the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
-In order to prevent job failures, `spark.sql.orc.aggregatePushdown` should be disabled while reading ORC files
-that were written by the GPU.
+If you are using release prior to release 22.06 where CUDF does not support writing file statistics, then the ORC files
+written by the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
+In order to prevent job failures in releases prior to release 22.06, `spark.sql.orc.aggregatePushdown` should be disabled
+while reading ORC files that were written by the GPU.
 
 *Reading ORC Files*
 
@@ -565,9 +563,6 @@ The boolean, byte, short, int, long, float, double, string are supported in curr
 
 ## Regular Expressions
 
-Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors so
-this is disabled by default. To enable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=true`.
-
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
 - `RLIKE`
@@ -578,18 +573,28 @@ The following Apache Spark regular expression functions and expressions are supp
 - `string_split`
 - `str_to_map`
 
-There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
-that a pattern is either unsupported or would produce incorrect results on the GPU.
+Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
+regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
+still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
+set `spark.rapids.sql.regexp.enabled=false`.
 
-Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
+These are the known edge cases where running on the GPU will produce different results to the CPU:
+
+- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
+ to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
+ next to a newline or a repetition that produces zero or more results
+ ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+
+The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported by `regexp_replace`
+- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+  or more results
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Non-digit character class `\D`
-- Non-word character class `\W`
 - Word and non-word boundaries, `\b` and `\B`
 - Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
@@ -793,13 +798,12 @@ disabled on the GPU by default and require configuration options to be specified
 
 The GPU will use a different strategy from Java's BigDecimal to handle/store decimal values, which
 leads to restrictions:
-* It is only available when `ansiMode` is on.
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `true`
-and set `spark.sql.ansi.enabled` to `true`.
+As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
+later, set
+[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
 
 ### Float to Integral Types
 
@@ -809,9 +813,9 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-To enable this operation on the GPU when using Spark 3.1.0 or later, set
+As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
-to `true`.
+to `false`.
 
 This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
@@ -821,8 +825,8 @@ The GPU will use different precision than Java's toString method when converting
 types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.
+As of 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
 
@@ -835,8 +839,8 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `true`.
+As of 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
 
@@ -895,6 +899,10 @@ ConstantFolding is an operator optimization rule in Catalyst that replaces expre
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
+
+### long/double to Timestamp
+Spark 330+ has an issue when casting a big enough long/double as timestamp, refer to https://issues.apache.org/jira/browse/SPARK-39209.
+Spark 330+ throws errors while the RAPIDS Accelerator can handle correctly when casting a big enough long/double as timestamp.
 
 ## JSON string handling
 The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows

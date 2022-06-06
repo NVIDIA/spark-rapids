@@ -135,7 +135,7 @@ type `DECIMAL64(scale=-2)`.
 ## RAPIDS Accelerated UDF Examples
 
 <!-- Note: should update the branch name to tag when releasing-->
-Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/RAPIDS-accelerated-UDFs) project.
+Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.08/examples/UDF-Examples/RAPIDS-accelerated-UDFs) project.
 
 ## GPU Support for Pandas UDF
 
@@ -189,7 +189,7 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
 
     ```shell
     ...
-    --conf spark.rapids.python.gpu.enabled=true \
+    --conf spark.rapids.sql.python.gpu.enabled=true \
     ```
 
 Please note: every type of Pandas UDF on Spark is run by a specific Spark execution plan. RAPIDS

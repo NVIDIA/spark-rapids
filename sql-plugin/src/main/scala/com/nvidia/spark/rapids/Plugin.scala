@@ -27,7 +27,6 @@ import scala.util.matching.Regex
 
 import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -310,11 +309,18 @@ object RapidsExecutorPlugin {
    * patch version then the actual patch version must be greater than or equal.
    * For example, version 7.1 is not satisfied by version 7.2, but version 7.1 is satisfied by
    * version 7.1.1.
+   * If the expected cudf version is a specified 'timestamp-seq' one, then it is satisfied by
+   * the SNAPSHOT version.
+   * For example, version 7.1-yyyymmdd.hhmmss-seq is satisfied by version 7.1-SNAPSHOT.
    */
   def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
     val expHyphen = if (expected.indexOf('-') >= 0) expected.indexOf('-') else expected.length
     val actHyphen = if (actual.indexOf('-') >= 0) actual.indexOf('-') else actual.length
-    if (actual.substring(actHyphen) != expected.substring(expHyphen)) return false
+    if (actual.substring(actHyphen) != expected.substring(expHyphen) &&
+      !(actual.substring(actHyphen) == "-SNAPSHOT" &&
+        expected.substring(expHyphen).matches("-([0-9]{8}).([0-9]{6})-([1-9][0-9]*)"))) {
+      return false
+    }
 
     val (expMajorMinor, expPatch) = expected.substring(0, expHyphen).split('.').splitAt(2)
     val (actMajorMinor, actPatch) = actual.substring(0, actHyphen).split('.').splitAt(2)
@@ -438,7 +444,6 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    SparkShimImpl.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
     PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||

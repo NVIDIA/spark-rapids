@@ -2086,16 +2086,16 @@ object GpuOverrides extends Logging {
       "IF expression",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-            TypeSig.MAP).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.MAP).nested(),
+                TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
             (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT +
-                TypeSig.MAP).nested(),
+                TypeSig.MAP + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
@@ -2765,30 +2765,12 @@ object GpuOverrides extends Logging {
         TypeSig.BOOLEAN,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
           TypeSig.ARRAY.nested(TypeSig.all)),
-        ("key", TypeSig.commonCudfTypes
-            .withPsNote(
-              Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), 
-              "NaN literals are not supported. Columnar input" +
-              s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false."),
-            TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // do not support literal arrays as LHS
           if (extractLit(in.left).isDefined) {
             willNotWorkOnGpu("Literal arrays are not supported for array_contains")
-          }
-
-          val rhsVal = extractLit(in.right)
-          val mightHaveNans = (in.right.dataType, rhsVal) match {
-            case (FloatType, Some(f: Literal)) => f.value.asInstanceOf[Float].isNaN
-            case (DoubleType, Some(d: Literal)) => d.value.asInstanceOf[Double].isNaN
-            case (FloatType | DoubleType, None) => conf.hasNans // RHS is a column
-            case _ => false
-          }
-          if (mightHaveNans) {
-            willNotWorkOnGpu("Comparisons with NaN values are not supported and" +
-              "will compute incorrect results. If it is known that there are no NaNs, set " +
-              s" ${RapidsConf.HAS_NANS} to false.")
           }
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -2946,7 +2928,7 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
-            case "EXCEPTION" => // Good we can support this
+            case "EXCEPTION"| "LAST_WIN" => // Good we can support this
             case other =>
               willNotWorkOnGpu(s"$other is not supported for config setting" +
                   s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
@@ -2973,6 +2955,22 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[TransformValues](in, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuTransformValues(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
+        }
+      }),
+    expr[MapFilter](
+      "Filters entries in a map using the function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[MapFilter](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuMapFilter(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
     expr[StringLocate](
@@ -3092,14 +3090,28 @@ object GpuOverrides extends Logging {
     expr[Concat](
       "List/String concatenate",
       ExprChecks.projectOnly((TypeSig.STRING + TypeSig.ARRAY).nested(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.STRING + TypeSig.ARRAY).nested(
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
+      }),
+    expr[MapConcat](
+      "Returns the union of all the given maps",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL),
+        TypeSig.MAP.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL),
+          TypeSig.MAP.nested(TypeSig.all)))),
+      (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
+        override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
@@ -3479,7 +3491,15 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
-    )
+    ),
+    expr[RaiseError](
+      "Throw an exception",
+      ExprChecks.unaryProject(
+        TypeSig.NULL, TypeSig.NULL,
+        TypeSig.STRING, TypeSig.STRING),
+      (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
@@ -3739,7 +3759,7 @@ object GpuOverrides extends Logging {
       (globalLimitExec, conf, p, r) =>
         new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded())
+            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",

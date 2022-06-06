@@ -195,18 +195,12 @@ class ApplicationInfo(
   // resourceprofile id to resource profile info
   val resourceProfIdToInfo = new HashMap[Int, ResourceProfileInfoCase]()
 
-  // jobId to job info
-  val jobIdToInfo = new HashMap[Int, JobInfoClass]()
-  // sqlId to sql info
-  val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
-
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
      ArrayBuffer[BlockManagerRemovedCase]()
 
   // From SparkListenerEnvironmentUpdate
   var sparkProperties = Map.empty[String, String]
   var classpathEntries = Map.empty[String, String]
-  var gpuMode = false
 
   var appInfo: ApplicationCase = null
   var appId: String = ""

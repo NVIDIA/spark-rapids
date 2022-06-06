@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -700,14 +701,6 @@ object GpuDivModLike extends Arm {
       }
     }
   }
-
-  def divByZeroError(): Nothing = {
-    throw new ArithmeticException("divide by zero")
-  }
-
-  def divOverflowError(): Nothing = {
-    throw new ArithmeticException("Overflow in integral divide.")
-  }
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
@@ -724,16 +717,16 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
     if (failOnError) {
       withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
         if (rhs.getBase.contains(zeroScalar)) {
-          divByZeroError()
+          throw RapidsErrorUtils.divByZeroError(origin)
         }
         if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-          divOverflowError()
+          throw RapidsErrorUtils.divOverflowError(origin)
         }
         super.doColumnar(lhs, rhs)
       }
     } else {
       if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-        divOverflowError()
+        throw RapidsErrorUtils.divOverflowError(origin)
       }
       withResource(replaceZeroWithNull(rhs.getBase)) { replaced =>
         super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
@@ -743,7 +736,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
     if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-      divOverflowError()
+      throw RapidsErrorUtils.divOverflowError(origin)
     }
     withResource(replaceZeroWithNull(rhs.getBase)) { replaced =>
       super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
@@ -753,7 +746,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (isScalarZero(rhs.getBase)) {
       if (failOnError) {
-        divByZeroError()
+        throw RapidsErrorUtils.divByZeroError(origin)
       } else {
         withResource(Scalar.fromNull(outputType(lhs.getBase, rhs.getBase))) { nullScalar =>
           ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
@@ -761,7 +754,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       }
     } else {
       if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-        divOverflowError()
+        throw RapidsErrorUtils.divOverflowError(origin)
       }
       super.doColumnar(lhs, rhs)
     }
@@ -808,7 +801,7 @@ case class GpuDecimalDivide(
     if (failOnError) {
       withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
         if (rhs.contains(zeroScalar)) {
-          GpuDivModLike.divByZeroError()
+          throw RapidsErrorUtils.divByZeroError(origin)
         }
       }
       rhs.incRefCount()

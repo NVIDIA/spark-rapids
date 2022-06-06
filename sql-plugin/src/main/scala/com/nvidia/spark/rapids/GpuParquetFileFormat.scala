@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -48,6 +48,15 @@ object GpuParquetFileFormat {
     ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema, sqlConf)
 
     val parquetOptions = new ParquetOptions(options, sqlConf)
+
+    val columnEncryption = options.getOrElse("parquet.encryption.column.keys", "")
+    val footerEncryption = options.getOrElse("parquet.encryption.footer.key", "")
+
+    if (!columnEncryption.isEmpty || !footerEncryption.isEmpty) {
+      meta.willNotWorkOnGpu("Encryption is not yet supported on GPU. If encrypted Parquet " +
+          "writes are not required unset the \"parquet.encryption.column.keys\" and " +
+          "\"parquet.encryption.footer.key\" in Parquet options")
+    }
 
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
@@ -218,6 +227,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
+
+    ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)

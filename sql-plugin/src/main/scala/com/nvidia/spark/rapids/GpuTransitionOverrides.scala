@@ -263,7 +263,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case (plan, null) =>
         // No coalesce requested
         insertCoalesce(plan, disableUntilInput)
-      case (plan, goal @ RequireSingleBatch) =>
+      case (plan, goal: RequireSingleBatchLike) =>
         // Even if coalesce is disabled a single batch is required to make this operator work
         // This should not cause bugs because we require a single batch in situations where
         // Spark also buffers data, so any operator that needs coalesce disabled would also
