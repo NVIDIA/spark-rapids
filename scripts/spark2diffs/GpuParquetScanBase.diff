@@ -1,4 +1,8 @@
-1a2,27
+2,4c2,27
+< 
+<   // Spark 2.x doesn't have datasource v2 so ignore ScanMeta
+<   // Spark 2.x doesn't have the rebase mode so ignore throwIfNeeded
+---
 >   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
 >     val scan = scanMeta.wrapped
 >     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -25,14 +29,11 @@
 >       }
 >     }
 >   }
-6c32
+9c32
 <       meta: RapidsMeta[_, _]): Unit = {
 ---
 >       meta: RapidsMeta[_, _, _]): Unit = {
-8a35,36
->     ParquetFieldIdShims.tagGpuSupportReadForFieldId(meta, sparkSession.sessionState.conf)
-> 
-59,65d86
+64,70d86
 <     // Spark 2.x doesn't have the rebase mode because the changes of calendar type weren't made
 <     // so just skip the checks, since this is just explain only it would depend on how
 <     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
@@ -40,5 +41,5 @@
 < 
 <     // Spark 2.x doesn't support the rebase mode
 <     /*
-95d115
+100d115
 <     */

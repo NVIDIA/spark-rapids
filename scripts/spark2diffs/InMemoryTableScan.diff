@@ -2,10 +2,8 @@
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-14,15d13
-<     // Databricks doesn't have 2.x so ignore
+25,26d24
+<     // user won't actually enable it so assume they could
 <     /*
-21d18
+36d33
 <     */
-59a57
-> 
