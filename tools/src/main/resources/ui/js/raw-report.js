@@ -246,78 +246,72 @@ $(document).ready(function() {
       },
       {
         name: "failedSQLIds",
-        data: "failedSQLIds",
+        data: "failedSQLIds[, ]",
         searchable: false,
         className: "none",
       },
       {
         name: "potentialProblems",
-        data: "potentialProblems",
+        data: "potentialProblems_html_safe[</br>]",
         searchable: false,
         className: "none",
         render: function (data, type, row) {
           if (type === 'display') {
-            return trimLongFields(data);
+            return insertSpacePostCommas(data);
           }
           return data;
         },
       },
       {
         name: "readFileFormatAndTypesNotSupported",
-        data: "readFileFormatAndTypesNotSupported",
+        data: "readFileFormatAndTypesNotSupported_html_safe[</br>]",
         searchable: false,
         className: "none",
         render: function (data, type, row) {
           if (type === 'display') {
-            return trimLongFields(data);
+            return insertSpacePostCommas(data);
           }
           return data;
         },
       },
       {
-        data: "writeDataFormat",
+        data: "writeDataFormat_html_safe[, ]",
         name: "writeDataFormat",
         orderable: false,
         className: "none",
-        render: function (data, type, row) {
-          if (type === 'display') {
-            return trimLongFields(data);
-          }
-          return data;
-        },
       },
       {
-        data: "complexTypes",
+        data: "complexTypes_html_safe[</br>]",
         name: "complexTypes",
         orderable: false,
         className: "none",
         render: function (data, type, row) {
           if (type === 'display') {
-            return trimLongFields(data);
+            return insertSpacePostCommas(data);
           }
           return data;
         },
       },
       {
-        data: "nestedComplexTypes",
+        data: "nestedComplexTypes_html_safe[</br>]",
         name: "nestedComplexTypes",
         orderable: false,
         className: "none",
         render: function (data, type, row) {
           if (type === 'display') {
-            return trimLongFields(data);
+            return insertSpacePostCommas(data);
           }
           return data;
         },
       },
       {
-        data: "readFileFormats",
+        data: "readFileFormats_html_safe[</br>]",
         name: "readFileFormats",
         orderable: false,
         className: "none",
         render: function (data, type, row) {
           if (type === 'display') {
-            return trimLongFields(data);
+            return insertSpacePostCommas(data);
           }
           return data;
         },
@@ -346,6 +340,7 @@ $(document).ready(function() {
     dom: 'Bfrtlip',
     buttons: [{
       extend: 'csv',
+      title: 'rapids_4_spark_qualification_output_ui_raw_data',
       text: 'Export'
     }],
     initComplete: function(settings, json) {

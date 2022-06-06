@@ -94,11 +94,20 @@ function totalCPUPercentageColor(cpuPercent) {
   return (cpuPercent < CPUPercentThreshold) ? "white" : "black";
 }
 
-function trimLongFields(strData) {
-  if (strData.length > 120) {
-    return strData.substring(0, 120) + "...";
+function escapeHtml(unsafe) {
+  return unsafe
+    .replaceAll(/&/g, "&amp;")
+    .replaceAll(/</g, "&lt;")
+    .replaceAll(/>/g, "&gt;")
+    .replaceAll(/"/g, "&quot;")
+    .replaceAll(/'/g, "&#039;");
+}
+
+function insertSpacePostCommas(arrData) {
+  if (arrData.length > 0) {
+    return arrData.replaceAll(',', ', ')
   }
-  return strData;
+  return '';
 }
 
 class GpuRecommendationCategory {
@@ -194,6 +203,35 @@ function mapFieldsToUI(rawAppRecord) {
   rawAppRecord["sqlDataFrameDuration"] = rawAppRecord.estimatedInfo.sqlDfDuration;
   rawAppRecord["gpuTimeSaved"] = parseFloat(rawAppRecord.estimatedInfo.estimatedGpuTimeSaved);
   rawAppRecord["gpuOpportunity"] = rawAppRecord.estimatedInfo.gpuOpportunity;
+  // escape html characters for data formatted fields
+  rawAppRecord["readFileFormats_html_safe"] =
+    rawAppRecord.readFileFormats.map(elem => {
+      return escapeHtml(elem);
+    });
+  rawAppRecord["readFileFormatAndTypesNotSupported_html_safe"] =
+    rawAppRecord.readFileFormatAndTypesNotSupported.map(elem => {
+      return escapeHtml(elem);
+    });
+  rawAppRecord["writeDataFormat_html_safe"] =
+    rawAppRecord.writeDataFormat.map(elem => {
+      return escapeHtml(elem);
+    });
+  rawAppRecord["complexTypes_html_safe"] =
+    rawAppRecord.complexTypes.map(elem => {
+      return escapeHtml(elem);
+    });
+  rawAppRecord["nestedComplexTypes_html_safe"] =
+    rawAppRecord.nestedComplexTypes.map(elem => {
+      return escapeHtml(elem);
+    });
+  rawAppRecord["writeDataFormat_html_safe"] =
+    rawAppRecord.writeDataFormat.map(elem => {
+      return escapeHtml(elem).toUpperCase();
+    });
+  rawAppRecord["potentialProblems_html_safe"] =
+    rawAppRecord.potentialProblems.map(elem => {
+      return escapeHtml(elem).toUpperCase();
+    });
 }
 
 function processRawData(rawRecords) {

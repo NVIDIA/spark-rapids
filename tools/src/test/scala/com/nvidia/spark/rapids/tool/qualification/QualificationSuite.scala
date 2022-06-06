@@ -111,12 +111,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
-    appSums.map { sum =>
-      TestQualificationSummary(sum.appName, sum.appId, sum.estimatedInfo.recommendation,
-        sum.estimatedInfo.estimatedGpuSpeedup, sum.estimatedInfo.estimatedGpuDur,
-        sum.estimatedInfo.estimatedGpuTimeSaved, sum.estimatedInfo.sqlDfDuration,
-        sum.sqlDataframeTaskDuration, sum.estimatedInfo.appDur,
-        sum.estimatedInfo.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
+    appSums.map { appInfoRec =>
+      val sum = QualOutputWriter.createSummaryInfoCSVAdapter(appInfoRec, ",")
+      TestQualificationSummary(sum.appName, sum.appId, sum.recommendation,
+        sum.estimatedGpuSpeedup, sum.estimatedGpuDur,
+        sum.estimatedGpuTimeSaved, sum.sqlDataframeDuration,
+        sum.sqlDataframeTaskDuration, sum.appDuration,
+        sum.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
         sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
         sum.complexTypes, sum.nestedComplexTypes, sum.potentialProblems, sum.longestSqlDuration,
         sum.nonSqlTaskDurationAndOverhead,
@@ -471,8 +472,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
-      assert(actualResult._1.equals(expectedResult(index)._1))
-      assert(actualResult._2.equals(expectedResult(index)._2))
+      assert(ToolUtils.parseComplexTypes(actualResult._1).equals(expectedResult(index)._1))
+      assert(ToolUtils.parseNestedComplexTypes(actualResult._2).equals(expectedResult(index)._2))
       index += 1
     }
   }

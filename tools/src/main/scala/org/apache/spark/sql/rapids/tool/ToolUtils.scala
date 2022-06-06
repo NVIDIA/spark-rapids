@@ -16,6 +16,9 @@
 
 package org.apache.spark.sql.rapids.tool
 
+import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter
+
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
 
@@ -67,6 +70,25 @@ object ToolUtils extends Logging {
   def truncateDoubleToTwoDecimal(valNum: Double): Double = {
     // floor is applied after multiplying by 100. This keeps the number "as is" up-to two decimal.
     math.floor(valNum * 100) / 100
+  }
+
+  def renderTextField(values: Seq[Any], itemDelimiter: String, txtDelimiter: String) : String = {
+    replaceDelimiter(values.mkString(itemDelimiter), txtDelimiter)
+  }
+
+  def parseComplexTypes(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER) : String = {
+    renderTextField(values, ";", fileDelimiter)
+  }
+
+  def parseNestedComplexTypes(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER) : String = {
+    renderTextField(values, ";", fileDelimiter)
+  }
+
+  def parsePotentialProblems(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER) : String = {
+    renderTextField(values, ":", fileDelimiter)
   }
 }
 

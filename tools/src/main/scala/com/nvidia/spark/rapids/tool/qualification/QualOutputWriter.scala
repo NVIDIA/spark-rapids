@@ -20,11 +20,9 @@ import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
-import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.{EstimatedSummaryInfo, QualificationAppInfo, QualificationSummaryInfo}
-
 /**
  * This class handles the output files for qualification.
  * It can write both a raw csv file and then a text summary report.
@@ -42,11 +40,12 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
       val headersAndSizes = QualOutputWriter
-        .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
-      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
-      sums.foreach { appSum =>
-        csvFileWriter.write(QualOutputWriter.constructAppDetailedInfo(appSum, headersAndSizes,
-          ",", false, reportReadSchema))
+              .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes,
+        QualOutputWriter.CSV_DELIMITER, false))
+      sums.foreach { sum =>
+        csvFileWriter.write(QualOutputWriter.constructAppDetailedInfo(sum, headersAndSizes,
+          QualOutputWriter.CSV_DELIMITER, false, reportReadSchema))
       }
     } finally {
       csvFileWriter.close()
@@ -127,6 +126,32 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 }
 
+case class QualificationSummaryInfoTextAdapter(
+    appName: String,
+    appId: String,
+    recommendation: String,
+    estimatedGpuSpeedup: Double,
+    estimatedGpuDur: Double,
+    estimatedGpuTimeSaved: Double,
+    sqlDataframeDuration: Long,
+    sqlDataframeTaskDuration: Long,
+    appDuration: Long,
+    gpuOpportunity: Long,
+    executorCpuTimePercent: Double,
+    failedSQLIds: String,
+    readFileFormatAndTypesNotSupported: String,
+    readFileFormats: String,
+    writeDataFormat: String,
+    complexTypes: String,
+    nestedComplexTypes: String,
+    potentialProblems: String,
+    longestSqlDuration: Long,
+    nonSqlTaskDurationAndOverhead: Long,
+    unsupportedSQLTaskDuration: Long,
+    supportedSQLTaskDuration: Long,
+    taskSpeedupFactor: Double,
+    endDurationEstimated: Boolean)
+
 object QualOutputWriter {
   val NON_SQL_TASK_DURATION_STR = "NonSQL Task Duration"
   val SQL_ID_STR = "SQL ID"
@@ -174,6 +199,8 @@ object QualOutputWriter {
   val SPEEDUP_BUCKET_STR_SIZE: Int = QualificationAppInfo.STRONGLY_RECOMMENDED.size
   val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
   val GPU_OPPORTUNITY_STR_SIZE: Int = GPU_OPPORTUNITY_STR.size
+
+  val CSV_DELIMITER = ","
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
@@ -236,17 +263,19 @@ object QualOutputWriter {
       ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
       ESTIMATED_GPU_DURATION -> ESTIMATED_GPU_DURATION.size,
       ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
-      SQL_DUR_STR -> SQL_DUR_STR.size,
+      SQL_DUR_STR -> SQL_DUR_STR_SIZE,
       TASK_DUR_STR -> TASK_DUR_STR.size,
-      APP_DUR_STR -> APP_DUR_STR.size,
+      APP_DUR_STR -> APP_DUR_STR_SIZE,
       GPU_OPPORTUNITY_STR -> GPU_OPPORTUNITY_STR_SIZE,
       EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
       SQL_IDS_FAILURES_STR -> getMaxSizeForHeader(appInfos.map(_.failedSQLIds.size),
         SQL_IDS_FAILURES_STR),
-      READ_FILE_FORMAT_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size),
-        READ_FILE_FORMAT_TYPES_STR),
-      WRITE_DATA_FORMAT_STR -> getMaxSizeForHeader(appInfos.map(_.writeDataFormat.size),
-        WRITE_DATA_FORMAT_STR),
+      READ_FILE_FORMAT_TYPES_STR ->
+        getMaxSizeForHeader(appInfos.map(_.readFileFormats.map(_.length).sum),
+          READ_FILE_FORMAT_TYPES_STR),
+      WRITE_DATA_FORMAT_STR ->
+        getMaxSizeForHeader(appInfos.map(_.writeDataFormat.map(_.length).sum),
+          WRITE_DATA_FORMAT_STR),
       COMPLEX_TYPES_STR ->
         getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
@@ -263,7 +292,7 @@ object QualOutputWriter {
     if (reportReadSchema) {
       detailedHeadersAndFields +=
         (READ_SCHEMA_STR ->
-          getMaxSizeForHeader(appInfos.map(_.readFileFormats.size), READ_SCHEMA_STR))
+          getMaxSizeForHeader(appInfos.map(_.readFileFormats.map(_.length).sum), READ_SCHEMA_STR))
     }
     detailedHeadersAndFields
   }
@@ -414,54 +443,83 @@ object QualOutputWriter {
     }
   }
 
-  def constructAppDetailedInfo(
+  def createSummaryInfoCSVAdapter(
       appInfo: QualificationSummaryInfo,
+      delimiter: String = "|") : QualificationSummaryInfoTextAdapter = {
+    QualificationSummaryInfoTextAdapter(
+      appInfo.appName,
+      appInfo.appId,
+      appInfo.estimatedInfo.recommendation,
+      ToolUtils.truncateDoubleToTwoDecimal(appInfo.estimatedInfo.estimatedGpuSpeedup),
+      ToolUtils.truncateDoubleToTwoDecimal(appInfo.estimatedInfo.estimatedGpuDur),
+      ToolUtils.truncateDoubleToTwoDecimal(appInfo.estimatedInfo.estimatedGpuTimeSaved),
+      appInfo.estimatedInfo.sqlDfDuration,
+      appInfo.sqlDataframeTaskDuration,
+      appInfo.estimatedInfo.appDur,
+      appInfo.estimatedInfo.gpuOpportunity,
+      ToolUtils.truncateDoubleToTwoDecimal(appInfo.executorCpuTimePercent),
+      ToolUtils.renderTextField(appInfo.failedSQLIds, ",", delimiter),
+      ToolUtils.renderTextField(appInfo.readFileFormatAndTypesNotSupported, ";", delimiter),
+      ToolUtils.renderTextField(appInfo.readFileFormats, ":", delimiter),
+      ToolUtils.renderTextField(appInfo.writeDataFormat, ";", delimiter).toUpperCase,
+      ToolUtils.parseComplexTypes(appInfo.complexTypes, delimiter),
+      ToolUtils.parseNestedComplexTypes(appInfo.nestedComplexTypes, delimiter),
+      ToolUtils.parsePotentialProblems(appInfo.potentialProblems, delimiter),
+      appInfo.longestSqlDuration,
+      appInfo.nonSqlTaskDurationAndOverhead,
+      appInfo.unsupportedSQLTaskDuration,
+      appInfo.supportedSQLTaskDuration,
+      ToolUtils.truncateDoubleToTwoDecimal(appInfo.taskSpeedupFactor),
+      appInfo.endDurationEstimated
+    )
+  }
+
+  private def constructDetailedAppInfoCSVRow(
+      appInfo: QualificationSummaryInfoTextAdapter,
       headersAndSizes: LinkedHashMap[String, Int],
-      delimiter: String = "|",
-      prettyPrint: Boolean,
-      reportReadSchema: Boolean = false): String = {
-    val readFileFormats = stringIfempty(replaceDelimiter(appInfo.readFileFormats, delimiter))
-    val complexTypes = stringIfempty(replaceDelimiter(appInfo.complexTypes, delimiter))
-    val nestedComplexTypes = stringIfempty(replaceDelimiter(appInfo.nestedComplexTypes, delimiter))
-    val readFileFormatsNotSupported =
-      stringIfempty(replaceDelimiter(appInfo.readFileFormatAndTypesNotSupported, delimiter))
-    val dataWriteFormat = stringIfempty(replaceDelimiter(appInfo.writeDataFormat, delimiter))
-    val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems, delimiter))
-    val failedSQLIds =  stringIfempty(replaceDelimiter(appInfo.failedSQLIds, delimiter))
+      reportReadSchema: Boolean = false): ListBuffer[(String, Int)] = {
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
-      stringIfempty(appInfo.estimatedInfo.recommendation) -> headersAndSizes(SPEEDUP_BUCKET_STR),
-      ToolUtils.formatDoublePrecision(appInfo.estimatedInfo.estimatedGpuSpeedup) ->
-        ESTIMATED_GPU_SPEEDUP.size,
-      ToolUtils.formatDoublePrecision(appInfo.estimatedInfo.estimatedGpuDur) ->
-        ESTIMATED_GPU_DURATION.size,
-      ToolUtils.formatDoublePrecision(appInfo.estimatedInfo.estimatedGpuTimeSaved) ->
-        ESTIMATED_GPU_TIMESAVED.size,
-      appInfo.estimatedInfo.sqlDfDuration.toString -> headersAndSizes(SQL_DUR_STR),
+      stringIfempty(appInfo.recommendation) -> headersAndSizes(SPEEDUP_BUCKET_STR),
+      appInfo.estimatedGpuSpeedup.toString -> ESTIMATED_GPU_SPEEDUP.size,
+      appInfo.estimatedGpuDur.toString -> ESTIMATED_GPU_DURATION.size,
+      appInfo.estimatedGpuTimeSaved.toString -> ESTIMATED_GPU_TIMESAVED.size,
+      appInfo.sqlDataframeDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
-      appInfo.estimatedInfo.appDur.toString -> headersAndSizes(APP_DUR_STR),
-      appInfo.estimatedInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
+      appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
+      appInfo.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
-      failedSQLIds -> headersAndSizes(SQL_IDS_FAILURES_STR),
-      readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
-      dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
-      complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
-      nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR),
-      stringIfempty(potentialProbs) -> headersAndSizes(POT_PROBLEM_STR),
+      stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
+      stringIfempty(appInfo.readFileFormatAndTypesNotSupported) ->
+        headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
+      stringIfempty(appInfo.writeDataFormat) -> headersAndSizes(WRITE_DATA_FORMAT_STR),
+      stringIfempty(appInfo.complexTypes) -> headersAndSizes(COMPLEX_TYPES_STR),
+      stringIfempty(appInfo.nestedComplexTypes) -> headersAndSizes(NESTED_TYPES_STR),
+      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.longestSqlDuration.toString -> headersAndSizes(LONGEST_SQL_DURATION_STR),
       appInfo.nonSqlTaskDurationAndOverhead.toString -> headersAndSizes(NONSQL_DUR_STR),
-      appInfo.unsupportedSQLTaskDuration.toString ->
-        headersAndSizes(UNSUPPORTED_TASK_DURATION_STR),
+      appInfo.unsupportedSQLTaskDuration.toString -> headersAndSizes(UNSUPPORTED_TASK_DURATION_STR),
       appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SUPPORTED_SQL_TASK_DURATION_STR),
-      ToolUtils.formatDoublePrecision(appInfo.taskSpeedupFactor) ->
-        headersAndSizes(SPEEDUP_FACTOR_STR),
+      appInfo.taskSpeedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
     )
-
     if (reportReadSchema) {
-      data += (readFileFormats -> headersAndSizes(READ_SCHEMA_STR))
+      data += (stringIfempty(appInfo.readFileFormats) -> headersAndSizes(READ_SCHEMA_STR))
     }
+    data
+  }
+
+  def constructAppDetailedInfo(
+      summaryAppInfo: QualificationSummaryInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String,
+      prettyPrint: Boolean,
+      reportReadSchema: Boolean): String = {
+
+    val appInfo = createSummaryInfoCSVAdapter(summaryAppInfo, delimiter)
+    val data =
+      constructDetailedAppInfoCSVRow(appInfo, headersAndSizes, reportReadSchema)
     constructOutputRow(data, delimiter, prettyPrint)
   }
 }
