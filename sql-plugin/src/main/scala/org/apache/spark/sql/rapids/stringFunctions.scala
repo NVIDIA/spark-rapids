@@ -973,14 +973,18 @@ case class GpuRegExpReplace(
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
 
-    val isEmptyRepetition: Boolean = {
-      new RegexParser(javaRegexpPattern).parse() match {
+    def isEmptyRepetition(regex: RegexAST): Boolean = {
+      regex match {
         case RegexRepetition(_, term) => term match {
           case SimpleQuantifier('*') | SimpleQuantifier('?') => true
           case QuantifierFixedLength(0) => true
           case QuantifierVariableLength(0, _) => true
           case _ => false
         }
+        case RegexGroup(_, term) =>
+          isEmptyRepetition(term) 
+        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
+        // we did, we would need to add a `case RegexChoice()` here
         case _ => false
       }
     }
@@ -988,7 +992,8 @@ case class GpuRegExpReplace(
     // For empty strings and a regex containing only a zero-match reptition, 
     // the behaviour on Spark is different. 
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
-    if (isEmptyRepetition && RegExpShim.reproduceEmptyStringBug()) {
+    if (RegExpShim.reproduceEmptyStringBug() &&
+      isEmptyRepetition(new RegexParser(javaRegexpPattern).parse())) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
         withResource(Scalar.fromInt(0)) { zero =>
           len.equalTo(zero)

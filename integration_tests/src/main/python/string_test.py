@@ -1079,5 +1079,8 @@ def test_replace_empty_string():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_replace(a, "A*", "_REPLACED_")'),
+                'regexp_replace(a, "A*", "_REPLACED_")',
+                'regexp_replace(a, "(A*)", "_REPLACED_")'
+                'regexp_replace(a, "(((A*)))", "_REPLACED_")'
+            ),
         conf=_regexp_conf)
