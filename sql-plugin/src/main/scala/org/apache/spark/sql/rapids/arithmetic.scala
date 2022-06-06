@@ -22,12 +22,13 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, RapidsErrorUtils, ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
