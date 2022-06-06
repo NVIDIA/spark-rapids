@@ -515,7 +515,9 @@ Below are some troubleshooting tips on GPU query performance issue:
 
 ### Why is Avro library not found by RAPIDS?
 
-Make sure you run the Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
+If you are getting a warning `Avro library not found by the RAPIDS plugin.` or if you are getting the 
+`java.lang.NoClassDefFoundError: org/apache/spark/sql/v2/avro/AvroScan` error, make sure you ran the 
+Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
 
 ### What is the default RMM pool allocator?
