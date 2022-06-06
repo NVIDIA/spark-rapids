@@ -125,7 +125,6 @@ $(document).ready(function(){
   // Start implementation of GPU Recommendations Apps
   let recommendGPUColName = "recommendation"
   let totalSpeedupColumnName = "totalSpeedup"
-  let sortColumnForGPURecommend = totalSpeedupColumnName
   let gpuRecommendationConf = {
     responsive: true,
     info: true,
@@ -224,8 +223,10 @@ $(document).ready(function(){
     }
   };
 
-  gpuRecommendationConf.order =
-      [[getColumnIndex(gpuRecommendationConf.columns, sortColumnForGPURecommend), "desc"]];
+  gpuRecommendationConf.order = [
+      [getColumnIndex(gpuRecommendationConf.columns, recommendGPUColName), "desc"],
+      [getColumnIndex(gpuRecommendationConf.columns, totalSpeedupColumnName), "desc"]
+  ];
 
   // set the dom of the tableConf
   gpuRecommendationConf.dom = initGpuRecommendationConf["Dom"].default;
@@ -248,7 +249,7 @@ $(document).ready(function(){
       // add custom panes to display recommendations
       let panesConfigurations = searchPanesConf["panes"];
       // first define values of the first recommendation Pane
-      let gpuCatgeoryOptions = function() {
+      let gpuCategoryOptions = function() {
         let categoryOptions = [];
         for (let i in recommendationContainer) {
           let currOption = {
@@ -266,7 +267,7 @@ $(document).ready(function(){
         let gpuPaneConfig = panesConfigurations["recommendation"];
         let recommendationPaneConf = {};
         recommendationPaneConf.header = gpuPaneConfig["header"];
-        recommendationPaneConf.options = gpuCatgeoryOptions();
+        recommendationPaneConf.options = gpuCategoryOptions();
         recommendationPaneConf.dtOpts = {
           "searching": gpuPaneConfig["search"],
           "order": gpuPaneConfig["order"],

@@ -19,7 +19,6 @@
 $(document).ready(function() {
   let attemptArray = processRawData(qualificationRecords);
   let totalSpeedupColumnName = "totalSpeedupFactor"
-  let sortColumnForGPURecommend = totalSpeedupColumnName
   let recommendGPUColName = "gpuRecommendation"
   let rawDataTableConf = {
     paging: (attemptArray.length > defaultPageLength),
@@ -356,8 +355,10 @@ $(document).ready(function() {
       });
     }
   };
-  rawDataTableConf.order =
-    [[getColumnIndex(rawDataTableConf.columns, sortColumnForGPURecommend), "desc"]];
+  rawDataTableConf.order = [
+      [getColumnIndex(rawDataTableConf.columns, recommendGPUColName), "desc"],
+      [getColumnIndex(rawDataTableConf.columns, totalSpeedupColumnName), "desc"]
+  ];
   let rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
 
   // set the tootTips for the table
