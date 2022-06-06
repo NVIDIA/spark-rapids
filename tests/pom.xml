@@ -148,25 +148,6 @@
                     </exclusions>
                 </dependency>
             </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-321cdh-test-src</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/320+/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <!--
@@ -293,62 +274,6 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release321</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321</value>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-321-test-src</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/320+/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
-            <id>release322</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>322</value>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-322-test-src</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/320+/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
             <id>release330</id>
             <activation>
                 <property>
@@ -368,7 +293,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/test/330/scala</source>
-                                        <source>${project.basedir}/src/test/320+/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
