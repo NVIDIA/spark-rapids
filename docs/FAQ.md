@@ -307,11 +307,15 @@ Yes
 
 ### Are the R APIs for Spark supported?
 
-Yes, but we don't actively test them.
+Yes, but we don't actively test them, because the RAPIDS Accelerator hooks into Spark not at 
+the various language APIs but at the Catalyst level after all the various APIs have converged into 
+the DataFrame API.
 
 ### Are the Java APIs for Spark supported?
 
-Yes, but we don't actively test them.
+Yes, but we don't actively test them, because the RAPIDS Accelerator hooks into Spark not at
+the various language APIs but at the Catalyst level after all the various APIs have converged into
+the DataFrame API.
 
 ### Are the Scala APIs for Spark supported?
 
@@ -410,6 +414,14 @@ The Scala UDF byte-code analyzer is disabled by default and must be enabled by t
 [`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
 setting.
 
+#### Optimize a row-based UDF in a GPU operation
+
+If the UDF can not be implemented by RAPIDS Accelerated UDFs or be automatically translated to
+Apache Spark operations, the RAPIDS Accelerator has an experimental feature to transfer only the
+data it needs between GPU and CPU inside a query operation, instead of falling this operation back 
+to CPU. This feature can be enabled by setting `spark.rapids.sql.rowBasedUDF.enabled` to true.
+
+
 ### Why is the size of my output Parquet/ORC file different?
 
 This can come down to a number of factors.  The GPU version often compresses data in smaller chunks
@@ -505,6 +517,11 @@ Below are some troubleshooting tips on GPU query performance issue:
 
 Make sure you run the Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
+
+### What is the default RMM pool allocator?
+
+Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
+`ARENA` for CUDA 11.5+. For CUDA 11.4 and older, it will fall back to `ARENA`.
 
 ### I have more questions, where do I go? 
 We use github to track bugs, feature requests, and answer questions. File an

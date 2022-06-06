@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.StructType
 
-object GpuOrcScanBase {
+object GpuOrcScan {
+  // spark 2.x doesn't have data source v2 so not ScanMeta
+
   def tagSupport(
       sparkSession: SparkSession,
       schema: StructType,

@@ -372,7 +372,7 @@ def test_cast_float_to_timestamp_ansi_for_nan_inf(type, invalid_value):
         data = [invalid_value]
         df = spark.createDataFrame(data, type)
         return df.select(f.col('value').cast(TimestampType())).collect()
-    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "java.time.DateTimeException")
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "SparkDateTimeException")
 
 # if float.floor > Long.max or float.ceil < Long.min, throw exception
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")

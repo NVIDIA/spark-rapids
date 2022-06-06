@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims
-
-import com.nvidia.spark.rapids.shims._
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 

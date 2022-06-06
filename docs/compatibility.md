@@ -384,7 +384,7 @@ The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and wr
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
  CPU when reading an unsupported compression format, and will error out in that case.
 
-### Push Down Aggreates for ORC
+### Push Down Aggregates for ORC
 
 Spark-3.3.0+ pushes down certain aggregations (`MIN`/`MAX`/`COUNT`) into ORC when the user-config
 `spark.sql.orc.aggregatePushdown` is set to true.  
@@ -414,16 +414,14 @@ file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.
 
 **Limitations With RAPIDS**
 
-RAPIDS does not support whole file statistics in ORC file. We are working with
-[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
-[here](https://github.com/rapidsai/cudf/issues/5826).
+RAPIDS does not support whole file statistics in ORC file in releases prior to release 22.06.
 
 *Writing ORC Files*
 
-Without CUDF support to file statistics, all ORC files written by
-the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
-In order to prevent job failures, `spark.sql.orc.aggregatePushdown` should be disabled while reading ORC files
-that were written by the GPU.
+If you are using release prior to release 22.06 where CUDF does not support writing file statistics, then the ORC files
+written by the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
+In order to prevent job failures in releases prior to release 22.06, `spark.sql.orc.aggregatePushdown` should be disabled
+while reading ORC files that were written by the GPU.
 
 *Reading ORC Files*
 
@@ -565,9 +563,6 @@ The boolean, byte, short, int, long, float, double, string are supported in curr
 
 ## Regular Expressions
 
-Regular expression evaluation on the GPU can potentially have high memory overhead and cause out-of-memory errors so
-this is disabled by default. To enable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=true`.
-
 The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
 - `RLIKE`
@@ -578,29 +573,33 @@ The following Apache Spark regular expression functions and expressions are supp
 - `string_split`
 - `str_to_map`
 
-There are instances where regular expression operations will fall back to CPU when the RAPIDS Accelerator determines 
-that a pattern is either unsupported or would produce incorrect results on the GPU.
+Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
+regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
+still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
+set `spark.rapids.sql.regexp.enabled=false`.
 
-Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
+These are the known edge cases where running on the GPU will produce different results to the CPU:
+
+- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
+ to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
+ next to a newline or a repetition that produces zero or more results
+ ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+
+The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported by `regexp_replace`
 - Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Word and non-word boundaries, `\b` and `\B`
-- Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Octal digits in the range `\0200` to `\0377`
-- Character classes with octal digits, such as `[\02]` or `[\024]`
-- Character classes with hex digits, such as `[\x02]` or `[\x24]`
-- Hex digits in the range `\x80` to `Character.MAX_CODE_POINT`
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.

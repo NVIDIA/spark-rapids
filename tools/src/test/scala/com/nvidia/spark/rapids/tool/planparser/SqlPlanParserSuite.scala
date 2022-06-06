@@ -251,6 +251,17 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assertSizeAndNotSupported(1, parquet.toSeq)
   }
 
+  test("Stages and jobs failure") {
+    val eventLog = s"$profileLogDir/tasks_executors_fail_compressed_eventlog.zstd"
+    val app = createAppFromEventlog(eventLog)
+    val stats = app.aggregateStats()
+    assert(stats.nonEmpty)
+    val estimatedGpuSpeed = stats.get.estimatedInfo.estimatedGpuSpeedup
+    val recommendation = stats.get.estimatedInfo.recommendation
+    assert (estimatedGpuSpeed == -1)
+    assert(recommendation.equals("Not Applicable"))
+  }
+
   test("InMemoryTableScan") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,

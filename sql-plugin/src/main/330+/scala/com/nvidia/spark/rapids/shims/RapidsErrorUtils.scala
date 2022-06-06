@@ -17,16 +17,16 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.rapids.TrampolineErrorUtils
 import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     if (isElementAtF) {
-      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
+      TrampolineErrorUtils.invalidElementAtIndexError(index, numElements)
     } else {
-      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
+      TrampolineErrorUtils.invalidArrayIndexError(index, numElements)
     }
   }
 
@@ -34,7 +34,7 @@ object RapidsErrorUtils {
       key: String,
       keyType: DataType,
       origin: Origin): NoSuchElementException = {
-    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
+    TrampolineErrorUtils.mapKeyNotExistError(key, keyType, origin)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
@@ -42,10 +42,10 @@ object RapidsErrorUtils {
   }
 
   def divByZeroError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.divideByZeroError(origin.context)
+    TrampolineErrorUtils.divByZeroError(origin)
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
+    TrampolineErrorUtils.divOverflowError(origin)
   }
 }

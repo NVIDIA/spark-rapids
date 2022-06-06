@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims._
 
-import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, BuildLeft, BuildRight, BuildSide}
 
 class GpuBroadcastNestedLoopJoinMeta(
@@ -43,7 +43,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     JoinTypeChecks.tagForGpu(join.joinType, this)
     join.joinType match {
       case _: InnerLike =>
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
+      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
         conditionMeta.foreach(requireAstForGpuOn)
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }

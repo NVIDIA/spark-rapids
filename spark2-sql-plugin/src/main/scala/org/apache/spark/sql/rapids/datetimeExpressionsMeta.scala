@@ -87,16 +87,10 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
    rule: DataFromReplacementRule)
   extends BinaryExprMeta[A](expr, conf, parent, rule) {
 
-  def shouldFallbackOnAnsiTimestamp: Boolean
-
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
     checkTimeZoneId(expr.timeZoneId)
-
-    if (shouldFallbackOnAnsiTimestamp) {
-      willNotWorkOnGpu("ANSI mode is not supported")
-    }
 
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {

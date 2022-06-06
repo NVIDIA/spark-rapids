@@ -26,5 +26,6 @@ import org.apache.spark.sql.catalyst.expressions.Expression
  */
 object TimeStamp {
 
+  // Spark 2.x doesn't have GetTimestamp
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 }
