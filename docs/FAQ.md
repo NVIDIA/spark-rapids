@@ -57,10 +57,6 @@ More information about cards that support forward compatibility can be found
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
-Using the `--jars` or `--packages` option followed by the file path or maven path to RAPIDS jar is the preferred way to run RAPIDS accelerator.
-If RAPIDS jar is copied directly to the `$SPARK_HOME/jars` folder, it might result in the ClassLoader not setting up classes
-properly to gain full advantage of the GPU.
-
 On startup the RAPIDS Accelerator will log a warning message on the Spark driver showing the
 version with a message that looks something like this:
 ```
@@ -504,6 +500,11 @@ Below are some troubleshooting tips on GPU query performance issue:
 * Tune the Spark and RAPIDS Accelerator parameters such as `spark.sql.shuffle.partitions`, 
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
+
+### Why is Avro library not found by RAPIDS?
+
+Make sure you run the Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
+RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
 
 ### I have more questions, where do I go? 
 We use github to track bugs, feature requests, and answer questions. File an
