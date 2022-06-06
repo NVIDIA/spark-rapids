@@ -715,7 +715,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   ///////////////////////////////////////////////////////////////////////////
   if (cmpSparkVersion(3, 4, 0) < 0) {
     // The following two tests are failing in Spark 3.4.0.
-    // Disable them temporarily, and tracked by
+    // Disable them temporarily,
+    // and tracked by https://github.com/NVIDIA/spark-rapids/issues/5748
     testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
       frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
     }
