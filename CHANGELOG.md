@@ -1,22 +1,20 @@
 # Change log
-Generated on 2022-06-06
+Generated on 2022-06-07
 
 ## Release 22.06
 
 ### Features
 |||
 |:---|:---|
-|[#3792](https://github.com/NVIDIA/spark-rapids/issues/3792)|Qualification tool improvements|
+|[#5451](https://github.com/NVIDIA/spark-rapids/issues/5451)|[FEA] Update Spark2 explain code for 22.06|
 |[#5261](https://github.com/NVIDIA/spark-rapids/issues/5261)|[FEA] Create MIG with Cgroups on YARN Dataproc scripts|
 |[#5476](https://github.com/NVIDIA/spark-rapids/issues/5476)|[FEA] extend concat on arrays to all nested types.|
 |[#5113](https://github.com/NVIDIA/spark-rapids/issues/5113)|[FEA] ANSI mode: Support CAST between types|
 |[#5112](https://github.com/NVIDIA/spark-rapids/issues/5112)|[FEA] ANSI mode: allow casting between numeric type and timestamp type|
-|[#5517](https://github.com/NVIDIA/spark-rapids/issues/5517)|[FEA] Qualification tool UI cosmetics|
 |[#5323](https://github.com/NVIDIA/spark-rapids/issues/5323)|[FEA] Enable floating point by default|
 |[#4518](https://github.com/NVIDIA/spark-rapids/issues/4518)|[FEA] Add support for escaped unicode hex in regular expressions|
 |[#5405](https://github.com/NVIDIA/spark-rapids/issues/5405)|[FEA] Support map_concat function|
 |[#5547](https://github.com/NVIDIA/spark-rapids/issues/5547)|[FEA] Regexp: Can we transpile `\W` and `\D` to Java's definition so we can support on GPU?|
-|[#5535](https://github.com/NVIDIA/spark-rapids/issues/5535)|[FEA] Need to pass MVN_OPT parameter for Databricks build scripts supporting more maven options|
 |[#5512](https://github.com/NVIDIA/spark-rapids/issues/5512)|[FEA] Qualification tool, hook up final output and output execs table|
 |[#5507](https://github.com/NVIDIA/spark-rapids/issues/5507)|[FEA] Support GpuRaiseError|
 |[#5325](https://github.com/NVIDIA/spark-rapids/issues/5325)|[FEA] Support spark.sql.mapKeyDedupPolicy=LAST_WIN for `TransformKeys`|
@@ -26,16 +24,15 @@ Generated on 2022-06-06
 |[#5176](https://github.com/NVIDIA/spark-rapids/issues/5176)|[FEA] Qualification tool UI|
 |[#5111](https://github.com/NVIDIA/spark-rapids/issues/5111)|[FEA] ANSI mode: CAST between ANSI intervals and IntegralType|
 |[#4605](https://github.com/NVIDIA/spark-rapids/issues/4605)|[FEA] Add regular expression support for new character classes introduced in Java 8|
-|[#5273](https://github.com/NVIDIA/spark-rapids/issues/5273)|[FEA]Support map_filter|
+|[#5273](https://github.com/NVIDIA/spark-rapids/issues/5273)|[FEA] Support map_filter|
 |[#1557](https://github.com/NVIDIA/spark-rapids/issues/1557)|[FEA] Enable ANSI mode for CAST string to date|
 |[#5446](https://github.com/NVIDIA/spark-rapids/issues/5446)|[FEA] Remove hasNans check for array_contains|
 |[#5445](https://github.com/NVIDIA/spark-rapids/issues/5445)|[FEA] Support reading Int as Byte/Short/Date from parquet |
 |[#5449](https://github.com/NVIDIA/spark-rapids/issues/5449)|[FEA] QualificationTool. Add speedup information to AppSummaryInfo|
 |[#5322](https://github.com/NVIDIA/spark-rapids/issues/5322)|[FEA] remove hasNans for Pivot|
 |[#4800](https://github.com/NVIDIA/spark-rapids/issues/4800)|[FEA] Enable support for more regular expressions with \A and \Z|
-|[#5404](https://github.com/NVIDIA/spark-rapids/issues/5404)|Add Shim for the Spark version shipped with Cloudera CDH 7.1.7|
-|[#5226](https://github.com/NVIDIA/spark-rapids/issues/5226)|[FEA]Support array_repeat|
-|[#5358](https://github.com/NVIDIA/spark-rapids/issues/5358)|[FEA] Qualification tool base plan parsing|
+|[#5404](https://github.com/NVIDIA/spark-rapids/issues/5404)|[FEA] Add Shim for the Spark version shipped with Cloudera CDH 7.1.7|
+|[#5226](https://github.com/NVIDIA/spark-rapids/issues/5226)|[FEA] Support array_repeat|
 |[#5229](https://github.com/NVIDIA/spark-rapids/issues/5229)|[FEA] Support arrays_zip|
 |[#5119](https://github.com/NVIDIA/spark-rapids/issues/5119)|[FEA] Support ANSI mode for SQL functions/operators|
 |[#4532](https://github.com/NVIDIA/spark-rapids/issues/4532)|[FEA] Re-enable support for `\Z` in regular expressions|
@@ -49,7 +46,6 @@ Generated on 2022-06-06
 |[#5060](https://github.com/NVIDIA/spark-rapids/issues/5060)|[FEA] Support Count on Struct of [ Struct of [String, Map(String,String)], Array(String), Map(String,String) ]|
 |[#4528](https://github.com/NVIDIA/spark-rapids/issues/4528)|[FEA] Add support for regular expressions containing `\s` and `\S`|
 |[#4557](https://github.com/NVIDIA/spark-rapids/issues/4557)|[FEA] Add support for regexp_replace with back-references|
-|[#2814](https://github.com/NVIDIA/spark-rapids/issues/2814)|SPARK-35243 has introduced support for ANSI interval types|
 
 ### Performance
 |||
@@ -62,7 +58,9 @@ Generated on 2022-06-06
 ### Bugs Fixed
 |||
 |:---|:---|
-|[#5739](https://github.com/NVIDIA/spark-rapids/issues/5739)|[BUG]. Spark 3.3 build failure - QueryExecutionErrors package scope changed|
+|[#5733](https://github.com/NVIDIA/spark-rapids/issues/5733)|[BUG] Integration test test_orc_write_encryption_fallback fail|
+|[#5719](https://github.com/NVIDIA/spark-rapids/issues/5719)|[BUG] test_cast_float_to_timestamp_ansi_for_nan_inf failed in spark330|
+|[#5739](https://github.com/NVIDIA/spark-rapids/issues/5739)|[BUG] Spark 3.3 build failure - QueryExecutionErrors package scope changed|
 |[#5670](https://github.com/NVIDIA/spark-rapids/issues/5670)|[BUG] Job failed when parsing "java.lang.reflect.InvocationTargetException: org.apache.spark.sql.catalyst.parser.ParseException:" |
 |[#4860](https://github.com/NVIDIA/spark-rapids/issues/4860)|[BUG] GPU writing ORC columns statistics|
 |[#5717](https://github.com/NVIDIA/spark-rapids/issues/5717)|[BUG] `div_by_zero` test is failing on Spark 330 on 22.06|
@@ -70,6 +68,7 @@ Generated on 2022-06-06
 |[#5672](https://github.com/NVIDIA/spark-rapids/issues/5672)|[BUG] Read exception occurs when clipped schema is empty|
 |[#5694](https://github.com/NVIDIA/spark-rapids/issues/5694)|[BUG] Inconsistent behavior with Spark when reading a non-existent column from Parquet|
 |[#5562](https://github.com/NVIDIA/spark-rapids/issues/5562)|[BUG] read ORC file with various file schemas|
+|[#5654](https://github.com/NVIDIA/spark-rapids/issues/5654)|[BUG] Transpiler produces regex pattern that cuDF cannot compile|
 |[#5655](https://github.com/NVIDIA/spark-rapids/issues/5655)|[BUG] Regular expression pattern `[&&1]` produces incorrect results on GPU|
 |[#4862](https://github.com/NVIDIA/spark-rapids/issues/4862)|[FEA] Add support for regular expressions containing octal digits inside character classes , eg`[\0177]`|
 |[#5615](https://github.com/NVIDIA/spark-rapids/issues/5615)|[BUG] GpuBatchScanExec only reports output row metrics|
@@ -77,7 +76,7 @@ Generated on 2022-06-06
 |[#4865](https://github.com/NVIDIA/spark-rapids/issues/4865)|[BUG] Add support for regular expressions containing hexadecimal digits inside character classes, eg `[\x7f]`|
 |[#5513](https://github.com/NVIDIA/spark-rapids/issues/5513)|[BUG] NoClassDefFoundError with caller classloader off in GpuShuffleCoalesceIterator in local-cluster|
 |[#5530](https://github.com/NVIDIA/spark-rapids/issues/5530)|[BUG] regexp: `\d`, `\w` inconsistencies with non-latin unicode input|
-|[#5594](https://github.com/NVIDIA/spark-rapids/issues/5594)|[BUG]3.3 test_div_overflow_exception_when_ansi test failures|
+|[#5594](https://github.com/NVIDIA/spark-rapids/issues/5594)|[BUG] 3.3 test_div_overflow_exception_when_ansi test failures|
 |[#5596](https://github.com/NVIDIA/spark-rapids/issues/5596)|[BUG] Shim service provider failure when using jar built with -DallowConventionalDistJar|
 |[#5582](https://github.com/NVIDIA/spark-rapids/issues/5582)|[BUG] Nightly CI failed with : 'dist/target/rapids-4-spark_2.12-22.06.0-SNAPSHOT.jar' not exists|
 |[#5577](https://github.com/NVIDIA/spark-rapids/issues/5577)|[BUG] test_cast_neg_to_decimal_err failing in databricks|
@@ -104,16 +103,15 @@ Generated on 2022-06-06
 |[#5444](https://github.com/NVIDIA/spark-rapids/issues/5444)|[BUG] build failed on Databricks|
 |[#5357](https://github.com/NVIDIA/spark-rapids/issues/5357)|[BUG] Spark 3.3 cache_test test_passing_gpuExpr_as_Expr[failures|
 |[#5429](https://github.com/NVIDIA/spark-rapids/issues/5429)|[BUG] test_cache_expand_exec fails on Spark 3.3|
-|[#5312](https://github.com/NVIDIA/spark-rapids/issues/5312)|[BUG]The coalesced AVRO file may contain different sync markers if the sync marker varies in the avro files being coalesced.|
+|[#5312](https://github.com/NVIDIA/spark-rapids/issues/5312)|[BUG] The coalesced AVRO file may contain different sync markers if the sync marker varies in the avro files being coalesced.|
 |[#5415](https://github.com/NVIDIA/spark-rapids/issues/5415)|[BUG] Regular Expressions: matching the dot `.` doesn't fully exclude all unicode line terminator characters|
-|[#5413](https://github.com/NVIDIA/spark-rapids/issues/5413)|[BUG]. Databricks 321 build fails -  not found: type OrcShims320untilAllBase|
+|[#5413](https://github.com/NVIDIA/spark-rapids/issues/5413)|[BUG] Databricks 321 build fails -  not found: type OrcShims320untilAllBase|
 |[#5286](https://github.com/NVIDIA/spark-rapids/issues/5286)|[BUG] assert failed test_struct_self_join and test_computation_in_grpby_columns|
-|[#5318](https://github.com/NVIDIA/spark-rapids/issues/5318)|Revert xfail for map_test |
 |[#5351](https://github.com/NVIDIA/spark-rapids/issues/5351)|[BUG] Build fails for Spark 3.3 due to extra arguments to mapKeyNotExistError|
 |[#5260](https://github.com/NVIDIA/spark-rapids/issues/5260)|[BUG] map_test failures on Spark 3.3.0|
 |[#5189](https://github.com/NVIDIA/spark-rapids/issues/5189)|[BUG] Reading from iceberg table will fail.|
 |[#5130](https://github.com/NVIDIA/spark-rapids/issues/5130)|[BUG] string_split does not respect spark.rapids.sql.regexp.enabled config|
-|[#5267](https://github.com/NVIDIA/spark-rapids/issues/5267)|[BUG]markdown link check failed issue|
+|[#5267](https://github.com/NVIDIA/spark-rapids/issues/5267)|[BUG] markdown link check failed issue|
 |[#5295](https://github.com/NVIDIA/spark-rapids/issues/5295)|[BUG] Build fails for Spark 3.3 due to extra arguments to `mapKeyNotExistError`|
 |[#5264](https://github.com/NVIDIA/spark-rapids/issues/5264)|[BUG] Delete unused generic type.|
 |[#5275](https://github.com/NVIDIA/spark-rapids/issues/5275)|[BUG] rlike cannot run on GPU because invalid or unsupported escape character ']' near index 14|
@@ -126,11 +124,11 @@ Generated on 2022-06-06
 |[#5242](https://github.com/NVIDIA/spark-rapids/issues/5242)|[BUG] Executor falls back to cudaMalloc if the pool can't be initialized|
 |[#5215](https://github.com/NVIDIA/spark-rapids/issues/5215)|[BUG] Coalescing reading is not working for v2 parquet/orc datasource|
 |[#5104](https://github.com/NVIDIA/spark-rapids/issues/5104)|[BUG] Unconditional warning in UDF Plugin "The compiler is disabled by default"|
-|[#5099](https://github.com/NVIDIA/spark-rapids/issues/5099)|[BUG]Profiling tool should not sum gettingResultTime|
+|[#5099](https://github.com/NVIDIA/spark-rapids/issues/5099)|[BUG] Profiling tool should not sum gettingResultTime|
 |[#5182](https://github.com/NVIDIA/spark-rapids/issues/5182)|[BUG] Spark 3.3 integration tests arithmetic_ops_test.py::test_div_overflow_exception_when_ansi failures|
 |[#5147](https://github.com/NVIDIA/spark-rapids/issues/5147)|[BUG] object LZ4Compressor is not a member of package ai.rapids.cudf.nvcomp|
 |[#4695](https://github.com/NVIDIA/spark-rapids/issues/4695)|[BUG] Segfault with UCX and ASYNC allocator|
-|[#5138](https://github.com/NVIDIA/spark-rapids/issues/5138)|[BUG]xgboost job failed if we enable PCBS|
+|[#5138](https://github.com/NVIDIA/spark-rapids/issues/5138)|[BUG] xgboost job failed if we enable PCBS|
 |[#5135](https://github.com/NVIDIA/spark-rapids/issues/5135)|[BUG] GpuRegExExtract is not align with RegExExtract|
 |[#5084](https://github.com/NVIDIA/spark-rapids/issues/5084)|[BUG] GpuWriteTaskStatsTracker complains for all writes in local mode|
 |[#5123](https://github.com/NVIDIA/spark-rapids/issues/5123)|[BUG] Compile error for Spark330 because of VectorizedColumnReader constructor added a new parameter.|
@@ -140,6 +138,10 @@ Generated on 2022-06-06
 ### PRs
 |||
 |:---|:---|
+|[#5737](https://github.com/NVIDIA/spark-rapids/pull/5737)|Remove the ORC encryption tests|
+|[#5753](https://github.com/NVIDIA/spark-rapids/pull/5753)|[DOC] Update regexp compatibility for 22.06 [skip ci]|
+|[#5738](https://github.com/NVIDIA/spark-rapids/pull/5738)|Update Spark2 explain code for 22.06|
+|[#5731](https://github.com/NVIDIA/spark-rapids/pull/5731)|Throw SparkDateTimeException for InvalidInput while casting in ANSI mode|
 |[#5742](https://github.com/NVIDIA/spark-rapids/pull/5742)|Spark-3.3 build fix - Move QueryExecutionErrors to sql package|
 |[#5641](https://github.com/NVIDIA/spark-rapids/pull/5641)|[Doc]Update 22.06 documentation[skip ci]|
 |[#5701](https://github.com/NVIDIA/spark-rapids/pull/5701)|Update docs for qualification tool to reflect recommendations and UI [skip ci]|
