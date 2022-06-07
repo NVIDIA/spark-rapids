@@ -100,6 +100,7 @@
             <properties>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -165,6 +166,7 @@
                 <spark.test.version>${spark312db.version}</spark.test.version>
                 <hadoop.client.version>2.7.4</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -214,6 +216,7 @@
             <properties>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -267,6 +270,7 @@
             <properties>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -319,6 +323,7 @@
             <properties>
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -381,6 +386,7 @@
             <properties>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -446,6 +452,7 @@
             <properties>
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -512,6 +519,7 @@
             <properties>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -582,6 +590,7 @@
             <properties>
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -661,6 +670,7 @@
                 <spark.test.version>${spark321db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -713,6 +723,7 @@
             <properties>
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -815,6 +826,7 @@
         <java.major.version>8</java.major.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
+        <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>22.06.0-SNAPSHOT</spark-rapids-jni.version>
