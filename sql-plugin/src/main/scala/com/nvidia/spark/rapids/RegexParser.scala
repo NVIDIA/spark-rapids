@@ -450,6 +450,7 @@ class RegexParser(pattern: String) {
         case "Blank" =>
           ListBuffer(RegexChar(' '), RegexEscaped('t'))
         case "Cntrl" =>
+          // should be \u0001-\u001f but we do not support the null terminator \u0000 
           ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u001f')), 
             RegexChar('\u007f'))
         case "XDigit" =>

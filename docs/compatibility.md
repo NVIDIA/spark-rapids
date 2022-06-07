@@ -586,7 +586,8 @@ These are the known edge cases where running on the GPU will produce different r
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
 - The character class `\p{ASCII}` matches only `[\x01-\x7F]` as opposed to Java's definition which matches `[\x00-\x7F]`,
- since null characters are not currently supported
+ since null characters are not currently supported. Similarily, `\p{Cntrl}` matches only `[\x01-\x1F\x7F]` as 
+ opposed to Java's `[\x00-\x1F\x7F]`
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
