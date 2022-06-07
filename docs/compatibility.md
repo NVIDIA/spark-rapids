@@ -591,22 +591,17 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported by `regexp_replace`
 - Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
   or more results
+- Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Word and non-word boundaries, `\b` and `\B`
-- Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Octal digits in the range `\0200` to `\0377`
-- Character classes with octal digits, such as `[\02]` or `[\024]`
-- Character classes with hex digits, such as `[\x02]` or `[\x24]`
-- Hex digits in the range `\x80` to `Character.MAX_CODE_POINT`
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.

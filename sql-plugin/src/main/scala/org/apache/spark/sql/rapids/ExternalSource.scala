@@ -16,11 +16,12 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
 import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.FileSourceScanExec
@@ -29,16 +30,20 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-object ExternalSource {
+object ExternalSource extends Logging {
+  val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
 
   lazy val hasSparkAvroJar = {
-    val loader = Utils.getContextOrSparkClassLoader
-
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
-    Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
-      case Failure(_) => false
-      case Success(_) => true
+    Utils.classIsLoadable(avroScanClassName) && {
+      Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
+        .getOrElse {
+          logWarning("Avro library not found by the RAPIDS plugin. The Plugin jars are " +
+              "likely deployed using a static classpath spark.driver/executor.extraClassPath. " +
+              "Consider using --jars or --packages instead.")
+          false
+        }
     }
   }
 
