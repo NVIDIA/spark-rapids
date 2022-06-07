@@ -249,7 +249,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
-  def writeOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
+  def executeFunOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
       fun: DataFrame => Unit,
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1)
@@ -368,7 +368,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         maxFloatDiff, sortBeforeRepart)
     test(qualifiedTestName) {
-      val (_, gpuPlan) = writeOnCpuAndGpuWithCapture(df, fun,
+      val (_, gpuPlan) = executeFunOnCpuAndGpuWithCapture(df, fun,
         conf = testConf,
         repart = repart)
       // Now check the GPU Conditions

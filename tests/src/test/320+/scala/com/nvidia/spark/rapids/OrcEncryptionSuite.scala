@@ -55,7 +55,7 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
       }
       assume(isValidTestForSparkVersion)
 
-     val tempFile = File.createTempFile("orc-encryption-test", "")
+      val tempFile = File.createTempFile("orc-encryption-test", "")
       frame.write.options(Map("orc.key.provider" -> "memory",
         "orc.encrypt" -> "pii:ints,more_ints",
         "orc.mask" -> "sha256:ints,more_ints")).mode("overwrite").orc(tempFile.getAbsolutePath)
