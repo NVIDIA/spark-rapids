@@ -983,6 +983,8 @@ case class GpuRegExpReplace(
         }
         case RegexGroup(_, term) =>
           isEmptyRepetition(term) 
+        case RegexSequence(parts) if parts.size == 1 =>
+          isEmptyRepetition(parts.head)
         // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
         // we did, we would need to add a `case RegexChoice()` here
         case _ => false
