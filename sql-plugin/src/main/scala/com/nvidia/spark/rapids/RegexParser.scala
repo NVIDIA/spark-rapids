@@ -404,11 +404,68 @@ class RegexParser(pattern: String) {
             parseHexDigit
           case '0' =>
             parseOctalDigit
+          case 'p' =>
+            consumeExpected(ch)
+            parsePredefinedClass
           case other =>
             throw new RegexUnsupportedException(
               s"invalid or unsupported escape character '$other'", Some(pos - 1))
         }
     }
+  }
+
+  private def parsePredefinedClass: RegexCharacterClass = {
+    consumeExpected('{')
+    val start = pos 
+    while(!eof() && pattern.charAt(pos).isLetter) {
+      pos += 1
+    }
+    val className = pattern.substring(start, pos)
+    def getCharacters(className: String): ListBuffer[RegexCharacterClassComponent] = {
+      // Character lists from here: 
+      // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+      className match {
+        case "Lower" => 
+          ListBuffer(RegexCharacterRange(RegexChar('a'), RegexChar('z')))
+        case "Upper" => 
+          ListBuffer(RegexCharacterRange(RegexChar('A'), RegexChar('Z')))
+        case "ASCII" =>
+          // should be \u0000-\u007f but we do not support the null terminator \u0000 
+          ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u007f')))
+        case "Alpha" => 
+          ListBuffer(getCharacters("Lower"), getCharacters("Upper")).flatten
+        case "Digit" =>
+          ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+        case "Alnum" =>
+          ListBuffer(getCharacters("Alpha"), getCharacters("Digit")).flatten
+        case "Punct" =>
+          val res:ListBuffer[RegexCharacterClassComponent] = 
+              ListBuffer("!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~".map(RegexChar): _*)
+          res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'))
+        case "Graph" => 
+          ListBuffer(getCharacters("Alnum"), getCharacters("Punct")).flatten
+        case "Print" =>
+          val res = getCharacters("Graph")
+          res += RegexChar('\u0020')
+        case "Blank" =>
+          ListBuffer(RegexChar(' '), RegexEscaped('t'))
+        case "Cntrl" =>
+          // should be \u0001-\u001f but we do not support the null terminator \u0000 
+          ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u001f')), 
+            RegexChar('\u007f'))
+        case "XDigit" =>
+          ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')),
+            RegexCharacterRange(RegexChar('a'), RegexChar('f')),
+            RegexCharacterRange(RegexChar('A'), RegexChar('F')))
+        case "Space" =>
+          ListBuffer(" \t\n\u000B\f\r".map(RegexChar): _*)
+        case _ => 
+          throw new RegexUnsupportedException(
+            s"predefined character class ${className} is not supported", Some(pos))
+      }
+    }
+    consumeExpected('}')
+    RegexCharacterClass(negated = false, characters = getCharacters(className))
   }
 
   private def isHexDigit(ch: Char): Boolean = ch.isDigit ||
@@ -1053,7 +1110,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map {
-            case r @ RegexChar(ch) if "^$".contains(ch) => r
+            case r @ RegexChar(ch) if "^$.".contains(ch) => r
             case ch => rewrite(ch, replacement, None) match {
               case valid: RegexCharacterClassComponent => valid
               case _ =>
@@ -1146,6 +1203,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
                         RegexSequence(ListBuffer(
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
+                    popBackrefIfNecessary(false)
+                  case RegexEscaped('z') =>
+                    // \Z\z or $\z transpiles to $
+                    r(j) = RegexChar('$')
                     popBackrefIfNecessary(false)
                   case RegexEscaped('b') | RegexEscaped('B') =>
                     throw new RegexUnsupportedException(
