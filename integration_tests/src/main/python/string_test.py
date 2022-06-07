@@ -1111,7 +1111,7 @@ def test_replace_empty_string():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_replace(a, "A*", "_REPLACED_")',
-                'regexp_replace(a, "(A*)", "_REPLACED_")'
+                'regexp_replace(a, "(A*)", "_REPLACED_")',
                 'regexp_replace(a, "(((A*)))", "_REPLACED_")'
             ),
         conf=_regexp_conf)
