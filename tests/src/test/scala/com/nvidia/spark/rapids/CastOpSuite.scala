@@ -272,9 +272,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
-      val key = getCastKey(ansiEnabled)
-      val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
-
+      val checks = getCastChecks(ansiEnabled)
       typeMatrix.foreach {
         case (from, to) =>
           // check if Spark supports this cast
@@ -336,7 +334,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     assert(unsupported == expected)
   }
 
-  private def getCastKey(ansiEnabled: Boolean): Class[Expression] = {
+  private def getCastChecks(ansiEnabled: Boolean): CastChecks = {
     // AnsiCast is merged into Cast from Spark 3.4.0.
     // Use reflection to avoid shims.
     val keyString = if (cmpSparkVersion(3, 4, 0) < 0 && ansiEnabled) {
@@ -344,13 +342,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
     } else {
       "org.apache.spark.sql.catalyst.expressions.Cast"
     }
-    Class.forName(keyString).asInstanceOf[Class[Expression]]
+    val key = Class.forName(keyString).asInstanceOf[Class[Expression]]
+    GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
   }
 
   private def getUnsupportedCasts(ansiEnabled: Boolean): Seq[(DataType, DataType)] = {
-    val key = getCastKey(ansiEnabled)
-    val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
-
+    val checks = getCastChecks(ansiEnabled)
     val unsupported = typeMatrix.flatMap {
       case (from, to) =>
         if (checks.sparkCanCast(from, to) && !checks.gpuCanCast(from, to)) {
