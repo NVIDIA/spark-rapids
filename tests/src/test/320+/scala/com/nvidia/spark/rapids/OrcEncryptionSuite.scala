@@ -26,6 +26,8 @@ import org.apache.orc.impl.CryptoUtils
 
 class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
 
+  // Create an InMemoryKeystore provider and addKey `pii` to it.
+  // CryptoUtils caches it so it can be used later by the test
   val hadoopConf = new Configuration()
   hadoopConf.set("orc.key.provider", "memory")
   val random = new SecureRandom()
