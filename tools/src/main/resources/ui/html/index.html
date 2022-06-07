@@ -169,28 +169,7 @@
                 </div>
                 <div class="card-body">
                   <div id="gpu-recommendation-card">
-                    <table id="gpu-recommendation-table" class="table display" style="width:100%">
-                      <thead>
-                      <tr>
-                        <th></th>
-                        <th>
-                          App Name
-                        </th>
-                        <th>
-                          App ID
-                        </th>
-                        <th>
-                          App Duration
-                        </th>
-                        <th>
-                          Estimated Speed-up
-                        </th>
-                        <th>
-                          Recommendation
-                        </th>
-                      </tr>
-                      </thead>
-                    </table>
+                    <div id="app-recommendations-data-container"></div>
                   </div>
                 </div>
               </div>
@@ -200,6 +179,33 @@
       </main>
     </div>
   </div>
+
+  <script id="gpu-recommendation-table-template" type="text/template">
+    <div id="apps-recommendations-data">
+      <table id="gpu-recommendation-table" class="table display" style="width:100%">
+        <thead>
+        <tr>
+          <th></th>
+          <th>
+            App Name
+          </th>
+          <th>
+            App ID
+          </th>
+          <th>
+            App Duration
+          </th>
+          <th>
+            Estimated Speed-up
+          </th>
+          <th>
+            Recommendation
+          </th>
+        </tr>
+        </thead>
+      </table>
+    </div>
+  </script>
 
   <script id="qual-report-summary-template" type="text/template">
     <div class="row dash-row">
