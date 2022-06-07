@@ -27,7 +27,7 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.util.SerializableConfiguration
 
-class AvroSourceProvider extends AvroProvider {
+class AvroProviderImpl extends AvroProvider {
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {

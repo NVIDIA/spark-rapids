@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 
-class HiveSourceProvider extends HiveProvider {
+class HiveProviderImpl extends HiveProvider {
 
   /**
    * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty

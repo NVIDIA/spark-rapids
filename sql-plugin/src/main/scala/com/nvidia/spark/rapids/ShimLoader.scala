@@ -24,12 +24,15 @@ import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
+
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
+import org.apache.spark.sql.hive.rapids.HiveProvider
+import org.apache.spark.sql.rapids.AvroProvider
 import org.apache.spark.util.MutableURLClassLoader
 
 /*
@@ -445,4 +448,15 @@ object ShimLoader extends Logging {
   def newExplainPlan(): ExplainPlanBase = {
     newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
+
+  def newHiveProvider(): HiveProvider= {
+    newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
+  }
+
+  /**
+   * Singleton Avro Provider
+   */
+  lazy val avroProvider: AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
+    "org.apache.spark.sql.rapids.AvroProviderImpl")
+
 }

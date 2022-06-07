@@ -60,14 +60,10 @@ trait AvroProvider {
 }
 
 object ExternalSource {
-  val providerClassName = "org.apache.spark.sql.rapids.AvroSourceProvider"
-
   lazy val hasSparkAvroJar = {
-    val loader = Utils.getContextOrSparkClassLoader
-
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
-    Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
+    Try(ShimLoader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
       case Failure(_) => false
       case Success(_) => true
     }
@@ -76,20 +72,19 @@ object ExternalSource {
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {
     if (hasSparkAvroJar) {
-      ShimLoader.newInstanceOf[AvroProvider](providerClassName).isSupportedFormat(format)
+      ShimLoader.avroProvider.isSupportedFormat(format)
     } else false
   }
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
     if (hasSparkAvroJar) {
-      ShimLoader.newInstanceOf[AvroProvider](providerClassName)
-          .isPerFileReadEnabledForFormat(format, conf)
+      ShimLoader.avroProvider.isPerFileReadEnabledForFormat(format, conf)
     } else false
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     if (hasSparkAvroJar) {
-      ShimLoader.newInstanceOf[AvroProvider](providerClassName).tagSupportForGpuFileSourceScan(meta)
+      ShimLoader.avroProvider.tagSupportForGpuFileSourceScan(meta)
     }
   }
 
@@ -99,7 +94,7 @@ object ExternalSource {
    */
   def getReadFileFormat(format: FileFormat): FileFormat = {
     if (hasSparkAvroJar) {
-      ShimLoader.newInstanceOf[AvroProvider](providerClassName).getReadFileFormat(format)
+      ShimLoader.avroProvider.getReadFileFormat(format)
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }
@@ -115,8 +110,8 @@ object ExternalSource {
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
     if (hasSparkAvroJar) {
-      ShimLoader.newInstanceOf[AvroProvider](providerClassName).
-          createMultiFileReaderFactory(format, broadcastedConf, pushedFilters, fileScan)
+      ShimLoader.avroProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
+        fileScan)
     } else {
       throw new RuntimeException(s"File format $format is not supported yet")
     }
@@ -124,7 +119,7 @@ object ExternalSource {
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     if (hasSparkAvroJar) {
-      ShimLoader.newInstanceOf[AvroProvider](providerClassName).getScans
+      ShimLoader.avroProvider.getScans
     } else Map.empty
   }
 

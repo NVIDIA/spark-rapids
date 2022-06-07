@@ -46,8 +46,7 @@ object GpuHiveOverrides {
    */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     if (isSparkHiveAvailable) {
-      val className = "org.apache.spark.sql.hive.rapids.HiveSourceProvider"
-      ShimLoader.newInstanceOf[HiveProvider](className).getExprs
+      ShimLoader.newHiveProvider().getExprs
     } else {
       Map.empty
     }
