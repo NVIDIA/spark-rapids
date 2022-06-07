@@ -36,7 +36,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetFieldIdShims, SparkShimImpl}
 import java.util
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -44,7 +44,6 @@ import org.apache.hadoop.fs.{FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.bytes.BytesUtils.readIntLittleEndian
 import org.apache.parquet.column.ColumnDescriptor
-import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
@@ -663,7 +662,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
             readAndSimpleFilterFooter(file, conf, filePath)
         }
       } catch {
-        case e: ParquetCryptoRuntimeException =>
+        case e if GpuParquetCrypto.isColumnarCryptoException(e) =>
           throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
             "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
             s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.", e)
