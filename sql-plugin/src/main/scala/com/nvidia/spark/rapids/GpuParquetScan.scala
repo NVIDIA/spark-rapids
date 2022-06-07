@@ -43,8 +43,8 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.bytes.BytesUtils.readIntLittleEndian
-import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 import org.apache.parquet.column.ColumnDescriptor
+import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
