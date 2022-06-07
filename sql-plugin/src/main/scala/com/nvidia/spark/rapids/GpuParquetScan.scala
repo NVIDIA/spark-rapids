@@ -1560,7 +1560,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       clippedReadFields.map { f =>
         if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
           // find the parquet column name
-          ParquetSchemaClipShims.getName(fieldIdToNameMap, f).get
+          fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f))
         } else {
           m.get(f.name).getOrElse(f.name)
         }
@@ -1568,7 +1568,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     } else {
       clippedReadFields.map { f =>
         if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
-          ParquetSchemaClipShims.getName(fieldIdToNameMap, f).get
+          fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f))
         } else {
           f.name
         }

@@ -73,15 +73,6 @@ object ParquetSchemaClipShims {
     }
   }
 
-  def getName(map: Map[Int, String], field: StructField): Option[String] = {
-    if (ParquetUtils.hasFieldId(field)) {
-      val fieldId = ParquetUtils.getFieldId(field)
-      map.get(fieldId)
-    } else {
-      None
-    }
-  }
-
   /** The stub for the config not defined in Spark 330 */
   def timestampNTZEnabled(conf: SQLConf): Boolean = false
 

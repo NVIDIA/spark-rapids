@@ -44,9 +44,6 @@ object ParquetSchemaClipShims {
   def fieldIdToNameMap(useFieldId: Boolean,
       fileType: Type): Map[Int, String] = Map.empty[Int, String]
 
-  def getType(map: Map[Int, Type], field: StructField): Option[Type] = None
-  def getName(map: Map[Int, String], field: StructField): Option[String] = None
-
   def clipSchema(
       parquetSchema: MessageType,
       catalystSchema: StructType,
