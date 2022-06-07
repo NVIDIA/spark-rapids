@@ -44,61 +44,65 @@ class ParquetFieldIdSuite extends SparkQueryCompareTestSuite {
   }
 
   test("enable write field IDs") {
-    val tempFile = File.createTempFile("stats", ".parquet")
-    try {
-      val (schema, data) = getSchemaAndData()
-      // write field IDs by default
-      withGpuSparkSession(spark => spark.createDataFrame(data.asJava, schema).write
-          .mode("overwrite").parquet(tempFile.getAbsolutePath))
+    if (cmpSparkVersion(3, 3, 0) >= 0) {
+      val tempFile = File.createTempFile("stats", ".parquet")
+      try {
+        val (schema, data) = getSchemaAndData()
+        // write field IDs by default
+        withGpuSparkSession(spark => spark.createDataFrame(data.asJava, schema).write
+            .mode("overwrite").parquet(tempFile.getAbsolutePath))
 
-      // Parquet files are in a directory
-      val d = new File(tempFile.getAbsolutePath)
-      assert(d.exists && d.isDirectory)
-      // filter part-*.parquet file
-      val parquetFiles = d.listFiles.filter(_.isFile).filter(f => f.getName.startsWith("part-")
-          && f.getName.endsWith(".parquet"))
-      parquetFiles.foreach { parquetFile =>
-        withResource(ParquetFileReader.open(HadoopInputFile.fromPath(
-          new Path(parquetFile.getAbsolutePath), new Configuration()))) { reader =>
-          val schemaInFile = reader.getFooter.getFileMetaData.getSchema
-          assert(schemaInFile.getFields.get(0).getId().intValue() == 11)
-          assert(schemaInFile.getFields.get(1).getId().intValue() == 22)
+        // Parquet files are in a directory
+        val d = new File(tempFile.getAbsolutePath)
+        assert(d.exists && d.isDirectory)
+        // filter part-*.parquet file
+        val parquetFiles = d.listFiles.filter(_.isFile).filter(f => f.getName.startsWith("part-")
+            && f.getName.endsWith(".parquet"))
+        parquetFiles.foreach { parquetFile =>
+          withResource(ParquetFileReader.open(HadoopInputFile.fromPath(
+            new Path(parquetFile.getAbsolutePath), new Configuration()))) { reader =>
+            val schemaInFile = reader.getFooter.getFileMetaData.getSchema
+            assert(schemaInFile.getFields.get(0).getId().intValue() == 11)
+            assert(schemaInFile.getFields.get(1).getId().intValue() == 22)
+          }
         }
+      } finally {
+        tempFile.delete()
       }
-    } finally {
-      tempFile.delete()
     }
   }
 
   test("disable write field IDs") {
-    val tempFile = File.createTempFile("stats", ".parquet")
-    val disableWriteFieldId = new SparkConf().set("spark.sql.parquet.fieldId.write.enabled",
-      "false")
+    if (cmpSparkVersion(3, 3, 0) >= 0) {
+      val tempFile = File.createTempFile("stats", ".parquet")
+      val disableWriteFieldId = new SparkConf().set("spark.sql.parquet.fieldId.write.enabled",
+        "false")
 
-    try {
-      val (schema, data) = getSchemaAndData()
-      withGpuSparkSession(spark => spark.createDataFrame(data.asJava, schema).write
-          .mode("overwrite").parquet(tempFile.getAbsolutePath),
-        // disable write field IDs
-        conf = disableWriteFieldId)
+      try {
+        val (schema, data) = getSchemaAndData()
+        withGpuSparkSession(spark => spark.createDataFrame(data.asJava, schema).write
+            .mode("overwrite").parquet(tempFile.getAbsolutePath),
+          // disable write field IDs
+          conf = disableWriteFieldId)
 
-      // Parquet files are in a directory
-      val d = new File(tempFile.getAbsolutePath)
-      assert(d.exists && d.isDirectory)
-      // filter part-*.parquet file
-      val parquetFiles = d.listFiles.filter(_.isFile).filter(f => f.getName.startsWith("part-")
-          && f.getName.endsWith(".parquet"))
-      parquetFiles.foreach { parquetFile =>
-        withResource(ParquetFileReader.open(HadoopInputFile.fromPath(
-          new Path(parquetFile.getAbsolutePath), new Configuration()))) { reader =>
-          val schemaInFile = reader.getFooter.getFileMetaData.getSchema
-          // should not write field IDs
-          assert(schemaInFile.getFields.get(0).getId == null)
-          assert(schemaInFile.getFields.get(1).getId == null)
+        // Parquet files are in a directory
+        val d = new File(tempFile.getAbsolutePath)
+        assert(d.exists && d.isDirectory)
+        // filter part-*.parquet file
+        val parquetFiles = d.listFiles.filter(_.isFile).filter(f => f.getName.startsWith("part-")
+            && f.getName.endsWith(".parquet"))
+        parquetFiles.foreach { parquetFile =>
+          withResource(ParquetFileReader.open(HadoopInputFile.fromPath(
+            new Path(parquetFile.getAbsolutePath), new Configuration()))) { reader =>
+            val schemaInFile = reader.getFooter.getFileMetaData.getSchema
+            // should not write field IDs
+            assert(schemaInFile.getFields.get(0).getId == null)
+            assert(schemaInFile.getFields.get(1).getId == null)
+          }
         }
+      } finally {
+        tempFile.delete()
       }
-    } finally {
-      tempFile.delete()
     }
   }
 }

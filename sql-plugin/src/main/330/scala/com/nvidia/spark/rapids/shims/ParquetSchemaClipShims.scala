@@ -73,15 +73,6 @@ object ParquetSchemaClipShims {
     }
   }
 
-  def getType(map: Map[Int, Type], field: StructField): Option[Type] = {
-    if (ParquetUtils.hasFieldId(field)) {
-      val fieldId = ParquetUtils.getFieldId(field)
-      map.get(fieldId)
-    } else {
-      None
-    }
-  }
-
   def getName(map: Map[Int, String], field: StructField): Option[String] = {
     if (ParquetUtils.hasFieldId(field)) {
       val fieldId = ParquetUtils.getFieldId(field)

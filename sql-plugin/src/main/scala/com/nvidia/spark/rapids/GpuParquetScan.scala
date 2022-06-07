@@ -764,9 +764,14 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         val fieldIdToFieldMap = ParquetSchemaClipShims.fieldIdToFieldMap(useFieldId, fileType)
 
         def getParquetType(f: StructField): Type = {
-          val ret = ParquetSchemaClipShims.getType(fieldIdToFieldMap, f)
-          ret.getOrElse(
-            fileFieldMap(if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT)))
+          if(useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
+            // use field ID and Spark schema specified field ID
+            // Note: can always get a result from the map.
+            // For unmatched field ID column `fileType` has a `_fake_name_UUID` column.
+            fieldIdToFieldMap(ParquetSchemaClipShims.getFieldId(f))
+          } else {
+            fileFieldMap(if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT))
+          }
         }
         struct.fields.foreach { f =>
           val curFile = getParquetType(f)
