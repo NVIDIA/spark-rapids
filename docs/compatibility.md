@@ -701,16 +701,21 @@ The formats which are supported on GPU vary depending on the setting for `timePa
 With timeParserPolicy set to `CORRECTED` or `EXCEPTION` (the default), the following formats are supported
 on the GPU without requiring any additional settings.
 
-- `dd/MM/yyyy`
-- `yyyy/MM`
+- `yyyy-MM-dd`
 - `yyyy/MM/dd`
 - `yyyy-MM`
-- `yyyy-MM-dd`
+- `yyyy/MM`
+- `dd/MM/yyyy`
 - `yyyy-MM-dd HH:mm:ss`
 - `MM-dd`
 - `MM/dd`
 - `dd-MM`
 - `dd/MM`
+- `MM/yyyy`
+- `MM-yyyy`
+- `MM/dd/yyyy`
+- `MM-dd-yyyy`
+- `MMyyyy`
 
 Valid Spark date/time formats that do not appear in the list above may also be supported but have not been 
 extensively tested and may produce different results compared to the CPU. Known issues include:
