@@ -17,20 +17,32 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.security.SecureRandom
 
 import com.nvidia.spark.rapids.shims.SparkShimImpl
-
-import org.apache.spark.SparkConf
+import org.apache.hadoop.conf.Configuration
+import org.apache.orc.{EncryptionAlgorithm, InMemoryKeystore}
+import org.apache.orc.impl.CryptoUtils
 
 class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
-  testGpuFallback(
+
+  val hadoopConf = new Configuration()
+  hadoopConf.set("orc.key.provider", "memory")
+  val random = new SecureRandom()
+  val keystore: InMemoryKeystore =
+    CryptoUtils.getKeyProvider(hadoopConf, random).asInstanceOf[InMemoryKeystore]
+  val algorithm: EncryptionAlgorithm = EncryptionAlgorithm.AES_CTR_128
+  val piiKey = new Array[Byte](algorithm.keyLength)
+  val topSecretKey = new Array[Byte](algorithm.keyLength)
+  random.nextBytes(piiKey)
+  random.nextBytes(topSecretKey)
+  keystore.addKey("pii", algorithm, piiKey).addKey("top_secret", algorithm, topSecretKey)
+
+  testGpuWriteFallback(
     "Write encrypted ORC fallback",
     "DataWritingCommandExec",
     intsDf,
-    conf = new SparkConf().set("hadoop.security.key.provider.path", "test:///")
-        .set("orc.key.provider", "hadoop")
-        .set("orc.encrypt", "pii:ints,more_ints")
-        .set("orc.mask", "sha256:ints,more_ints")) {
+    execsAllowedNonGpu = Seq("ShuffleExchangeExec", "DataWritingCommandExec")) {
     frame =>
       // ORC encryption is only allowed in 3.2+
       val isValidTestForSparkVersion = SparkShimImpl.getSparkShimVersion match {
@@ -41,16 +53,9 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
       }
       assume(isValidTestForSparkVersion)
 
-//      withCpuSparkSession(session => {
-//        val conf = session.sessionState.newHadoopConf()
-//        val provider = HadoopShimsFactory.get.getHadoopKeyProvider(conf, new Random)
-//        assume(!provider.getKeyNames.isEmpty,
-//          s"$provider doesn't has the test keys. ORC shim is created with old Hadoop libraries")
-//      }
-//      )
-
-      val tempFile = File.createTempFile("orc-encryption-test", "")
-      frame.write.mode("overwrite").orc(tempFile.getAbsolutePath)
-      frame.selectExpr("*")
+     val tempFile = File.createTempFile("orc-encryption-test", "")
+      frame.write.options(Map("orc.key.provider" -> "memory",
+        "orc.encrypt" -> "pii:ints,more_ints",
+        "orc.mask" -> "sha256:ints,more_ints")).mode("overwrite").orc(tempFile.getAbsolutePath)
   }
 }

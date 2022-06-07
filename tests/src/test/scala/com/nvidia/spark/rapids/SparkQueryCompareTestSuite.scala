@@ -249,6 +249,57 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
+  def writeOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
+      fun: DataFrame => Unit,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1)
+  : (SparkPlan, SparkPlan) = {
+    conf.setIfMissing("spark.sql.shuffle.partitions", "2")
+
+    // force a new session to avoid accidentally capturing a late callback from a previous query
+    TrampolineUtil.cleanupAnyExistingSession()
+    ExecutionPlanCaptureCallback.startCapture()
+    var cpuPlan: Option[SparkPlan] = null
+      try {
+        withCpuSparkSession(session => {
+          var data = df(session)
+          if (repart > 0) {
+            // repartition the data so it is turned into a projection,
+            // not folded into the table scan exec
+            data = data.repartition(repart)
+          }
+          fun(data)
+        }, conf)
+      } finally {
+        cpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+      }
+    if (cpuPlan.isEmpty) {
+      throw new RuntimeException("Did not capture CPU plan")
+    }
+
+    ExecutionPlanCaptureCallback.startCapture()
+    var gpuPlan: Option[SparkPlan] = null
+      try {
+        withGpuSparkSession(session => {
+          var data = df(session)
+          if (repart > 0) {
+            // repartition the data so it is turned into a projection,
+            // not folded into the table scan exec
+            data = data.repartition(repart)
+          }
+          fun(data)
+        }, conf)
+      } finally {
+        gpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+      }
+
+    if (gpuPlan.isEmpty) {
+      throw new RuntimeException("Did not capture GPU plan")
+    }
+
+    (cpuPlan.get, gpuPlan.get)
+  }
+
   def runOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
       fun: DataFrame => DataFrame,
       conf: SparkConf = new SparkConf(),
@@ -300,6 +351,29 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
 
     (fromCpu, cpuPlan.get, fromGpu, gpuPlan.get)
+  }
+
+  def testGpuWriteFallback(testName: String,
+      fallbackCpuClass: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => Unit): Unit = {
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+    test(qualifiedTestName) {
+      val (_, gpuPlan) = writeOnCpuAndGpuWithCapture(df, fun,
+        conf = testConf,
+        repart = repart)
+      // Now check the GPU Conditions
+      ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlan, fallbackCpuClass)
+    }
   }
 
   def testGpuFallback(testName: String,
