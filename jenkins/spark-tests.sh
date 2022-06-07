@@ -43,6 +43,12 @@ else
 fi
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
+export INCLUDE_SPARK_AVRO_JAR=${INCLUDE_SPARK_AVRO_JAR:-"true"}
+if [[ "${INCLUDE_SPARK_AVRO_JAR}"  == "true" ]]; then
+  $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
+      -DgroupId=org.apache.spark -DartifactId=spark-avro_$SCALA_BINARY_VER -Dversion=$SPARK_VER
+fi
+
 # TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -Dtransitive=false \
