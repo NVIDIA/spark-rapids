@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.GpuCSVScan
-
 import org.apache.spark.sql.execution.FileSourceScanExec
 
 object GpuReadCSVFileFormat {

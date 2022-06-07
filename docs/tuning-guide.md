@@ -194,6 +194,14 @@ rather than megabytes or smaller.
 Note that the GPU can encode Parquet and ORC data much faster than the CPU, so the costs of
 writing large files can be significantly lower.
 
+## Input Files' column order
+When there are a large number of columns for file formats like Parquet and ORC the size of the 
+contiguous data for each individual column can be very small. This can result in doing lots of very 
+small random reads to the file system to read the data for the subset of columns that are needed.
+
+We suggest reordering the columns needed by the queries and then rewrite the files to make those
+columns adjacent. This could help both Spark on CPU and GPU.
+
 ## Input Partition Size
 
 Similar to the discussion on [input file size](#input-files), many queries can benefit from using

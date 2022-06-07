@@ -26,44 +26,15 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.json.{JSONOptions, JSONOptionsInRead}
 import org.apache.spark.sql.catalyst.util.PermissiveMode
-import org.apache.spark.sql.types.{DateType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types._
 
-object GpuJsonScan {
-
+object GpuJsonUtils {
   // spark 2.x uses FastDateFormat, use getPattern
   def dateFormatInRead(options: JSONOptions): String = options.dateFormat.getPattern
+  def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat.getPattern
+}
 
-  def timestampFormatInRead(fileOptions: Serializable): Option[String] = {
-    fileOptions match {
-      case jsonOpts: JSONOptions => Option(jsonOpts.timestampFormat.getPattern)
-      case _ => throw new RuntimeException("Wrong file options.")
-    }
-  }
-
-  private val supportedDateFormats = Set(
-    "yyyy-MM-dd",
-    "yyyy/MM/dd",
-    "yyyy-MM",
-    "yyyy/MM",
-    "MM-yyyy",
-    "MM/yyyy",
-    "MM-dd-yyyy",
-    "MM/dd/yyyy"
-    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
-    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
-    // and would need to coordinate with the timestamp format too, because both cannot
-    // coexist
-  )
-
-  private val supportedTsPortionFormats = Set(
-    "HH:mm:ss.SSSXXX",
-    "HH:mm:ss[.SSS][XXX]",
-    "HH:mm",
-    "HH:mm:ss",
-    "HH:mm[:ss]",
-    "HH:mm:ss.SSS",
-    "HH:mm:ss[.SSS]"
-  )
+object GpuJsonScan {
 
   def tagSupport(
       sparkSession: SparkSession,
@@ -131,28 +102,34 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
     })
 
-    if (readSchema.map(_.dataType).contains(DateType)) {
-      DateUtils.tagAndGetCudfFormat(meta,
-          dateFormatInRead(parsedOptions), parseString = true)
+    val types = readSchema.map(_.dataType)
+    if (types.contains(DateType)) {
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
-    if (readSchema.map(_.dataType).contains(TimestampType)) {
+   if (types.contains(TimestampType)) {
       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
-      timestampFormatInRead(parsedOptions).foreach { tsFormat =>
-        val parts = tsFormat.split("'T'", 2)
-        if (parts.isEmpty) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.headOption.exists(h => !supportedDateFormats.contains(h))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-        if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
-          meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
-        }
-      }
+      GpuTextBasedDateUtils.tagCudfFormat(meta,
+        GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
+    }
+
+    if (!meta.conf.isJsonFloatReadEnabled && types.contains(FloatType)) {
+      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
+    }
+
+    if (!meta.conf.isJsonDoubleReadEnabled && types.contains(DoubleType)) {
+      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading doubles. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
+    }
+
+    if (!meta.conf.isJsonDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading decimals. " +
+        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DECIMALS} to true.")
     }
 
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>

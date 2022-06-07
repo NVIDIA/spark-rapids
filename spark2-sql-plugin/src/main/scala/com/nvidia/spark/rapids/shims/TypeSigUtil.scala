@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
+import com.nvidia.spark.rapids.{TypeEnum, TypeSig, TypeSigUtilBase}
 
 import org.apache.spark.sql.types.DataType
 
 /** TypeSig Support for [3.1.1, 3.2.0) */
-object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtilBase {
+object TypeSigUtil extends TypeSigUtilBase {
 
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
@@ -66,4 +66,7 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtilBase {
   /** Get numeric and interval TypeSig */
   override def getNumericAndInterval(): TypeSig =
     TypeSig.cpuNumeric + TypeSig.CALENDAR
+
+  /** Get Ansi year-month and day-time TypeSig, begins from 320+ */
+  override def getAnsiInterval: TypeSig = TypeSig.none
 }

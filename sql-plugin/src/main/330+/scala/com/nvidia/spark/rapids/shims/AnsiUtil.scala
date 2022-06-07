@@ -16,11 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import java.time.DateTimeException
-
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuColumnVector}
 
+import org.apache.spark.rapids.ShimTrampolineUtil
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 
@@ -44,12 +43,15 @@ object AnsiUtil extends Arm {
   }
 
   private def castDoubleToTimestampAnsi(doubleInput: ColumnView, toType: DataType): ColumnVector = {
-    val msg = s"The column contains at least a single value that is " +
-        s"NaN, Infinity or out-of-range values. To return NULL instead, use 'try_cast'. " +
-        s"If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
+    val msg = s"The column contains out-of-range values. To return NULL instead, use " +
+        s"'try_cast'. If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
 
-    def throwDateTimeException: Unit = {
-      throw new DateTimeException(msg)
+    // These are the arguments required by SparkDateTimeException class to create error message.
+    val errorClass = "CAST_INVALID_INPUT"
+    val messageParameters = Array("DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
+
+    def throwSparkDateTimeException(infOrNan: String): Unit = {
+      throw ShimTrampolineUtil.dateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
     }
 
     def throwOverflowException: Unit = {
@@ -58,7 +60,7 @@ object AnsiUtil extends Arm {
 
     withResource(doubleInput.isNan) { hasNan =>
       if (BoolUtils.isAnyValidTrue(hasNan)) {
-        throwDateTimeException
+        throwSparkDateTimeException("NaN")
       }
     }
 
@@ -66,7 +68,8 @@ object AnsiUtil extends Arm {
     withResource(FloatUtils.getInfinityVector(doubleInput.getType)) { inf =>
       withResource(doubleInput.contains(inf)) { hasInf =>
         if (BoolUtils.isAnyValidTrue(hasInf)) {
-          throwDateTimeException
+          // We specify as "Infinity" for both "+Infinity" and "-Infinity" in the error message
+          throwSparkDateTimeException("Infinity")
         }
       }
     }

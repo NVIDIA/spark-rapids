@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.aggregate._
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, WindowInPandasExec}
+import org.apache.spark.sql.execution.python.{AggregateInPandasExec, FlatMapGroupsInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
@@ -83,26 +83,6 @@ object ShimGpuOverrides extends Logging {
           TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
           TypeSig.cpuNumeric),
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-        }),
-      GpuOverrides.expr[RegExpReplace](
-       "String replace using a regular expression pattern",
-        ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
-          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-            ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
-              .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
-              TypeSig.lit(TypeEnum.INT)))),
-        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
-      GpuOverrides.expr[ScalaUDF](
-        "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
-          "to get better performance.",
-        ExprChecks.projectOnly(
-          GpuUserDefinedFunction.udfTypeSig,
-          TypeSig.all,
-          repeatingParamCheck =
-            Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-        (expr, conf, p, r) => new ScalaUDFMetaBase(expr, conf, p, r) {
         })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
@@ -118,30 +98,6 @@ object ShimGpuOverrides extends Logging {
 
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
         }),
-    GpuOverrides.exec[ArrowEvalPythonExec](
-      "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled",
-      ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-        TypeSig.all),
-      (e, conf, p, r) =>
-        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
-          val udfs: Seq[BaseExprMeta[PythonUDF]] =
-            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-            e.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
-          override def replaceMessage: String = "partially run on GPU"
-          override def noReplacementPossibleMessage(reasons: String): String =
-            s"cannot run even partially on the GPU because $reasons"
-      }),
-    GpuOverrides.exec[FlatMapGroupsInPandasExec](
-      "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
     GpuOverrides.exec[WindowInPandasExec](
       "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
         " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -152,13 +108,7 @@ object ShimGpuOverrides extends Logging {
       (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
         override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
           winPy.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-      }).disabledByDefault("it only supports row based frame for now"),
-    GpuOverrides.exec[AggregateInPandasExec](
-      "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
-        " the Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+      }).disabledByDefault("it only supports row based frame for now")
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 }
 

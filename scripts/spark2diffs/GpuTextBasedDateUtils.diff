@@ -1,0 +1,13 @@
+28c28
+<       meta: RapidsMeta[_, _],
+---
+>       meta: RapidsMeta[_, _, _],
+43,46c43,45
+<           //  Spark 2.x doesn't have ansi
+<           // if (SQLConf.get.ansiEnabled) {
+<           //   meta.willNotWorkOnGpu("LEGACY format in ANSI mode is not supported on the GPU")
+<           if (!meta.conf.incompatDateFormats) {
+---
+>           if (SQLConf.get.ansiEnabled) {
+>             meta.willNotWorkOnGpu("LEGACY format in ANSI mode is not supported on the GPU")
+>           } else if (!meta.conf.incompatDateFormats) {
