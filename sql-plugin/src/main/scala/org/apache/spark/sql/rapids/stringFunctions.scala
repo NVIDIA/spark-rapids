@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.nio.charset.Charset
+
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
@@ -834,6 +836,14 @@ object GpuRegExpUtils {
     if (!meta.conf.isRegExpEnabled) {
       meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
+    }
+
+    Charset.defaultCharset().name() match {
+      case "UTF-8" =>
+        // supported
+      case _ => 
+        meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
+        "supports the UTF-8 charset when using regular expressions")
     }
   }
 

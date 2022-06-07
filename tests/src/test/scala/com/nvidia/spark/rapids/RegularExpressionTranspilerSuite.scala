@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
@@ -569,6 +570,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("AST fuzz test - regexp_replace") {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), REGEXP_LIMITED_CHARS_REPLACE,
       RegexReplaceMode)
+  }
+
+  test("AST fuzz test - regexp_find - full unicode input") {
+    assume(isUnicodeEnabled())
+    doAstFuzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+      RegexFindMode)
+  }
+
+  test("AST fuzz test - regexp_replace - full unicode input") {
+    assume(isUnicodeEnabled())
+    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+      RegexReplaceMode)
+  }
+
+  def isUnicodeEnabled(): Boolean = {
+    Charset.defaultCharset().name() == "UTF-8"
   }
 
   test("AST fuzz test - regexp_find - anchor focused") {
