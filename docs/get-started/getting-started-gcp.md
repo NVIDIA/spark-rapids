@@ -161,16 +161,15 @@ Dataproc [RAPIDS init
 script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 
 Once data is prepared, we use the [Mortgage XGBoost4j Scala
-Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.zpln) in Dataproc's Zeppelin service to execute
-the training job on the GPU.  NVIDIA also ships [Spark
-XGBoost4j](https://github.com/NVIDIA/spark-xgboost) which is based on [DMLC
-xgboost](https://github.com/dmlc/xgboost).  Precompiled
-[XGBoost4j](https://repo1.maven.org/maven2/com/nvidia/xgboost4j_3.0/) and [XGBoost4j
-Spark](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/) libraries can be
+Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's jupyter notebook to execute
+the training job on the GPU. Scala based XGBoost examples use [DLMC XGBoost](https://github.com/dmlc/xgboost).
+For PySpark based XGBoost, please refer to the [Spark-RAPIDS-examples 22.04 branch](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04)
+that uses [NVIDIA’s Spark XGBoost version](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.4.2-0.3.0/).
+Precompiled
+[XGBoost4j](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) and [XGBoost4j
+Spark](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) libraries can be
 downloaded from maven.  They are pre-downloaded by the GCP [RAPIDS init
-action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).  Since
-github cannot render a Zeppelin notebook, we prepared a [Jupyter Notebook with Scala
-code](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) for you to view the code content.
+action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 
 The training time should be around 480 seconds (1/10 of CPU execution time with same config).  This
 is shown under cell:
