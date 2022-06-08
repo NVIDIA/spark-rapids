@@ -285,8 +285,12 @@ def test_mod_pmod_long_min_value():
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
-    exception_str = "java.lang.ArithmeticException: divide by zero" if is_before_spark_320() else \
-        "org.apache.spark.SparkArithmeticException: divide by zero" 
+    if is_before_spark_320():
+        exception_str = 'java.lang.ArithmeticException: divide by zero'
+    elif is_before_spark_330():
+        exception_str = 'SparkArithmeticException: divide by zero'
+    else:
+        exception_str = 'SparkArithmeticException: Division by zero'
         
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -483,9 +487,19 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
+_arith_data_gens_for_round = numeric_gens +  _arith_decimal_gens_no_neg_scale + [
+    decimal_gen_32bit_neg_scale,
+    DecimalGen(precision=15, scale=-8),
+    DecimalGen(precision=30, scale=-5),
+    pytest.param(_decimal_gen_36_neg5, marks=pytest.mark.skipif(
+        is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+')),
+    pytest.param(_decimal_gen_38_neg10, marks=pytest.mark.skipif(
+        is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+'))
+]
+
 @incompat
 @approximate_float
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -497,7 +511,7 @@ def test_decimal_bround(data_gen):
 
 @incompat
 @approximate_float
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
