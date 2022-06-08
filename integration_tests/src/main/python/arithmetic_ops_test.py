@@ -285,8 +285,12 @@ def test_mod_pmod_long_min_value():
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
-    exception_str = "java.lang.ArithmeticException: divide by zero" if is_before_spark_320() else \
-        "org.apache.spark.SparkArithmeticException: divide by zero" 
+    if is_before_spark_320():
+        exception_str = 'java.lang.ArithmeticException: divide by zero'
+    elif is_before_spark_330():
+        exception_str = 'SparkArithmeticException: divide by zero'
+    else:
+        exception_str = 'SparkArithmeticException: Division by zero'
         
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
