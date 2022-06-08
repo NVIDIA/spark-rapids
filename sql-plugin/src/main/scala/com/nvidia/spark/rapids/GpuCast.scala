@@ -1474,6 +1474,8 @@ object GpuCast extends Arm {
           dt.precision + 1 min DType.DECIMAL128_MAX_PRECISION, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
           withResource(container.round(dt.scale, cudf.RoundMode.HALF_UP)) { rd =>
+            // The cast here is for cases that cuDF decimal type got promoted as precision + 1.
+            // Need to convert back to original cuDF type, to keep align with the precision.
             rd.castTo(targetType)
           }
         }
