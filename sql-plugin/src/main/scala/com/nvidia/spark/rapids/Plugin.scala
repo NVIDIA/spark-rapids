@@ -295,7 +295,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
               s"${ef.toErrorString}")
             System.exit(20)
           case _: CudaException =>
-            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: ${ef.toErrorString}")
+            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
+              s"${ef.toErrorString}")
           case _: CudfException =>
             logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
           case _ =>
@@ -335,21 +336,6 @@ object RapidsExecutorPlugin {
       val zipped = expPatchInts.zipAll(actPatchInts, 0, 0)
       zipped.forall { case (e, a) => e <= a }
     }
-  }
-
-  def isCudaException(ef: ExceptionFailure): Boolean = ef.exception match {
-    case Some(_: CudaException) => true
-    case _ => false
-  }
-
-  def isCudaFatalException(ef: ExceptionFailure): Boolean = ef.exception match {
-    case Some(_: CudaFatalException) => true
-    case _ => false
-  }
-
-  def isCudfException(ef: ExceptionFailure): Boolean = ef.exception match {
-    case Some(_: CudfException) => true
-    case _ => false
   }
 }
 
