@@ -17,13 +17,16 @@
 
 set -ex
 
-SPARKSRCTGZ=$1
+## Environments SPARKSRCTGZ, BASE_SPARK_VERSION, BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS, MVN_OPT
+## can be overwritten by shell variables, e.g. "BASE_SPARK_VERSION=3.1.2 MVN_OPT=-DskipTests bash build.sh"
+
+SPARKSRCTGZ=${SPARKSRCTGZ:-''}
 # version of Apache Spark we are building against
-BASE_SPARK_VERSION=$2
-BUILD_PROFILES=$3
-BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$4
-BUILD_PROFILES=${BUILD_PROFILES:-'databricks312,!snapshot-shims'}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
+BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
+## '-Pfoo=1,-Dbar=2,...' to '-Pfoo=1 -Dbar=2 ...'
+MVN_OPT=${MVN_OPT//','/' '}
+
 BUILDVER=$(echo ${BASE_SPARK_VERSION} | sed 's/\.//g')db
 # the version of Spark used when we install the Databricks jars in .m2
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
@@ -34,7 +37,7 @@ SPARK_MAJOR_VERSION_STRING=spark_${SPARK_MAJOR_VERSION_NUM_STRING}
 
 echo "tgz is $SPARKSRCTGZ"
 echo "Base Spark version is $BASE_SPARK_VERSION"
-echo "build profiles $BUILD_PROFILES"
+echo "maven options is $MVN_OPT"
 echo "BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS is $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
 
 sudo apt install -y maven rsync
@@ -54,16 +57,14 @@ fi
 export WORKSPACE=`pwd`
 
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
-CUDF_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cudf.version -DforceStdout`
 SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
 CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
 
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
-# export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
+# export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=/home/ubuntu/.m2/repository
-CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 JARDIR=/databricks/jars
@@ -444,7 +445,7 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests
+mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids

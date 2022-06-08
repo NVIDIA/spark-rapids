@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import incompat, allow_non_gpu
@@ -51,13 +51,37 @@ def test_timeadd_daytime_column():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
+# Should specify `spark.sql.legacy.interval.enabled` to test `DateAddInterval` after Spark 3.2.0,
+# refer to https://issues.apache.org/jira/browse/SPARK-34896
+# [SPARK-34896][SQL] Return day-time interval from dates subtraction
+# 1. Add the SQL config `spark.sql.legacy.interval.enabled` which will control when Spark SQL should use `CalendarIntervalType` instead of ANSI intervals.
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_dateaddinterval(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
             .selectExpr('a + (interval {} days {} seconds)'.format(days, seconds),
-            'a - (interval {} days {} seconds)'.format(days, seconds)))
+            'a - (interval {} days {} seconds)'.format(days, seconds)),
+        legacy_interval_enabled_conf)
+
+# test add days(not specify hours, minutes, seconds, milliseconds, microseconds) in ANSI mode.
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+def test_dateaddinterval_ansi(data_gen):
+    days, _ = data_gen
+    # only specify the `days`
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
+            .selectExpr('a + (interval {} days)'.format(days)),
+        conf=copy_and_update(ansi_enabled_conf, legacy_interval_enabled_conf))
+
+# Throws if add hours, minutes or seconds, milliseconds, microseconds to a date in ANSI mode
+def test_dateaddinterval_ansi_exception():
+    assert_gpu_and_cpu_error(
+        # specify the `seconds`
+        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
+            .selectExpr('a + (interval {} days {} seconds)'.format(1, 5)).collect(),
+        conf=copy_and_update(ansi_enabled_conf, legacy_interval_enabled_conf),
+        error_message="IllegalArgumentException")
 
 @pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_datediff(data_gen):
@@ -183,39 +207,83 @@ def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
 
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_to_unix_timestamp(data_gen):
+def test_to_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"))
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
+        {'spark.sql.ansi.enabled': ansi_enabled})
 
-@allow_non_gpu('ProjectExec,Alias,ToUnixTimestamp,Literal')
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_to_unix_timestamp_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
-            'ToUnixTimestamp',
-            conf={'spark.sql.ansi.enabled': 'true'})
 
+@pytest.mark.parametrize('invalid,fmt', [
+    ('2021-01/01', 'yyyy-MM-dd'),
+    ('2021/01-01', 'yyyy/MM/dd'),
+    ('2021/01', 'yyyy-MM'),
+    ('2021-01', 'yyyy/MM'),
+    ('01/02/201', 'dd/MM/yyyy'),
+    ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('01#01', 'MM-dd'),
+    ('01T01', 'MM/dd'),
+    ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
+    ('01-01', 'dd/MM'),
+    ('2021-01', 'MM/yyyy'),
+    ('2021-01', 'MM-yyyy'),
+    ('01-02-2022', 'MM/dd/yyyy'),
+    ('99-01-2022', 'MM-dd-yyyy'),
+], ids=idfn)
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+@pytest.mark.parametrize('operator', ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"], ids=idfn)
+def test_string_to_timestamp_functions_ansi_invalid(invalid, fmt, parser_policy, operator):
+    sql = "{operator}(a, '{fmt}')".format(fmt=fmt, operator=operator)
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+
+    def fun(spark):
+        df = spark.createDataFrame([(invalid,)], "a string")
+        return df.selectExpr(sql).collect()
+
+    assert_gpu_and_cpu_error(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf), error_message="Exception")
+
+
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+# first get expected string via `date_format`
+def test_string_to_timestamp_functions_ansi_valid(parser_policy):
+    expr_format = "{operator}(date_format(a, '{fmt}'), '{fmt}')"
+    formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM', 'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss',
+               'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM', 'MM/yyyy', 'MM-yyyy', 'MM/dd/yyyy', 'MM-dd-yyyy']
+    operators = ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"]
+    format_operator_pairs = [(fmt, operator) for fmt in formats for operator in operators]
+    expr_list = [expr_format.format(operator=operator, fmt=fmt) for (fmt, operator) in format_operator_pairs]
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+
+    def fun(spark):
+        df = spark.createDataFrame([(datetime(1970, 8, 12, tzinfo=timezone.utc),)], "a timestamp")
+        return df.selectExpr(expr_list)
+
+    assert_gpu_and_cpu_are_equal_collect(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf))
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_unix_timestamp_improved(data_gen):
+def test_unix_timestamp_improved(data_gen, ansi_enabled):
     conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
             "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))), conf)
+        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
+        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
 
-@allow_non_gpu('ProjectExec,Alias,UnixTimestamp,Literal')
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_unix_timestamp_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
-            'UnixTimestamp',
-            conf={'spark.sql.ansi.enabled': 'true'})
+def test_unix_timestamp(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
+        {'spark.sql.ansi.enabled': ansi_enabled})
 
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_to_unix_timestamp_improved(data_gen):
+def test_to_unix_timestamp_improved(data_gen, ansi_enabled):
     conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"), conf)
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
+        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
 
 str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
@@ -223,23 +291,48 @@ str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM
         (StringGen('[0-2][1-8]/[01][12]'), 'dd/MM'),
         (ConvertGen(DateGen(nullable=False), lambda d: d.strftime('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
 
-@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-def test_string_to_unix_timestamp(data_gen, date_form):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)))
+# get invalid date string df
+def invalid_date_string_df(spark):
+    return spark.createDataFrame([['invalid_date_string']], "a string")
 
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-def test_string_unix_timestamp(data_gen, date_form):
+def test_string_to_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)))
+        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
+        {'spark.sql.ansi.enabled': ansi_enabled})
 
-@allow_non_gpu('ProjectExec,Alias,GetTimestamp,Literal,Cast')
+def test_string_to_unix_timestamp_ansi_exception():
+    assert_gpu_and_cpu_error(
+        lambda spark : invalid_date_string_df(spark).selectExpr("to_unix_timestamp(a, '{}')".format('yyyy/MM/dd')).collect(),
+        error_message="Exception",
+        conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
+def test_string_unix_timestamp(data_gen, date_form, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),
+        {'spark.sql.ansi.enabled': ansi_enabled})
+
+def test_string_unix_timestamp_ansi_exception():
+    assert_gpu_and_cpu_error(
+        lambda spark : invalid_date_string_df(spark).select(f.unix_timestamp(f.col('a'), 'yyyy/MM/dd')).collect(),
+        error_message="Exception",
+        conf=ansi_enabled_conf)
+
 @pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
-def test_gettimestamp_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
-            'GetTimestamp',
-            conf={'spark.sql.ansi.enabled': 'true'})
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+def test_gettimestamp(data_gen, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
+        {'spark.sql.ansi.enabled': ansi_enabled})
+
+def test_gettimestamp_ansi_exception():
+    assert_gpu_and_cpu_error(
+        lambda spark : invalid_date_string_df(spark).select(f.to_date(f.col("a"), "yyyy-MM-dd")).collect(),
+        error_message="Exception",
+        conf=ansi_enabled_conf)
 
 supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/MM/yyyy',
                           'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM']

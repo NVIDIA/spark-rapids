@@ -105,8 +105,8 @@ object ConcatAndConsumeAll {
 
 object CoalesceGoal {
   def maxRequirement(a: CoalesceGoal, b: CoalesceGoal): CoalesceGoal = (a, b) match {
-    case (RequireSingleBatch, _) => a
-    case (_, RequireSingleBatch) => b
+    case (_: RequireSingleBatchLike, _) => a
+    case (_, _: RequireSingleBatchLike) => b
     case (_: BatchedByKey, _: TargetSize) => a
     case (_: TargetSize, _: BatchedByKey) => b
     case (a: BatchedByKey, b: BatchedByKey) =>
@@ -121,8 +121,8 @@ object CoalesceGoal {
   }
 
   def minProvided(a: CoalesceGoal, b:CoalesceGoal): CoalesceGoal = (a, b) match {
-    case (RequireSingleBatch, _) => b
-    case (_, RequireSingleBatch) => a
+    case (_: RequireSingleBatchLike, _) => b
+    case (_, _: RequireSingleBatchLike) => a
     case (_: BatchedByKey, _: TargetSize) => b
     case (_: TargetSize, _: BatchedByKey) => a
     case (a: BatchedByKey, b: BatchedByKey) =>
@@ -136,8 +136,8 @@ object CoalesceGoal {
   }
 
   def satisfies(found: CoalesceGoal, required: CoalesceGoal): Boolean = (found, required) match {
-    case (RequireSingleBatch, _) => true
-    case (_, RequireSingleBatch) => false
+    case (_: RequireSingleBatchLike, _) => true
+    case (_, _: RequireSingleBatchLike) => false
     case (_: BatchedByKey, _: TargetSize) => true
     case (_: TargetSize, _: BatchedByKey) => false
     case (BatchedByKey(aOrder), BatchedByKey(bOrder)) =>
@@ -167,12 +167,17 @@ sealed abstract class CoalesceSizeGoal extends CoalesceGoal {
 }
 
 /**
- * A single batch is required as the input to a note in the SparkPlan. This means
+ * Trait used for pattern matching for single batch coalesce goals.
+ */
+trait RequireSingleBatchLike
+
+/**
+ * A single batch is required as the input to a node in the SparkPlan. This means
  * all of the data for a given task is in a single batch. This should be avoided
  * as much as possible because it can result in running out of memory or run into
  * limitations of the batch size by both Spark and cudf.
  */
-case object RequireSingleBatch extends CoalesceSizeGoal {
+case object RequireSingleBatch extends CoalesceSizeGoal with RequireSingleBatchLike {
 
   override val targetSizeBytes: Long = Long.MaxValue
 
@@ -180,6 +185,23 @@ case object RequireSingleBatch extends CoalesceSizeGoal {
   override def toString: String = "RequireSingleBatch"
 }
 
+/**
+ * This is exactly the same as `RequireSingleBatch` except that if the
+ * batch would fail to coalesce because it reaches cuDF row-count limits, the
+ * coalesce code is free to null filter given the filter expression in `filterExpression`.
+ * @note This is an ugly hack because ideally these rows are never read from the input source
+ *       given that we normally push down IsNotNull in Spark. This should be removed when
+ *       we can handle this in a proper way, likely at the logical plan optimization level.
+ *       More details here: https://issues.apache.org/jira/browse/SPARK-39131
+ */
+case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
+    extends CoalesceSizeGoal with RequireSingleBatchLike {
+
+  override val targetSizeBytes: Long = Long.MaxValue
+
+  /** Override toString to improve readability of Spark explain output */
+  override def toString: String = "RequireSingleBatchWithFilter"
+}
 /**
  * Produce a stream of batches that are at most the given size in bytes. The size
  * is estimated in some cases so it may go over a little, but it should generally be
@@ -227,6 +249,12 @@ abstract class AbstractGpuCoalesceIterator(
   private val iter = new CollectTimeIterator(s"$opName: collect", batches, streamTime)
 
   private var batchInitialized: Boolean = false
+
+  /**
+   * This is defined iff `goal` is `RequireSingleBatchWithFilter` and we have
+   * reached the cuDF row-count limit.
+   */
+  private var inputFilterExpression: Option[Expression] = None
 
   /**
    * Return true if there is something saved on deck for later processing.
@@ -351,7 +379,17 @@ abstract class AbstractGpuCoalesceIterator(
 
       // there is a hard limit of 2^31 rows
       while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
-        closeOnExcept(iter.next()) { cb =>
+        val cbFromIter = iter.next()
+
+        var cb = if (inputFilterExpression.isDefined) {
+          // If we have reached the cuDF limit once, proactively filter batches
+          // after that first limit is reached.
+          GpuFilter(cbFromIter, inputFilterExpression.get)
+        } else {
+          cbFromIter
+        }
+
+        closeOnExcept(cb) { _ =>
           val nextRows = cb.numRows()
           numInputBatches += 1
 
@@ -366,12 +404,40 @@ abstract class AbstractGpuCoalesceIterator(
             val wouldBeBytes = numBytes + nextBytes
 
             if (wouldBeRows > Int.MaxValue) {
-              if (goal == RequireSingleBatch) {
-                throw new IllegalStateException("A single batch is required for this operation," +
+              goal match {
+                case RequireSingleBatch =>
+                  throw new IllegalStateException("A single batch is required for this operation," +
                     s" but cuDF only supports ${Int.MaxValue} rows. At least $wouldBeRows" +
                     s" are in this partition. Please try increasing your partition count.")
+                case RequireSingleBatchWithFilter(filterExpression) =>
+                  // filter what we had already stored
+                  val filteredDown = GpuFilter(concatAllAndPutOnGPU(), filterExpression)
+                  closeOnExcept(filteredDown) { _ =>
+                    // filter the incoming batch as well
+                    closeOnExcept(GpuFilter(cb, filterExpression)) { filteredCb =>
+                      cb = null // null out `cb` to prevent multiple close calls
+                      val filteredWouldBeRows = filteredDown.numRows() + filteredCb.numRows()
+                      if (filteredWouldBeRows > Int.MaxValue) {
+                        throw new IllegalStateException(
+                          "A single batch is required for this operation, but cuDF only supports " +
+                            s"${Int.MaxValue} rows. At least $filteredWouldBeRows are in this " +
+                            "partition, even after filtering nulls. " +
+                            "Please try increasing your partition count.")
+                      }
+                      if (inputFilterExpression.isEmpty) {
+                        inputFilterExpression = Some(filterExpression)
+                        logWarning("Switched to null-filtering mode. This coalesce iterator " +
+                          "succeeded to fit rows under the cuDF limit only after null filtering. " +
+                          "Please try increasing your partition count.")
+                      }
+                      numRows = filteredWouldBeRows
+                      numBytes = getBatchDataSize(filteredDown) + getBatchDataSize(filteredCb)
+                      addBatch(filteredDown)
+                      addBatch(filteredCb)
+                    }
+                  }
+                case _ => saveOnDeck(cb) // not a single batch requirement
               }
-              saveOnDeck(cb)
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
               saveOnDeck(cb)
             } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
@@ -394,9 +460,13 @@ abstract class AbstractGpuCoalesceIterator(
       val isLastBatch = !(hasOnDeck || iter.hasNext)
 
       // enforce single batch limit when appropriate
-      if (goal == RequireSingleBatch && !isLastBatch) {
-        throw new IllegalStateException("A single batch is required for this operation." +
-            " Please try increasing your partition count.")
+      if (!isLastBatch) {
+        goal match {
+          case _: RequireSingleBatchLike =>
+            throw new IllegalStateException("A single batch is required for this operation," +
+                " Please try increasing your partition count.")
+          case _ =>
+        }
       }
 
       numOutputRows += numRows

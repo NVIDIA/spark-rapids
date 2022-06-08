@@ -126,9 +126,8 @@ class HealthCheckSuite extends FunSuite {
 
   test("test unSupportedSQLPlan") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    val qualificationlogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val appArgs =
-      new ProfileArgs(Array(s"$qualificationlogDir/dataset_eventlog"))
+      new ProfileArgs(Array(s"$logDir/dataset_eventlog"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {

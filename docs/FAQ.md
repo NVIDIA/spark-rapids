@@ -307,11 +307,15 @@ Yes
 
 ### Are the R APIs for Spark supported?
 
-Yes, but we don't actively test them.
+Yes, but we don't actively test them, because the RAPIDS Accelerator hooks into Spark not at 
+the various language APIs but at the Catalyst level after all the various APIs have converged into 
+the DataFrame API.
 
 ### Are the Java APIs for Spark supported?
 
-Yes, but we don't actively test them.
+Yes, but we don't actively test them, because the RAPIDS Accelerator hooks into Spark not at
+the various language APIs but at the Catalyst level after all the various APIs have converged into
+the DataFrame API.
 
 ### Are the Scala APIs for Spark supported?
 
@@ -376,7 +380,7 @@ There are multiple reasons why this a problematic configuration:
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`, 
-[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04/examples/MIG-Support) 
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.06/examples/MIG-Support) 
 or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
@@ -409,6 +413,14 @@ translates these operations into GPU operations just like other query plan opera
 The Scala UDF byte-code analyzer is disabled by default and must be enabled by the user via the
 [`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
 setting.
+
+#### Optimize a row-based UDF in a GPU operation
+
+If the UDF can not be implemented by RAPIDS Accelerated UDFs or be automatically translated to
+Apache Spark operations, the RAPIDS Accelerator has an experimental feature to transfer only the
+data it needs between GPU and CPU inside a query operation, instead of falling this operation back 
+to CPU. This feature can be enabled by setting `spark.rapids.sql.rowBasedUDF.enabled` to true.
+
 
 ### Why is the size of my output Parquet/ORC file different?
 
@@ -501,5 +513,19 @@ Below are some troubleshooting tips on GPU query performance issue:
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
 
+### Why is Avro library not found by RAPIDS?
 
-  
+If you are getting a warning `Avro library not found by the RAPIDS plugin.` or if you are getting the 
+`java.lang.NoClassDefFoundError: org/apache/spark/sql/v2/avro/AvroScan` error, make sure you ran the 
+Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
+RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
+
+### What is the default RMM pool allocator?
+
+Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
+`ARENA` for CUDA 11.5+. For CUDA 11.4 and older, it will fall back to `ARENA`.
+
+### I have more questions, where do I go? 
+We use github to track bugs, feature requests, and answer questions. File an
+[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
+or answer a question on the [discussion board](https://github.com/NVIDIA/spark-rapids/discussions).

@@ -1,0 +1,8 @@
+7c7
+<   def tagGpuSupportWriteForFieldId(meta: RapidsMeta[_, _], schema: StructType,
+---
+>   def tagGpuSupportWriteForFieldId(meta: RapidsMeta[_, _, _], schema: StructType,
+12c12
+<   def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _], conf: SQLConf): Unit = {
+---
+>   def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _, _], conf: SQLConf): Unit = {

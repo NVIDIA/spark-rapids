@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,13 +29,15 @@
 
 ARG RDMA_CORE_VERSION=32.1
 ARG CUDA_VER=11.2.2
-ARG UCX_VER=1.11.2
-ARG UCX_CUDA_VER=11.2
+ARG UCX_VER=1.12.1
+ARG UCX_CUDA_VER=11
 
 # Throw away image to build rdma_core
 FROM ubuntu:18.04 as rdma_core
 ARG RDMA_CORE_VERSION
 
+# https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 RUN apt update && apt install -y dh-make wget build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
 
 RUN wget https://github.com/linux-rdma/rdma-core/releases/download/v${RDMA_CORE_VERSION}/rdma-core-${RDMA_CORE_VERSION}.tar.gz
@@ -50,5 +52,5 @@ COPY --from=rdma_core /*.deb /tmp/
 
 RUN apt update
 RUN apt-get install -y wget
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5.x-cuda$UCX_CUDA_VER.deb
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5-cuda$UCX_CUDA_VER.deb
 RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb

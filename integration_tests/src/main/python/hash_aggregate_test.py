@@ -309,6 +309,11 @@ _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
+_init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_nans + [
+    _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_very_big_neg_scale_decimals]
+
 
 _init_list_full_decimal = [_grpkey_short_full_decimals, 
     _grpkey_short_full_neg_scale_decimals]
@@ -445,8 +450,8 @@ def test_exceptAll(data_gen):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -454,32 +459,6 @@ def test_hash_grpby_pivot(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c')),
         conf = conf)
-
-@approximate_float
-@ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
-        'NormalizeNaNAndZero')
-@incompat
-@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
-def test_hash_pivot_groupby_nan_fallback(data_gen):
-    # collect values to pivot in previous, to avoid this preparation job being captured
-    def fetch_pivot_values(spark):
-        max_values = spark._jsparkSession.sessionState().conf().dataFramePivotMaxValues()
-        df = gen_df(spark, data_gen, length=100)
-        df = df.select('b').distinct().limit(max_values + 1).sort('b')
-        return [row[0] for row in df.collect()]
-
-    pivot_values = with_cpu_session(fetch_pivot_values)
-
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a')
-            .pivot('b', pivot_values)
-            .agg(f.sum('c')),
-        "PivotFirst",
-        conf=_nans_float_conf)
-
 
 @approximate_float
 @ignore_order(local=True)
@@ -494,12 +473,11 @@ def test_hash_grpby_pivot_without_nans(data_gen, conf):
             .agg(f.sum('c')),
         conf=conf)
 
-
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -507,30 +485,6 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c'), f.max('c')),
         conf=conf)
-
-@approximate_float
-@ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec')
-@incompat
-@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
-def test_hash_pivot_reduction_nan_fallback(data_gen):
-    # collect values to pivot in previous, to avoid this preparation job being captured
-    def fetch_pivot_values(spark):
-        max_values = spark._jsparkSession.sessionState().conf().dataFramePivotMaxValues()
-        df = gen_df(spark, data_gen, length=100)
-        df = df.select('b').distinct().limit(max_values + 1).sort('b')
-        return [row[0] for row in df.collect()]
-
-    pivot_values = with_cpu_session(fetch_pivot_values)
-
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby()
-            .pivot('b', pivot_values)
-            .agg(f.sum('c')),
-        "PivotFirst",
-        conf=_nans_float_conf)
 
 @approximate_float
 @ignore_order(local=True)
@@ -544,6 +498,36 @@ def test_hash_reduction_pivot_without_nans(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c')),
         conf=conf)
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_reduction_pivot_with_nans(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby()
+            .pivot('b')
+            .agg(f.sum('c')),
+        conf=conf)
+
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
+        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
+        'NormalizeNaNAndZero')
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
+def test_hash_pivot_groupby_duplicates_fallback(data_gen):
+    # PivotFirst will not work on the GPU when pivot_values has duplicates
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .pivot('b', ['10.0', '10.0'])
+            .agg(f.sum('c')),
+        "PivotFirst",
+        conf=_nans_float_conf)
 
 _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(BooleanGen(), length=15),
@@ -1038,20 +1022,20 @@ def test_first_last_reductions_nested_types(data_gen):
 def test_generic_reductions(data_gen):
     local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
-            # Coalesce and sort are to make sure that first and last, which are non-deterministic
-            # become deterministic
-            lambda spark : unary_op_df(spark, data_gen)\
-                    .coalesce(1).selectExpr(
-                'min(a)',
-                'max(a)',
-                'first(a)',
-                'last(a)',
-                'count(a)',
-                'count()',
-                'count(1)'),
-            conf = local_conf)
+        # Coalesce and sort are to make sure that first and last, which are non-deterministic
+        # become deterministic
+        lambda spark : unary_op_df(spark, data_gen) \
+            .coalesce(1).selectExpr(
+            'min(a)',
+            'max(a)',
+            'first(a)',
+            'last(a)',
+            'count(a)',
+            'count()',
+            'count(1)'),
+        conf=local_conf)
 
-@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_count(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
@@ -1082,6 +1066,32 @@ def test_arithmetic_reductions(data_gen):
                 'sum(a)',
                 'avg(a)'),
             conf = _no_nans_float_conf)
+
+@pytest.mark.parametrize('data_gen',
+                         non_nan_all_basic_gens + decimal_gens + _nested_gens,
+                         ids=idfn)
+def test_collect_list_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        # coalescing because collect_list is not deterministic
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr('collect_list(a)'),
+        conf=_no_nans_float_conf)
+
+_struct_only_nested_gens = [all_basic_struct_gen,
+                            StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
+                            StructGen([])]
+@pytest.mark.parametrize('data_gen',
+                         non_nan_all_basic_gens + decimal_gens + _struct_only_nested_gens,
+                         ids=idfn)
+def test_collect_set_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('sort_array(collect_set(a))'),
+        conf=_no_nans_float_conf)
+
+def test_collect_empty():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("select collect_list(null)"))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("select collect_set(null)"))
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
@@ -1606,7 +1616,7 @@ def test_count_fallback_when_ansi_enabled(data_gen):
 def test_no_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
-        # coalescing because of first/last are not deterministic
+        # coalescing because first/last are not deterministic
         df = df.coalesce(1).orderBy("a", "b")
         return df.groupBy('a').agg(f.first("b"), f.last("b"), f.min("b"), f.max("b"))
 

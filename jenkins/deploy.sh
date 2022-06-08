@@ -53,8 +53,9 @@ fi
 
 ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
 ART_VER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.version -DforceStdout`
+CUDA_CLASSIFIER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=cuda.version -DforceStdout`
 
-FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
+FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$CUDA_CLASSIFIER"
 POM_FPATH="$DIST_PL/target/extra-resources/META-INF/maven/com.nvidia/$ART_ID/pom.xml"
 
 echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
@@ -87,6 +88,7 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
             -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER \
+            -Dfiles=$FPATH.jar -Dtypes=jar -Dclassifiers=$CUDA_CLASSIFIER \
             -DpomFile="$POM_FPATH"
 
 ###### Deploy profiling tool jar(s) ######
@@ -97,7 +99,7 @@ TOOL_FPATH="deployjars/$TOOL_ART_ID-$TOOL_ART_VER"
 TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javadoc.jar"
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $TOOL_DOC_JARS \
-            -Dfile=$TOOL_FPATH.jar -DpomFile=${TOOL_PL}/pom.xml
+            -Dfile=$TOOL_FPATH.jar -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
 
 ###### Deploy Spark 2.x explain meta jar ######
 SPARK2_PL=${SPARK2_PL:-"spark2-sql-plugin"}

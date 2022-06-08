@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.04.0</version>
+        <version>22.06.0-SNAPSHOT</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tools_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark tools</name>
     <description>RAPIDS Accelerator for Apache Spark tools</description>
-    <version>22.04.0</version>
+    <version>22.06.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -37,9 +37,18 @@
         <spark.test.version>${spark311.version}</spark.test.version>
         <spark.version.classifier>spark311</spark.version.classifier>
         <target.classifier>spark311</target.classifier>
+        <ui.cache.dir>${project.build.directory}/ui-dependencies-cache</ui.cache.dir>
+        <ui.resources.relative>src/main/resources/ui</ui.resources.relative>
+        <ui.resources.dir>${project.basedir}/${ui.resources.relative}</ui.resources.dir>
+        <ui.resources.external.folder>assets</ui.resources.external.folder>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-common_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
@@ -81,6 +90,14 @@
             <resource>
               <directory>${project.basedir}/src/main/resources</directory>
             </resource>
+            <resource>
+                <directory>${project.basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <!-- The NOTICE will be taken care of by the antrun task below -->
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>
@@ -97,9 +114,11 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <minimizeJar>true</minimizeJar>
                             <artifactSet>
                                 <includes>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
+                                    <include>com.nvidia:rapids-4-spark-common_${scala.binary.version}</include>
                                 </includes>
                             </artifactSet>
                             <filters>
@@ -118,7 +137,7 @@
                                     <mainClass>com.nvidia.spark.rapids.tool.profiling.ProfileMain</mainClass>
                                 </transformer>
                             </transformers>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <createDependencyReducedPom>true</createDependencyReducedPom>
                         </configuration>
                     </execution>
                 </executions>
@@ -130,6 +149,90 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>download-ui-dependencies</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <property name="project.basedir" value="${project.basedir}"/>
+                                <property name="project.build.directory"
+                                          value="${project.build.directory}"/>
+                                <property name="project.cache.dir" value="${ui.cache.dir}"/>
+                                <property name="project.ui.root" value="${ui.resources.dir}"/>
+                                <property name="project.ui.output"
+                                          value="${ui.resources.dir}/${ui.resources.external.folder}"/>
+                                <property name="lib.bootstrap.url"
+                                          value="https://github.com/twbs/bootstrap/releases/download/v4.6.1/bootstrap-4.6.1-dist.zip"/>
+                                <property name="lib.bootstrap.dir" value="bootstrap"/>
+                                <property name="lib.jquery.dir" value="jquery"/>
+                                <property name="lib.jquery.url"
+                                          value="https://github.com/jquery/jquery/archive/refs/tags/3.6.0.zip"/>
+                                <property name="lib.mustache.dir" value="mustache-js"/>
+                                <property name="lib.mustache.url"
+                                          value="https://github.com/janl/mustache.js/archive/refs/tags/v4.1.0.zip"/>
+                                <property name="lib.spur.dir" value="spur"/>
+                                <property name="lib.spur.url"
+                                          value="https://github.com/HackerThemes/spur-template/archive/refs/heads/master.zip"/>
+                                <property name="lib.datatables.url.domain"
+                                          value="https://cdn.datatables.net"/>
+                                <property name="lib.datatables.dir" value="datatables"/>
+                                <ant antfile="${project.basedir}/prepare-ui-libraries.xml"></ant>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-notice</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <phase>process-resources</phase>
+                        <configuration>
+                            <target>
+                                <!-- copy NOTICE-binary to NOTICE -->
+                                <copy
+                                        todir="${project.build.directory}/classes/META-INF/"
+                                        verbose="true">
+                                    <fileset dir="${project.basedir}/..">
+                                        <include name="NOTICE-binary"/>
+                                    </fileset>
+                                    <mapper type="glob" from="*-binary" to="*"/>
+                                </copy>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- clean up the qual-ui dependencies from the resources -->
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>${maven.clean.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>clean-qual-ui-dependencies</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <filesets>
+                                <fileset>
+                                    <directory>${ui.resources.relative}</directory>
+                                    <includes>
+                                        <include>${ui.resources.external.folder}/</include>
+                                    </includes>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

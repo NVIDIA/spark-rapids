@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,20 +24,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * processed by a single write task in [[GpuFileFormatDataWriter]] - i.e. there should be one
  * instance per executor.
  *
- * This trait is coupled with the way [[GpuFileFormatWriter]] works, in the sense that its methods
- * will be called according to how column batches are being written out to disk, namely in
- * sorted order according to partitionValue(s), then bucketId.
- *
- * As such, a typical call scenario is:
- *
- * newPartition -> newBucket -> newFile -> newRow -.
- *    ^        |______^___________^ ^         ^____|
- *    |               |             |______________|
- *    |               |____________________________|
- *    |____________________________________________|
- *
- * newPartition and newBucket events are only triggered if the relation to be written out is
- * partitioned and/or bucketed, respectively.
+ * newPartition event is only triggered if the relation to be written out is partitioned.
  */
 trait ColumnarWriteTaskStatsTracker {
 
@@ -51,17 +38,16 @@ trait ColumnarWriteTaskStatsTracker {
   def newPartition(/*partitionValues: InternalRow*/): Unit
 
   /**
-   * Process the fact that a new bucket is about to written.
-   * Only triggered when the relation is bucketed by a (non-empty) sequence of columns.
-   * @param bucketId The bucket number.
-   */
-  def newBucket(bucketId: Int): Unit
-
-  /**
    * Process the fact that a new file is about to be written.
    * @param filePath Path of the file into which future rows will be written.
    */
   def newFile(filePath: String): Unit
+
+  /**
+   * Process the fact that a file is finished to be written and closed.
+   * @param filePath Path of the file.
+   */
+  def closeFile(filePath: String): Unit
 
   /**
    * Process a new column batch to update the tracked statistics accordingly.

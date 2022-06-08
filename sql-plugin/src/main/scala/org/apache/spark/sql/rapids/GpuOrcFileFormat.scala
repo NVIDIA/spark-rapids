@@ -58,6 +58,17 @@ object GpuOrcFileFormat extends Logging {
         s"${RapidsConf.ENABLE_ORC_WRITE} to true")
     }
 
+    val keyProviderPath = options.getOrElse("hadoop.security.key.provider.path", "")
+    val keyProvider = options.getOrElse("orc.key.provider", "")
+    val encrypt = options.getOrElse("orc.encrypt", "")
+    val mask = options.getOrElse("orc.mask", "")
+
+    if (!keyProvider.isEmpty || !keyProviderPath.isEmpty || !encrypt.isEmpty || !mask.isEmpty) {
+      meta.willNotWorkOnGpu("Encryption is not yet supported on GPU. If encrypted ORC " +
+          "writes are not required unset the \"hadoop.security.key.provider.path\" and " +
+          "\"orc.key.provider\" and \"orc.encrypt\" and \"orc.mask\"")
+    }
+
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)
 
     val sqlConf = spark.sessionState.conf
@@ -156,10 +167,10 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
   }
 }
 
-class GpuOrcWriter(path: String,
+class GpuOrcWriter(override val path: String,
                    dataSchema: StructType,
                    context: TaskAttemptContext)
-  extends ColumnarOutputWriter(path, context, dataSchema, "ORC") {
+  extends ColumnarOutputWriter(context, dataSchema, "ORC") {
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils

@@ -17,10 +17,10 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.ColumnarCopyHelper
-import com.nvidia.spark.rapids.GpuRowToColumnConverter.{LongConverter, NotNullLongConverter, TypeConverter}
+import com.nvidia.spark.rapids.{ColumnarCopyHelper, TypeSig}
+import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
 
-import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
+import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
 import org.apache.spark.sql.vectorized.ColumnVector
 
 /**
@@ -63,6 +63,7 @@ object GpuTypeShims {
   def hasConverterForType(otherType: DataType) : Boolean = {
     otherType match {
       case DayTimeIntervalType(_, _) => true
+      case YearMonthIntervalType(_, _) => true
       case _ => false
     }
   }
@@ -78,6 +79,8 @@ object GpuTypeShims {
     (t, nullable) match {
       case (DayTimeIntervalType(_, _), true) => LongConverter
       case (DayTimeIntervalType(_, _), false) => NotNullLongConverter
+      case (YearMonthIntervalType(_, _), true) => IntConverter
+      case (YearMonthIntervalType(_, _), false) => NotNullIntConverter
       case _ => throw new RuntimeException(s"No converter is found for type $t.")
     }
   }
@@ -92,6 +95,9 @@ object GpuTypeShims {
       case _: DayTimeIntervalType =>
         // use int64 as Spark does
         DType.INT64
+      case _: YearMonthIntervalType =>
+        // use int32 as Spark does
+        DType.INT32
       case _ =>
         null
     }
@@ -100,6 +106,7 @@ object GpuTypeShims {
   /** Whether the Shim supports columnar copy for the given type */
   def isColumnarCopySupportedForType(colType: DataType): Boolean = colType match {
     case DayTimeIntervalType(_, _) => true
+    case YearMonthIntervalType(_, _) => true
     case _ => false
   }
 
@@ -111,12 +118,15 @@ object GpuTypeShims {
       b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = cv.dataType() match {
     case DayTimeIntervalType(_, _) =>
       ColumnarCopyHelper.longCopy(cv, b, rows)
+    case YearMonthIntervalType(_, _) =>
+      ColumnarCopyHelper.intCopy(cv, b, rows)
     case t =>
       throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
   }
 
   def isParquetColumnarWriterSupportedForType(colType: DataType): Boolean = colType match {
     case DayTimeIntervalType(_, _) => true
+    case YearMonthIntervalType(_, _) => true
     case _ => false
   }
 
@@ -125,6 +135,7 @@ object GpuTypeShims {
    */
   def supportToScalarForType(t: DataType): Boolean = {
     t match {
+      case _: YearMonthIntervalType => true
       case _: DayTimeIntervalType => true
       case _ => false
     }
@@ -133,8 +144,13 @@ object GpuTypeShims {
   /**
    * Convert the given value to Scalar
    */
-  def toScalarForType(t: DataType, v: Any) = {
+  def toScalarForType(t: DataType, v: Any): Scalar = {
     t match {
+      case _: YearMonthIntervalType => v match {
+        case i: Int => Scalar.fromInt(i)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+            s" for IntType, expecting int")
+      }
       case _: DayTimeIntervalType => v match {
         case l: Long => Scalar.fromLong(l)
         case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
@@ -144,7 +160,6 @@ object GpuTypeShims {
         throw new RuntimeException(s"Can not convert $v to scalar for type $t.")
     }
   }
-
 
   def supportCsvRead(dt: DataType) : Boolean = {
     dt match {
@@ -160,4 +175,67 @@ object GpuTypeShims {
     }
   }
 
+  /**
+   * Whether the Shim supports day-time interval type for specific operator
+   * Alias, Add, Subtract, Positive... operators support day-time interval type
+   */
+  def isSupportedDayTimeType(dt: DataType): Boolean = dt.isInstanceOf[DayTimeIntervalType]
+
+  /**
+   * Whether the Shim supports year-month interval type
+   * Alias, Add, Subtract, Positive... operators support year-month interval type
+   */
+  def isSupportedYearMonthType(dt: DataType): Boolean = dt.isInstanceOf[YearMonthIntervalType]
+
+  /**
+   * Get additional arithmetic supported types for this Shim
+   */
+  def additionalArithmeticSupportedTypes: TypeSig = TypeSig.ansiIntervals
+
+  /**
+   * Get additional predicate supported types for this Shim
+   */
+  def additionalPredicateSupportedTypes: TypeSig = TypeSig.DAYTIME
+
+  /**
+   * Get additional Csv supported types for this Shim
+   */
+  def additionalCsvSupportedTypes: TypeSig = TypeSig.DAYTIME
+
+  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
+
+  def typesYearMonthCanCastTo: TypeSig = TypeSig.integral
+
+  def typesDayTimeCanCastToOnSpark: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
+
+  def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING +
+      TypeSig.integral
+
+  def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.YEARMONTH + TypeSig.DAYTIME
+
+  def additionalTypesStringCanCastTo: TypeSig = TypeSig.DAYTIME
+
+  /**
+   * Get additional Parquet supported types for this Shim
+   */
+  def additionalParquetSupportedTypes: TypeSig = TypeSig.ansiIntervals
+
+  /**
+   * Get additional common operators supported types for this Shim
+   * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
+   */
+  def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.ansiIntervals
+
+  def hasSideEffectsIfCastIntToYearMonth(ym: DataType): Boolean =
+      // if cast(int as interval year), multiplication by 12 can cause overflow
+      ym.asInstanceOf[YearMonthIntervalType].endField == YearMonthIntervalType.YEAR
+
+  def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean =
+      // if cast(int as interval day), multiplication by (86400 * 1000000) can cause overflow
+      dt.asInstanceOf[DayTimeIntervalType].endField == DayTimeIntervalType.DAY
+
+  /**
+   * throws exception if floor(float value)  > Long.Max when cast(float as timestamp)
+   */
+  def hasSideEffectsIfCastFloatToTimestamp: Boolean = true
 }

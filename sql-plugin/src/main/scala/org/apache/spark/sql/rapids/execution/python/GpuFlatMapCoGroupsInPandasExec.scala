@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.{ShimBinaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -99,8 +99,8 @@ case class GpuFlatMapCoGroupsInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
-    leftGroup.map(SparkShimImpl.sortOrder(_, Ascending)) ::
-      rightGroup.map(SparkShimImpl.sortOrder(_, Ascending)) :: Nil
+    leftGroup.map(SortOrder(_, Ascending)) ::
+      rightGroup.map(SortOrder(_, Ascending)) :: Nil
   }
 
   override protected def doExecute(): RDD[InternalRow] = {

@@ -78,7 +78,7 @@ def test_logical_with_side_effect(ansi_enabled, lhs_arg, int_arg, logic_op):
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: do_it(spark, lhs_arg, int_arg, logic_op).collect(),
             conf=ansi_conf,
-            error_message="java.lang.ArithmeticException")
+            error_message="ArithmeticException")
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: do_it(spark, lhs_arg, int_arg, logic_op),

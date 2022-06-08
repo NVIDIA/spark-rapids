@@ -16,24 +16,36 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.catalyst.trees.Origin
+import org.apache.spark.sql.rapids.TrampolineErrorUtils
+import org.apache.spark.sql.types.DataType
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     if (isElementAtF) {
-      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
+      TrampolineErrorUtils.invalidElementAtIndexError(index, numElements)
     } else {
-      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
+      TrampolineErrorUtils.invalidArrayIndexError(index, numElements)
     }
   }
 
-  def mapKeyNotExistError(key: String, isElementAtF: Boolean = false): NoSuchElementException = {
-    // For now, the default argument is false. The caller sets the correct value accordingly.
-    QueryExecutionErrors.mapKeyNotExistError(key, isElementAtF)
+  def mapKeyNotExistError(
+      key: String,
+      keyType: DataType,
+      origin: Origin): NoSuchElementException = {
+    TrampolineErrorUtils.mapKeyNotExistError(key, keyType, origin)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+  }
+
+  def divByZeroError(origin: Origin): ArithmeticException = {
+    TrampolineErrorUtils.divByZeroError(origin)
+  }
+
+  def divOverflowError(origin: Origin): ArithmeticException = {
+    TrampolineErrorUtils.divOverflowError(origin)
   }
 }

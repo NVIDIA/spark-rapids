@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ import org.apache.spark.sql.catalyst.rules.Rule
 
 class Plugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
-    logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
-        s" by default. To enable it, set `spark.rapids.sql.udfCompiler.enabled` to true")
     extensions.injectResolutionRule(logicalPlanRules)
   }
 

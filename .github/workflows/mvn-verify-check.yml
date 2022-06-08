@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # A workflow to run mvn verify check
-name: mvn-verify check
+name: Maven verify checks (Scala style, Compile and Doc-gen w/ base Spark version)
 
 on:
   pull_request:

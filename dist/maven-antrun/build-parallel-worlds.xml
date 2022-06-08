@@ -47,7 +47,7 @@
     -->
     <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
 
-    <target name="build-parallel-worlds">
+    <target name="init-properties">
         <property environment="env"/>
         <echo level="info">Preparing parallel worlds with params:
             included_buildvers=${included_buildvers}
@@ -61,8 +61,19 @@
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix" value="${project.build.directory}/deps/${aggregatorArtifact}-${project.version}"/>
-        <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <property name="aggregatorBuildDir" value="${project.basedir}/../aggregator/target"/>
+
+        <condition property="should.build.conventional.jar">
+            <and>
+                <not><contains string="${included_buildvers}" substring=","/></not>
+                <istrue value="${allowConventionalDistJar}"/>
+            </and>
+        </condition>
+        <echo level="info">Determined should.build.conventional.jar: ${should.build.conventional.jar}</echo>
+    </target>
+
+    <target name="copy-dependencies"
+            depends="init-properties">
         <ac:for list="${included_buildvers}" param="bv" trim="true">
             <sequential>
                 <!-- precedence order tolerating mvn clean
@@ -104,20 +115,39 @@
                         </exec>
                     </ac:else>
                 </ac:if>
+            </sequential>
+        </ac:for>
+    </target>
+    <target name="build-conventional-jar"
+            depends="copy-dependencies"
+            if="should.build.conventional.jar">
+            <echo level="info">Single Shim build and allowConventionalDistJar is set to true:
+                promoting aggregator jar as the final conventional jar.
+            </echo>
+            <unzip src="${aggregatorPrefix}-spark${included_buildvers}.jar"
+                dest="${project.build.directory}/parallel-world"
+            />
+    </target>
+    <target name="build-parallel-worlds"
+            depends="build-conventional-jar"
+            unless="should.build.conventional.jar">
+        <ac:for list="${included_buildvers}" param="bv" trim="true">
+            <sequential>
                 <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
                     dest="${project.build.directory}/parallel-world">
                     <patternset id="shared-world-includes">
                         <includesfile name="${project.basedir}/unshimmed-common-from-spark311.txt"/>
                         <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                        <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                     </patternset>
                 </unzip>
                 <unzip src="${aggregatorPrefix}-spark@{bv}.jar"
-                    dest="${project.build.directory}/parallel-world/spark@{bv}">
+                    dest="${project.build.directory}/parallel-world/spark@{bv}"
+                >
                 </unzip>
             </sequential>
         </ac:for>
 
+        <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <concat destfile="${shimServiceFile}">
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
         </concat>
@@ -150,6 +180,12 @@
                 </not>
             </condition>
         </fail>
+
+        <!-- Remove the explicily unshimmed files from the common directory -->
+        <delete>
+            <fileset dir="${project.build.directory}/parallel-world/spark3xx-common"
+                     includesfile="${project.basedir}/unshimmed-common-from-spark311.txt"/>
+        </delete>
 
         <echo level="info">Generating dependency-reduced-pom.xml</echo>
         <resources id="aggregatorDependencyRegexWithoutWhitespace">
