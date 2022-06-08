@@ -288,14 +288,19 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
     failureReason match {
-      case ef: ExceptionFailure if RapidsExecutorPlugin.isCudaFatalException(ef) =>
-        logError("Stopping the Executor based on exception being a fatal CUDA error: " +
-          s"${ef.toErrorString}")
-        System.exit(20)
-      case ef: ExceptionFailure if RapidsExecutorPlugin.isCudaException(ef) =>
-        logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: ${ef.toErrorString}")
-      case ef: ExceptionFailure if RapidsExecutorPlugin.isCudfException(ef) =>
-        logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
+      case ef: ExceptionFailure =>
+        ef.exception match {
+          case _: CudaFatalException =>
+            logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+              s"${ef.toErrorString}")
+            System.exit(20)
+          case _: CudaException =>
+            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: ${ef.toErrorString}")
+          case _: CudfException =>
+            logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
+          case _ =>
+            logDebug(s"Executor onTaskFailed: ${ef.toErrorString}")
+        }
       case other =>
         logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
