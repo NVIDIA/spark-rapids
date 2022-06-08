@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_databricks_runtime
 from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
@@ -301,7 +302,9 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
-    exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)"
+    dec_value = "Decimal(compact,-120000000,20,0})" if is_before_spark_330() \
+        or is_databricks_runtime() else "Decimal(compact, -120000000, 20, 0)"
+    exception_content = dec_value + " cannot be represented as Decimal(7, 7)"
     exception_str = "java.lang.ArithmeticException: " + exception_content if is_before_spark_330() \
         and not is_databricks104_or_later() else "org.apache.spark.SparkArithmeticException: " \
         + exception_content
