@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -232,7 +233,7 @@ case class GpuCSVScan(
 
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, metrics)
+      maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
   }
 
   // overrides nothing in 330
@@ -261,7 +262,8 @@ case class GpuCSVPartitionReaderFactory(
     parsedOptions: CSVOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory {
+    metrics: Map[String, GpuMetric],
+    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
