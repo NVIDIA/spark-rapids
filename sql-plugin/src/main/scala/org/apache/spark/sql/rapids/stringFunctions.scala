@@ -992,10 +992,10 @@ case class GpuRegExpReplace(
     }
 
     // For empty strings and a regex containing only a zero-match reptition, 
-    // the behaviour on Spark is different. 
+    // the behavior in some versions of Spark is different. 
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
     if (RegExpShim.reproduceEmptyStringBug() &&
-      isEmptyRepetition(new RegexParser(javaRegexpPattern).parse())) {
+        isEmptyRepetition(new RegexParser(javaRegexpPattern).parse())) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
         withResource(Scalar.fromInt(0)) { zero =>
           len.equalTo(zero)
