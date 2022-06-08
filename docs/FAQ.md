@@ -520,6 +520,9 @@ If you are getting a warning `Avro library not found by the RAPIDS plugin.` or i
 Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
 
+NOTE: You could use `--extraClassPath` followed by the path to Avro and the RAPIDS Plugin jar but one
+important thing to keep in mind is that never mix the `--jars` and `--extraClassPath`
+
 ### What is the default RMM pool allocator?
 
 Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
