@@ -552,7 +552,7 @@ def test_re_replace():
 # See https://issues.apache.org/jira/browse/SPARK-39107
 # See https://github.com/NVIDIA/spark-rapids/issues/5456
 def test_re_replace_repetition():
-    gen = StringGen('.{0,5}TEST[\ud720 A]{0,5}')
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "[E]+", "PROD")',
@@ -560,7 +560,12 @@ def test_re_replace_repetition():
                 'REGEXP_REPLACE(a, "A{0,}", "PROD")',
                 'REGEXP_REPLACE(a, "T?E?", "PROD")',
                 'REGEXP_REPLACE(a, "A*", "PROD")',
-                'REGEXP_REPLACE(a, "A{0,5}", "PROD")'),
+                'REGEXP_REPLACE(a, "A{0,5}", "PROD")',
+                'REGEXP_REPLACE(a, "(A*)", "PROD")',
+                'REGEXP_REPLACE(a, "(((A*)))", "PROD")',
+                'REGEXP_REPLACE(a, "((A*)E?)", "PROD")',
+                'REGEXP_REPLACE(a, "[A-Z]?", "PROD")'
+            ),
         conf=_regexp_conf)
 
 
@@ -1104,14 +1109,4 @@ def test_rlike_fallback_possessive_quantifier():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a*+"'),
                 'RLike',
-        conf=_regexp_conf)
-
-def test_replace_empty_string():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_replace(a, "A*", "_REPLACED_")',
-                'regexp_replace(a, "(A*)", "_REPLACED_")',
-                'regexp_replace(a, "(((A*)))", "_REPLACED_")'
-            ),
         conf=_regexp_conf)
