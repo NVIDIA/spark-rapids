@@ -841,9 +841,9 @@ object GpuRegExpUtils {
   }
 
   /**
-    * Recursively check if pattern contains only zero-match repetitions 
-    * ?, *, {0,}, or {0,n} or any combination of them. 
-    */
+   * Recursively check if pattern contains only zero-match repetitions 
+   * ?, *, {0,}, or {0,n} or any combination of them. 
+   */
   def isEmptyRepetition(pattern: String): Boolean = {
     def isASTEmptyRepetition(regex: RegexAST): Boolean = {
       regex match {
