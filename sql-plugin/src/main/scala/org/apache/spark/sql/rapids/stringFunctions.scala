@@ -771,6 +771,9 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 }
 
 object GpuRegExpUtils {
+  private def parseAST(pattern: String): RegexAST = {
+    new RegexParser(pattern).parse()
+  }
 
   /**
    * Convert symbols of back-references if input string contains any.
@@ -835,6 +838,31 @@ object GpuRegExpUtils {
       meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
     }
+  }
+
+  /**
+    * Recursively check if pattern contains only zero-match repetitions 
+    * ?, *, {0,}, or {0,n} or any combination of them. 
+    */
+  def isEmptyRepetition(pattern: String): Boolean = {
+    def isASTEmptyRepetition(regex: RegexAST): Boolean = {
+      regex match {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case RegexGroup(_, term) =>
+          isASTEmptyRepetition(term) 
+        case RegexSequence(parts) =>
+          parts.forall(isASTEmptyRepetition)
+        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
+        // we did, we would need to add a `case RegexChoice()` here
+        case _ => false
+      }
+    }
+    isASTEmptyRepetition(parseAST(pattern))
   }
 
 }
@@ -972,30 +1000,11 @@ case class GpuRegExpReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-
-    def isEmptyRepetition(regex: RegexAST): Boolean = {
-      regex match {
-        case RegexRepetition(_, term) => term match {
-          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
-          case QuantifierFixedLength(0) => true
-          case QuantifierVariableLength(0, _) => true
-          case _ => false
-        }
-        case RegexGroup(_, term) =>
-          isEmptyRepetition(term) 
-        case RegexSequence(parts) =>
-          parts.forall(isEmptyRepetition)
-        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
-        // we did, we would need to add a `case RegexChoice()` here
-        case _ => false
-      }
-    }
-
     // For empty strings and a regex containing only a zero-match reptition, 
     // the behavior in some versions of Spark is different. 
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
-    if (RegExpShim.reproduceEmptyStringBug() &&
-        isEmptyRepetition(new RegexParser(javaRegexpPattern).parse())) {
+    if (RegExpShim.reproduceEmptyStringBug() && 
+        GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
         withResource(Scalar.fromInt(0)) { zero =>
           len.equalTo(zero)
