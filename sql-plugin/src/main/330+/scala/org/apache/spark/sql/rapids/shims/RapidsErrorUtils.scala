@@ -48,4 +48,11 @@ object RapidsErrorUtils {
   def divOverflowError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
   }
+
+  def arithmeticOverflowError(
+      message: String,
+      hint: String = "",
+      errorContext: String = ""): ArithmeticException = {
+    QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
+  }
 }

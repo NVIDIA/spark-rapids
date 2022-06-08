@@ -341,10 +341,16 @@ def test_unary_minus_ansi_no_overflow(data_gen):
     (ShortType(), SHORT_MIN),
     (ByteType(), BYTE_MIN)], ids=idfn)
 def test_unary_minus_ansi_overflow(data_type, value):
+    """
+    We don't check the error messages because they are different for CPU and GPU
+    CPU: {name of the data type} overflow
+    GPU: One or more rows overflow for {name of the operation} operation
+    """
     assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_overflow_df(spark, [value], data_type, '-a').collect(),
             conf=ansi_enabled_conf,
-            error_message='ArithmeticException')
+            error_message='java.lang.ArithmeticException' if is_before_spark_330() else \
+                          'org.apache.spark.SparkArithmeticException')
 
 # This just ends up being a pass through.  There is no good way to force
 # a unary positive into a plan, because it gets optimized out, but this
