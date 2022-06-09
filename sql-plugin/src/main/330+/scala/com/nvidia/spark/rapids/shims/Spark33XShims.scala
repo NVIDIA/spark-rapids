@@ -87,6 +87,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
         (ceil, conf, p, r) => new BinaryExprMeta[RoundCeil](ceil, conf, p, r) {
           override def tagExprForGpu(): Unit = {
+            willNotWorkOnGpu("RoundCeil is currently not supported on GPU")
             ceil.child.dataType match {
               case dt: DecimalType =>
                 val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
@@ -118,6 +119,7 @@ trait Spark33XShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
         (floor, conf, p, r) => new BinaryExprMeta[RoundFloor](floor, conf, p, r) {
           override def tagExprForGpu(): Unit = {
+            willNotWorkOnGpu("RoundFloor is currently not supported on GPU")
             floor.child.dataType match {
               case dt: DecimalType =>
                 val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
