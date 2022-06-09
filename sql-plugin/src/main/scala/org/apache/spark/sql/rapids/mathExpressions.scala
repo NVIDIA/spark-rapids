@@ -23,7 +23,6 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
-import org.apache.spark.sql.rapids.shims.RapidsFloorCeilUtils
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -166,7 +165,11 @@ object GpuFloorCeil {
 }
 
 case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
-  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
+  override def dataType: DataType = child.dataType match {
+    case dt: DecimalType =>
+      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
+    case _ => LongType
+  }
 
   override def hasSideEffects: Boolean = true
 
@@ -238,7 +241,11 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
 }
 
 case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
-  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
+  override def dataType: DataType = child.dataType match {
+    case dt: DecimalType =>
+      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
+    case _ => LongType
+  }
 
   override def hasSideEffects: Boolean = true
 
