@@ -414,9 +414,8 @@ def test_floor(data_gen):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_floor_scale_zero(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'),
-            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'), 'RoundFloor')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @allow_non_gpu('ProjectExec')
@@ -435,9 +434,8 @@ def test_ceil(data_gen):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_ceil_scale_zero(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'),
-            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'), 'RoundCeil')
 
 @pytest.mark.parametrize('data_gen', [_decimal_gen_36_neg5, _decimal_gen_38_neg10], ids=idfn)
 def test_floor_ceil_overflow(data_gen):
