@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
+import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
 import org.apache.spark.util.Utils
@@ -83,7 +84,7 @@ object TrampolineUtil {
                                 version: String,
                                 message: String,
                                 cause: Throwable): SparkUpgradeException = {
-    new SparkUpgradeException(version, message, cause)
+    SparkUpgradeExceptionShims.newSparkUpgradeException(version, message, cause)
   }
 
   /** Shuts down and cleans up any existing Spark session */

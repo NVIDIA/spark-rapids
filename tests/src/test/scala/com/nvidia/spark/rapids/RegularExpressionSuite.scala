@@ -59,10 +59,8 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'','D')")
   }
 
-  testGpuFallback("String regexp_replace regex 1 cpu fall back",
-    "RegExpReplace",
-    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
+  testSparkResultsAreEqual("String regexp_replace regex 1",
+    nullableStringsFromCsv, conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'.*','D')")
   }
 
@@ -91,13 +89,17 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
   }
 
-  testSparkResultsAreEqual("String regexp_extract regex 1",
-    extractStrings, conf = conf) {
+  // https://github.com/NVIDIA/spark-rapids/issues/5659
+  testGpuFallback("String regexp_extract regex 1",
+    "ProjectExec", extractStrings, conf = conf,
+    execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec")) {
     frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
   }
 
-  testSparkResultsAreEqual("String regexp_extract regex 2",
-    extractStrings, conf = conf) {
+  // https://github.com/NVIDIA/spark-rapids/issues/5659
+  testGpuFallback("String regexp_extract regex 2",
+    "ProjectExec", extractStrings, conf = conf,
+    execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec")) {
     frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
   }
 

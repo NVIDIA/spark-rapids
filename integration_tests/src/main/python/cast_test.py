@@ -20,6 +20,7 @@ from spark_session import is_before_spark_320, is_before_spark_330, is_databrick
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
+from datetime import datetime
 import math
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
@@ -364,13 +365,113 @@ def test_cast_string_to_negative_scale_decimal():
             f.col('a').cast(DecimalType(8, -3))))
 
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
-@pytest.mark.parametrize('type', [DoubleType(), FloatType()])
-def test_cast_double_to_timestamp(type):
+@pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
+@pytest.mark.parametrize('invalid_value', [float("inf"), float("-inf"), float("nan")])
+def test_cast_float_to_timestamp_ansi_for_nan_inf(type, invalid_value):
     def fun(spark):
-        data=[float("inf"),float("-inf"),float("nan")]
-        df = spark.createDataFrame(data, DoubleType())
+        data = [invalid_value]
+        df = spark.createDataFrame(data, type)
         return df.select(f.col('value').cast(TimestampType())).collect()
-    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "java.time.DateTimeException")
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "SparkDateTimeException")
+
+# if float.floor > Long.max or float.ceil < Long.min, throw exception
+@pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
+@pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
+@pytest.mark.parametrize('invalid_value', [float(LONG_MAX) + 100, float(LONG_MIN) - 100])
+def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
+    def fun(spark):
+        data = [invalid_value]
+        df = spark.createDataFrame(data, type)
+        return df.select(f.col('value').cast(TimestampType())).collect()
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "ArithmeticException")
+
+@pytest.mark.skipif(is_before_spark_330(), reason='330+ throws exception in ANSI mode')
+def test_cast_float_to_timestamp_side_effect():
+    def getDf(spark):
+        return spark.createDataFrame([(True, float(LONG_MAX) + 100), (False, float(1))],
+                                     "c_b boolean, c_f float").repartition(1)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: getDf(spark).selectExpr("if(c_b, cast(0 as timestamp), cast(c_f as timestamp))"),
+        conf=ansi_enabled_conf)
+
+# non ansi mode, will get null
+@pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
+def test_cast_float_to_timestamp_for_nan_inf(type):
+    def fun(spark):
+        data = [(float("inf"),), (float("-inf"),), (float("nan"),)]
+        schema = StructType([StructField("value", type, True)])
+        df = spark.createDataFrame(data, schema)
+        return df.select(f.col('value').cast(TimestampType()))
+    assert_gpu_and_cpu_are_equal_collect(fun)
+
+# gen for casting long to timestamp, range is about in [0000, 9999]
+long_gen_to_timestamp = LongGen(max_val=math.floor((9999-1970) * 365 * 86400),
+                                min_val=-math.floor(1970 * 365 * 86400))
+
+# the overflow case of `cast(long to timestamp)` is move to `TimestampSuite`
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize('gen', [
+    byte_gen,
+    short_gen,
+    int_gen,
+    long_gen_to_timestamp], ids=idfn)
+def test_cast_integral_to_timestamp(gen, ansi_enabled):
+    if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
+        pytest.skip()
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr("cast(a as timestamp)"),
+        conf={"spark.sql.ansi.enabled": ansi_enabled})
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+def test_cast_float_to_timestamp(ansi_enabled):
+    if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
+        pytest.skip()
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, long_gen_to_timestamp)
+            .selectExpr("cast(cast(a as float) as timestamp)"),
+        conf={"spark.sql.ansi.enabled": ansi_enabled})
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+def test_cast_double_to_timestamp(ansi_enabled):
+    if (is_before_spark_330() and ansi_enabled):  # 330- does not support in ANSI mode
+        pytest.skip()
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, long_gen_to_timestamp)
+            .selectExpr("cast(cast(a as double) as timestamp)"),
+        conf={"spark.sql.ansi.enabled": ansi_enabled})
+
+@pytest.mark.parametrize('invalid_and_type', [
+    (BYTE_MAX + 1, ByteType()),
+    (BYTE_MIN  - 1, ByteType()),
+    (SHORT_MAX + 1, ShortType()),
+    (SHORT_MIN - 1, ShortType()),
+    (INT_MAX + 1, IntegerType()),
+    (INT_MIN - 1, IntegerType()),
+], ids=idfn)
+@pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
+def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
+    (invalid, to_type) = invalid_and_type
+    assert_gpu_and_cpu_error(
+        # pass seconds to `datetime.fromtimestamp`
+        lambda spark: spark.createDataFrame([datetime.fromtimestamp(invalid)], TimestampType())
+            .select(f.col("value").cast(to_type)).collect(),
+        conf=ansi_enabled_conf,
+        error_message="overflow")
+
+@pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
+def test_cast_timestamp_to_numeric_ansi_no_overflow():
+    data = [datetime.fromtimestamp(i) for i in range(BYTE_MIN, BYTE_MAX + 1)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, TimestampType())
+            .selectExpr("cast(value as byte)", "cast(value as short)", "cast(value as int)", "cast(value as long)",
+                        "cast(value as float)", "cast(value as double)"),
+        conf=ansi_enabled_conf)
+
+def test_cast_timestamp_to_numeric_non_ansi():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen)
+            .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
+                        "cast(a as float)", "cast(a as double)"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():

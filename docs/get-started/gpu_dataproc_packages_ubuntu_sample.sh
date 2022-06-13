@@ -139,14 +139,12 @@ EOF
   systemctl start dataproc-cgroup-device-permissions
 }
 
-readonly DEFAULT_SPARK_RAPIDS_VERSION="22.04.0"
+readonly DEFAULT_SPARK_RAPIDS_VERSION="22.06.0"
 readonly DEFAULT_CUDA_VERSION="11.0"
-readonly DEFAULT_CUDF_VERSION="22.04.0"
 readonly DEFAULT_XGBOOST_VERSION="1.4.2"
 readonly DEFAULT_XGBOOST_GPU_SUB_VERSION="0.3.0"
 readonly SPARK_VERSION="3.0"
 
-readonly CUDF_VERSION=${DEFAULT_CUDF_VERSION}
 # SPARK config
 readonly SPARK_RAPIDS_VERSION=${DEFAULT_SPARK_RAPIDS_VERSION}
 readonly XGBOOST_VERSION=${DEFAULT_XGBOOST_VERSION}
@@ -173,9 +171,6 @@ function install_spark_rapids() {
     -P /usr/lib/spark/jars/
   wget -nv --timeout=30 --tries=5 --retry-connrefused \
     "${nvidia_repo_url}/rapids-4-spark_2.12/${SPARK_RAPIDS_VERSION}/rapids-4-spark_2.12-${SPARK_RAPIDS_VERSION}.jar" \
-    -P /usr/lib/spark/jars/
-  wget -nv --timeout=30 --tries=5 --retry-connrefused \
-    "${rapids_repo_url}/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-cuda${cudf_cuda_version}.jar" \
     -P /usr/lib/spark/jars/
 }
 

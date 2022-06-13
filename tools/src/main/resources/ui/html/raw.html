@@ -130,7 +130,8 @@
                 <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
               </svg>
               <strong>Disclaimer!</strong><ul>
-              <li>Additionally, estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
+              <li>Estimates provided by the Qualification tool are based on the currently supported "<em>SparkPlan</em>" or "<em>Executor Nodes</em>" used in the application. It currently does not look at the expressions or datatypes used.</li>
+              <li>Please refer to the <a href="https://nvidia.github.io/spark-rapids/docs/supported_ops.html">Supported Operators</a> guide to check the types and expressions you are using are supported.</li></ul>
               <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
               </button>
@@ -149,36 +150,37 @@
                 </div>
                 <div class="spur-card-title">Raw Data of all Applications</div>
               </div>
-              <div class="card-body ">
+              <div class="card-body">
                 <div id="all-apps-raw-data">
-                  <table id="all-apps-raw-data-table" class="table data-table display datatable" style="width:100%">
+                  <table id="all-apps-raw-data-table" class="table data-table display wrap" style="width:100%">
                     <thead>
                     <tr>
                       <th>App Name</th>
                       <th>App ID</th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="Time duration that includes only SQL/Dataframe queries">
-                                        SQL DF Duration</span></th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="Amount of time spent in tasks of SQL Dataframe operations measured in Wall-Clock">
-                                        SQL Dataframe Task Duration</span></th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="Highlighted in blue are apps that were missing application finished event from the log">
-                                        App Duration</span></th>
-                      <th><span data-toggle="tooltip" data-placement="top"
-                                title="This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO. Shaded red when it is below 40%">
-                                        Executor CPU Time Percent</span></th>
+                      <th>User</th>
+                      <th>Start Time</th>
+                      <th>Recommendation</th>
+                      <th>Estimated GPU Speedup</th>
+                      <th>App Duration</th>
                       <th>Estimated GPU Duration</th>
+                      <th>Estimated GPU Time Saved</th>
+                      <th>Task Speed-up Factor</th>
+                      <th>SQL DF Duration</th>
+                      <th>GPU Opportunity</th>
                       <th>Unsupported Task Duration</th>
-                      <th>Speed-up Duration</th>
-                      <th>Speed-up Factor</th>
-                      <th>Speed-up Bucket</th>
-                      <th>Longest SqlDuration</th>
+                      <th>Supported SQL DF Task Duration</th>
+                      <th>SQL Dataframe Task Duration</th>
+                      <th>Executor CPU Time Percent</th>
+                      <th>Longest SQL Duration</th>
+                      <th>NONSQL Task Duration Plus Overhead</th>
+                      <th>App Duration Estimated</th>
                       <th>SQL Ids with Failures</th>
+                      <th>Potential Problems</th>
                       <th>Unsupported Read File Formats and Types</th>
-                      <th>Write Data Format</th>
+                      <th>Unsupported Write Data Format</th>
                       <th>Complex Types</th>
                       <th>Nested Complex Types</th>
+                      <th>Read Schema</th>
                     </tr>
                     </thead>
                   </table>
