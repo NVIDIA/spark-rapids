@@ -164,6 +164,12 @@ trait SparkShims {
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 
   /**
+   * Return the replacement rule for AnsiCast.
+   * 'AnsiCast' is removed from Spark 3.4.0, so need to handle it separately.
+   */
+  def ansiCastRule: ExprRule[_ <: Expression]
+
+  /**
    * Determine if the Spark version allows the supportsColumnar flag to be overridden
    * in AdaptiveSparkPlanExec. This feature was introduced in Spark 3.2 as part of
    * SPARK-35881.
