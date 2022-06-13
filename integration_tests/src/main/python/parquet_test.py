@@ -125,6 +125,27 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "parquet"})
 
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
+@pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_round_trip_binary_as_string(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.binaryAsString': 'true',
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+    # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
+    # for nested timestamp/date support
+    assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
+            conf=all_confs)
+
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 # The following need extra jars 'lzo', 'lz4', 'brotli', 'zstd'
 # https://github.com/NVIDIA/spark-rapids/issues/143

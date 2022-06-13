@@ -193,16 +193,6 @@ object GpuParquetScan {
 
     FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
 
-    val schemaHasStrings = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[StringType])
-    }
-
-    if (sqlConf.get(SQLConf.PARQUET_BINARY_AS_STRING.key,
-      SQLConf.PARQUET_BINARY_AS_STRING.defaultValueString).toBoolean && schemaHasStrings) {
-      meta.willNotWorkOnGpu(s"GpuParquetScan does not support" +
-          s" ${SQLConf.PARQUET_BINARY_AS_STRING.key}")
-    }
-
     val schemaHasTimestamps = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
