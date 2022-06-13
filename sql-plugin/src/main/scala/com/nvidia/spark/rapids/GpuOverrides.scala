@@ -1330,7 +1330,10 @@ object GpuOverrides extends Logging {
           }
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuFloor(child)
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // use Spark `Floor.dataType` to keep consistent between Spark versions.
+          GpuFloor(child, a.dataType)
+        }
       }),
     expr[Ceil](
       "Ceiling of a number",
@@ -1350,7 +1353,10 @@ object GpuOverrides extends Logging {
           }
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuCeil(child)
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // use Spark `Ceil.dataType` to keep consistent between Spark versions.
+          GpuCeil(child, a.dataType)
+        }
       }),
     expr[Not](
       "Boolean not operator",
