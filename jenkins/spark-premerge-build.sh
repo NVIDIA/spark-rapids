@@ -130,7 +130,7 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-# controls whether we build snapshots for the Spark maintenance versions like 3.1.4  and 3.2.2
+# controls whether we build snapshots for the Spark maintenance versions like 3.1.4 and 3.2.2
 BUILD_MINOR_VERSION_SNAPSHOTS="false"
 # controls whether we build snapshots for the next Spark major version like 3.4.0 or 4.0.0
 BUILD_MAJOR_VERSION_SNAPSHOTS="false"
