@@ -674,19 +674,22 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(csvDetailedHeader(ind).equals(headersDetailed(ind)))
     }
     // check that recommendation field is relevant to GPU Speed-up
+    // Note that range-check does not apply for NOT-APPLICABLE
     val estimatedFieldsIndStart = 2
-    if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+    assert(valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0)
+    if (!valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE)) {
+      if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
         QualificationAppInfo.LOWER_BOUND_STRONGLY_RECOMMENDED) {
-      assert(
-        valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
-    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        assert(
+          valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
+      } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
         QualificationAppInfo.LOWER_BOUND_RECOMMENDED) {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
-    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0) {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
-    } else {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE))
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
+      } else {
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
+      }
     }
+
     // check numeric fields skipping "Estimated Speed-up" on purpose
     for (ind <- estimatedFieldsIndStart + 2  until csvDetailedFields.size) {
       if (csvDetailedFields(ind)._1.equals(DoubleType)

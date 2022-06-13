@@ -41,7 +41,7 @@ function getExpandedAppDetails() {
     '    <tr>' +
     '      <th scope=\"row\">Estimated Speed-up</th>' +
     '      <td> {{totalSpeedup_display}} </td>' +
-    '      <td> ' + toolTipsValues.gpuRecommendations.details.mathFormatted.totalSpeedup + '</td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.totalSpeedup + '</td>' +
     '    </tr>' +
     '    <tr>' +
     '      <th scope=\"row\">App Duration</th>' +

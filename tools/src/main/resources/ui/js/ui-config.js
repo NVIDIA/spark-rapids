@@ -61,12 +61,8 @@ let toolTipsValues = {
         "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
         "Estimated Speed-up": "Speed-up factor estimated for the app. Calculated as the ratio between \<em\>App Duration\<\/em\> and \<em\>Estimated GPU Duration\<\/em\>",
         "details": {
-            "mathFormatted": {
-                "totalSpeedup":
-                  // math tags inside tooltip does not work on Chrome. Using Sup and Sub as a work-around for now.
-                  //"Speed-up factor estimated for the app. Calculated as (<math><mfrac><mn>App Duration</mn><mi>GPU Estimated Duration</mi></mfrac></math>)",
-                  "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>Estimated GPU Duration</sub>)",
-            },
+            //" Math formatted may not work on all browser.
+            // (<math><mfrac><mn>App Duration</mn><mi>GPU Estimated Duration</mi></mfrac></math>)",
             "totalSpeedup":
               "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>Estimated GPU Duration</sub>)",
             "nonSqlTaskDurationAndOverhead": "total duration of the app not involving SQL",
