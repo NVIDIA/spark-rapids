@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ParquetFieldIdShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetFieldIdShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -70,7 +70,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -474,6 +474,10 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val useFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val timestampNTZEnabled = ParquetSchemaClipShims.timestampNTZEnabled(sqlConf)
 
+  private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
+    "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
+  private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
+
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
       case p:PrimitiveType =>
@@ -561,9 +565,15 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
         if (!util.Arrays.equals(MAGIC, magic)) {
-          throw new RuntimeException(s"$filePath is not a Parquet file. " +
+          if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
+            throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
+              "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+              s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
+          } else {
+            throw new RuntimeException(s"$filePath is not a Parquet file. " +
               s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
               s"but found ${util.Arrays.toString(magic)}")
+          }
         }
         val footerIndex = footerLengthIndex - footerLength
         if (footerIndex < MAGIC.length || footerIndex >= footerLengthIndex) {
@@ -619,32 +629,47 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
     withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
       val filePath = new Path(new URI(file.filePath))
-      val footer = footerReader match {
-        case ParquetFooterReaderType.NATIVE =>
-          val serialized = withResource(readAndFilterFooter(file, conf, readDataSchema, filePath)) {
-            tableFooter =>
-              if (tableFooter.getNumColumns <= 0) {
-                // Special case because java parquet reader does not like having 0 columns.
-                val numRows = tableFooter.getNumRows
-                val block = new BlockMetaData()
-                block.setRowCount(numRows)
-                val schema = new MessageType("root")
-                return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
-                  schema, false, false, false)
-              }
+      // Make sure we aren't trying to read encrypted files. For now, remove the related
+      // parquet confs from the hadoop configuration and try to catch the resulting
+      // exception and print a useful message
+      PARQUET_ENCRYPTION_CONFS.foreach { encryptConf =>
+        if (conf.get(encryptConf) != null) {
+          conf.unset(encryptConf)
+        }
+      }
+      val footer = try {
+         footerReader match {
+          case ParquetFooterReaderType.NATIVE =>
+            val serialized = withResource(readAndFilterFooter(file, conf,
+              readDataSchema, filePath)) { tableFooter =>
+                if (tableFooter.getNumColumns <= 0) {
+                  // Special case because java parquet reader does not like having 0 columns.
+                  val numRows = tableFooter.getNumRows
+                  val block = new BlockMetaData()
+                  block.setRowCount(numRows)
+                  val schema = new MessageType("root")
+                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                    schema, false, false, false)
+                }
 
-              tableFooter.serializeThriftFile()
-          }
-          withResource(serialized) { serialized =>
-            withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
-              val inputFile = new HMBInputFile(serialized)
-
-              // We already filtered the ranges so no need to do more here...
-              ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
+                tableFooter.serializeThriftFile()
             }
-          }
-        case _ =>
-          readAndSimpleFilterFooter(file, conf, filePath)
+            withResource(serialized) { serialized =>
+              withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
+                val inputFile = new HMBInputFile(serialized)
+
+                // We already filtered the ranges so no need to do more here...
+                ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
+              }
+            }
+          case _ =>
+            readAndSimpleFilterFooter(file, conf, filePath)
+        }
+      } catch {
+        case e if GpuParquetCrypto.isColumnarCryptoException(e) =>
+          throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
+            "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+            s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.", e)
       }
 
       val fileSchema = footer.getFileMetaData.getSchema
@@ -1492,7 +1517,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 object ParquetMultiFileThreadPool extends MultiFileReaderThreadPool
 
 // Parquet schema wrapper
-private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase
+private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
+
+  override def fieldNames: Array[String] = schema.getFields.asScala.map(_.getName).toArray
+}
 
 // Parquet BlockMetaData wrapper
 private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockBase {
@@ -1771,6 +1799,21 @@ class MultiFileCloudParquetPartitionReader(
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics, ignoreCorruptFiles) with ParquetPartitionReaderBase {
 
+
+  private case class HostMemoryEmptyMetaData(
+    override val partitionedFile: PartitionedFile,
+    bufferSize: Long,
+    override val bytesRead: Long,
+    isCorrectRebaseMode: Boolean,
+    isCorrectInt96RebaseMode: Boolean,
+    hasInt96Timestamps: Boolean,
+    clippedSchema: MessageType,
+    readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
+
+    override def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)] =
+      Array(null.asInstanceOf[HostMemoryBuffer] -> bufferSize)
+  }
+
   case class HostMemoryBuffersWithMetaData(
       override val partitionedFile: PartitionedFile,
       override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
@@ -1798,26 +1841,26 @@ class MultiFileCloudParquetPartitionReader(
      *
      * Note that the TaskContext is not set in these threads and should not be used.
      */
-    override def call(): HostMemoryBuffersWithMetaData = {
+    override def call(): HostMemoryBuffersWithMetaDataBase = {
       TrampolineUtil.setTaskContext(taskContext)
       try {
         doRead()
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${file.filePath}", e)
-          HostMemoryBuffersWithMetaData(file, Array((null, 0)), 0, false, false, false, null)
+          HostMemoryEmptyMetaData(file, 0, 0,  false, false, false, null, null)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          HostMemoryBuffersWithMetaData(file, Array((null, 0)), 0, false, false, false, null)
+          HostMemoryEmptyMetaData(file, 0, 0,  false, false, false, null, null)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
     }
 
-    private def doRead(): HostMemoryBuffersWithMetaData = {
+    private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
       try {
@@ -1826,25 +1869,25 @@ class MultiFileCloudParquetPartitionReader(
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          return HostMemoryBuffersWithMetaData(file, Array((null, 0)), bytesRead,
+          return HostMemoryEmptyMetaData(file, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
+            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, readDataSchema)
         }
         blockChunkIter = fileBlockMeta.blocks.iterator.buffered
         if (isDone) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // got close before finishing
-          HostMemoryBuffersWithMetaData(file, Array((null, 0)), bytesRead,
+          HostMemoryEmptyMetaData(file, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
+            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, readDataSchema)
         } else {
-          if (readDataSchema.isEmpty) {
+          if (fileBlockMeta.schema.getFieldCount == 0) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
             // overload size to be number of rows with null buffer
-            HostMemoryBuffersWithMetaData(file, Array((null, numRows)), bytesRead,
+            HostMemoryEmptyMetaData(file, numRows, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
+              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, readDataSchema)
           } else {
             val filePath = new Path(new URI(file.filePath))
             while (blockChunkIter.hasNext) {
@@ -1856,9 +1899,9 @@ class MultiFileCloudParquetPartitionReader(
             if (isDone) {
               // got close before finishing
               hostBuffers.foreach(_._1.safeClose())
-              HostMemoryBuffersWithMetaData(file, Array((null, 0)), bytesRead,
+              HostMemoryEmptyMetaData(file, 0, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
+                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, readDataSchema)
             } else {
               HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
@@ -1918,6 +1961,20 @@ class MultiFileCloudParquetPartitionReader(
   override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
       Option[ColumnarBatch] = {
     fileBufsAndMeta match {
+      case meta: HostMemoryEmptyMetaData =>
+        // Not reading any data, but add in partition data if needed
+        val rows = meta.bufferSize.toInt
+        val batch = if (rows == 0) {
+          new ColumnarBatch(Array.empty, 0)
+        } else {
+          // Someone is going to process this data, even if it is just a row count
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          val nullColumns = meta.readSchema.fields.safeMap(f =>
+            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+          new ColumnarBatch(nullColumns, rows)
+        }
+        addPartitionValues(Some(batch), meta.partitionedFile.partitionValues, partitionSchema)
+
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val (hostBuffer, size) = memBuffersAndSize.head
@@ -1945,13 +2002,6 @@ class MultiFileCloudParquetPartitionReader(
       hostBuffer: HostMemoryBuffer,
       dataSize: Long,
       fileName: String): Option[ColumnarBatch] = {
-    // not reading any data, but add in partition data if needed
-    if (hostBuffer == null) {
-      // Someone is going to process this data, even if it is just a row count
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-      val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
-      return addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
-    }
     val table = withResource(hostBuffer) { _ =>
 
       // Dump parquet data into a file
@@ -2058,13 +2108,17 @@ class ParquetPartitionReader(
     withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkedBlocks = populateCurrentBlockChunk(blockIterator,
         maxReadBatchSizeRows, maxReadBatchSizeBytes)
-      if (readDataSchema.isEmpty) {
+      if (clippedParquetSchema.getFieldCount == 0) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         val numRows = currentChunkedBlocks.map(_.getRowCount).sum.toInt
         if (numRows == 0) {
           None
         } else {
-          Some(new ColumnarBatch(Array.empty, numRows.toInt))
+          // Someone is going to process this data, even if it is just a row count
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          val nullColumns = readDataSchema.safeMap(f =>
+            GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
+          Some(new ColumnarBatch(nullColumns.toArray, numRows))
         }
       } else {
         val table = readToTable(currentChunkedBlocks)

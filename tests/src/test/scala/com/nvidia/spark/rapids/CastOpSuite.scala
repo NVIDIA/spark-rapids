@@ -702,6 +702,22 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("cast float/double to decimal (include upcast of cuDF decimal type)") {
+    val genFloats: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(459.288333f), Tuple1(-123.456789f), Tuple1(789.100001f)))
+        .selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 9, scale = 6,
+      customDataGenerator = Option(genFloats))
+
+    val genDoubles: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(459.288333), Tuple1(-123.456789), Tuple1(789.100001)))
+        .selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 9, scale = 6,
+      customDataGenerator = Option(genDoubles))
+  }
+
   test("cast decimal to decimal") {
     // fromScale == toScale
     testCastToDecimal(DataTypes.createDecimalType(18, 0),

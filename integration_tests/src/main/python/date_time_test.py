@@ -328,6 +328,12 @@ def test_gettimestamp(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
+
+@pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
+def test_gettimestamp_format_MMyyyy(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "MMyyyy")))
+
 def test_gettimestamp_ansi_exception():
     assert_gpu_and_cpu_error(
         lambda spark : invalid_date_string_df(spark).select(f.to_date(f.col("a"), "yyyy-MM-dd")).collect(),

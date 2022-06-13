@@ -1,0 +1,9 @@
+4c4
+<     parent: Option[RapidsMeta[_, _]],
+---
+>     parent: Option[RapidsMeta[_, _, _]],
+25,26d24
+<     // user won't actually enable it so assume they could
+<     /*
+36d33
+<     */

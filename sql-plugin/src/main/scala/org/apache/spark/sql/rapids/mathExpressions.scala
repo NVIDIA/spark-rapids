@@ -21,10 +21,8 @@ import java.io.Serializable
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
-import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, ImplicitCastInputTypes}
-import org.apache.spark.sql.rapids.shims.RapidsFloorCeilUtils
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -167,7 +165,11 @@ object GpuFloorCeil {
 }
 
 case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
-  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
+  override def dataType: DataType = child.dataType match {
+    case dt: DecimalType =>
+      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
+    case _ => LongType
+  }
 
   override def hasSideEffects: Boolean = true
 
@@ -239,7 +241,11 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
 }
 
 case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
-  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
+  override def dataType: DataType = child.dataType match {
+    case dt: DecimalType =>
+      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
+    case _ => LongType
+  }
 
   override def hasSideEffects: Boolean = true
 
@@ -556,32 +562,16 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
   override def dataType: DataType = DoubleType
 }
 
-abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBinaryExpression
-  with Serializable with ImplicitCastInputTypes {
+// Due to SPARK-39226, the dataType of round-like functions differs by Spark versions.
+abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: DataType)
+  extends GpuBinaryExpression with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
   override def right: Expression = scale
 
   def roundMode: RoundMode
 
-  override lazy val dataType: DataType = child.dataType match {
-    // if the new scale is bigger which means we are scaling up,
-    // keep the original scale as `Decimal` does
-    case DecimalType.Fixed(p, s) => DecimalType(p, if (_scale > s) s else _scale)
-    case t => t
-  }
-
-  // Avoid repeated evaluation since `scale` is a constant int,
-  // avoid unnecessary `child` evaluation in both codegen and non-codegen eval
-  // by checking if scaleV == null as well.
-  private lazy val scaleV: Any = scale match {
-    case _: GpuExpression =>
-      withResource(scale.columnarEval(null).asInstanceOf[GpuScalar]) { s =>
-        s.getValue
-      }
-    case _ => scale.eval(EmptyRow)
-  }
-  private lazy val _scale: Int = scaleV.asInstanceOf[Int]
+  override def dataType: DataType = outputType
 
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
 
@@ -590,9 +580,19 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
     val lhsValue = value.getBase
     val scaleVal = scale.getValue.asInstanceOf[Int]
 
-    dataType match {
-      case DecimalType.Fixed(_, scaleVal) =>
-        lhsValue.round(scaleVal, roundMode)
+    child.dataType match {
+      case DecimalType.Fixed(_, s) =>
+        // Only needs to perform round when required scale < input scale
+        val rounded = if (scaleVal < s) {
+          lhsValue.round(scaleVal, roundMode)
+        } else {
+          lhsValue.incRefCount()
+        }
+        withResource(rounded) { _ =>
+          // Fit the output datatype
+          rounded.castTo(
+            DecimalUtil.createCudfDecimal(dataType.asInstanceOf[DecimalType]))
+        }
       case ByteType =>
         fixUpOverflowInts(() => Scalar.fromByte(0.toByte), scaleVal, lhsValue)
       case ShortType =>
@@ -766,13 +766,13 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   }
 }
 
-case class GpuBRound(child: Expression, scale: Expression) extends
-  GpuRoundBase(child, scale) {
+case class GpuBRound(child: Expression, scale: Expression, outputType: DataType) extends
+  GpuRoundBase(child, scale, outputType) {
   override def roundMode: RoundMode = RoundMode.HALF_EVEN
 }
 
-case class GpuRound(child: Expression, scale: Expression) extends
-  GpuRoundBase(child, scale) {
+case class GpuRound(child: Expression, scale: Expression, outputType: DataType) extends
+  GpuRoundBase(child, scale, outputType) {
   override def roundMode: RoundMode = RoundMode.HALF_UP
 }
 
