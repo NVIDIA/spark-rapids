@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetSchemaClipShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -268,9 +268,9 @@ object GpuParquetScan {
 object GpuParquetPartitionReaderFactoryBase {
 
   /**
-   * Remove the columns that not in `fileSchema` from `clippedSchema`
-   * Note: if `useFieldId`, the `clippedSchema` can contain `_fake_name_UUID` columns that not exist
-   * in `fileSchema`
+   * Remove the columns not in `fileSchema` from `clippedSchema`.
+   * Note: if `useFieldId` is true, `clippedSchema` can contain `_fake_name_UUID` columns
+   * that do not exist in `fileSchema`.
    */
   def filterClippedSchema(
       clippedSchema: MessageType,

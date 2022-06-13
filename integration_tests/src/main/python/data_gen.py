@@ -1032,6 +1032,6 @@ def append_unique_int_col_to_df(spark, dataframe):
     new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
     return spark.createDataFrame(new_rows, new_schema)
 
-
-disable_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "false"}  # default is true
-enable_field_id_read = {"spark.sql.parquet.fieldId.read.enabled": "true"}  # default is false
+disable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "false"}  # default is true
+enable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "true"}
+enable_parquet_field_id_read = {"spark.sql.parquet.fieldId.read.enabled": "true"}  # default is false

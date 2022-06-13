@@ -423,12 +423,12 @@ def get_nested_parquet_meta_data_for_field_id():
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
 def test_parquet_write_field_id(spark_tmp_path):
-    data_path = "/tmp/m1"
+    data_path = spark_tmp_path + '/PARQUET_DATA'
     schema, data = get_nested_parquet_meta_data_for_field_id()
     with_gpu_session(
         # default write Parquet IDs
         lambda spark: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite")
-            .parquet(data_path))
+            .parquet(data_path), conf=enable_parquet_field_id_write)
 
     # check data, for schema check refer to Scala test case `ParquetFieldIdSuite`
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -436,7 +436,7 @@ def test_parquet_write_field_id(spark_tmp_path):
             .mode("overwrite").parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path,
-        conf=enable_field_id_read)
+        conf=enable_parquet_field_id_read)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
 def test_parquet_write_field_id_disabled(spark_tmp_path):
@@ -445,7 +445,7 @@ def test_parquet_write_field_id_disabled(spark_tmp_path):
     with_gpu_session(
         lambda spark: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite")
             .parquet(data_path),
-        conf=disable_field_id_write)  # disable write Parquet IDs
+        conf=disable_parquet_field_id_write)  # disable write Parquet IDs
 
     # check data, for schema check refer to Scala test case `ParquetFieldIdSuite`
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -453,7 +453,7 @@ def test_parquet_write_field_id_disabled(spark_tmp_path):
             .mode("overwrite").parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path,
-        conf=enable_field_id_read)
+        conf=enable_parquet_field_id_read)
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
