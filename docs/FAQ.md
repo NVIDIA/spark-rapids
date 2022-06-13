@@ -521,7 +521,7 @@ Spark job by using the `--jars` or `--packages` option followed by the file path
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
 
 NOTE: You could set `spark.driver.extraClassPath` and `spark.executor.extraClassPath` followed by the path to Avro and 
-the RAPIDS Plugin jar but one important thing to keep in mind is that never mix the `--jars` 
+the RAPIDS Plugin jar but one important thing to keep in mind is that never mix the `jars/packages` 
 and extraClassPath confs
 
 ### What is the default RMM pool allocator?
