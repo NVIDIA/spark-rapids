@@ -78,15 +78,14 @@ public class SparkBatch implements Batch {
         .executeWith(localityEnabled ? ThreadPools.getWorkerPool() : null)
         .run(index -> readTasks[index] = new GpuSparkScan.ReadTask(
             tasks.get(index), tableBroadcast, expectedSchemaString,
-            caseSensitive, localityEnabled, rapidsConf, confBroadcast,
-            parentScan.metrics()));
+            caseSensitive, localityEnabled, rapidsConf, confBroadcast));
 
     return readTasks;
   }
 
   @Override
   public PartitionReaderFactory createReaderFactory() {
-    return new GpuSparkScan.ReaderFactory();
+    return new GpuSparkScan.ReaderFactory(parentScan.metrics());
   }
 
 //  private int batchSize() {

@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import scala.collection.JavaConverters;
 import scala.collection.Seq;
 
 import com.nvidia.spark.rapids.GpuMetric;
@@ -43,7 +42,6 @@ import org.apache.iceberg.mapping.NameMapping;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -100,6 +98,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
   @Override
   public org.apache.iceberg.io.CloseableIterator<ColumnarBatch> iterator() {
+    scala.collection.immutable.Map<String, GpuMetric> localMetrics = metrics;
     try (ParquetFileReader reader = newReader(input, options)) {
       MessageType fileSchema = reader.getFileMetaData().getSchema();
 
@@ -152,7 +151,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       // reuse Parquet scan code to read the raw data from the file
       ParquetPartitionReader partReader = new ParquetPartitionReader(conf, partFile,
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
-          sparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, metrics,
+          sparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, localMetrics,
           true, true, true);
 
       return new GpuIcebergReader(expectedSchema, partReader, deleteFilter, idToConstant);

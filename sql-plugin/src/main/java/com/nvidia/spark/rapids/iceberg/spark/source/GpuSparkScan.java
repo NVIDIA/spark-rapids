@@ -178,6 +178,12 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   }
 
   static class ReaderFactory implements PartitionReaderFactory {
+    private scala.collection.immutable.Map<String, GpuMetric> metrics;
+
+    public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics) {
+      this.metrics = metrics;
+    }
+
     @Override
     public PartitionReader<InternalRow> createReader(InputPartition partition) {
       throw new IllegalStateException("non-columnar read");
@@ -186,7 +192,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     @Override
     public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition partition) {
       if (partition instanceof ReadTask) {
-        return new BatchReader((ReadTask) partition);
+        return new BatchReader((ReadTask) partition, metrics);
       } else {
         throw new UnsupportedOperationException("Incorrect input partition type: " + partition);
       }
@@ -199,10 +205,10 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   }
 
   private static class BatchReader extends GpuBatchDataReader implements PartitionReader<ColumnarBatch> {
-    BatchReader(ReadTask task) {
+    BatchReader(ReadTask task, scala.collection.immutable.Map<String, GpuMetric> metrics) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getParquetDebugDumpPrefix(), task.getMetrics());
+          task.getParquetDebugDumpPrefix(), metrics);
     }
   }
 
@@ -216,15 +222,13 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final int maxBatchSizeRows;
     private final long maxBatchSizeBytes;
     private final String parquetDebugDumpPrefix;
-    private final scala.collection.immutable.Map<String, GpuMetric> metrics;
 
     private transient Schema expectedSchema = null;
     private transient String[] preferredLocations = null;
 
     ReadTask(CombinedScanTask task, Broadcast<Table> tableBroadcast, String expectedSchemaString,
              boolean caseSensitive, boolean localityPreferred, RapidsConf rapidsConf,
-             Broadcast<SerializableConfiguration> confBroadcast,
-             scala.collection.immutable.Map<String, GpuMetric> metrics) {
+             Broadcast<SerializableConfiguration> confBroadcast) {
       this.task = task;
       this.tableBroadcast = tableBroadcast;
       this.expectedSchemaString = expectedSchemaString;
@@ -239,7 +243,6 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       this.maxBatchSizeRows = rapidsConf.maxReadBatchSizeRows();
       this.maxBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes();
       this.parquetDebugDumpPrefix = rapidsConf.parquetDebugDumpPrefix();
-      this.metrics = metrics;
     }
 
     @Override
@@ -273,10 +276,6 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
 
     public String getParquetDebugDumpPrefix() {
       return parquetDebugDumpPrefix;
-    }
-
-    public scala.collection.immutable.Map<String, GpuMetric> getMetrics() {
-      return metrics;
     }
 
     private Schema expectedSchema() {
