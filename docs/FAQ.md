@@ -513,6 +513,12 @@ Below are some troubleshooting tips on GPU query performance issue:
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
 
+### Why is Avro library not found by RAPIDS?
+
+If you are getting a warning `Avro library not found by the RAPIDS plugin.` or if you are getting the 
+`java.lang.NoClassDefFoundError: org/apache/spark/sql/v2/avro/AvroScan` error, make sure you ran the 
+Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
+RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
 
 ### What is the default RMM pool allocator?
 

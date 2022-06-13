@@ -404,11 +404,68 @@ class RegexParser(pattern: String) {
             parseHexDigit
           case '0' =>
             parseOctalDigit
+          case 'p' =>
+            consumeExpected(ch)
+            parsePredefinedClass
           case other =>
             throw new RegexUnsupportedException(
               s"invalid or unsupported escape character '$other'", Some(pos - 1))
         }
     }
+  }
+
+  private def parsePredefinedClass: RegexCharacterClass = {
+    consumeExpected('{')
+    val start = pos 
+    while(!eof() && pattern.charAt(pos).isLetter) {
+      pos += 1
+    }
+    val className = pattern.substring(start, pos)
+    def getCharacters(className: String): ListBuffer[RegexCharacterClassComponent] = {
+      // Character lists from here: 
+      // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+      className match {
+        case "Lower" => 
+          ListBuffer(RegexCharacterRange(RegexChar('a'), RegexChar('z')))
+        case "Upper" => 
+          ListBuffer(RegexCharacterRange(RegexChar('A'), RegexChar('Z')))
+        case "ASCII" =>
+          // should be \u0000-\u007f but we do not support the null terminator \u0000 
+          ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u007f')))
+        case "Alpha" => 
+          ListBuffer(getCharacters("Lower"), getCharacters("Upper")).flatten
+        case "Digit" =>
+          ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')))
+        case "Alnum" =>
+          ListBuffer(getCharacters("Alpha"), getCharacters("Digit")).flatten
+        case "Punct" =>
+          val res:ListBuffer[RegexCharacterClassComponent] = 
+              ListBuffer("!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~".map(RegexChar): _*)
+          res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'))
+        case "Graph" => 
+          ListBuffer(getCharacters("Alnum"), getCharacters("Punct")).flatten
+        case "Print" =>
+          val res = getCharacters("Graph")
+          res += RegexChar('\u0020')
+        case "Blank" =>
+          ListBuffer(RegexChar(' '), RegexEscaped('t'))
+        case "Cntrl" =>
+          // should be \u0001-\u001f but we do not support the null terminator \u0000 
+          ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u001f')), 
+            RegexChar('\u007f'))
+        case "XDigit" =>
+          ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')),
+            RegexCharacterRange(RegexChar('a'), RegexChar('f')),
+            RegexCharacterRange(RegexChar('A'), RegexChar('F')))
+        case "Space" =>
+          ListBuffer(" \t\n\u000B\f\r".map(RegexChar): _*)
+        case _ => 
+          throw new RegexUnsupportedException(
+            s"predefined character class ${className} is not supported", Some(pos))
+      }
+    }
+    consumeExpected('}')
+    RegexCharacterClass(negated = false, characters = getCharacters(className))
   }
 
   private def isHexDigit(ch: Char): Boolean = ch.isDigit ||
@@ -889,6 +946,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexRepetition(lineTerminatorMatcher(Set(ch), true,
                     mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
+            case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
+              throw new RegexUnsupportedException(
+                      "regex sequences with \\b or \\B not supported around $")
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
@@ -962,9 +1022,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
           } else {
             RegexCharacterClass(negated = false, components)
           }
-        case 'b' | 'B' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4517
-          throw new RegexUnsupportedException("word boundaries are not supported")
+        case 'b' | 'B' if mode == RegexSplitMode =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/5478
+          throw new RegexUnsupportedException("word boundaries are not supported in split mode")
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
         case 'Z' if mode == RegexSplitMode =>
@@ -1050,7 +1110,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map {
-            case r @ RegexChar(ch) if "^$".contains(ch) => r
+            case r @ RegexChar(ch) if "^$.".contains(ch) => r
             case ch => rewrite(ch, replacement, None) match {
               case valid: RegexCharacterClassComponent => valid
               case _ =>
@@ -1144,6 +1204,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
+                  case RegexEscaped('z') =>
+                    // \Z\z or $\z transpiles to $
+                    r(j) = RegexChar('$')
+                    popBackrefIfNecessary(false)
+                  case RegexEscaped('b') | RegexEscaped('B') =>
+                    throw new RegexUnsupportedException(
+                      "regex sequences with \\b or \\B not supported around $")
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
@@ -1159,14 +1226,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
         })._1)
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
-        case (_, SimpleQuantifier(ch)) if mode == RegexReplaceMode && "?*".contains(ch) =>
-          // example: pattern " ?", input "] b[", replace with "X":
-          // java: X]XXbX[X
-          // cuDF: XXXX] b[
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
-          throw new RegexUnsupportedException(
-            "regexp_replace on GPU does not support repetition with ? or *")
-
         case (_, SimpleQuantifier(ch)) if mode == RegexSplitMode && "?*".contains(ch) =>
           // example: pattern " ?", input "] b[", replace with "X":
           // java: X]XXbX[X
@@ -1175,19 +1234,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with ? or * consistently with Spark")
 
-        case (_, QuantifierVariableLength(0, _)) if mode == RegexReplaceMode =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/4468
-          throw new RegexUnsupportedException(
-            "regexp_replace on GPU does not support repetition with {0,} or {0,n}")
-
         case (_, QuantifierVariableLength(0, _)) if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4884
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
             "consistently with Spark")
 
-        case (_, QuantifierFixedLength(0))
-          if mode != RegexFindMode =>
+        case (_, QuantifierVariableLength(0, Some(0))) if mode != RegexFindMode =>
+          throw new RegexUnsupportedException(
+            "regex_replace and regex_split on GPU do not support repetition with {0,0}")
+
+        case (_, QuantifierFixedLength(0)) if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
             "regex_replace and regex_split on GPU do not support repetition with {0}")
 

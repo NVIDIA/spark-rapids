@@ -13,19 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids.shims
 
-package org.apache.spark.sql.rapids.shims
-
-import org.apache.spark.sql.rapids.GpuFloorCeil
-import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
-
-object RapidsFloorCeilUtils {
-
-  def outputDataType(dataType: DataType): DataType = {
-    dataType match {
-      case dt: DecimalType =>
-         DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
-      case _ => LongType
-    }
-  }
+object GpuParquetCrypto {
+  /**
+   * Columnar encryption was added in Spark 3.2.0 but CDH doesn't have Parquet 1.12. 
+   */
+  def isColumnarCryptoException(e: Throwable): Boolean = false
 }

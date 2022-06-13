@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 
 import pytest
 
@@ -20,7 +21,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from conftest import is_databricks_runtime
 
 
@@ -1105,3 +1106,37 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
+
+@pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
+@pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
+
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('one', int_gen), ('two', byte_gen), ('THREE', boolean_gen)]
+
+    encryption_confs = {
+        'parquet.encryption.kms.client.class': 'org.apache.parquet.crypto.keytools.mocks.InMemoryKMS',
+        'parquet.encryption.key.list': 'keyA:AAECAwQFBgcICQoLDA0ODw== ,  keyB:AAECAAECAAECAAECAAECAA==',
+        'parquet.crypto.factory.class': 'org.apache.parquet.crypto.keytools.PropertiesDrivenCryptoFactory'
+    }
+
+    conf = copy_and_update(reader_confs, encryption_confs)
+
+    with_cpu_session(
+        lambda spark : gen_df(spark, gen_list).write.
+            option("parquet.encryption.column.keys" , "keyA:one").
+            option("parquet.encryption.footer.key" , "keyB").
+            parquet(data_path), conf=encryption_confs)
+
+    # test with missing encryption conf reading encrypted file
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.parquet(data_path).collect()),
+        error_message='Could not read footer for file')
+
+    assert_py4j_exception(
+        lambda: with_gpu_session(
+            lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
+        error_message='The GPU does not support reading encrypted Parquet files')

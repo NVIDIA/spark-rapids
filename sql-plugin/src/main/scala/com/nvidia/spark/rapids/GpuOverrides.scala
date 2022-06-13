@@ -2401,7 +2401,7 @@ object GpuOverrides extends Logging {
           }
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuBRound(lhs, rhs)
+          GpuBRound(lhs, rhs, a.dataType)
       }),
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
@@ -2422,7 +2422,7 @@ object GpuOverrides extends Logging {
           }
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRound(lhs, rhs)
+          GpuRound(lhs, rhs, a.dataType)
       }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +

@@ -1464,12 +1464,20 @@ object GpuCast extends Arm {
       val targetType = DecimalUtil.createCudfDecimal(dt)
       // If target scale reaches DECIMAL128_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      val casted = if (targetType.getDecimalMaxPrecision == dt.scale) {
+      val casted = if (DType.DECIMAL128_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DecimalUtils.createDecimalType(dt.precision, dt.scale + 1)
+        // Increase precision by one along with scale in case of overflow, which may lead to
+        // the upcast of cuDF decimal type. If precision already hits the max precision, it is safe
+        // to increase the scale solely because we have checked and replaced out of range values.
+        val containerType = DecimalUtils.createDecimalType(
+          dt.precision + 1 min DType.DECIMAL128_MAX_PRECISION, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
-          container.round(dt.scale, cudf.RoundMode.HALF_UP)
+          withResource(container.round(dt.scale, cudf.RoundMode.HALF_UP)) { rd =>
+            // The cast here is for cases that cuDF decimal type got promoted as precision + 1.
+            // Need to convert back to original cuDF type, to keep align with the precision.
+            rd.castTo(targetType)
+          }
         }
       }
       // Cast NaN values to nulls

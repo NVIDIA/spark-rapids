@@ -432,18 +432,21 @@
                         </goals>
                         <configuration>
                             <artifactItems>
+                                <!-- if add new artifacts, should set `overWrite` as true -->
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>spark-rapids-jni</artifactId>
                                     <classifier>${cuda.version}</classifier>
                                     <excludes>META-INF</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                    <overWrite>true</overWrite>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>org.openucx</groupId>
                                     <artifactId>jucx</artifactId>
                                     <excludes>META-INF</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                    <overWrite>true</overWrite>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>

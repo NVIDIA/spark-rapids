@@ -285,8 +285,12 @@ def test_mod_pmod_long_min_value():
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
-    exception_str = "java.lang.ArithmeticException: divide by zero" if is_before_spark_320() else \
-        "org.apache.spark.SparkArithmeticException: divide by zero" 
+    if is_before_spark_320():
+        exception_str = 'java.lang.ArithmeticException: divide by zero'
+    elif is_before_spark_330():
+        exception_str = 'SparkArithmeticException: divide by zero'
+    else:
+        exception_str = 'SparkArithmeticException: Division by zero'
         
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -297,16 +301,17 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
-    exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)"
-    exception_str = "java.lang.ArithmeticException: " + exception_content if is_before_spark_330() \
-        and not is_databricks104_or_later() else "org.apache.spark.SparkArithmeticException: " \
-        + exception_content
+    exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)" \
+        if is_before_spark_314() or ((not is_before_spark_320()) and is_before_spark_322()) else \
+        "Decimal(compact, -120000000, 20, 0) cannot be represented as Decimal(7, 7)"
+    exception_type = "java.lang.ArithmeticException: " if is_before_spark_330() \
+        and not is_databricks104_or_later() else "org.apache.spark.SparkArithmeticException: "
 
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'cast(-12 as {})'.format(to_cast_string(data_gen.data_type))).collect(),
         ansi_enabled_conf,
-        exception_str)
+        exception_type + exception_content)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
@@ -399,17 +404,18 @@ def test_hypot(data_gen):
             'hypot(a, b)',
         ))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale + [DecimalGen(30, 15)], ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
 
+# This test should be enabled to run on GPU as part of https://github.com/NVIDIA/spark-rapids/issues/5797
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
+@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_floor_scale_zero(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'),
-            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'), 'RoundFloor')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @allow_non_gpu('ProjectExec')
@@ -418,17 +424,18 @@ def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale + [DecimalGen(30, 15)], ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
 
+# This test should be enabled to run on GPU as part of https://github.com/NVIDIA/spark-rapids/issues/5797
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Ceil function is not supported before Spark 3.3.0')
+@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_ceil_scale_zero(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'),
-            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'), 'RoundCeil')
 
 @pytest.mark.parametrize('data_gen', [_decimal_gen_36_neg5, _decimal_gen_38_neg10], ids=idfn)
 def test_floor_ceil_overflow(data_gen):
@@ -482,9 +489,19 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
+_arith_data_gens_for_round = numeric_gens +  _arith_decimal_gens_no_neg_scale + [
+    decimal_gen_32bit_neg_scale,
+    DecimalGen(precision=15, scale=-8),
+    DecimalGen(precision=30, scale=-5),
+    pytest.param(_decimal_gen_36_neg5, marks=pytest.mark.skipif(
+        is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+')),
+    pytest.param(_decimal_gen_38_neg10, marks=pytest.mark.skipif(
+        is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+'))
+]
+
 @incompat
 @approximate_float
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -496,7 +513,7 @@ def test_decimal_bround(data_gen):
 
 @incompat
 @approximate_float
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(

@@ -1,4 +1,6 @@
-1a2,10
+2c2,9
+<   // spark 2.x doesn't have data source v2 so not ScanMeta
+---
 >   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
 >     val scan = scanMeta.wrapped
 >     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -7,8 +9,7 @@
 >     }
 >     tagSupport(scan.sparkSession, schema, scanMeta)
 >   }
-> 
-5c14
+7c14
 <       meta: RapidsMeta[_, _]): Unit = {
 ---
 >       meta: RapidsMeta[_, _, _]): Unit = {

@@ -1,4 +1,6 @@
-5c5
-<       fsse.sqlContext.sparkSession,
+2d1
+<   
+5c4
+<     val session = fsse.sqlContext.sparkSession
 ---
->       SparkShimImpl.sessionFromPlan(fsse),
+>     val session = SparkShimImpl.sessionFromPlan(fsse)
