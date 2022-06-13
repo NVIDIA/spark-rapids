@@ -829,7 +829,7 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <spark-rapids-jni.version>22.06.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-jni.version>22.06.0</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
