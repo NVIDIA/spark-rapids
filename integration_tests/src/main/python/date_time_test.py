@@ -389,8 +389,7 @@ def test_date_format_maybe_incompat(data_gen, date_format):
 @ignore_order()
 def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
     data_path = spark_tmp_path + '/CSV_DATA'
-    gen = StringGen(pattern='[0][1-9][1][8-9][1-9][1-9]', nullable=False)
-    conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
+    gen = StringGen(pattern='[0][0-9][1][8-9][1-9][1-9]', nullable=False)
     schema = gen.data_type
     with_cpu_session(lambda spark : gen_df(spark, gen, length=100).write.csv(data_path))
     def do_join_cast(spark):
@@ -399,4 +398,4 @@ def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
             .selectExpr("date_format(to_date(r_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename").withColumnRenamed("monthly_reporting_period", "r_monthly_reporting_period").withColumnRenamed("filename", "r_filename")
         joined = left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
         return joined
-    assert_gpu_and_cpu_are_equal_collect(do_join_cast, conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join_cast)
