@@ -52,7 +52,8 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       partitionSchema,
       filters.toArray,
       new RapidsConf(sqlConf),
-      metrics)
+      metrics,
+      options)
     PartitionReaderIterator.buildReader(factory)
   }
 }

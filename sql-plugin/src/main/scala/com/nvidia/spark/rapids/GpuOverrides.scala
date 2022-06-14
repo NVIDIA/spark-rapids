@@ -649,7 +649,9 @@ object GpuOverrides extends Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType => TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
+      case TimestampType =>
+        TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
+        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
       case StringType => true
       case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
       case NullType => allowNull
@@ -1330,7 +1332,10 @@ object GpuOverrides extends Logging {
           }
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuFloor(child)
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // use Spark `Floor.dataType` to keep consistent between Spark versions.
+          GpuFloor(child, a.dataType)
+        }
       }),
     expr[Ceil](
       "Ceiling of a number",
@@ -1350,7 +1355,10 @@ object GpuOverrides extends Logging {
           }
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuCeil(child)
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // use Spark `Ceil.dataType` to keep consistent between Spark versions.
+          GpuCeil(child, a.dataType)
+        }
       }),
     expr[Not](
       "Boolean not operator",
@@ -1696,7 +1704,6 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("interval months isn't supported")
             }
           }
-          checkTimeZoneId(timeAdd.timeZoneId)
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1718,7 +1725,6 @@ object GpuOverrides extends Logging {
                 willNotWorkOnGpu("interval months isn't supported")
               }
             }
-            checkTimeZoneId(dateAddInterval.timeZoneId)
           }
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1779,9 +1785,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(hour.timeZoneId)
-        }
 
         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
       }),
@@ -1790,9 +1793,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-         checkTimeZoneId(minute.timeZoneId)
-        }
 
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuMinute(expr)
@@ -1802,9 +1802,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(second.timeZoneId)
-        }
 
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuSecond(expr)
@@ -3499,8 +3496,9 @@ object GpuOverrides extends Logging {
         TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
-      })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+      }),
+    SparkShimImpl.ansiCastRule
+  ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
@@ -3759,7 +3757,7 @@ object GpuOverrides extends Logging {
       (globalLimitExec, conf, p, r) =>
         new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded())
+            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",

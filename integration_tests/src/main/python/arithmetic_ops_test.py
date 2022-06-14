@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later, is_databricks104_or_later, is_spark_330_or_later
+from spark_session import *
 import pyspark.sql.functions as f
 from datetime import timedelta
 
@@ -301,17 +301,17 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
-    exception_str = "java.lang.ArithmeticException: " if is_before_spark_330() \
+    exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)" \
+        if is_before_spark_314() or ((not is_before_spark_320()) and is_before_spark_322()) else \
+        "Decimal(compact, -120000000, 20, 0) cannot be represented as Decimal(7, 7)"
+    exception_type = "java.lang.ArithmeticException: " if is_before_spark_330() \
         and not is_databricks104_or_later() else "org.apache.spark.SparkArithmeticException: "
-    dec_value = "Decimal(compact,-120000000,20,0})" if is_before_spark_330() \
-        else "Decimal(compact, -120000000, 20, 0)"
-    err_str = exception_str + dec_value + " cannot be represented as Decimal(7, 7)"
 
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'cast(-12 as {})'.format(to_cast_string(data_gen.data_type))).collect(),
         ansi_enabled_conf,
-        err_str)
+        exception_type + exception_content)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
@@ -404,7 +404,7 @@ def test_hypot(data_gen):
             'hypot(a, b)',
         ))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale + [DecimalGen(30, 15)], ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
@@ -423,7 +423,7 @@ def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale + [DecimalGen(30, 15)], ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
@@ -817,8 +817,10 @@ def _test_div_by_zero(ansi_mode, expr):
         err_message = 'java.lang.ArithmeticException: divide by zero'
     elif is_before_spark_330():
         err_message = 'SparkArithmeticException: divide by zero'
-    else:
+    elif is_before_spark_340():
         err_message = 'SparkArithmeticException: Division by zero'
+    else:
+        err_message = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
 
     if ansi_mode == 'ansi':
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
@@ -855,13 +857,15 @@ div_overflow_exprs = [
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    exception_str = "java.lang.ArithmeticException: Overflow in integral divide" if is_before_spark_330() \
-        else "org.apache.spark.SparkArithmeticException: Overflow in integral divide"
+    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() \
+        else 'org.apache.spark.SparkArithmeticException'
+    err_mess = ': Overflow in integral divide' if is_before_spark_340() \
+        else ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
     if ansi_enabled == 'true':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
-            error_message=exception_str)
+            error_message=err_exp + err_mess)
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_div_overflow_df(spark, expr),

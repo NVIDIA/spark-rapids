@@ -377,8 +377,6 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
-    checkTimeZoneId(expr.timeZoneId)
-
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       extractStringLit(expr.right) match {
@@ -403,51 +401,53 @@ object GpuToTimestamp extends Arm {
   // or EXCEPTION. It is possible that other formats may be supported but these are the only
   // ones that we have tests for.
   val CORRECTED_COMPATIBLE_FORMATS = Map(
-    "yyyy-MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+    "yyyy-MM-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{4}-\d{2}-\d{2}\Z"),
-    "yyyy/MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+    "yyyy/MM/dd" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{4}/\d{1,2}/\d{1,2}\Z"),
-    "yyyy-MM" -> ParseFormatMeta('-', isTimestamp = false,
+    "yyyy-MM" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{4}-\d{2}\Z"),
-    "yyyy/MM" -> ParseFormatMeta('/', isTimestamp = false,
+    "yyyy/MM" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{4}/\d{2}\Z"),
-    "dd/MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+    "dd/MM/yyyy" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{2}/\d{2}/\d{4}\Z"),
-    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta('-', isTimestamp = true,
+    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta(Option('-'), isTimestamp = true,
       raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\Z"),
-    "MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+    "MM-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{2}-\d{2}\Z"),
-    "MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+    "MM/dd" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{2}/\d{2}\Z"),
-    "dd-MM" -> ParseFormatMeta('-', isTimestamp = false,
+    "dd-MM" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{2}-\d{2}\Z"),
-    "dd/MM" -> ParseFormatMeta('/', isTimestamp = false,
+    "dd/MM" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{2}/\d{2}\Z"),
-    "MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+    "MM/yyyy" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{2}/\d{4}\Z"),
-    "MM-yyyy" -> ParseFormatMeta('-', isTimestamp = false,
+    "MM-yyyy" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{2}-\d{4}\Z"),
-    "MM/dd/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+    "MM/dd/yyyy" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{2}/\d{2}/\d{4}\Z"),
-    "MM-dd-yyyy" -> ParseFormatMeta('-', isTimestamp = false,
-      raw"\A\d{2}-\d{2}-\d{4}\Z")
+    "MM-dd-yyyy" -> ParseFormatMeta(Option('-'), isTimestamp = false,
+      raw"\A\d{2}-\d{2}-\d{4}\Z"),
+    "MMyyyy" -> ParseFormatMeta(Option.empty, isTimestamp = false,
+      raw"\A\d{6}\Z")
   )
 
   // We are compatible with Spark for these formats when the timeParserPolicy is LEGACY. It
   // is possible that other formats may be supported but these are the only ones that we have
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Map(
-    "yyyy-MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+    "yyyy-MM-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
-    "yyyy/MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+    "yyyy/MM/dd" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{4}/\d{1,2}/\d{1,2}(\D|\s|\Z)"),
-    "dd-MM-yyyy" -> ParseFormatMeta('-', isTimestamp = false,
+    "dd-MM-yyyy" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{1,2}-\d{1,2}-\d{4}(\D|\s|\Z)"),
-    "dd/MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+    "dd/MM/yyyy" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{1,2}/\d{1,2}/\d{4}(\D|\s|\Z)"),
-    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta('-', isTimestamp = true,
+    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta(Option('-'), isTimestamp = true,
       raw"\A\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
-    "yyyy/MM/dd HH:mm:ss" -> ParseFormatMeta('/', isTimestamp = true,
+    "yyyy/MM/dd HH:mm:ss" -> ParseFormatMeta(Option('/'), isTimestamp = true,
       raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)")
   )
 
@@ -555,12 +555,12 @@ object GpuToTimestamp extends Arm {
     // we support date formats using either `-` or `/` to separate year, month, and day and the
     // regex rules are written with '-' so we need to replace '-' with '/' here as necessary
     val rulesWithSeparator = format.separator match {
-      case '/' =>
+      case Some('/') =>
         regexReplaceRules.map {
           case RegexReplace(pattern, backref) =>
             RegexReplace(pattern.replace('-', '/'), backref.replace('-', '/'))
         }
-      case '-' =>
+      case Some('-') | Some(_) | None =>
         regexReplaceRules
     }
 
@@ -618,7 +618,7 @@ object GpuToTimestamp extends Arm {
 
 }
 
-case class ParseFormatMeta(separator: Char, isTimestamp: Boolean, validRegex: String)
+case class ParseFormatMeta(separator: Option[Char], isTimestamp: Boolean, validRegex: String)
 
 case class RegexReplace(search: String, replace: String)
 

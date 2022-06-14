@@ -25,8 +25,8 @@ import scala.collection.mutable.{Map => MutableMap}
 import scala.util.Try
 import scala.util.matching.Regex
 
+import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -289,19 +289,21 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
     failureReason match {
       case ef: ExceptionFailure =>
-        val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
-          "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
-          "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
-          "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
-          "cudaErrorECCUncorrectable")
-        if (unrecoverableErrors.exists(ef.description.contains(_)) ||
-          unrecoverableErrors.exists(ef.toErrorString.contains(_))) {
-          logError("Stopping the Executor based on exception being a fatal CUDA error: " +
-            s"${ef.toErrorString}")
-          System.exit(20)
+        ef.exception match {
+          case Some(_: CudaFatalException) =>
+            logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+              s"${ef.toErrorString}")
+            System.exit(20)
+          case Some(_: CudaException) =>
+            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
+              s"${ef.toErrorString}")
+          case Some(_: CudfException) =>
+            logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
+          case _ =>
+            logDebug(s"Executor onTaskFailed: ${ef.toErrorString}")
         }
       case other =>
-        logDebug(s"Executor onTaskFailed not a CUDA fatal error: ${other.toString}")
+        logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
   }
 }
@@ -423,7 +425,6 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    SparkShimImpl.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
     PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
