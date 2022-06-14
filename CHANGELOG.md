@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-06-07
+Generated on 2022-06-14
 
 ## Release 22.06
 
@@ -58,6 +58,11 @@ Generated on 2022-06-07
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#5769](https://github.com/NVIDIA/spark-rapids/issues/5769)|[BUG] arithmetic ops tests failing on Spark 3.3.0|
+|[#5785](https://github.com/NVIDIA/spark-rapids/issues/5785)|[BUG] Tests module build failed in OrcEncryptionSuite for 321cdh|
+|[#5765](https://github.com/NVIDIA/spark-rapids/issues/5765)|[BUG] Container decimal overflow when casting float/double to decimal |
+|[#5246](https://github.com/NVIDIA/spark-rapids/issues/5246)|Verify Parquet columnar encryption is handled safely|
+|[#5770](https://github.com/NVIDIA/spark-rapids/issues/5770)|[BUG] test_buckets failed|
 |[#5733](https://github.com/NVIDIA/spark-rapids/issues/5733)|[BUG] Integration test test_orc_write_encryption_fallback fail|
 |[#5719](https://github.com/NVIDIA/spark-rapids/issues/5719)|[BUG] test_cast_float_to_timestamp_ansi_for_nan_inf failed in spark330|
 |[#5739](https://github.com/NVIDIA/spark-rapids/issues/5739)|[BUG] Spark 3.3 build failure - QueryExecutionErrors package scope changed|
@@ -138,6 +143,19 @@ Generated on 2022-06-07
 ### PRs
 |||
 |:---|:---|
+|[#5795](https://github.com/NVIDIA/spark-rapids/pull/5795)|Update FAQ to include local jar deployment via extraClassPath [skip ci]|
+|[#5802](https://github.com/NVIDIA/spark-rapids/pull/5802)|Update spark-rapids-jni.version to release 22.06.0|
+|[#5798](https://github.com/NVIDIA/spark-rapids/pull/5798)|Fall back to CPU for RoundCeil and RoundFloor expressions|
+|[#5791](https://github.com/NVIDIA/spark-rapids/pull/5791)|Remove ORC encryption test from 321cdh|
+|[#5766](https://github.com/NVIDIA/spark-rapids/pull/5766)|Fix the overflow of container type when casting floats to decimal|
+|[#5786](https://github.com/NVIDIA/spark-rapids/pull/5786)|Fix rounds over decimal in Spark 330+|
+|[#5761](https://github.com/NVIDIA/spark-rapids/pull/5761)|Throw an exception when attempting to read columnar encrypted Parquet files on the GPU|
+|[#5784](https://github.com/NVIDIA/spark-rapids/pull/5784)|Update the error string for test_cast_neg_to_decimal_err on 330|
+|[#5781](https://github.com/NVIDIA/spark-rapids/pull/5781)|Correct the exception string for test_mod_pmod_by_zero on Spark 3.3.0|
+|[#5764](https://github.com/NVIDIA/spark-rapids/pull/5764)|Add test for encrypted ORC write|
+|[#5760](https://github.com/NVIDIA/spark-rapids/pull/5760)|Enable avrotest in nightly tests [skip ci]|
+|[#5746](https://github.com/NVIDIA/spark-rapids/pull/5746)|Init 22.06 changelog [skip ci]|
+|[#5716](https://github.com/NVIDIA/spark-rapids/pull/5716)|Disable Avro support when spark-avro classes not loadable by Shim classloader|
 |[#5737](https://github.com/NVIDIA/spark-rapids/pull/5737)|Remove the ORC encryption tests|
 |[#5753](https://github.com/NVIDIA/spark-rapids/pull/5753)|[DOC] Update regexp compatibility for 22.06 [skip ci]|
 |[#5738](https://github.com/NVIDIA/spark-rapids/pull/5738)|Update Spark2 explain code for 22.06|
