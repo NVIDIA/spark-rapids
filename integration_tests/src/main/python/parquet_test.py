@@ -134,9 +134,9 @@ def test_parquet_read_round_trip_binary_as_string(spark_tmp_path, read_func, rea
     gen_list = [("a", string_gen), ("b", int_gen), ("c", string_gen)]
     data_path = spark_tmp_path + '/binary_as_string.parquet'
     # cast to binary to read back as a string
-    # NOTE: using pyarrow to write the parquet file as writing the parquet files using spark doesn't 
-    # produce a parquet file where the binary values are read back as strings, this simulates reading
-    # a parquet file produced outside of spark
+    # NOTE: using pyarrow to write the parquet file because spark doesn't 
+    # produce a parquet file where the binary values are read back as strings,
+    # ultimately this simulates reading a parquet file produced outside of spark
     def create_parquet_file(spark):
         df = gen_df(spark, gen_list).select(
                 f.col('a').cast("BINARY").alias('a'),\
