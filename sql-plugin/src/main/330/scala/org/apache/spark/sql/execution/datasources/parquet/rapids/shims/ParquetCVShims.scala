@@ -14,18 +14,23 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
+package org.apache.spark.sql.execution.datasources.parquet
 
-import org.apache.spark.sql.rapids.GpuFloorCeil
-import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
+import org.apache.spark.memory.MemoryMode
+import org.apache.spark.sql.execution.vectorized.WritableColumnVector
+import org.apache.spark.sql.types.StructType
 
-object RapidsFloorCeilUtils {
+object ParquetCVShims {
 
-  def outputDataType(dataType: DataType): DataType = {
-    dataType match {
-      case dt: DecimalType =>
-         DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
-      case _ => LongType
-    }
+  def newParquetCV(
+      sparkSchema: StructType,
+      idx: Int,
+      column: ParquetColumn,
+      vector: WritableColumnVector,
+      capacity: Int,
+      memoryMode: MemoryMode,
+      missingColumns: java.util.Set[ParquetColumn],
+      isTopLevel: Boolean): ParquetColumnVector = {
+    new ParquetColumnVector(column, vector, capacity, memoryMode, missingColumns)
   }
 }

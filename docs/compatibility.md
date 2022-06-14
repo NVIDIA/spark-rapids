@@ -585,6 +585,9 @@ These are the known edge cases where running on the GPU will produce different r
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+- The character class `\p{ASCII}` matches only `[\x01-\x7F]` as opposed to Java's definition which matches `[\x00-\x7F]`,
+ since null characters are not currently supported. Similarily, `\p{Cntrl}` matches only `[\x01-\x1F\x7F]` as 
+ opposed to Java's `[\x00-\x1F\x7F]`
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
@@ -701,16 +704,21 @@ The formats which are supported on GPU vary depending on the setting for `timePa
 With timeParserPolicy set to `CORRECTED` or `EXCEPTION` (the default), the following formats are supported
 on the GPU without requiring any additional settings.
 
-- `dd/MM/yyyy`
-- `yyyy/MM`
+- `yyyy-MM-dd`
 - `yyyy/MM/dd`
 - `yyyy-MM`
-- `yyyy-MM-dd`
+- `yyyy/MM`
+- `dd/MM/yyyy`
 - `yyyy-MM-dd HH:mm:ss`
 - `MM-dd`
 - `MM/dd`
 - `dd-MM`
 - `dd/MM`
+- `MM/yyyy`
+- `MM-yyyy`
+- `MM/dd/yyyy`
+- `MM-dd-yyyy`
+- `MMyyyy`
 
 Valid Spark date/time formats that do not appear in the list above may also be supported but have not been 
 extensively tested and may produce different results compared to the CPU. Known issues include:

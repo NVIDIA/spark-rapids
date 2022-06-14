@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,9 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.types._
 
 object SchemaUtils extends Arm {
+  // Parquet field ID metadata key
+  val FIELD_ID_METADATA_KEY = "parquet.field.id"
+
   /**
    * Convert a TypeDescription to a Catalyst StructType.
    */
@@ -215,18 +218,40 @@ object SchemaUtils extends Arm {
       dataType: DataType,
       name: String,
       nullable: Boolean,
-      writeInt96: Boolean): T = {
+      writeInt96: Boolean,
+      fieldMeta: Metadata,
+      parquetFieldIdWriteEnabled: Boolean): T = {
+
+    // Parquet specific field id
+    val parquetFieldId: Option[Int] = if (fieldMeta.contains(FIELD_ID_METADATA_KEY)) {
+      Option(Math.toIntExact(fieldMeta.getLong(FIELD_ID_METADATA_KEY)))
+    } else {
+      Option.empty
+    }
+
     dataType match {
       case dt: DecimalType =>
-        builder.withDecimalColumn(name, dt.precision, nullable)
+        if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          builder.withDecimalColumn(name, dt.precision, nullable, parquetFieldId.get)
+        } else {
+          builder.withDecimalColumn(name, dt.precision, nullable)
+        }
       case TimestampType =>
-        builder.withTimestampColumn(name, writeInt96, nullable)
+        if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          builder.withTimestampColumn(name, writeInt96, nullable, parquetFieldId.get)
+        } else {
+          builder.withTimestampColumn(name, writeInt96, nullable)
+        }
       case s: StructType =>
-        builder.withStructColumn(
-          writerOptionsFromSchema(
-            structBuilder(name, nullable),
-            s,
-            writeInt96).build())
+        val structB = if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          structBuilder(name, nullable, parquetFieldId.get)
+        } else {
+          structBuilder(name, nullable)
+        }
+        builder.withStructColumn(writerOptionsFromSchema(
+          structB,
+          s,
+          writeInt96, parquetFieldIdWriteEnabled).build())
       case a: ArrayType =>
         builder.withListColumn(
           writerOptionsFromField(
@@ -234,7 +259,7 @@ object SchemaUtils extends Arm {
             a.elementType,
             name,
             a.containsNull,
-            writeInt96).build())
+            writeInt96, fieldMeta, parquetFieldIdWriteEnabled).build())
       case m: MapType =>
         // It is ok to use `StructBuilder` here for key and value, since either
         // `OrcWriterOptions.Builder` or `ParquetWriterOptions.Builder` is actually an
@@ -246,15 +271,21 @@ object SchemaUtils extends Arm {
               m.keyType,
               "key",
               nullable = false,
-              writeInt96).build().getChildColumnOptions()(0),
+              writeInt96, fieldMeta, parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
             writerOptionsFromField(
               structBuilder(name, nullable),
               m.valueType,
               "value",
               m.valueContainsNull,
-              writeInt96).build().getChildColumnOptions()(0)))
+              writeInt96,
+              fieldMeta,
+              parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)))
       case _ =>
-        builder.withColumns(nullable, name)
+        if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          builder.withColumn(nullable, name, parquetFieldId.get)
+        } else {
+          builder.withColumns(nullable, name)
+        }
     }
     builder.asInstanceOf[T]
   }
@@ -269,9 +300,11 @@ object SchemaUtils extends Arm {
   def writerOptionsFromSchema[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
       builder: NestedBuilder[T, V],
       schema: StructType,
-      writeInt96: Boolean = false): T = {
+      writeInt96: Boolean = false,
+      parquetFieldIdEnabled: Boolean = false): T = {
     schema.foreach(field =>
-      writerOptionsFromField(builder, field.dataType, field.name, field.nullable, writeInt96)
+      writerOptionsFromField(builder, field.dataType, field.name, field.nullable, writeInt96,
+        field.metadata, parquetFieldIdEnabled)
     )
     builder.asInstanceOf[T]
   }

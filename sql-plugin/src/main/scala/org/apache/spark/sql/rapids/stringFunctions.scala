@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
@@ -773,6 +773,9 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 }
 
 object GpuRegExpUtils {
+  private def parseAST(pattern: String): RegexAST = {
+    new RegexParser(pattern).parse()
+  }
 
   /**
    * Convert symbols of back-references if input string contains any.
@@ -845,6 +848,31 @@ object GpuRegExpUtils {
         meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
         "supports the UTF-8 charset when using regular expressions")
     }
+  }
+
+  /**
+   * Recursively check if pattern contains only zero-match repetitions 
+   * ?, *, {0,}, or {0,n} or any combination of them. 
+   */
+  def isEmptyRepetition(pattern: String): Boolean = {
+    def isASTEmptyRepetition(regex: RegexAST): Boolean = {
+      regex match {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case RegexGroup(_, term) =>
+          isASTEmptyRepetition(term) 
+        case RegexSequence(parts) =>
+          parts.forall(isASTEmptyRepetition)
+        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
+        // we did, we would need to add a `case RegexChoice()` here
+        case _ => false
+      }
+    }
+    isASTEmptyRepetition(parseAST(pattern))
   }
 
 }
@@ -960,6 +988,7 @@ case class GpuRegExpReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression,
+    javaRegexpPattern: String,
     cudfRegexPattern: String,
     cudfReplacementString: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes {
@@ -970,17 +999,40 @@ case class GpuRegExpReplace(
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
 
-  def this(srcExpr: Expression, searchExpr: Expression, cudfRegexPattern: String,
-      cudfReplacementString: String) = {
-    this(srcExpr, searchExpr, GpuLiteral("", StringType), cudfRegexPattern, cudfReplacementString)
+  def this(srcExpr: Expression, searchExpr: Expression, javaRegexpPattern: String,
+    cudfRegexPattern: String, cudfReplacementString: String) = {
+    
+    this(srcExpr, searchExpr, GpuLiteral("", StringType), javaRegexpPattern, 
+      cudfRegexPattern, cudfReplacementString)
   }
 
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    withResource(Scalar.fromString(cudfReplacementString)) { rep =>
-      strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+    // For empty strings and a regex containing only a zero-match reptition, 
+    // the behavior in some versions of Spark is different. 
+    // see https://github.com/NVIDIA/spark-rapids/issues/5456
+    if (RegExpShim.reproduceEmptyStringBug() && 
+        GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
+      val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
+        withResource(Scalar.fromInt(0)) { zero =>
+          len.equalTo(zero)
+        }
+      }
+      withResource(isEmpty) { _ =>
+        withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+          withResource(GpuScalar.from(cudfReplacementString, DataTypes.StringType)) { rep =>
+            withResource(strExpr.getBase.replaceRegex(cudfRegexPattern, rep)) { replacement =>
+              isEmpty.ifElse(emptyString, replacement)
+            }
+          }
+        }
+      }
+    } else {
+      withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+        strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+      }
     }
   }
 

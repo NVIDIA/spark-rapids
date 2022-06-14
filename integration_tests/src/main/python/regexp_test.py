@@ -204,12 +204,10 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
         conf=_regexp_conf)
 
-# Note regexp_replace with empty string will not match 
-# unless we are using Spark 3.1.4, 3.2.2, or 3.3.0
-# See https://issues.apache.org/jira/browse/SPARK-39107
+# We have shims to support empty strings for zero-repetition patterns
 # See https://github.com/NVIDIA/spark-rapids/issues/5456
 def test_re_replace_repetition():
-    gen = StringGen('.{0,5}TEST[\ud720 A]{0,5}')
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "[E]+", "PROD")',
@@ -217,7 +215,12 @@ def test_re_replace_repetition():
                 'REGEXP_REPLACE(a, "A{0,}", "PROD")',
                 'REGEXP_REPLACE(a, "T?E?", "PROD")',
                 'REGEXP_REPLACE(a, "A*", "PROD")',
-                'REGEXP_REPLACE(a, "A{0,5}", "PROD")'),
+                'REGEXP_REPLACE(a, "A{0,5}", "PROD")',
+                'REGEXP_REPLACE(a, "(A*)", "PROD")',
+                'REGEXP_REPLACE(a, "(((A*)))", "PROD")',
+                'REGEXP_REPLACE(a, "((A*)E?)", "PROD")',
+                'REGEXP_REPLACE(a, "[A-Z]?", "PROD")'
+            ),
         conf=_regexp_conf)
 
 
@@ -562,6 +565,26 @@ def test_regexp_replace_word():
             'regexp_replace(a, "\\\\W", "x")',
             'regexp_replace(a, "[a-zA-Z_0-9]", "x")',
             'regexp_replace(a, "[^a-zA-Z_0-9]", "x")',
+        ),
+        conf=_regexp_conf)
+
+def test_predefined_character_classes():
+    gen = mk_str_gen('[a-zA-Z]{0,2}[\r\n!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]{0,2}[0-9]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_replace(a, "\\\\p{Lower}", "x")',
+            'regexp_replace(a, "\\\\p{Upper}", "x")',
+            'regexp_replace(a, "\\\\p{ASCII}", "x")',
+            'regexp_replace(a, "\\\\p{Alpha}", "x")',
+            'regexp_replace(a, "\\\\p{Digit}", "x")',
+            'regexp_replace(a, "\\\\p{Alnum}", "x")',
+            'regexp_replace(a, "\\\\p{Punct}", "x")',
+            'regexp_replace(a, "\\\\p{Graph}", "x")',
+            'regexp_replace(a, "\\\\p{Print}", "x")',
+            'regexp_replace(a, "\\\\p{Blank}", "x")',
+            'regexp_replace(a, "\\\\p{Cntrl}", "x")',
+            'regexp_replace(a, "\\\\p{XDigit}", "x")',
+            'regexp_replace(a, "\\\\p{Space}", "x")',
         ),
         conf=_regexp_conf)
 

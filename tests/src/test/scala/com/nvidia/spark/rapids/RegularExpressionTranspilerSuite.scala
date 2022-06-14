@@ -393,6 +393,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile \\z") {
     doTranspileTest("abc\\z", "abc$")
+    doTranspileTest("abc\\Z\\z", "abc$")
+    doTranspileTest("abc$\\z", "abc$")
   }
 
   test("transpile $") {
@@ -404,6 +406,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
     doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+  }
+
+  test("transpile predefined character classes") {
+    doTranspileTest("\\p{Lower}", "[a-z]")
+    doTranspileTest("\\p{Alpha}", "[a-zA-Z]")
+    doTranspileTest("\\p{Alnum}", "[a-zA-Z0-9]")
+    doTranspileTest("\\p{Punct}", "[!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]]")
+    doTranspileTest("\\p{Print}", "[a-zA-Z0-9!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]\u0020]")
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
@@ -424,9 +434,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  // Patterns are generated from these characters
-  // '&' is absent due to https://github.com/NVIDIA/spark-rapids/issues/5655
-  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},.^$*+?abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
+  private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},-./;:!^$#%&*+?<=>@\"'~`" +
+    "abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 
