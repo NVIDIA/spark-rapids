@@ -143,6 +143,8 @@ object ExternalSource extends Logging {
     var scans: Seq[ScanRule[_ <: Scan]] = icebergBatchQueryScanClass.map { clz =>
       Seq(new ScanRule[Scan](
         (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
+          override def supportsRuntimeFilters: Boolean = true
+
           override def tagSelfForGpu(): Unit = {
             // TODO: Should this be tied to Parquet/ORC formats as well since underlying files
             //       could be that format?

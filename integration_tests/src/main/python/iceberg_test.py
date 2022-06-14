@@ -28,9 +28,10 @@ def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
         spark.sql("INSERT INTO {} VALUES (1, 'a'), (2, 'b'), (3, 'c')".format(table))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT COUNT(DISTINCT id) from {}".format(table)))
+        lambda spark : spark.sql("SELECT COUNT(DISTINCT id) from {}".format(table)),
+        conf={"spark.rapids.sql.format.iceberg.enabled": "false"}
+    )
 
-@allow_non_gpu('BatchScanExec')
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320() or is_databricks_runtime(),

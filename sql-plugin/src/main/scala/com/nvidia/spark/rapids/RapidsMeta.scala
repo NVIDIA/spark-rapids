@@ -488,6 +488,8 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override def tagSelfForGpu(): Unit = {}
+
+  def supportsRuntimeFilters: Boolean = false
 }
 
 /**
