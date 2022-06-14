@@ -61,6 +61,7 @@ Generated on 2022-06-14
 |[#5769](https://github.com/NVIDIA/spark-rapids/issues/5769)|[BUG] arithmetic ops tests failing on Spark 3.3.0|
 |[#5785](https://github.com/NVIDIA/spark-rapids/issues/5785)|[BUG] Tests module build failed in OrcEncryptionSuite for 321cdh|
 |[#5765](https://github.com/NVIDIA/spark-rapids/issues/5765)|[BUG] Container decimal overflow when casting float/double to decimal |
+|[#5246](https://github.com/NVIDIA/spark-rapids/issues/5246)|Verify Parquet columnar encryption is handled safely|
 |[#5770](https://github.com/NVIDIA/spark-rapids/issues/5770)|[BUG] test_buckets failed|
 |[#5733](https://github.com/NVIDIA/spark-rapids/issues/5733)|[BUG] Integration test test_orc_write_encryption_fallback fail|
 |[#5719](https://github.com/NVIDIA/spark-rapids/issues/5719)|[BUG] test_cast_float_to_timestamp_ansi_for_nan_inf failed in spark330|
