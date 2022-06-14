@@ -45,8 +45,6 @@ object GpuParquetFileFormat {
 
     val sqlConf = spark.sessionState.conf
 
-    ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema, sqlConf)
-
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
     val columnEncryption = options.getOrElse("parquet.encryption.column.keys", "")
@@ -227,6 +225,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
+    val parquetFieldIdWriteEnabled = ParquetFieldIdShims.getParquetIdWriteEnabled(sqlConf)
 
     ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 
@@ -259,7 +258,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException,
-          timestampRebaseException, context)
+          timestampRebaseException, context, parquetFieldIdWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -275,7 +274,8 @@ class GpuParquetWriter(
     compressionType: CompressionType,
     dateRebaseException: Boolean,
     timestampRebaseException: Boolean,
-    context: TaskAttemptContext)
+    context: TaskAttemptContext,
+    parquetFieldIdEnabled: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet") {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
@@ -356,7 +356,8 @@ class GpuParquetWriter(
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
-        ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType)
+        ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
+        parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
     Table.writeParquetChunked(builder.build(), this)

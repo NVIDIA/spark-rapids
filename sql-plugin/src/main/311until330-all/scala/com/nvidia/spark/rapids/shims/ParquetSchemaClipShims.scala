@@ -16,16 +16,33 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.parquet.schema.MessageType
+import org.apache.parquet.schema.{MessageType, Type}
 
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StructField, StructType}
 
 object ParquetSchemaClipShims {
-  /** Two stubs for configs not defined before Spark 330 */
+  /** Stubs for configs not defined before Spark 330 */
   def useFieldId(conf: SQLConf): Boolean = false
+
+  def ignoreMissingIds(conf: SQLConf): Boolean = false
+
   def timestampNTZEnabled(conf: SQLConf): Boolean = false
+
+  def checkIgnoreMissingIds(ignoreMissingIds: Boolean, parquetFileSchema: MessageType,
+      catalystRequestedSchema: StructType): Unit = {}
+
+  def hasFieldId(field: StructField): Boolean =
+    throw new RuntimeException("This Shim should not invoke `hasFieldId`")
+
+  def getFieldId(field: StructField): Int =
+    throw new RuntimeException("This Shim should not invoke `getFieldId`")
+
+  def fieldIdToFieldMap(useFieldId: Boolean, fileType: Type): Map[Int, Type] = Map.empty[Int, Type]
+
+  def fieldIdToNameMap(useFieldId: Boolean,
+      fileType: Type): Map[Int, String] = Map.empty[Int, String]
 
   def clipSchema(
       parquetSchema: MessageType,
