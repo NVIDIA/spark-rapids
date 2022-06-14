@@ -689,6 +689,7 @@ def test_regexp_replace_unicode_support():
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, "TEST\ud720", "PROD")',
             'REGEXP_REPLACE(a, "TEST\\\\b", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\B", "PROD")',
             'REGEXP_REPLACE(a, "TEST䤫", "PROD")',
             'REGEXP_REPLACE(a, "TEST[䤫]", "PROD")',
             'REGEXP_REPLACE(a, "TEST.*\\\\d", "PROD")',

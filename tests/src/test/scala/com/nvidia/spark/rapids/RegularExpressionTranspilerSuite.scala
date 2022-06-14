@@ -583,7 +583,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("AST fuzz test - regexp_find - full unicode input") {
     assume(isUnicodeEnabled())
-    doAstFuzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
       RegexFindMode)
   }
 
