@@ -520,9 +520,9 @@ If you are getting a warning `Avro library not found by the RAPIDS plugin.` or i
 Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
 
-NOTE: You could set `spark.driver.extraClassPath` and `spark.executor.extraClassPath` followed by the path to Avro and 
-the RAPIDS Plugin jar but one important thing to keep in mind is that never mix the `jars/packages` 
-and extraClassPath confs
+Note, you can add locally installed jars for external packages such as Avro Data Sources and the RAPIDS Accelerator jars via  `spark.driver.extraClassPath` (--driver-class-path in the client mode) on the driver side, and `spark.executor.extraClassPath` on the executor side. However, you should not mix the deploy methods for either of the external modules.  Either deploy both Spark Avro and RAPIDS Accelerator jars as local jars via `extraClassPath` settings or use the `--jars` or `--packages` options.
+
+As a consequence, per  Issue #5796, if you also use the RAPIDS Shuffle Manager, your deployment option may be limited to the extraClassPath method.
 
 ### What is the default RMM pool allocator?
 
