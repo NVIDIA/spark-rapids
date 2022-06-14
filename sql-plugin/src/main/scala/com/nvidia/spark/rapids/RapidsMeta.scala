@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -367,11 +367,16 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
-  protected def checkTimeZoneId(timeZoneId: Option[String]): Unit = {
-    timeZoneId.foreach { zoneId =>
-      if (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault())) {
-        willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-      }
+  def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
+    // Both of the Spark session time zone and JVM's default time zone should be UTC.
+    if (!TypeChecks.areTimestampsSupported(sessionZoneId)) {
+      willNotWorkOnGpu("Only UTC zone id is supported. " +
+        s"Actual session local zone id: $sessionZoneId")
+    }
+
+    val defaultZoneId = ZoneId.systemDefault()
+    if (!TypeChecks.areTimestampsSupported(defaultZoneId)) {
+      willNotWorkOnGpu(s"Only UTC zone id is supported. Actual default zone id: $defaultZoneId")
     }
   }
 
@@ -987,6 +992,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
+    wrapped match {
+      case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.zoneId)
+      case _ => // do nothing
+    }
     tagExprForGpu()
   }
 

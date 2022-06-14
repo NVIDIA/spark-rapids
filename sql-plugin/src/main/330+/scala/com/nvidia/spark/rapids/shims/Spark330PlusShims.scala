@@ -162,7 +162,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
                 case _: DayTimeIntervalType => // Supported
               }
             }
-            checkTimeZoneId(timeAdd.timeZoneId)
           }
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
