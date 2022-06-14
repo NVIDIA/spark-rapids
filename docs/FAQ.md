@@ -147,9 +147,10 @@ An Apache Spark plan is transformed and optimized into a set of operators called
 This plan is then run through a set of rules to translate it to a version that runs on the GPU.
 If you want to know what will run on the GPU and what will not along with an explanation why you
 can set [spark.rapids.sql.explain](configs.md#sql.explain) to `ALL`. If you just want to see the
-operators not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being
-broken down into multiple jobs, and in those cases a separate log message might be output for each
-job. These are logged each time a query is compiled into an `RDD`, not just when the job runs.
+operators not on the GPU you may set it to `NOT_ON_GPU` (which is the default setting value). Be
+aware that some queries end up being broken down into multiple jobs, and in those cases a separate
+log message might be output for each job. These are logged each time a query is compiled into an
+`RDD`, not just when the job runs.
 Because of this calling `explain` on a DataFrame will also trigger this to be logged.
 
 The format of each line follows the pattern

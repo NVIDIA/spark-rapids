@@ -1279,7 +1279,7 @@ object RapidsConf {
       "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of " +
       "a query that did not go on the GPU")
     .stringConf
-    .createWithDefault("NONE")
+    .createWithDefault("NOT_ON_GPU")
 
   val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
     .internal()
