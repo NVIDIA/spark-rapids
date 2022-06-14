@@ -32,7 +32,7 @@
     <packaging>jar</packaging>
 
     <properties>
-        <hadoop.version>3.1.4</hadoop.version>
+        <hadoop.version>3.2.3</hadoop.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
         <spark.version.classifier>spark311</spark.version.classifier>
