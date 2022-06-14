@@ -36,7 +36,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetFieldIdShims, SparkShimImpl}
 import java.util
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -470,6 +470,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
 
+  private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
+    "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
+  private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -558,9 +561,15 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
         if (!util.Arrays.equals(MAGIC, magic)) {
-          throw new RuntimeException(s"$filePath is not a Parquet file. " +
+          if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
+            throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
+              "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+              s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
+          } else {
+            throw new RuntimeException(s"$filePath is not a Parquet file. " +
               s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
               s"but found ${util.Arrays.toString(magic)}")
+          }
         }
         val footerIndex = footerLengthIndex - footerLength
         if (footerIndex < MAGIC.length || footerIndex >= footerLengthIndex) {
@@ -616,32 +625,47 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
     withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
       val filePath = new Path(new URI(file.filePath))
-      val footer = footerReader match {
-        case ParquetFooterReaderType.NATIVE =>
-          val serialized = withResource(readAndFilterFooter(file, conf, readDataSchema, filePath)) {
-            tableFooter =>
-              if (tableFooter.getNumColumns <= 0) {
-                // Special case because java parquet reader does not like having 0 columns.
-                val numRows = tableFooter.getNumRows
-                val block = new BlockMetaData()
-                block.setRowCount(numRows)
-                val schema = new MessageType("root")
-                return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
-                  schema, false, false, false)
-              }
+      // Make sure we aren't trying to read encrypted files. For now, remove the related
+      // parquet confs from the hadoop configuration and try to catch the resulting
+      // exception and print a useful message
+      PARQUET_ENCRYPTION_CONFS.foreach { encryptConf =>
+        if (conf.get(encryptConf) != null) {
+          conf.unset(encryptConf)
+        }
+      }
+      val footer = try {
+         footerReader match {
+          case ParquetFooterReaderType.NATIVE =>
+            val serialized = withResource(readAndFilterFooter(file, conf,
+              readDataSchema, filePath)) { tableFooter =>
+                if (tableFooter.getNumColumns <= 0) {
+                  // Special case because java parquet reader does not like having 0 columns.
+                  val numRows = tableFooter.getNumRows
+                  val block = new BlockMetaData()
+                  block.setRowCount(numRows)
+                  val schema = new MessageType("root")
+                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                    schema, false, false, false)
+                }
 
-              tableFooter.serializeThriftFile()
-          }
-          withResource(serialized) { serialized =>
-            withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
-              val inputFile = new HMBInputFile(serialized)
-
-              // We already filtered the ranges so no need to do more here...
-              ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
+                tableFooter.serializeThriftFile()
             }
-          }
-        case _ =>
-          readAndSimpleFilterFooter(file, conf, filePath)
+            withResource(serialized) { serialized =>
+              withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
+                val inputFile = new HMBInputFile(serialized)
+
+                // We already filtered the ranges so no need to do more here...
+                ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
+              }
+            }
+          case _ =>
+            readAndSimpleFilterFooter(file, conf, filePath)
+        }
+      } catch {
+        case e if GpuParquetCrypto.isColumnarCryptoException(e) =>
+          throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
+            "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+            s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.", e)
       }
 
       val fileSchema = footer.getFileMetaData.getSchema
