@@ -160,19 +160,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
 
-  test("Cast from string to date ANSI mode with valid values") {
-    testCastStringTo(DataTypes.DateType, Seq("2021-01-01", "2021-02-01"),
-      ansiMode = AnsiExpectSuccess)
-  }
-
-  test("Cast from string to date ANSI mode with invalid values") {
-    assumeSpark320orLater
-    // test the values individually
-    Seq("2021-20-60", "not numbers", "666666666").foreach { value =>
-      testCastStringTo(DataTypes.DateType, Seq(value), ansiMode = AnsiExpectFailure)
-    }
-  }
-
   test("Cast from string to timestamp") {
     testCastStringTo(DataTypes.TimestampType,
       timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
@@ -414,6 +401,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.FloatType, DataTypes.LongType) if ansiEnabled => longsAsFloats(spark)
       case (DataTypes.DoubleType, DataTypes.LongType) if ansiEnabled => longsAsDoubles(spark)
 
+      case (DataTypes.LongType, DataTypes.TimestampType) => longsDivideByMicrosPerSecond(spark)
+
       case _ => FuzzerUtils.createDataFrame(from)(spark)
     }
   }
@@ -486,7 +475,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
-      col("longs").cast(TimestampType))
+      col("more_longs").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf,
@@ -711,6 +700,22 @@ class CastOpSuite extends GpuExpressionTestSuite {
       testCastToDecimal(DataTypes.DoubleType, scale,
         customDataGenerator = Some(doublesIncludeNaNs))
     }
+  }
+
+  test("cast float/double to decimal (include upcast of cuDF decimal type)") {
+    val genFloats: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(459.288333f), Tuple1(-123.456789f), Tuple1(789.100001f)))
+        .selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 9, scale = 6,
+      customDataGenerator = Option(genFloats))
+
+    val genDoubles: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(459.288333), Tuple1(-123.456789), Tuple1(789.100001)))
+        .selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 9, scale = 6,
+      customDataGenerator = Option(genDoubles))
   }
 
   test("cast decimal to decimal") {
@@ -1399,6 +1404,11 @@ object CastOpSuite {
     val valuesWithWhitespace = values.map(s => s"\t\n\t$s\r\n")
 
     values ++ valuesWithWhitespace
+  }
+
+  def longsDivideByMicrosPerSecond(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(_ / 10000000L).toDF("c0")
   }
 
   def timestampsAsStrings(

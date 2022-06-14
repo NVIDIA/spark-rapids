@@ -39,5 +39,4 @@ trait RebaseShims {
     SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ.key
   def int96ParquetRebaseWriteKey: String =
     SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-  def hasSeparateINT96RebaseConf: Boolean = true
 }

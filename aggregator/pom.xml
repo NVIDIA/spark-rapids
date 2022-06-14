@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.04.0</version>
+        <version>22.06.0</version>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>22.04.0</version>
+    <version>22.06.0</version>
 
     <properties>
         <!--
@@ -171,7 +171,7 @@
             <plugin>
                 <!-- keep for the case dependency-reduced pom is enabled -->
                 <artifactId>maven-clean-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>${maven.clean.plugin.version}</version>
                 <executions>
                     <execution>
                         <id>clean-reduced-dependency-poms</id>

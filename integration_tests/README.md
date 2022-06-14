@@ -253,7 +253,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-22.04.0-tests.jar,rapids-4-spark-integration-tests_2.12-22.04.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-22.06.0-tests.jar,rapids-4-spark-integration-tests_2.12-22.06.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -272,11 +272,11 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
 If you just want to verify the SQL replacement is working you will need to add the
-`rapids-4-spark` and `cudf` jars to your `spark-submit` command. Note the following
-example assumes CUDA 11.0 is being used.
+`rapids-4-spark` jar to your `spark-submit` command. Note the following example
+assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.04.0.jar,cudf-22.04.0-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.06.0-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -375,8 +375,24 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.04.0.jar,cudf-22.04.0-cuda11.jar,rapids-4-spark-tests_2.12-22.04.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-22.04.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-22.04.0.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.06.0-cuda11.jar,rapids-4-spark-tests_2.12-22.06.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-22.06.0-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-22.06.0-cuda11.jar" ./runtests.py --cudf_udf
 ```
+
+### Enabling fuzz tests
+
+Fuzz tests are intended to find more corner cases in testing. We disable them by default because they might randomly fail. 
+The tests can be enabled by appending the option `--fuzz_test` to the command.
+
+   * `--fuzz_test` (enable the fuzz tests when provided, and remove this option if you want to disable the tests)
+
+To reproduce an error appearing in the fuzz tests, you also need to add the flag `--debug_tmp_path` to save the test data.
+
+### Enabling Apache Iceberg tests
+
+Some tests require that Apache Iceberg has been configured in the Spark environment and cannot run
+properly without it. These tests assume Iceberg is not configured and are disabled by default.
+If Spark has been configured to support Iceberg then these tests can be enabled by adding the
+`--iceberg` option to the command.
 
 ## Writing tests
 

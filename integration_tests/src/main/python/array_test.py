@@ -19,7 +19,7 @@ from data_gen import *
 from spark_session import is_before_spark_330, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, col, isnan, element_at
+from pyspark.sql.functions import array_contains, col, element_at, lit
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -141,34 +141,29 @@ def test_orderby_array_of_structs(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      FloatGen(no_nans=True), DoubleGen(no_nans=True),
+                                      float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
-    lit = gen_scalar(data_gen, force_no_nulls=True)
+    literal = gen_scalar(data_gen, force_no_nulls=True)
 
     def get_input(spark):
         return two_col_df(spark, arr_gen, data_gen)
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: get_input(spark).select(
-                                            array_contains(col('a'), lit.cast(data_gen.data_type)),
+                                            array_contains(col('a'), literal.cast(data_gen.data_type)),
                                             array_contains(col('a'), col('b')),
-                                            array_contains(col('a'), col('a')[5])
-                                         ), no_nans_conf)
+                                            array_contains(col('a'), col('a')[5])))
 
 
-# Test array_contains() with a literal key that is extracted from the input array of doubles
-# that does contain NaNs. Note that the config is still set to indicate that the input has NaNs
-# but we verify that the plan is on the GPU despite that if the value being looked up is not a NaN.
-@pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [FloatGen(special_cases=[(float('nan'), 20)]),
+                          DoubleGen(special_cases=[(float('nan'), 20)])], ids=idfn)
 def test_array_contains_for_nans(data_gen):
-    arr_gen = ArrayGen(data_gen)
-
-    def main_df(spark):
-        df = three_col_df(spark, arr_gen, data_gen, arr_gen)
-        chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
-        return df.select(array_contains(col('a'), chk_val))
-    assert_gpu_and_cpu_are_equal_collect(main_df)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, ArrayGen(data_gen), data_gen).select(
+            array_contains(col('a'), col('b')),
+            array_contains(col('a'), lit(float('nan')).cast(data_gen.data_type))))
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
@@ -284,6 +279,39 @@ def test_array_max(data_gen):
                 'array_max(a)'),
             conf=no_nans_conf)
 
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen, all_null=True)], ids=idfn)
+def test_array_max_all_nulls(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'array_max(a)'),
+            conf=no_nans_conf)
+
+@pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
+def test_array_repeat_with_count_column(data_gen):
+    cnt_gen = IntegerGen(min_val=-5, max_val=5, special_cases=[])
+    cnt_not_null_gen = IntegerGen(min_val=-5, max_val=5, special_cases=[], nullable=False)
+    gen = StructGen(
+        [('elem', data_gen), ('cnt', cnt_gen), ('cnt_nn', cnt_not_null_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'array_repeat(elem, cnt)',
+            'array_repeat(elem, cnt_nn)',
+            'array_repeat("abc", cnt)'))
+
+
+@pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
+def test_array_repeat_with_count_scalar(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'array_repeat(a, 3)',
+            'array_repeat(a, 1)',
+            'array_repeat(a, 0)',
+            'array_repeat(a, -2)',
+            'array_repeat("abc", 2)',
+            'array_repeat("abc", 0)',
+            'array_repeat("abc", -1)'))
+
+
 # We add in several types of processing for foldable functions because the output
 # can be different types.
 @pytest.mark.parametrize('query', [
@@ -332,3 +360,37 @@ def test_array_exists(data_gen, threeVL):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
         'spark.sql.legacy.followThreeValuedLogicInArrayExists' : threeVL,
     })
+
+
+array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5)]
+
+
+@pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
+def test_arrays_zip(data_gen):
+    gen = StructGen(
+        [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'arrays_zip(a, b, c, d)',
+            'arrays_zip(a, b, c)',
+            'arrays_zip(a, b, array())',
+            'arrays_zip(a)')
+    )
+
+
+def test_arrays_zip_corner_cases():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(int_gen), length=100).selectExpr(
+            'arrays_zip()',
+            'arrays_zip(null)',
+            'arrays_zip(null, null)',
+            'arrays_zip(null, a)',
+            'arrays_zip(a, array())',
+            'arrays_zip(a, array(), array(1, 2))',
+            'arrays_zip(a, array(1, 2, 4, 3), array(5))')
+    )
+
+def test_array_max_q1():
+    def q1(spark):
+        return spark.sql('SELECT ARRAY_MAX(TRANSFORM(ARRAY_REPEAT(STRUCT(1, 2), 0), s -> s.col2))')
+    assert_gpu_and_cpu_are_equal_collect(q1)

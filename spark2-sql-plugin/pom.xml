@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.04.0</version>
+        <version>22.06.0</version>
     </parent>
     <artifactId>rapids-4-spark-sql-meta_2.11</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Base Meta</name>
     <description>The RAPIDS SQL plugin for Apache Spark Base Meta Information</description>
-    <version>22.04.0</version>
+    <version>22.06.0</version>
 
     <properties>
         <scala.binary.version>2.11</scala.binary.version>
@@ -147,7 +147,7 @@
                     <scalaVersion>${scala.version}</scalaVersion>
                     <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                     <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                    <recompileMode>incremental</recompileMode>
+                    <recompileMode>${scala.recompileMode}</recompileMode>
                     <args>
                         <arg>-unchecked</arg>
                         <arg>-deprecation</arg>
@@ -161,13 +161,7 @@
                         <jvmArg>-Xms1024m</jvmArg>
                         <jvmArg>-Xmx1024m</jvmArg>
                     </jvmArgs>
-                    <javacArgs>
-                        <javacArg>-source</javacArg>
-                        <javacArg>${maven.compiler.source}</javacArg>
-                        <javacArg>-target</javacArg>
-                        <javacArg>${maven.compiler.target}</javacArg>
-                        <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
-                    </javacArgs>
+                    <addJavacArgs>${scala.javac.args}</addJavacArgs>
                 </configuration>
             </plugin>
             <plugin>

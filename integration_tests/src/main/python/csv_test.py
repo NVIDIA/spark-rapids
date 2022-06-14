@@ -257,6 +257,21 @@ def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_ena
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
             conf=updated_conf)
 
+@pytest.mark.parametrize('name,schema,options', [
+    pytest.param('small_float_values.csv', _float_schema, {'header': 'true'}),
+    pytest.param('small_float_values.csv', _double_schema, {'header': 'true'}),
+], ids=idfn)
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_csv_read_small_floats(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
+    updated_conf=copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
+                                         conf=updated_conf)
+
 csv_supported_gens = [
         # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
         # This would require multiLine reads to work correctly so we avoid these chars
@@ -513,3 +528,15 @@ def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema).csv(data_path),
         conf=updated_conf)
+
+@allow_non_gpu(any = True)
+def test_csv_read_case_insensitivity(spark_tmp_path):
+    gen_list = [('one', int_gen), ('tWo', byte_gen), ('THREE', boolean_gen)]
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.option('header', True).csv(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.option('header', True).csv(data_path).select('one', 'two', 'three'),
+        {'spark.sql.caseSensitive': 'false'}
+    )

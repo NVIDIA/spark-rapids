@@ -22,10 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.04.0</version>
+        <version>22.06.0</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>22.04.0</version>
+    <version>22.06.0</version>
     <properties>
         <target.classifier/>
     </properties>
@@ -49,15 +49,10 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>ai.rapids</groupId>
-            <artifactId>cudf</artifactId>
-            <classifier>${cuda.version}</classifier>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
+            <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -74,47 +69,60 @@
 
     <profiles>
         <profile>
-            <id>release311cdh</id>
+            <id>release321cdh</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>311cdh</value>
+                    <value>321cdh</value>
                 </property>
             </activation>
             <dependencies>
                 <dependency>
-                    <!-- it seems CDH jars pull an old version of Guava but need new version
-                         to run with, so here we override Guava version for testing -->
-                    <groupId>com.google.guava</groupId>
-                    <artifactId>guava</artifactId>
-                    <version>${guava.cdh.version}</version>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
                         <exclusion>
-                            <groupId>org.apache.curator</groupId>
-                            <artifactId>curator-recipes</artifactId>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
                         </exclusion>
                     </exclusions>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.curator</groupId>
-                    <artifactId>curator-recipes</artifactId>
-                    <version>4.3.0.7.2.7.0-184</version>
-                </dependency>
-                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
+                    <version>${spark321cdh.version}</version>
                     <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
                         <exclusion>
                             <groupId>org.apache.spark</groupId>
                             <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>${arrow.cdh.version}</version>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-core</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-annotations</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>io.netty</groupId>
+                            <artifactId>netty-common</artifactId>
                         </exclusion>
                     </exclusions>
                 </dependency>
@@ -226,31 +234,6 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>generate-build-info</id>
-                        <phase>generate-resources</phase>
-                        <configuration>
-                            <!-- Execute the shell script to generate the plugin build information. -->
-                            <target>
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
-                                    <arg value="${project.version}"/>
-                                    <arg value="${cudf.version}"/>
-                                </exec>
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
                     <finalName>rapids-4-spark-integration-tests_${scala.binary.version}-${project.version}-${spark.version.classifier}</finalName>
@@ -289,6 +272,32 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>${maven.clean.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>clean-copy</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <filesets>
+                                    <directory>target/dependency</directory>
+                                    <includes>
+                                        <include>parquet-hadoop*.jar</include>
+                                        <include>spark-avro*.jar</include>
+                                    </includes>
+                                </filesets>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
@@ -301,14 +310,15 @@
                             <useBaseVersion>true</useBaseVersion>
                             <artifactItems>
                                 <artifactItem>
-                                    <groupId>ai.rapids</groupId>
-                                    <artifactId>cudf</artifactId>
-                                    <classifier>${cuda.version}</classifier>
-                                </artifactItem>
-                                <artifactItem>
                                     <groupId>org.apache.spark</groupId>
                                     <artifactId>spark-avro_${scala.binary.version}</artifactId>
                                     <version>${spark.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.apache.parquet</groupId>
+                                    <artifactId>parquet-hadoop</artifactId>
+                                    <version>${parquet.hadoop.version}</version>
+                                    <classifier>tests</classifier>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>

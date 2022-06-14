@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.RapidsConf
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
+import org.apache.spark.SparkException
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.functions.{udf => makeUdf}
@@ -851,6 +852,30 @@ class OpcodeSuite extends FunSuite {
     val result = dataset.withColumn("new", u(col("x"),col("y")))
     val ref = dataset.withColumn("new", lit(2.0))
     checkEquiv(result, ref)
+  }
+
+  test("Conditional simplification - if (c) true else false => c") {
+    val myudf: (Int) => Boolean = i => {
+      if (i < 20) true else false
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(20, 19).toDF("x")
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x") < 20)
+    assert(udfIsCompiled(result))
+    assert(!result.queryExecution.analyzed.toString.contains("if"))
+  }
+
+  test("Conditional simplification - if (c) false else true => !c") {
+    val myudf: (Int) => Boolean = i => {
+      if (i < 20) false else true
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(20, 19).toDF("x")
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x") >= 20)
+    checkEquiv(result, ref)
+    assert(!result.queryExecution.analyzed.toString.contains("if"))
   }
 
   test("LDC_W opcode") {
@@ -2324,6 +2349,44 @@ class OpcodeSuite extends FunSuite {
     val result = runner(dataset)
     val ref = dataset.withColumn("new", length(col("value")) + capturedArg)
     checkEquivNotCompiled(result, ref)
+  }
+
+  test("capture a primitive var in method") {
+    def run() = {
+      val capturedArg: Int = 4
+      val myudf: (String) => Int = str => {
+        str.length + capturedArg
+      }
+      val u = makeUdf(myudf)
+      val dataset = List("hello", "world").toDS()
+      val result = dataset.withColumn("new", u(col("value")))
+      val ref = dataset.withColumn("new", length(col("value")) + capturedArg)
+      checkEquiv(result, ref)
+    }
+    run
+  }
+
+  test("throw a SparkException object") {
+    def run(x: Int) = {
+      val myudf: (Int) => Boolean = i => {
+        if (i < 0 || i >= x) {
+          throw new SparkException(s"Fold number must be in range [0, $x), but got $i.")
+        }
+        true
+      }
+      val u = makeUdf(myudf)
+      val dataset = List(2, 20).toDS()
+      val result = dataset.withColumn("new", u('value))
+      val ref = dataset.withColumn("new", lit(true))
+      checkEquiv(result, ref)
+    }
+    run(30)
+    try {
+      run(20)
+    } catch {
+      case e: RuntimeException =>
+        assert(e.getMessage == "Fold number must be in range [0, 20), but got 20.")
+    }
   }
 
   test("Conditional array buffer processing") {

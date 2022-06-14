@@ -99,6 +99,9 @@ case class GpuCreateMap(
     }
   }
 
+  override lazy val hasSideEffects: Boolean =
+    GpuCreateMap.exceptionOnDupKeys || super.hasSideEffects
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(new Array[ColumnVector](children.size)) { columns =>
       val numRows = batch.numRows()
@@ -135,11 +138,14 @@ object GpuCreateMap extends Arm {
       SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
   }
 
+  def exceptionOnDupKeys: Boolean =
+    SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
+        SQLConf.MapKeyDedupPolicy.EXCEPTION.toString
+
   def createMapFromKeysValuesAsStructs(dataType: MapType,
                                        listsOfKeyValueStructs : ColumnView): GpuColumnVector = {
     withResource(listsOfKeyValueStructs.dropListDuplicatesWithKeysValues()) { deduped =>
-      if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-        SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
+      if (exceptionOnDupKeys) {
         // Compare child data row count before and after removing duplicates to determine
         // if there were duplicates.
         withResource(deduped.getChildColumnView(0)) { a =>

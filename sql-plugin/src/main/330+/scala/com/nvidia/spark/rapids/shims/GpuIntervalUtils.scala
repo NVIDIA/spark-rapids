@@ -15,12 +15,17 @@
  */
 package com.nvidia.spark.rapids.shims
 
+import java.math.BigInteger
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.Arm
+import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.types.{DayTimeIntervalType => DT}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.{Arm, BoolUtils, CloseableHolder}
+
+import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, MONTHS_PER_YEAR}
+import org.apache.spark.sql.rapids.shims.IntervalUtils
+import org.apache.spark.sql.types.{DataType, DayTimeIntervalType => DT, YearMonthIntervalType => YM}
 
 /**
  * Parse DayTimeIntervalType string column to long column of micro seconds
@@ -68,6 +73,10 @@ object GpuIntervalUtils extends Arm {
   val MAX_SECOND: Long = Long.MaxValue / SECONDS.toMicros(1)
   val MAX_HOUR_IN_DAY = 23L
   val MAX_MINUTE_IN_HOUR = 59L
+
+  val prefixStr = "INTERVAL '"
+  // used for casting Long.MinValue to string
+  val minLongBaseStr = "-106751991 04:00:54.775808000"
 
   // literals ignore upper and lower cases
   private val INTERVAL = "[iI][nN][tT][eE][rR][vV][aA][lL]"
@@ -126,9 +135,26 @@ object GpuIntervalUtils extends Arm {
   private val secondPatternString = s"$sign$secondBoundPattern$microPattern"
   private val secondLiteralRegex = s"^$INTERVAL$blanks$sign'$secondPatternString'$blanks$SECOND$$"
 
-  def checkAllValid(cv: ColumnVector, regexp: String): Unit = {
-    if (cv.hasNulls) {
-      throw new RuntimeException(s"Do not match the regular expression: $regexp")
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnView, t: DataType): ColumnVector = {
+    castStringToDayTimeIntervalWithThrow(cv, t.asInstanceOf[DT])
+  }
+
+  /**
+   * Cast string column to long column, throw exception if the casting of a row failed
+   * Fail reasons includes: regexp not match, range check failed, overflow when adding
+   * @param cv string column
+   * @param t  day-time interval type
+   * @return long column of micros
+   * @throws IllegalArgumentException if have a row failed
+   */
+  def castStringToDayTimeIntervalWithThrow(cv: ColumnView, t: DT): ColumnVector = {
+    withResource(castStringToDTInterval(cv, t)) { ret =>
+      if(ret.getNullCount > cv.getNullCount) {
+        throw new IllegalArgumentException("Cast string to day time interval failed, " +
+            "may be the format is invalid, range check failed or overflow")
+      } else {
+        ret.incRefCount()
+      }
     }
   }
 
@@ -138,21 +164,12 @@ object GpuIntervalUtils extends Arm {
    *
    * @param cv             string column
    * @param t              day-time interval type
-   * @param throwException throw exception if failed when throwException is true
-   *                       TODO: checked regexp match, should also check range, check overflow,
-   *                       seems there are no operators requiring this.
    * @return long column of micros
    */
-  def castStringToDTInterval(
-      cv: ColumnVector, t: DT, throwException: Boolean = false): ColumnVector = {
+  def castStringToDTInterval(cv: ColumnView, t: DT): ColumnVector = {
     (t.startField, t.endField) match {
       case (DT.DAY, DT.DAY) => withResource(cv.extractRe(dayLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), dayLiteralRegex)
-          }
-
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToDay(sign,
               groupsTable.getColumn(2) // day
@@ -163,11 +180,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.DAY, DT.HOUR) => withResource(cv.extractRe(dayHourLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), dayHourLiteralRegex)
-          }
-
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToHour(sign,
               groupsTable.getColumn(2), // day
@@ -179,10 +191,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.DAY, DT.MINUTE) => withResource(cv.extractRe(dayMinuteLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), dayMinuteLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToMinute(sign,
               groupsTable.getColumn(2), // day
@@ -195,10 +203,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.DAY, DT.SECOND) => withResource(cv.extractRe(daySecondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), daySecondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToSecond(sign,
               groupsTable.getColumn(2), // day
@@ -212,10 +216,6 @@ object GpuIntervalUtils extends Arm {
       }
 
       case (DT.HOUR, DT.HOUR) => withResource(cv.extractRe(hourLiteralRegex)) { groupsTable => {
-        if (throwException) {
-          // check all match the regexp
-          checkAllValid(groupsTable.getColumn(2), hourLiteralRegex)
-        }
         withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
           addFromHourToHour(sign,
             groupsTable.getColumn(2) // hour
@@ -226,10 +226,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.HOUR, DT.MINUTE) => withResource(cv.extractRe(hourMinuteLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), hourMinuteLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromHourToMinute(sign,
               groupsTable.getColumn(2), // hour
@@ -241,10 +237,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.HOUR, DT.SECOND) => withResource(cv.extractRe(hourSecondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), hourSecondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) {
             sign =>
               addFromHourToSecond(sign,
@@ -259,10 +251,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.MINUTE, DT.MINUTE) => withResource(cv.extractRe(minuteLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), minuteLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromMinuteToMinute(sign,
               groupsTable.getColumn(2) // minute
@@ -273,10 +261,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.MINUTE, DT.SECOND) => withResource(cv.extractRe(minuteSecondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), minuteSecondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromMinuteToSecond(sign,
               groupsTable.getColumn(2), // minute
@@ -289,10 +273,6 @@ object GpuIntervalUtils extends Arm {
 
       case (DT.SECOND, DT.SECOND) => withResource(cv.extractRe(secondLiteralRegex)) {
         groupsTable => {
-          if (throwException) {
-            // check all match the regexp
-            checkAllValid(groupsTable.getColumn(2), secondLiteralRegex)
-          }
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromSecondToSecond(sign,
               groupsTable.getColumn(2), // second
@@ -555,6 +535,361 @@ object GpuIntervalUtils extends Arm {
       withResource(Scalar.fromLong(multiple)) { multipleScalar =>
         baseWithSign.mul(multipleScalar)
       }
+    }
+  }
+
+  def toDayTimeIntervalString(micros: ColumnView, dayTimeType: DataType): ColumnVector = {
+    val t = dayTimeType.asInstanceOf[DT]
+    toDayTimeIntervalString(micros, t.startField, t.endField)
+  }
+
+  /**
+   * Cast day-time interval to string
+   * Rewrite from org.apache.spark.sql.catalyst.util.IntervalUtils.toDayTimeIntervalString
+   *
+   * @param micros     long micro seconds
+   * @param startField start field, valid values are [0, 3] indicates [DAY, HOUR, MINUTE, SECOND]
+   * @param endField   end field, should >= startField,
+   *                   valid values are [0, 3] indicates [DAY, HOUR, MINUTE, SECOND]
+   * @return ANSI day-time interval string, e.g.: interval '01 08:30:30.001' DAY TO SECOND
+   */
+  def toDayTimeIntervalString(
+      micros: ColumnView,
+      startField: Byte,
+      endField: Byte): ColumnVector = {
+
+    val numRows = micros.getRowCount
+    val from = DT.fieldToString(startField).toUpperCase
+    val to = DT.fieldToString(endField).toUpperCase
+    val postfixStr = s"' ${if (startField == endField) from else s"$from TO $to"}"
+
+    val retCv = withResource(new ArrayBuffer[ColumnView]) { parts =>
+        // prefix with sign part: INTERVAL ' or INTERVAL '-
+        parts += withResource(Scalar.fromLong(0L)) { zero =>
+          withResource(micros.lessThan(zero)) { less =>
+            withResource(Scalar.fromString(prefixStr + "-")) { negPrefix =>
+              withResource(Scalar.fromString(prefixStr)) { prefix =>
+                less.ifElse(negPrefix, prefix)
+              }
+            }
+          }
+        }
+
+        // calculate abs, abs(Long.MinValue) will overflow, handle in the last as special case
+        withResource(new CloseableHolder(micros.abs())) { restHolder =>
+
+        startField match {
+          case DT.DAY =>
+            // start day part
+            parts += divResult(restHolder.get, MICROS_PER_DAY)
+            restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_DAY))
+          case DT.HOUR =>
+            // start hour part
+            parts += divResultWithPadding(restHolder.get, MICROS_PER_HOUR)
+            restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_HOUR))
+          case DT.MINUTE =>
+            // start minute part
+            parts += divResultWithPadding(restHolder.get, MICROS_PER_MINUTE)
+            restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_MINUTE))
+          case DT.SECOND =>
+            // start second part
+            addDecimalParts(restHolder.get, parts)
+        }
+
+        if (startField < DT.HOUR && DT.HOUR <= endField) {
+          // if hour has precedent part
+          parts += getConstStringVector(" ", numRows)
+          parts += divResultWithPadding(restHolder.get, MICROS_PER_HOUR)
+          restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_HOUR))
+        }
+
+        if (startField < DT.MINUTE && DT.MINUTE <= endField) {
+          // if minute has precedent part
+          parts += getConstStringVector(":", numRows)
+          parts += divResultWithPadding(restHolder.get, MICROS_PER_MINUTE)
+          restHolder.setAndCloseOld(getRest(restHolder.get, MICROS_PER_MINUTE))
+        }
+
+        if (startField < DT.SECOND && DT.SECOND <= endField) {
+          // if second has precedent part
+          parts += getConstStringVector(":", numRows)
+
+          // start second part
+          addDecimalParts(restHolder.get, parts)
+        }
+
+        // trailing part, e.g.:  ' DAY TO SECOND
+        parts += getConstStringVector(postfixStr, numRows)
+
+        // concatenate all the parts
+        ColumnVector.stringConcatenate(parts.toArray[ColumnView])
+      }
+    }
+
+    // special handling for Long.MinValue
+    // if micros are Long.MinValue, directly replace with const string
+    withResource(retCv) { ret =>
+      val firstStr = startField match {
+        case DT.DAY => s"-$MAX_DAY"
+        case DT.HOUR => s"-$MAX_HOUR"
+        case DT.MINUTE => s"-$MAX_MINUTE"
+        case DT.SECOND => s"-$MAX_SECOND.775808"
+      }
+      val followingStr = if (startField == endField) {
+        ""
+      } else {
+        val substrStart = startField match {
+          case DT.DAY => 10
+          case DT.HOUR => 13
+          case DT.MINUTE => 16
+        }
+        val substrEnd = endField match {
+          case DT.HOUR => 13
+          case DT.MINUTE => 16
+          case DT.SECOND => 26
+        }
+        minLongBaseStr.substring(substrStart, substrEnd)
+      }
+      val minStr = s"$prefixStr$firstStr$followingStr$postfixStr"
+      withResource(Scalar.fromString(minStr)) { minStrScalar =>
+        withResource(Scalar.fromLong(Long.MinValue)) { minS =>
+          withResource(micros.equalTo(minS)) { eq =>
+            eq.ifElse(minStrScalar, ret)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * return (micros / div).toString
+   */
+  private def divResult(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(Scalar.fromLong(div)) { divS =>
+      withResource(micros.div(divS)) { ret =>
+        ret.castTo(DType.STRING)
+      }
+    }
+  }
+
+  /**
+   * return (micros / div).toString with padding zero
+   */
+  private def divResultWithPadding(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(divResult(micros, div)) { s =>
+      // pad 0 if value < 10, e.g.:  9 => 09
+      s.zfill(2)
+    }
+  }
+
+  /**
+   * return (micros % div)
+   */
+  private def getRest(micros: ColumnVector, div: Long): ColumnVector = {
+    withResource(Scalar.fromLong(div)) { divS =>
+      micros.mod(divS)
+    }
+  }
+
+  private def getConstStringVector(s: String, numRows: Long): ColumnVector = {
+    withResource(Scalar.fromString(s)) { scalar =>
+      ai.rapids.cudf.ColumnVector.fromScalar(scalar, numRows.toInt)
+    }
+  }
+
+  /**
+   * Generate second decimal part with strip trailing `0` and `.`
+   */
+  private def addDecimalParts(rest: ColumnVector, parts: ArrayBuffer[ColumnView]) = {
+    // if second less than 10, should pad zero. e.g.: `9.500000` => `09.500000`
+    withResource(Scalar.fromString("0")) { padZero =>
+      withResource(Scalar.fromString("")) { empty =>
+        parts += withResource(Scalar.fromLong(10 * MICROS_PER_SECOND)) { tenSeconds =>
+          withResource(rest.lessThan(tenSeconds)) { lessThan10 =>
+            lessThan10.ifElse(padZero, empty)
+          }
+        }
+      }
+    }
+
+    // get the second strings with fractional microseconds
+    // the values always have dot and 6 fractional digits
+    val decimalType = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+    // use big int to generate Decimal128 decimal scalar
+    val microsPerSecondBigInt = new BigInteger(MICROS_PER_SECOND.toString)
+    val decimalStrCv = withResource(rest.castTo(decimalType)) { decimal =>
+      withResource(Scalar.fromDecimal(0, microsPerSecondBigInt)) { microsPerSecond =>
+        withResource(decimal.div(microsPerSecond)) { r =>
+          r.castTo(DType.STRING)
+        }
+      }
+    }
+
+    // strip trailing `0`
+    // e.g.: 0.001000 => 0.001, 0.000000 => 0.
+    val stripedCv = withResource(decimalStrCv) { decimalStr =>
+      withResource(Scalar.fromString("0")) { zero =>
+        decimalStr.rstrip(zero)
+      }
+    }
+
+    // strip trailing `.` for spacial case:  0. => 0
+    parts += withResource(stripedCv) { striped =>
+      withResource(Scalar.fromString(".")) { dot =>
+        striped.rstrip(dot)
+      }
+    }
+  }
+
+  def dayTimeIntervalToLong(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    dt.asInstanceOf[DT].endField match {
+      case DT.DAY => withResource(Scalar.fromLong(MICROS_PER_DAY)) { micros =>
+        dtCv.div(micros)
+      }
+      case DT.HOUR => withResource(Scalar.fromLong(MICROS_PER_HOUR)) { micros =>
+        dtCv.div(micros)
+      }
+      case DT.MINUTE => withResource(Scalar.fromLong(MICROS_PER_MINUTE)) { micros =>
+        dtCv.div(micros)
+      }
+      case DT.SECOND => withResource(Scalar.fromLong(MICROS_PER_SECOND)) { micros =>
+        dtCv.div(micros)
+      }
+    }
+  }
+
+  def dayTimeIntervalToInt(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
+      castToTargetWithOverflowCheck(longCv, DType.INT32)
+    }
+  }
+
+  def dayTimeIntervalToShort(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
+      castToTargetWithOverflowCheck(longCv, DType.INT16)
+    }
+  }
+
+  def dayTimeIntervalToByte(dtCv: ColumnView, dt: DataType): ColumnVector = {
+    withResource(dayTimeIntervalToLong(dtCv, dt)) { longCv =>
+      castToTargetWithOverflowCheck(longCv, DType.INT8)
+    }
+  }
+
+  def yearMonthIntervalToLong(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    ym.asInstanceOf[YM].endField match {
+      case YM.YEAR => withResource(Scalar.fromLong(MONTHS_PER_YEAR)) { monthsPerYear =>
+        ymCv.div(monthsPerYear)
+      }
+      case YM.MONTH => ymCv.castTo(DType.INT64)
+    }
+  }
+
+  def yearMonthIntervalToInt(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    ym.asInstanceOf[YM].endField match {
+      case YM.YEAR => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) { monthsPerYear =>
+        ymCv.div(monthsPerYear)
+      }
+      case YM.MONTH => ymCv.copyToColumnVector()
+    }
+  }
+
+  def yearMonthIntervalToShort(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    withResource(yearMonthIntervalToInt(ymCv, ym)) { i =>
+      castToTargetWithOverflowCheck(i, DType.INT16)
+    }
+  }
+
+  def yearMonthIntervalToByte(ymCv: ColumnView, ym: DataType): ColumnVector = {
+    withResource(yearMonthIntervalToInt(ymCv, ym)) { i =>
+      castToTargetWithOverflowCheck(i, DType.INT8)
+    }
+  }
+
+  private def castToTargetWithOverflowCheck(cv: ColumnView, dType: DType): ColumnVector = {
+    withResource(cv.castTo(dType)) { retTarget =>
+      withResource(cv.notEqualTo(retTarget)) { notEqual =>
+        if (BoolUtils.isAnyValidTrue(notEqual)) {
+          throw new ArithmeticException(s"overflow occurs when casting to $dType")
+        } else {
+          retTarget.incRefCount()
+        }
+      }
+    }
+  }
+
+  /**
+   * Convert long cv to `day time interval`
+   */
+  def longToDayTimeInterval(longCv: ColumnView, dt: DataType): ColumnVector = {
+    val microsScalar = dt.asInstanceOf[DT].endField match {
+      case DT.DAY => Scalar.fromLong(MICROS_PER_DAY)
+      case DT.HOUR => Scalar.fromLong(MICROS_PER_HOUR)
+      case DT.MINUTE => Scalar.fromLong(MICROS_PER_MINUTE)
+      case DT.SECOND => Scalar.fromLong(MICROS_PER_SECOND)
+    }
+    withResource(microsScalar) { micros =>
+      // leverage `Decimal 128` to check the overflow
+      IntervalUtils.multipleToLongWithOverflowCheck(longCv, micros)
+    }
+  }
+
+  /**
+   * Convert (byte | short | int) cv to `day time interval`
+   */
+  def intToDayTimeInterval(intCv: ColumnView, dt: DataType): ColumnVector = {
+    dt.asInstanceOf[DT].endField match {
+      case DT.DAY => withResource(Scalar.fromLong(MICROS_PER_DAY)) { micros =>
+        if (intCv.getType.equals(DType.INT32)) {
+          // leverage `Decimal 128` to check the overflow
+          // Int.MaxValue * `micros` can cause overflow
+          IntervalUtils.multipleToLongWithOverflowCheck(intCv, micros)
+        } else {
+          // no need to check overflow for short byte types
+          intCv.mul(micros)
+        }
+      }
+      case DT.HOUR => withResource(Scalar.fromLong(MICROS_PER_HOUR)) { micros =>
+        // no need to check overflow
+        intCv.mul(micros)
+      }
+      case DT.MINUTE => withResource(Scalar.fromLong(MICROS_PER_MINUTE)) { micros =>
+        // no need to check overflow
+        intCv.mul(micros)
+      }
+      case DT.SECOND => withResource(Scalar.fromLong(MICROS_PER_SECOND)) { micros =>
+        // no need to check overflow
+        intCv.mul(micros)
+      }
+    }
+  }
+
+  /**
+   * Convert long cv to `year month interval`
+   */
+  def longToYearMonthInterval(longCv: ColumnView, ym: DataType): ColumnVector = {
+    ym.asInstanceOf[YM].endField match {
+      case YM.YEAR => withResource(Scalar.fromLong(MONTHS_PER_YEAR)) { num12 =>
+        // leverage `Decimal 128` to check the overflow
+        IntervalUtils.multipleToIntWithOverflowCheck(longCv, num12)
+      }
+      case YM.MONTH => IntervalUtils.castLongToIntWithOverflowCheck(longCv)
+    }
+  }
+
+  /**
+   * Convert (byte | short | int) cv to `year month interval`
+   */
+  def intToYearMonthInterval(intCv: ColumnView, ym: DataType): ColumnVector = {
+    (ym.asInstanceOf[YM].endField, intCv.getType) match {
+      case (YM.YEAR, DType.INT32) => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) { num12 =>
+        // leverage `Decimal 128` to check the overflow
+        IntervalUtils.multipleToIntWithOverflowCheck(intCv, num12)
+      }
+      case (YM.YEAR, DType.INT16 | DType.INT8) => withResource(Scalar.fromInt(MONTHS_PER_YEAR)) {
+        num12 => intCv.mul(num12)
+      }
+      case (YM.MONTH, _) => intCv.castTo(DType.INT32)
     }
   }
 }

@@ -287,6 +287,11 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   }
 }
 
+object RapidsReaderType extends Enumeration {
+  type RapidsReaderType = Value
+  val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
+}
+
 object RapidsConf {
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
@@ -415,7 +420,7 @@ object RapidsConf {
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly.")
     .stringConf
-    .createWithDefault("ARENA")
+    .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -554,7 +559,7 @@ object RapidsConf {
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
     .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
@@ -573,7 +578,7 @@ object RapidsConf {
       "In some cases this can result in cudf producing an answer when spark overflows. " +
       "Because this is not as compatible with spark, we have it disabled by default.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val HAS_NANS = conf("spark.rapids.sql.hasNans")
     .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
@@ -594,7 +599,7 @@ object RapidsConf {
       "different results on the GPU as the aggregation is done in parallel.  This can enable " +
       "those operations if you know the query is only computing it once.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -611,13 +616,13 @@ object RapidsConf {
     .doc("Casting from floating point types to decimal on the GPU returns results that have " +
       "tiny difference compared to results returned from CPU.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_STRING = conf("spark.rapids.sql.castFloatToString.enabled")
     .doc("Casting from floating point types to string on the GPU returns results that have " +
       "a different precision than the default results of Spark.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
@@ -625,13 +630,13 @@ object RapidsConf {
           "slightly different range of values when using Spark 3.1.0 or later. Refer to the CAST " +
           "documentation for more details.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_CAST_DECIMAL_TO_FLOAT = conf("spark.rapids.sql.castDecimalToFloat.enabled")
       .doc("Casting from decimal to floating point types on the GPU returns results that have " +
           "tiny difference compared to results returned from CPU.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
@@ -642,7 +647,7 @@ object RapidsConf {
       "the GPU returns Double.MaxValue while CPU returns \"+Infinity\" and \"-Infinity\" " +
       "respectively")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
     .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
@@ -727,6 +732,27 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  object ParquetFooterReaderType extends Enumeration {
+    val JAVA, NATIVE = Value
+  }
+
+  val PARQUET_READER_FOOTER_TYPE =
+    conf("spark.rapids.sql.format.parquet.reader.footer.type")
+      .doc("In some cases reading the footer of the file is very expensive. Typically this " +
+          "happens when there are a large number of columns and relatively few " +
+          "of them are being read on a large number of files. " +
+          "This provides the ability to use a different path to parse and filter the footer. " +
+          "JAVA is the default and should match closely with Apache Spark. NATIVE will parse and " +
+          "filter the footer using C++. In the worst case this can be slower than JAVA, but " +
+          "not by much if anything. This is still a very experimental feature and there are " +
+          "known bugs and limitations. It should work for most cases when reading data that " +
+          "complies with the latest Parquet standard, but can run into issues for older data " +
+          "that does not fully comply with it.")
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(ParquetFooterReaderType.values.map(_.toString))
+      .createWithDefault(ParquetFooterReaderType.JAVA.toString)
+
   // This is an experimental feature now. And eventually, should be enabled or disabled depending
   // on something that we don't know yet but would try to figure out.
   val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
@@ -736,10 +762,6 @@ object RapidsConf {
       "removed in the future.")
     .booleanConf
     .createWithDefault(false)
-
-  object ParquetReaderType extends Enumeration {
-    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
-  }
 
   val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
     .doc("Sets the parquet reader type. We support different types that are optimized for " +
@@ -765,8 +787,8 @@ object RapidsConf {
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(ParquetReaderType.values.map(_.toString))
-    .createWithDefault(ParquetReaderType.AUTO.toString)
+    .checkValues(RapidsReaderType.values.map(_.toString))
+    .createWithDefault(RapidsReaderType.AUTO.toString)
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
@@ -827,11 +849,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // This will be deleted when COALESCING is implemented for ORC
-  object OrcReaderType extends Enumeration {
-    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
-  }
-
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
     .doc("Sets the orc reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
@@ -856,8 +873,8 @@ object RapidsConf {
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(OrcReaderType.values.map(_.toString))
-    .createWithDefault(OrcReaderType.AUTO.toString)
+    .checkValues(RapidsReaderType.values.map(_.toString))
+    .createWithDefault(RapidsReaderType.AUTO.toString)
 
   val ORC_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.orc.multiThreadedRead.numThreads")
@@ -892,7 +909,7 @@ object RapidsConf {
   val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
     .doc("CSV reading is not 100% compatible when reading floats.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
     .doc("CSV reading is not 100% compatible when reading doubles.")
@@ -918,7 +935,7 @@ object RapidsConf {
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
     .doc("JSON reading is not 100% compatible when reading doubles.")
@@ -940,6 +957,52 @@ object RapidsConf {
     .doc("When set to true enables avro input acceleration")
     .booleanConf
     .createWithDefault(false)
+
+  val AVRO_READER_TYPE = conf("spark.rapids.sql.format.avro.reader.type")
+    .doc("Sets the avro reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.avro.multiThreadedRead.numThreads. " +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.avro.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(RapidsReaderType.values.map(_.toString))
+    .createWithDefault(RapidsReaderType.AUTO.toString)
+
+  val AVRO_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.avro.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on one executor, to use for reading small " +
+        "avro files in parallel. This can not be changed at runtime after the executor has " +
+        "started. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.avro.reader.type.")
+      .integerConf
+      .createWithDefault(20)
+
+  val AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.avro.reader.type")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -974,12 +1037,13 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
-    .doc("Specifies whether regular expressions should be evaluated on GPU. Complex expressions " +
-      "can cause out of memory issues so this is disabled by default. Setting this config to " +
-      "true will make supported regular expressions run on the GPU. See the compatibility " +
-      "guide for more information about which regular expressions are supported on the GPU.")
+    .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
+      "Unsupported expressions will fall back to CPU. However, there are some known edge cases " +
+      "that will still execute on GPU and produce incorrect results and these are documented in " +
+      "the compatibility guide. Setting this config to false will make all regular expressions " +
+      "run on the CPU instead.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -1014,6 +1078,12 @@ object RapidsConf {
 
   val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
     .doc("A path prefix where ORC split file data is dumped for debugging.")
+    .internal()
+    .stringConf
+    .createWithDefault(null)
+
+  val AVRO_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.avro.debug.dumpPrefix")
+    .doc("A path prefix where AVRO split file data is dumped for debugging.")
     .internal()
     .stringConf
     .createWithDefault(null)
@@ -1393,7 +1463,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.04.0.jar,cudf-22.04.0-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.06.0-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1593,6 +1663,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
 
+  lazy val avroDebugDumpPrefix: String = get(AVRO_DEBUG_DUMP_PREFIX)
+
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
@@ -1639,17 +1711,27 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
 
+  lazy val parquetReaderFooterType: ParquetFooterReaderType.Value = {
+    get(PARQUET_READER_FOOTER_TYPE) match {
+      case "NATIVE" => ParquetFooterReaderType.NATIVE
+      case "JAVA" => ParquetFooterReaderType.JAVA
+      case other =>
+        throw new IllegalArgumentException(s"Internal Error $other is not supported for " +
+            s"${PARQUET_READER_FOOTER_TYPE.key}")
+    }
+  }
+
   lazy val isParquetPerFileReadEnabled: Boolean =
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.PERFILE
 
   lazy val isParquetAutoReaderEnabled: Boolean =
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.AUTO
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.AUTO
 
   lazy val isParquetCoalesceFileReadEnabled: Boolean = isParquetAutoReaderEnabled ||
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.COALESCING
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
-    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.MULTITHREADED
+    RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
 
@@ -1666,16 +1748,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.PERFILE
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.PERFILE
 
   lazy val isOrcAutoReaderEnabled: Boolean =
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.AUTO
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.AUTO
 
   lazy val isOrcCoalesceFileReadEnabled: Boolean = isOrcAutoReaderEnabled ||
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.COALESCING
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
-    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.MULTITHREADED
+    RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val orcMultiThreadReadNumThreads: Int = get(ORC_MULTITHREAD_READ_NUM_THREADS)
 
@@ -1704,6 +1786,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
   lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
+
+  lazy val isAvroPerFileReadEnabled: Boolean =
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.PERFILE
+
+  lazy val isAvroAutoReaderEnabled: Boolean =
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.AUTO
+
+  lazy val isAvroCoalesceFileReadEnabled: Boolean = isAvroAutoReaderEnabled ||
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.COALESCING
+
+  lazy val isAvroMultiThreadReadEnabled: Boolean = isAvroAutoReaderEnabled ||
+    RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
+
+  lazy val avroMultiThreadReadNumThreads: Int = get(AVRO_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

@@ -10,8 +10,8 @@
       "pattern": "/docs/archives"
     }
   ],
-  "timeout": "5s",
+  "timeout": "15s",
   "retryOn429": true,
-  "retryCount":10,
+  "retryCount":30,
   "aliveStatusCodes": [200, 403]
 } 

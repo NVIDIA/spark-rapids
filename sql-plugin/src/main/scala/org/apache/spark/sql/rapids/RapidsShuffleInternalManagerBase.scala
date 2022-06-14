@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
@@ -115,7 +114,10 @@ class RapidsCachingWriter[K, V](
               shuffleStorage.addContiguousTable(
                 bufferId,
                 contigTable,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                // we don't need to sync here, because we sync on the cuda
+                // stream after sliceInternalOnGpu (contiguous_split)
+                needsSync = false)
             case c: GpuCompressedColumnVector =>
               val buffer = c.getTableBuffer
               buffer.incRefCount()
@@ -128,7 +130,10 @@ class RapidsCachingWriter[K, V](
                 bufferId,
                 buffer,
                 tableMeta,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                // we don't need to sync here, because we sync on the cuda
+                // stream after compression.
+                needsSync = false)
             case c => throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
           bytesWritten += partSize
@@ -372,7 +377,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
         val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
         val blocksByAddress = try {
-          SparkShimImpl.getMapSizesByExecutorId(gpu.shuffleId,
+          SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(gpu.shuffleId,
             startMapIndex, endMapIndex, startPartition, endPartition)
         } finally {
           nvtxRange.close()

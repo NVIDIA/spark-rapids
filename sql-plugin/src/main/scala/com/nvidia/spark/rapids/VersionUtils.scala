@@ -34,17 +34,12 @@ object VersionUtils {
     SparkShimImpl.getSparkShimVersion.isInstanceOf[ClouderaShimVersion]
   }
 
-  lazy val isEMR: Boolean = {
-    SparkShimImpl.getSparkShimVersion.isInstanceOf[EMRShimVersion]
-  }
-
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = SparkShimImpl.getSparkShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)
       case ClouderaShimVersion(a, b, c, _) => (a, b, c)
-      case EMRShimVersion(a, b, c) => (a, b, c)
     }
     val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
     val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix

@@ -22,10 +22,11 @@ To get started tuning your job and get the most performance out of it please sta
 The plugin has a set of Spark configs that control its behavior and are documented
 [here](docs/configs.md).
 
-## Issues
+## Issues & Questions
 
-We use github issues to track bugs, feature requests, and to try and answer questions. You
-may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
+We use github to track bugs, feature requests, and answer questions. File an
+[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
+or answer a question on the [discussion board](https://github.com/NVIDIA/spark-rapids/discussions).
 
 ## Download
 
@@ -51,17 +52,17 @@ You may need to disable RMM caching when exporting data to an ML library as that
 will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
 access to any of the memory that RMM is holding.
 
-## Spark Qualification and Profiling tools
+## Qualification and Profiling tools
 
-The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
+The Qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications.
 
-The profiling tool generates information which can be used for debugging and profiling applications.
+The Profiling tool generates information which can be used for debugging and profiling applications.
 Information such as Spark version, executor information, properties and so on. This runs on either CPU or
 GPU generated event logs.
 
-Please refer to [spark qualification tool documentation](docs/spark-qualification-tool.md)
-and [spark profiling tool documentation](docs/spark-profiling-tool.md)
+Please refer to [Qualification tool documentation](docs/spark-qualification-tool.md)
+and [Profiling tool documentation](docs/spark-profiling-tool.md)
 for more details on how to use the tools.
 
 ## Dependency for External Projects
@@ -74,7 +75,7 @@ as a `provided` dependency.
 <dependency>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark_2.12</artifactId>
-    <version>22.04.0</version>
+    <version>22.06.0</version>
     <scope>provided</scope>
 </dependency>
 ```

@@ -46,26 +46,27 @@ else
 
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
-        CUDF_JARS=$(echo "$LOCAL_JAR_PATH"/cudf-*.jar)
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
+        # TODO - need to update jenkins scripts to upload this jar
+        # https://github.com/NVIDIA/spark-rapids/issues/5771
+        export INCLUDE_PARQUET_HADOOP_TEST_JAR=false
+        PARQUET_HADOOP_TESTS=
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     else
-        CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
         AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
+        PARQUET_HADOOP_TESTS=$(echo "$SCRIPTPATH"/target/dependency/parquet-hadoop*.jar)
+        export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     fi
 
-    # `./run_pyspark_from_build.sh` runs all tests including avro_test.py with spark-avro.jar
-    #                               in the classpath.
+    # `./run_pyspark_from_build.sh` runs all the tests excluding the avro tests in 'avro_test.py'.
     #
-    # `./run_pyspark_from_build.sh -k xxx ` runs all xxx tests with spark-avro.jar in the classpath
-    #
-    # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` run all tests (except the marker skipif())
-    #                                           without spark-avro.jar
+    # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` runs all the tests, including the tests
+    #                                                           in 'avro_test.py'.
     if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr [:upper:] [:lower:] ) == "true" ]];
     then
         export INCLUDE_SPARK_AVRO_JAR=true
@@ -74,8 +75,8 @@ else
         AVRO_JARS=""
     fi
 
-    # Only 3 jars: cudf.jar dist.jar integration-test.jar
-    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $AVRO_JARS"
+    # Only 3 jars: dist.jar integration-test.jar avro.jar
+    ALL_JARS="$PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then

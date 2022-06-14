@@ -16,46 +16,71 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.avro.AvroFileFormat
-import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
+import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-object ExternalSource {
+object ExternalSource extends Logging {
+  val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
 
   lazy val hasSparkAvroJar = {
-    val loader = Utils.getContextOrSparkClassLoader
-
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
-    Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
-      case Failure(_) => false
-      case Success(_) => true
+    Utils.classIsLoadable(avroScanClassName) && {
+      Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
+        .getOrElse {
+          logWarning("Avro library not found by the RAPIDS plugin. The Plugin jars are " +
+              "likely deployed using a static classpath spark.driver/executor.extraClassPath. " +
+              "Consider using --jars or --packages instead.")
+          false
+        }
     }
   }
 
-  def tagSupportForGpuFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+  /** If the file format is supported as an external source */
+  def isSupportedFormat(format: FileFormat): Boolean = {
+    if (hasSparkAvroJar) {
+      format match {
+        case _: AvroFileFormat => true
+        case _ => false
+      }
+    } else false
+  }
+
+  def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
+    if (hasSparkAvroJar) {
+      format match {
+        case _: AvroFileFormat => conf.isAvroPerFileReadEnabled
+        case _ => false
+      }
+    } else false
+  }
+
+  def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     if (hasSparkAvroJar) {
       meta.wrapped.relation.fileFormat match {
         case _: AvroFileFormat => GpuReadAvroFileFormat.tagSupport(meta)
         case f =>
           meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
       }
-    } else {
-      meta.wrapped.relation.fileFormat match {
-        case f =>
-          meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
-      }
     }
   }
 
-  def convertFileFormatForGpuFileSourceScanExec(format: FileFormat): FileFormat = {
+  /**
+   * Get a read file format for the input format.
+   * Better to check if the format is supported first by calling 'isSupportedFormat'
+   */
+  def getReadFileFormat(format: FileFormat): FileFormat = {
     if (hasSparkAvroJar) {
       format match {
         case _: AvroFileFormat => new GpuReadAvroFileFormat
@@ -63,11 +88,41 @@ object ExternalSource {
           throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
       }
     } else {
-      format match {
-        case f =>
-          throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
-      }
+      throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }
+  }
+
+  /**
+   * Create a multi-file reader factory for the input format.
+   * Better to check if the format is supported first by calling 'isSupportedFormat'
+   */
+  def createMultiFileReaderFactory(
+      format: FileFormat,
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    if (hasSparkAvroJar) {
+      format match {
+        case _: AvroFileFormat =>
+          GpuAvroMultiFilePartitionReaderFactory(
+            fileScan.relation.sparkSession.sessionState.conf,
+            fileScan.rapidsConf,
+            broadcastedConf,
+            fileScan.relation.dataSchema,
+            fileScan.requiredSchema,
+            fileScan.relation.partitionSchema,
+            new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
+            fileScan.allMetrics,
+            pushedFilters,
+            fileScan.queryUsesInputFile)
+        case _ =>
+          // never reach here
+          throw new RuntimeException(s"File format $format is not supported yet")
+      }
+    } else {
+      throw new RuntimeException(s"File format $format is not supported yet")
+    }
+
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -85,6 +140,7 @@ object ExternalSource {
                 a.readDataSchema,
                 a.readPartitionSchema,
                 a.options,
+                a.pushedFilters,
                 conf,
                 a.partitionFilters,
                 a.dataFilters)
@@ -93,4 +149,29 @@ object ExternalSource {
     } else Map.empty
   }
 
+  /** If the scan is supported as an external source */
+  def isSupportedScan(scan: Scan): Boolean = {
+    if (hasSparkAvroJar) {
+      scan match {
+        case _: GpuAvroScan => true
+        case _ => false
+      }
+    } else false
+  }
+
+  /**
+   * Clone the input scan with setting 'true' to the 'queryUsesInputFile'.
+   * Better to check if the scan is supported first by calling 'isSupportedScan'.
+   */
+  def copyScanWithInputFileTrue(scan: Scan): Scan = {
+    if (hasSparkAvroJar) {
+      scan match {
+        case avroScan: GpuAvroScan => avroScan.copy(queryUsesInputFile=true)
+        case _ =>
+          throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
+      }
+    } else {
+      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
+    }
+  }
 }

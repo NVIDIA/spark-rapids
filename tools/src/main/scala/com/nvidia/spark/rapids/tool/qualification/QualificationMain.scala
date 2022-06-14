@@ -40,13 +40,10 @@ object QualificationMain extends Logging {
    * Entry point for tests
    */
   def mainInternal(appArgs: QualificationArgs,
-      writeOutput: Boolean = true,
-      dropTempViews: Boolean = false,
       printStdout:Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
-    val userName = appArgs.userName
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
@@ -54,18 +51,14 @@ object QualificationMain extends Logging {
     val nThreads = appArgs.numThreads.getOrElse(
       Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
     val timeout = appArgs.timeout.toOption
-    val readScorePercent = appArgs.readScorePercent.getOrElse(20)
     val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
     val order = appArgs.order.getOrElse("desc")
+    val uiEnabled = appArgs.htmlReport.getOrElse(false)
 
     val hadoopConf = new Configuration()
 
     val pluginTypeChecker = try {
-      if (readScorePercent > 0 || reportReadSchema) {
-        Some(new PluginTypeChecker())
-      } else {
-        None
-      }
+      new PluginTypeChecker()
     } catch {
       case ie: IllegalStateException =>
         logError("Error creating the plugin type checker!", ie)
@@ -93,7 +86,7 @@ object QualificationMain extends Logging {
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
-      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
+      nThreads, order, pluginTypeChecker, reportReadSchema, printStdout, uiEnabled)
     val res = qual.qualifyApps(filteredLogs)
     (0, res)
   }

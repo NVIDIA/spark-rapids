@@ -180,6 +180,10 @@ def pytest_runtest_setup(item):
     else:
         _limit = -1
 
+    if item.get_closest_marker('iceberg'):
+        if not item.config.getoption('iceberg'):
+            pytest.skip('Iceberg tests not configured to run')
+
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
@@ -334,3 +338,10 @@ def enable_cudf_udf(request):
     if not enable_udf_cudf:
         # cudf_udf tests are not required for any test runs
         pytest.skip("cudf_udf not configured to run")
+
+@pytest.fixture(scope="session")
+def enable_fuzz_test(request):
+    enable_fuzz_test = request.config.getoption("fuzz_test")
+    if not enable_fuzz_test:
+        # fuzz tests are not required for any test runs
+        pytest.skip("fuzz_test not configured to run")

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.function.BiFunction
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -40,7 +41,7 @@ class RapidsGdsStore(
       stream: Cuda.Stream): RapidsBufferBase = {
     withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
-        case d: DeviceMemoryBuffer => d
+        case d: BaseDeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
       }
       if (deviceBuffer.getLength < batchWriteBufferSize) {
@@ -49,6 +50,11 @@ class RapidsGdsStore(
         singleShotSpill(other, deviceBuffer)
       }
     }
+  }
+
+  override def close(): Unit = {
+    super.close()
+    batchSpiller.close()
   }
 
   abstract class RapidsGdsBuffer(
@@ -79,12 +85,14 @@ class RapidsGdsStore(
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
         length: Long, stream: Cuda.Stream): Unit = {
       dst match {
-        case dmOriginal: DeviceMemoryBuffer =>
-          val dm = dmOriginal.slice(dstOffset, length)
-          // TODO: switch to async API when it's released, using the passed in CUDA stream.
-          stream.sync()
-          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-          logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+        case dmOriginal: BaseDeviceMemoryBuffer =>
+          val sliced = dmOriginal.slice(dstOffset, length).asInstanceOf[BaseDeviceMemoryBuffer]
+          withResource(sliced) { dm =>
+            // TODO: switch to async API when it's released, using the passed in CUDA stream.
+            stream.sync()
+            CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+            logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+          }
         case _ => throw new IllegalStateException(
           s"GDS can only copy to device buffer, not ${dst.getClass}")
       }
@@ -101,7 +109,7 @@ class RapidsGdsStore(
     }
   }
 
-  private def singleShotSpill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer)
+  private def singleShotSpill(other: RapidsBuffer, deviceBuffer: BaseDeviceMemoryBuffer)
   : RapidsBufferBase = {
     val id = other.id
     val path = id.getDiskPath(diskBlockManager)
@@ -120,7 +128,7 @@ class RapidsGdsStore(
       other.getSpillPriority, other.spillCallback)
   }
 
-  class BatchSpiller() {
+  class BatchSpiller() extends AutoCloseable {
     private val blockSize = 4096
     private[this] val spilledBuffers = new ConcurrentHashMap[File, Set[RapidsBufferId]]
     private[this] val pendingBuffers = ArrayBuffer.empty[RapidsGdsBatchedBuffer]
@@ -128,7 +136,13 @@ class RapidsGdsStore(
     private[this] var currentFile = TempSpillBufferId().getDiskPath(diskBlockManager)
     private[this] var currentOffset = 0L
 
-    def spill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
+    override def close(): Unit = {
+      pendingBuffers.safeFree()
+      pendingBuffers.clear()
+      batchWriteBuffer.close()
+    }
+
+    def spill(other: RapidsBuffer, deviceBuffer: BaseDeviceMemoryBuffer): RapidsBufferBase =
       this.synchronized {
         if (deviceBuffer.getLength > batchWriteBufferSize - currentOffset) {
           val path = currentFile.getAbsolutePath
@@ -218,17 +232,20 @@ class RapidsGdsStore(
       override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
           length: Long, stream: Cuda.Stream): Unit = this.synchronized {
         dst match {
-          case dmOriginal: DeviceMemoryBuffer =>
-            val dm = dmOriginal.slice(dstOffset, length)
-            if (isPending) {
-              copyToBuffer(dm, fileOffset + srcOffset, length, stream)
-              stream.sync()
-              logDebug(s"Created device buffer $length from batch write buffer")
-            } else {
-              // TODO: switch to async API when it's released, using the passed in CUDA stream.
-              stream.sync()
-              CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-              logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+          case dmOriginal: BaseDeviceMemoryBuffer =>
+            val sliced = dmOriginal.slice(dstOffset, length).asInstanceOf[BaseDeviceMemoryBuffer]
+            withResource(sliced) { dm =>
+              if (isPending) {
+                copyToBuffer(dm, fileOffset + srcOffset, length, stream)
+                stream.sync()
+                logDebug(s"Created device buffer $length from batch write buffer")
+              } else {
+                // TODO: switch to async API when it's released, using the passed in CUDA stream.
+                stream.sync()
+                CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+                logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length " +
+                  s"via GDS")
+              }
             }
           case _ => throw new IllegalStateException(
             s"GDS can only copy to device buffer, not ${dst.getClass}")
