@@ -393,9 +393,11 @@ def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
     schema = gen.data_type
     with_cpu_session(lambda spark : gen_df(spark, gen, length=100).write.csv(data_path))
     def do_join_cast(spark):
-        left = spark.read.csv(data_path).selectExpr("date_format(to_date(_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")
+        left = spark.read.csv(data_path)\
+            .selectExpr("date_format(to_date(_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")
         right = spark.read.csv(data_path).withColumnRenamed("_c0", "r_c0")\
-            .selectExpr("date_format(to_date(r_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename").withColumnRenamed("monthly_reporting_period", "r_monthly_reporting_period").withColumnRenamed("filename", "r_filename")
-        joined = left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
-        return joined
+            .selectExpr("date_format(to_date(r_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")\
+            .withColumnRenamed("monthly_reporting_period", "r_monthly_reporting_period")\
+            .withColumnRenamed("filename", "r_filename")
+        return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
     assert_gpu_and_cpu_are_equal_collect(do_join_cast)
