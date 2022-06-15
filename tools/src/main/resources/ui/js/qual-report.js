@@ -159,35 +159,6 @@ function createGPURecommendationTableConf(
         }
       },
       {
-        name: 'appDuration',
-        data: 'appDuration',
-        type: 'numeric',
-        searchable: false,
-        render: function (data, type, row) {
-          if (type === 'display') {
-            return formatDuration(data)
-          }
-          return data;
-        },
-        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-          if (oData.endDurationEstimated) {
-            $(nTd).css('color', 'blue');
-          }
-        }
-      },
-      {
-        name: totalSpeedupColumnName,
-        data: 'totalSpeedup',
-        searchable: false,
-        type: 'numeric',
-        render: function (data, type, row) {
-          if (type === 'display') {
-            return row.totalSpeedup_display
-          }
-          return data;
-        },
-      },
-      {
         name: recommendGPUColName,
         data: 'gpuCategory',
         render: function (data, type, row) {
@@ -205,7 +176,36 @@ function createGPURecommendationTableConf(
           $(nTd).attr('data-html', "true");
           $(nTd).attr('title', toolTipVal);
         }
-      }
+      },
+      {
+        name: totalSpeedupColumnName,
+        data: 'totalSpeedup',
+        searchable: false,
+        type: 'numeric',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.totalSpeedup_display
+          }
+          return data;
+        },
+      },
+      {
+        name: 'appDuration',
+        data: 'appDuration',
+        type: 'numeric',
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
+          if (oData.endDurationEstimated) {
+            $(nTd).css('color', 'blue');
+          }
+        }
+      },
     ],
     //dom with search panes
     dom: initGpuRecommendationCustomConf.Dom,
@@ -331,6 +331,8 @@ $(document).ready(function(){
 
   //
   // Set tooltips for the datatables using jQuery delegated event listener options.
+  // Note that we should always use Note that we should always use jQuery delegated event listener
+  // options as documented in app-report.js
   //
   $('#gpu-recommendation-table tbody').on('mouseover', 'td, th', function () {
     $('[data-toggle="tooltip"]').tooltip({
