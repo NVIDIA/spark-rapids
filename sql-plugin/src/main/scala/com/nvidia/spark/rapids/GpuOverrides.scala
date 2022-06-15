@@ -3103,6 +3103,9 @@ object GpuOverrides extends Logging {
       }),
     expr[MapConcat](
       "Returns the union of all the given maps",
+      // Currently, GpuMapConcat supports nested values but not nested keys.
+      // We will add the nested key support after
+      // https://github.com/rapidsai/cudf/pull/9452 is merged.
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
@@ -3114,7 +3117,7 @@ object GpuOverrides extends Logging {
         override def tagExprForGpu(): Unit = {
           a.dataType.keyType match {
             case MapType(_,_,_) | ArrayType(_,_) | StructType(_) => willNotWorkOnGpu(
-              s"GPU does not currently support the key type ${a.dataType.keyType}.")
+              s"GpuMapConcat does not currently support the key type ${a.dataType.keyType}.")
             case _ =>
           }
         }
