@@ -39,12 +39,15 @@ $(document).ready(function() {
   //   container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
   // });
 
-  // set the tootTips for the table by targeting the entire HTML Container
-  $('#app-details-data-container [data-toggle="tooltip"]').tooltip({
-    container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",});
+  //
+  // Set tooltips for the datatables using jQuery delegated event listener options.
+  //
+  $('tbody').on('mouseover', 'td, th', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
+  });
 
   setupNavigation();
 });

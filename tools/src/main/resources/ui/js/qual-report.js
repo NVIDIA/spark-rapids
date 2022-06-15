@@ -329,12 +329,15 @@ $(document).ready(function(){
   let text = Mustache.render(template, qualReportSummary);
   $("#qual-report-summary").html(jQuery.parseHTML(text, false));
 
-  // set the tootTips for the table
-  $('#gpu-recommendation-card [data-toggle="tooltip"]').tooltip({
-    container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",});
+  //
+  // Set tooltips for the datatables using jQuery delegated event listener options.
+  //
+  $('#gpu-recommendation-table tbody').on('mouseover', 'td, th', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
+  });
 
   setupNavigation();
 });

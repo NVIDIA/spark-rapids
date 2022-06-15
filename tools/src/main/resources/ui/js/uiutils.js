@@ -55,7 +55,6 @@ class AppsToStagesMap {
       });
     }
     appStages.add("N/A");
-    console.log(appStages)
     this.appsHashMap.set(appRecord.appId, appStages)
     return appRecord.stageInfo;
   }
@@ -699,14 +698,20 @@ function createAppDetailedTableConf(
         renderer: function ( api, rowIdx, columns ) {
           let data = $.map( columns, function ( col, i ) {
             let dataTableToolTip = toolTipsValues[appDetailsCustomParams.toolTipID];
-            return col.hidden ?
-              '<tr data-dt-row="'+col.rowIndex+'" data-dt-column="'+col.columnIndex+'">'+
-              '<th scope=\"row\"><span data-toggle=\"tooltip\" data-placement=\"top\"' +
-              '    title=\"' + dataTableToolTip[col.title] + '\">'+col.title+':'+
-              '</span></th> '+
-              '<td>'+col.data+'</td>'+
-              '</tr>' :
-              '';
+            if (!col.hidden) {
+              return '';
+            }
+            let returnStr = '<tr data-dt-row="'+col.rowIndex+'" data-dt-column="'+col.columnIndex+'">'+
+              '<th scope="row">';
+            if (dataTableToolTip[col.title]) {
+              returnStr += '<span data-toggle=\"tooltip\" data-placement=\"top\"' +
+                '    title=\"' + dataTableToolTip[col.title] + '\">'+col.title+':'+
+                '</span>';
+            } else {
+              returnStr += col.title;
+            }
+            returnStr += '</th> <td>'+col.data+'</td> </tr>';
+            return returnStr;
           } ).join('');
 
           return data ?

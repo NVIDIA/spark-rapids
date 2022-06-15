@@ -148,25 +148,27 @@ $(document).ready(function() {
   );
 
   //
-  // set tooltips for the three tables
+  // Set tooltips for the three tables.
+  // Note that we should always use method-2
   //
-  $('#app-execs-details-data-container [data-toggle="tooltip"]').tooltip({
-    container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",});
-
-  $('#app-stages-details-data-container [data-toggle="tooltip"]').tooltip({
-  container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",});
-
-  $('#app-details-data-container [data-toggle="tooltip"]').tooltip({
-    container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",});
+  // method-1:
+  //           using datatables. This method has limitations because datatable removes nodes from
+  //           the DOM, therefore events applied with a static event listener might not be able to
+  //           bind themselves to all nodes in the table.
+  // $('#app-execs-details-data-container [data-toggle="tooltip"]').tooltip({
+  //   container: 'body',
+  //   html: true,
+  //   animation: true,
+  //   placement:"bottom",});
+  //
+  // method-2:
+  //          Using jQuery delegated event listener options which overcomes the limitations in method-1
+  $('tbody').on('mouseover', 'td, th', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
+  });
 
   setupNavigation();
 });
