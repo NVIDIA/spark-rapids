@@ -53,7 +53,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo], speedUpFactor: Double = 2.0,
+  private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo], speedUpFactor: Double = 3.0,
       expectedDur: Seq[Option[Long]] = Seq.empty, extraText: String = ""): Unit = {
     for (t <- Seq(execs)) {
       assert(t.size == size, s"$extraText $t")
@@ -122,9 +122,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
         val sorts = allChildren.filter(_.exec == "Sort")
-        assertSizeAndSupported(3, sorts, 6.0)
+        assertSizeAndSupported(3, sorts, 5.2)
         val smj = allChildren.filter(_.exec == "SortMergeJoin")
-        assertSizeAndSupported(1, smj, 14.9)
+        assertSizeAndSupported(1, smj, 14.1)
       }
     }
   }

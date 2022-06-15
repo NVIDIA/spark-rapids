@@ -2229,8 +2229,8 @@ object SupportedOpsForTools {
       ("ShuffleExchangeExec", "3.1"),
       ("FilterExec", "2.4"),
       ("HashAggregateExec", "3.4"),
-      ("SortExec", "6.0"),
-      ("SortMergeJoinExec", "14.9"),
+      ("SortExec", "5.2"),
+      ("SortMergeJoinExec", "14.1"),
       ("ArrowEvalPythonExec", "1.2"),
       ("AggregateInPandasExec", "1.2"),
       ("FlatMapGroupsInPandasExec", "1.2"),
@@ -2247,7 +2247,7 @@ object SupportedOpsForTools {
         val allCols = if (operatorCustomSpeedUp.contains(cpuName)) {
           Seq(cpuName, operatorCustomSpeedUp(cpuName))
         } else {
-          Seq(cpuName, "2.0")
+          Seq(cpuName, "3.0")
         }
         println(s"${allCols.mkString(",")}")
       }
@@ -2259,7 +2259,7 @@ object SupportedOpsForTools {
         val cpuName = rule.tag.runtimeClass.getSimpleName
         // We are assigning speed up of 3 to all the Exprs supported by the plugin. This can be
         // adjusted later.
-        val allCols = Seq(cpuName, "3")
+        val allCols = Seq(cpuName, "4")
         println(s"${allCols.mkString(",")}")
       }
     }

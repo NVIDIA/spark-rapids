@@ -114,7 +114,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
   test("supported operator score from default file") {
     val checker = new PluginTypeChecker
     assert(checker.getSpeedupFactor("FilterExec") == 2.4)
-    assert(checker.getSpeedupFactor("Ceil") == 3)
+    assert(checker.getSpeedupFactor("Ceil") == 4)
   }
 
   test("supported Execs") {
