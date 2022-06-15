@@ -1780,6 +1780,16 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("strings")
   }
 
+  def ArrayKeyMapDF(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq((Map(List(1, 2) -> 2), (Map(List(2, 3) -> 3)))).toDF("col1", "col2")
+  }
+
+  def StructKeyMapDF(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq((Map((1, 2) -> 2), (Map((2, 3) -> 3)))).toDF("col1", "col2")
+  }
+
   def nullableStringsFromCsv = {
     fromCsvDf("strings.csv", StructType(Array(
       StructField("strings", StringType, true),
