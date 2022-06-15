@@ -1077,15 +1077,6 @@ def test_rlike_null_pattern():
                 'a rlike NULL'))
 
 @allow_non_gpu('ProjectExec', 'RLike')
-def test_rlike_fallback_null_pattern():
-    gen = mk_str_gen('[abcd]{1,3}')
-    assert_gpu_fallback_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'a rlike "a\u0000"'),
-            'RLike',
-        conf=_regexp_conf)
-
-@allow_non_gpu('ProjectExec', 'RLike')
 def test_rlike_fallback_empty_group():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_fallback_collect(
