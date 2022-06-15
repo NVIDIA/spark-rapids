@@ -52,5 +52,5 @@ COPY --from=rdma_core /*.deb /tmp/
 
 RUN apt update
 RUN apt-get install -y wget
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5.x-cuda$UCX_CUDA_VER.deb
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5-cuda$UCX_CUDA_VER.deb
 RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
