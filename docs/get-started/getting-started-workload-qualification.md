@@ -31,7 +31,7 @@ This article describes the tools we provide and how to do gap analysis and workl
 
 If you have Spark event logs from prior runs of the applications on Spark 2.x or 3.x, you can use
 the [Qualification tool](../spark-qualification-tool.md) and 
-[Profiling tool](../spark-profiling-tool.md) to analyze them.  The qualification tool outputs the score, rank
+[Profiling tool](../spark-profiling-tool.md) to analyze them.  The Qualification tool outputs the score, rank
 and some of the potentially not-supported features for each Spark application.  For example, the CSV
 output can print `Unsupported Read File Formats and Types`, `Unsupported Write Data Format` and
 `Potential Problems` which are the indication of some not-supported features.  Its output can help
@@ -81,18 +81,18 @@ the driver logs with `spark.rapids.sql.explain=all`.
 #### Requirements
 
 - A Spark 3.x CPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- The `rapids-4-spark` [jar](../download.md)
 
 #### Usage
 
-1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
+1. In `spark-shell`, add the `rapids-4-spark` jar into --jars option or put it in the
    Spark classpath and enable the configs `spark.rapids.sql.mode=explainOnly` and
    `spark.plugins=com.nvidia.spark.SQLPlugin`.
 
    For example:
 
    ```bash
-   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.mode=explainOnly --conf spark.plugins=com.nvidia.spark.SQLPlugin
+   spark-shell --jars /PathTo/rapids-4-spark_<version>.jar --conf spark.rapids.sql.mode=explainOnly --conf spark.plugins=com.nvidia.spark.SQLPlugin
    ```
 2.  Enable optional RAPIDS Accelerator related parameters based on your setup.
 
@@ -101,15 +101,9 @@ the driver logs with `spark.rapids.sql.explain=all`.
    [configuration documentation](../configs.md) for details of RAPIDS Accelerator
    parameters.
 
-   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
-   UDFs, you can set the following parameters:
+   For example, if your jobs Scala UDFs, you can set the following parameters:
 
   ```scala
-   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
-   spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
-   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
-   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 
@@ -139,7 +133,7 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 #### Requirements with Spark 3.X
 
 - A Spark 3.X CPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- The `rapids-4-spark` [jar](../download.md)
 - Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 21.12 or newer
 
@@ -165,7 +159,7 @@ in the plan due to that.
 This is very similar output you would get by running the query with the
 RAPIDS Accelerator enabled and with the config `spark.rapids.sql.enabled` enabled.
 
-Requires the RAPIDS Accelerator for Apache Spark jar and RAPIDS cudf jar be included
+Requires the RAPIDS Accelerator for Apache Spark jar be included
 in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
 
 Calling from Scala:
@@ -193,13 +187,13 @@ Throws:
 
 #### Usage
 
-1. In `spark-shell`, add the necessary jars into --jars option or put them in the
+1. In `spark-shell`, add the necessary jar into --jars option or put it in the
    Spark classpath.
 
    For example, on Spark 3.X:
 
    ```bash
-   spark-shell --jars /PathTo/cudf-<version>.jar,/PathTo/rapids-4-spark_<version>.jar
+   spark-shell --jars /PathTo/rapids-4-spark_<version>.jar
    ```
 
    For example, on Spark 2.4.X:
@@ -220,15 +214,9 @@ Throws:
    the meaning and risk of above parameters before enabling it. Please refer to the
    [configuration documentation](../configs.md) for details of RAPIDS Accelerator parameters.
    
-   For example, if your jobs have `double`, `float` and `decimal` operators together with some Scala
-   UDFs, you can set the following parameters:
+   For example, if your jobs have Scala UDFs, you can set the following parameters:
    
    ```scala
-   spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-   spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
-   spark.conf.set("spark.rapids.sql.decimalType.enabled", true)
-   spark.conf.set("spark.rapids.sql.castFloatToDecimal.enabled",true)
-   spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 
@@ -269,7 +257,7 @@ pretty accurate.
 ### Requirements
 
 - A Spark 3.x GPU cluster
-- The `rapids-4-spark` and `cudf` [jars](../download.md)
+- The `rapids-4-spark` [jar](../download.md)
 
 ### How to use
 

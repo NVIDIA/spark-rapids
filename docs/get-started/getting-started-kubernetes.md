@@ -17,6 +17,10 @@ Kubernetes requires a Docker image to run Spark.  Generally everything needed is
 image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
 [Dockerfile.cuda](Dockerfile.cuda) example.
 
+You can find other supported base CUDA images for from 
+[CUDA dockerhub](https://hub.docker.com/r/nvidia/cuda). Its source Dockerfile is inside
+[GitLab repository](https://gitlab.com/nvidia/container-images/cuda/) which can be used to build
+the docker images from OS base image from scratch.
 
 ## Prerequisites
     * Kubernetes cluster is up and running with NVIDIA GPU support
@@ -41,9 +45,9 @@ On a client machine which has access to the Kubernetes cluster:
 2. Download the [RAPIDS Accelerator for Spark jars](getting-started-on-prem.md#download-the-rapids-jars) and the
   [GPU discovery script](getting-started-on-prem.md#install-the-gpu-discovery-script).
   
-   Put the 2 jars -- `rapids-4-spark_<version>.jar`, `cudf-<version>.jar`  and `getGpusResources.sh` in the same directory as `spark`.
+   Put `rapids-4-spark_<version>.jar` and `getGpusResources.sh` in the same directory as `spark`.
    
-   Note: If here you decide to put above 2 jars in the `spark/jars` directory which will be copied into 
+   Note: If here you decide to put above jar in the `spark/jars` directory which will be copied into
    `/opt/spark/jars` directory in Docker image, then in the future you do not need to 
    specify `spark.driver.extraClassPath` or `spark.executor.extraClassPath` using `cluster` mode.
    This example just shows you a way to put customized jars or 3rd party jars.
@@ -61,7 +65,7 @@ On a client machine which has access to the Kubernetes cluster:
    Currently the directory in the local machine should look as below:
    ```shell 
    $ ls
-   Dockerfile.cuda   cudf-<version>.jar   getGpusResources.sh   rapids-4-spark_<version>.jar   spark
+   Dockerfile.cuda   getGpusResources.sh   rapids-4-spark_<version>.jar   spark
    ```
 
 4. Build the Docker image with a proper repository name and tag and push it to the repository
@@ -113,8 +117,8 @@ $SPARK_HOME/bin/spark-submit \
      --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
      --conf spark.executor.resource.gpu.vendor=nvidia.com \
      --conf spark.kubernetes.container.image=$IMAGE_NAME \
-     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
-     --conf spark.driver.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
+     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar \
+     --conf spark.driver.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar \
      --driver-memory 2G \
      local:///opt/spark/examples/jars/spark-examples_2.12-3.0.2.jar
 ```
@@ -177,8 +181,8 @@ $SPARK_HOME/bin/spark-shell \
      --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
      --conf spark.executor.resource.gpu.vendor=nvidia.com \
      --conf spark.kubernetes.container.image=$IMAGE_NAME \
-     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
-     --driver-class-path=./cudf-<version>.jar:./rapids-4-spark_<version>.jar \
+     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar \
+     --driver-class-path=./rapids-4-spark_<version>.jar \
      --driver-memory 2G 
 ```
 
@@ -244,9 +248,9 @@ $SPARK_HOME/bin/spark-submit \
      --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
      --conf spark.executor.resource.gpu.vendor=nvidia.com \
      --conf spark.kubernetes.container.image=$IMAGE_NAME \
-     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
+     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar \
      --driver-memory 2G \
-     --driver-class-path=./cudf-<version>.jar:./rapids-4-spark_<version>.jar \
+     --driver-class-path=./rapids-4-spark_<version>.jar \
      test.py
 ```
 
@@ -304,8 +308,8 @@ Using Spark Operator is another way to submit Spark Applications into a Kubernet
        "spark.plugins": "com.nvidia.spark.SQLPlugin"
        "spark.executor.resource.gpu.discoveryScript": "/opt/sparkRapidsPlugin/getGpusResources.sh"
        "spark.executor.resource.gpu.vendor": "nvidia.com"
-       "spark.executor.extraClassPath": "/opt/sparkRapidsPlugin/rapids-4-spark.jar:/opt/sparkRapidsPlugin/cudf.jar"
-       "spark.driver.extraClassPath": "/opt/sparkRapidsPlugin/rapids-4-spark.jar:/opt/sparkRapidsPlugin/cudf.jar"
+       "spark.executor.extraClassPath": "/opt/sparkRapidsPlugin/rapids-4-spark.jar"
+       "spark.driver.extraClassPath": "/opt/sparkRapidsPlugin/rapids-4-spark.jar"
      type: Python
      pythonVersion: 3
      mode: cluster

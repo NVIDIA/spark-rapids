@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,10 @@
 FROM nvidia/cuda:11.0-devel-ubuntu18.04
 ARG spark_uid=185
 
-# Install java dependencies 
+# https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+
+# Install java dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends openjdk-8-jdk openjdk-8-jre
 ENV JAVA_HOME /usr/lib/jvm/java-1.8.0-openjdk-amd64
 ENV PATH $PATH:/usr/lib/jvm/java-1.8.0-openjdk-amd64/jre/bin:/usr/lib/jvm/java-1.8.0-openjdk-amd64/bin
@@ -51,7 +54,6 @@ COPY spark/examples /opt/spark/examples
 COPY spark/kubernetes/tests /opt/spark/tests
 COPY spark/data /opt/spark/data
 
-COPY cudf-*-cuda11.jar /opt/sparkRapidsPlugin
 COPY rapids-4-spark_2.12-*.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 

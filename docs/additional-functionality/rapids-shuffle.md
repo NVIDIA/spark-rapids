@@ -43,7 +43,7 @@ be installed on the host and inside Docker containers (if not baremetal). A host
 requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
 
 The minimum UCX requirement for the RAPIDS Shuffle Manager is
-[UCX 1.11.2](https://github.com/openucx/ucx/releases/tag/v1.11.2).
+[UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1).
 
 #### Baremetal
 
@@ -73,47 +73,40 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    further.
 
 2. Fetch and install the UCX package for your OS from:
-   [UCX 1.11.2](https://github.com/openucx/ucx/releases/tag/v1.11.2).
-
-   NOTE: Please install the artifact with the newest CUDA 11.x version (for UCX 1.11.2 please
-   pick CUDA 11.2) as CUDA 11 introduced [CUDA Enhanced Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases).
-   Starting with UCX 1.12, UCX will stop publishing individual artifacts for each minor version of CUDA.
-
-   Please refer to our [FAQ](../FAQ.md#what-hardware-is-supported) for caveats with
-   CUDA Enhanced Compatibility.
+   [UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1).
 
    RDMA packages have extra requirements that should be satisfied by MLNX_OFED.
 
 ##### CentOS UCX RPM
-The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.11.2
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.12.1
 available at
-https://github.com/openucx/ucx/releases/download/v1.11.2/ucx-v1.11.2-centos7-mofed5.x-cuda11.2.tar.bz2
+https://github.com/openucx/ucx/releases/download/v1.12.1/ucx-v1.12.1-centos7-mofed5-cuda11.tar.bz2
 contains:
 
 ```
-ucx-devel-1.11.2-1.el7.x86_64.rpm
-ucx-debuginfo-1.11.2-1.el7.x86_64.rpm
-ucx-1.11.2-1.el7.x86_64.rpm
-ucx-cuda-1.11.2-1.el7.x86_64.rpm
-ucx-rdmacm-1.11.2-1.el7.x86_64.rpm
-ucx-cma-1.11.2-1.el7.x86_64.rpm
-ucx-ib-1.11.2-1.el7.x86_64.rpm
+ucx-devel-1.12.1-1.el7.x86_64.rpm
+ucx-debuginfo-1.12.1-1.el7.x86_64.rpm
+ucx-1.12.1-1.el7.x86_64.rpm
+ucx-cuda-1.12.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.12.1-1.el7.x86_64.rpm
+ucx-cma-1.12.1-1.el7.x86_64.rpm
+ucx-ib-1.12.1-1.el7.x86_64.rpm
 ```
 
 For a setup without RoCE or Infiniband networking, the only packages required are:
 
 ```
-ucx-1.11.2-1.el7.x86_64.rpm
-ucx-cuda-1.11.2-1.el7.x86_64.rpm
+ucx-1.12.1-1.el7.x86_64.rpm
+ucx-cuda-1.12.1-1.el7.x86_64.rpm
 ```
 
 If accelerated networking is available, the package list is:
 
 ```
-ucx-1.11.2-1.el7.x86_64.rpm
-ucx-cuda-1.11.2-1.el7.x86_64.rpm
-ucx-rdmacm-1.11.2-1.el7.x86_64.rpm
-ucx-ib-1.11.2-1.el7.x86_64.rpm
+ucx-1.12.1-1.el7.x86_64.rpm
+ucx-cuda-1.12.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.12.1-1.el7.x86_64.rpm
+ucx-ib-1.12.1-1.el7.x86_64.rpm
 ```
 
 ---
@@ -152,7 +145,7 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-The following are examples of Docker containers with UCX 1.11.2 and cuda-11.2 support.
+The following are examples of Docker containers with UCX 1.12.1 and cuda-11.2 support.
 
 | OS Type | RDMA | Dockerfile |
 | ------- | ---- | ---------- |
@@ -288,15 +281,15 @@ In this section, we are using a docker container built using the sample dockerfi
    | Spark Shim      | spark.shuffle.manager value                              |
    | --------------- | -------------------------------------------------------- |
    | 3.1.1           | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
-   | 3.1.1 CDH       | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
    | 3.1.2           | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
    | 3.1.3           | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
    | 3.2.0           | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
    | 3.2.1           | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
+   | 3.2.1 CDH       | com.nvidia.spark.rapids.spark321cdh.RapidsShuffleManager |
    | Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
    | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 
-2. Settings for UCX 1.11.2+:
+2. Settings for UCX 1.12.1+:
 
     Minimum configuration:
 
@@ -305,7 +298,7 @@ In this section, we are using a docker container built using the sample dockerfi
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
-    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+    --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
     --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
     --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n
     ```
@@ -317,7 +310,7 @@ In this section, we are using a docker container built using the sample dockerfi
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
-    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+    --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
     --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
     --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
     --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
@@ -345,9 +338,9 @@ guide for Databricks. The following are extra steps required to enable UCX.
 ```
 #!/bin/bash
 sudo apt install -y wget libnuma1 &&
-wget https://github.com/openucx/ucx/releases/download/v1.11.2/ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb &&
-sudo dpkg -i ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb &&
-rm ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb
+wget https://github.com/openucx/ucx/releases/download/v1.12.1/ucx-v1.12.1-ubuntu18.04-mofed5-cuda11.deb &&
+sudo dpkg -i ucx-v1.12.1-ubuntu18.04-mofed5-cuda11.deb &&
+rm ucx-v1.12.1-ubuntu18.04-mofed5-cuda11.deb
 ```
 
 Save the script in DBFS and add it to the "Init Scripts" list:
