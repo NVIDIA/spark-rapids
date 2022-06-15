@@ -601,7 +601,7 @@ class RegexParser(pattern: String) {
 }
 
 object RegexParser {
-  private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\f')
+  private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\u0007', '\u001b', '\f')
 
   def isRegExpString(s: String): Boolean = {
 
