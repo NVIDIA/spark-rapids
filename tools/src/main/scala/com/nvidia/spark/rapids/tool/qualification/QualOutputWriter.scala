@@ -39,8 +39,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   def writeDetailedReport(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}.csv", "CSV")
     try {
-      val headersAndSizes = QualOutputWriter
-              .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
+      val headersAndSizes = QualOutputWriter.getDetailedHeaderStringsAndSizes(sums,
+        reportReadSchema)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes,
         QualOutputWriter.CSV_DELIMITER, false))
       sums.foreach { sum =>
@@ -126,7 +126,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 }
 
-case class QualificationSummaryInfoTextAdapter(
+case class FormattedQualificationSummaryInfo(
     appName: String,
     appId: String,
     recommendation: String,
@@ -443,10 +443,10 @@ object QualOutputWriter {
     }
   }
 
-  def createSummaryInfoCSVAdapter(
+  def createFormattedQualSummaryInfo(
       appInfo: QualificationSummaryInfo,
-      delimiter: String = "|") : QualificationSummaryInfoTextAdapter = {
-    QualificationSummaryInfoTextAdapter(
+      delimiter: String = "|") : FormattedQualificationSummaryInfo = {
+    FormattedQualificationSummaryInfo(
       appInfo.appName,
       appInfo.appId,
       appInfo.estimatedInfo.recommendation,
@@ -462,9 +462,9 @@ object QualOutputWriter {
       ToolUtils.renderTextField(appInfo.readFileFormatAndTypesNotSupported, ";", delimiter),
       ToolUtils.renderTextField(appInfo.readFileFormats, ":", delimiter),
       ToolUtils.renderTextField(appInfo.writeDataFormat, ";", delimiter).toUpperCase,
-      ToolUtils.parseComplexTypes(appInfo.complexTypes, delimiter),
-      ToolUtils.parseNestedComplexTypes(appInfo.nestedComplexTypes, delimiter),
-      ToolUtils.parsePotentialProblems(appInfo.potentialProblems, delimiter),
+      ToolUtils.formatComplexTypes(appInfo.complexTypes, delimiter),
+      ToolUtils.formatComplexTypes(appInfo.nestedComplexTypes, delimiter),
+      ToolUtils.formatPotentialProblems(appInfo.potentialProblems, delimiter),
       appInfo.longestSqlDuration,
       appInfo.nonSqlTaskDurationAndOverhead,
       appInfo.unsupportedSQLTaskDuration,
@@ -475,7 +475,7 @@ object QualOutputWriter {
   }
 
   private def constructDetailedAppInfoCSVRow(
-      appInfo: QualificationSummaryInfoTextAdapter,
+      appInfo: FormattedQualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       reportReadSchema: Boolean = false): ListBuffer[(String, Int)] = {
     val data = ListBuffer[(String, Int)](
@@ -516,10 +516,8 @@ object QualOutputWriter {
       delimiter: String,
       prettyPrint: Boolean,
       reportReadSchema: Boolean): String = {
-
-    val appInfo = createSummaryInfoCSVAdapter(summaryAppInfo, delimiter)
-    val data =
-      constructDetailedAppInfoCSVRow(appInfo, headersAndSizes, reportReadSchema)
+    val formattedAppInfo = createFormattedQualSummaryInfo(summaryAppInfo, delimiter)
+    val data = constructDetailedAppInfoCSVRow(formattedAppInfo, headersAndSizes, reportReadSchema)
     constructOutputRow(data, delimiter, prettyPrint)
   }
 }

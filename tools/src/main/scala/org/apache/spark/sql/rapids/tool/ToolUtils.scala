@@ -72,22 +72,27 @@ object ToolUtils extends Logging {
     math.floor(valNum * 100) / 100
   }
 
-  def renderTextField(values: Seq[Any], itemDelimiter: String, txtDelimiter: String) : String = {
-    replaceDelimiter(values.mkString(itemDelimiter), txtDelimiter)
+  /**
+   * Convert a sequence to a single string that can be appended to a formatted text.
+   *
+   * @param values Input array to be converted.
+   * @param separator Input array to be converted.
+   * @param txtDelimiter The delimiter used by the output file format (i.e., comma for CSV).
+   *                     All occurrences of this delimiter are replaced by ";".
+   * @return A single string in the form of item1[separator]item2 with all txtDelimiter replaced by
+   *         semi-colons.
+   */
+  def renderTextField(values: Seq[Any], separator: String, txtDelimiter: String): String = {
+    replaceDelimiter(values.mkString(separator), txtDelimiter)
   }
 
-  def parseComplexTypes(
-      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER) : String = {
+  def formatComplexTypes(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER): String = {
     renderTextField(values, ";", fileDelimiter)
   }
 
-  def parseNestedComplexTypes(
-      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER) : String = {
-    renderTextField(values, ";", fileDelimiter)
-  }
-
-  def parsePotentialProblems(
-      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER) : String = {
+  def formatPotentialProblems(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER): String = {
     renderTextField(values, ":", fileDelimiter)
   }
 }

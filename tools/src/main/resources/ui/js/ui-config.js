@@ -61,8 +61,8 @@ let toolTipsValues = {
         "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
         "Estimated Speed-up": "Speed-up factor estimated for the app. Calculated as the ratio between \<em\>App Duration\<\/em\> and \<em\>Estimated GPU Duration\<\/em\>",
         "details": {
-            //" Math formatted may not work on all browser.
-            // (<math><mfrac><mn>App Duration</mn><mi>GPU Estimated Duration</mi></mfrac></math>)",
+            // Chrome does not support MathML. For simple mathematical formulas, use HTML tags as workaround.
+            // "totalSpeedup": (<math><mfrac><mn>App Duration</mn><mi>GPU Estimated Duration</mi></mfrac></math>)",
             "totalSpeedup":
               "Speed-up factor estimated for the app. Calculated as (<sup>App Duration</sup>&frasl;<sub>Estimated GPU Duration</sub>)",
             "nonSqlTaskDurationAndOverhead": "total duration of the app not involving SQL",

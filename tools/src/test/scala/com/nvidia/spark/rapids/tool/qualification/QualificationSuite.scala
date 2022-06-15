@@ -112,7 +112,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
     appSums.map { appInfoRec =>
-      val sum = QualOutputWriter.createSummaryInfoCSVAdapter(appInfoRec, ",")
+      val sum = QualOutputWriter.createFormattedQualSummaryInfo(appInfoRec, ",")
       TestQualificationSummary(sum.appName, sum.appId, sum.recommendation,
         sum.estimatedGpuSpeedup, sum.estimatedGpuDur,
         sum.estimatedGpuTimeSaved, sum.sqlDataframeDuration,
@@ -472,8 +472,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
-      assert(ToolUtils.parseComplexTypes(actualResult._1).equals(expectedResult(index)._1))
-      assert(ToolUtils.parseNestedComplexTypes(actualResult._2).equals(expectedResult(index)._2))
+      assert(ToolUtils.formatComplexTypes(actualResult._1).equals(expectedResult(index)._1))
+      assert(ToolUtils.formatComplexTypes(actualResult._2).equals(expectedResult(index)._2))
       index += 1
     }
   }

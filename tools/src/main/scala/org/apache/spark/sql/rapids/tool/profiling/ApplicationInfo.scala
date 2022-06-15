@@ -270,7 +270,7 @@ class ApplicationInfo(
         val (_, nestedComplexTypes) = reportComplexTypes
         val potentialProbs = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
         sqlIdToInfo.get(sqlID).foreach { sql =>
-          sql.problematic = ToolUtils.parsePotentialProblems(potentialProbs)
+          sql.problematic = ToolUtils.formatPotentialProblems(potentialProbs)
         }
 
         // Then process SQL plan metric type
