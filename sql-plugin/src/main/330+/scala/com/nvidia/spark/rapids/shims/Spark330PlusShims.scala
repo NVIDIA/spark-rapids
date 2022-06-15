@@ -87,7 +87,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
         (ceil, conf, p, r) => new BinaryExprMeta[RoundCeil](ceil, conf, p, r) {
           override def tagExprForGpu(): Unit = {
-            willNotWorkOnGpu("RoundCeil is currently not supported on GPU")
             ceil.child.dataType match {
               case dt: DecimalType =>
                 val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
@@ -105,8 +104,10 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             }
           }
 
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuCeil(lhs)
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+            // use Spark `RoundCeil.dataType` to keep consistent between Spark versions.
+            GpuCeil(lhs, ceil.dataType)
+          }
         }),
       GpuOverrides.expr[RoundFloor](
         "Computes the floor of the given expression to d decimal places",
@@ -119,7 +120,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
         (floor, conf, p, r) => new BinaryExprMeta[RoundFloor](floor, conf, p, r) {
           override def tagExprForGpu(): Unit = {
-            willNotWorkOnGpu("RoundFloor is currently not supported on GPU")
             floor.child.dataType match {
               case dt: DecimalType =>
                 val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
@@ -137,8 +137,10 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             }
           }
 
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuFloor(lhs)
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+            // use Spark `RoundFloor.dataType` to keep consistent between Spark versions.
+            GpuFloor(lhs, floor.dataType)
+          }
         }),
       GpuOverrides.expr[TimeAdd](
         "Adds interval to timestamp",
@@ -160,7 +162,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
                 case _: DayTimeIntervalType => // Supported
               }
             }
-            checkTimeZoneId(timeAdd.timeZoneId)
           }
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =

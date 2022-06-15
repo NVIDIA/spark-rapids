@@ -16,11 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.RapidsMeta
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.StructType
 
 object ParquetFieldIdShims {
   /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
@@ -28,12 +26,6 @@ object ParquetFieldIdShims {
     // Parquet field ID support configs are not supported until Spark 3.3
   }
 
-  def tagGpuSupportWriteForFieldId(meta: RapidsMeta[_, _, _], schema: StructType,
-      conf: SQLConf): Unit = {
-    // Parquet field ID support configs are not supported until Spark 3.3
-  }
-
-  def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _, _], conf: SQLConf): Unit = {
-    // Parquet field ID support configs are not supported until Spark 3.3
-  }
+  /** Parquet field ID support configs are not supported until Spark 3.3 */
+  def getParquetIdWriteEnabled(sqlConf: SQLConf): Boolean = false
 }
