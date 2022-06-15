@@ -152,7 +152,7 @@ function createGPURecommendationTableConf(
         render:  (appId, type, row) => {
           if (type === 'display' || type === 'filter') {
             if (UIConfig.fullAppView.enabled) {
-              return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+              return `<a href="${row.attemptDetailsURL}">${appId}</a>`
             }
           }
           return appId;
@@ -334,8 +334,7 @@ $(document).ready(function(){
     container: 'body',
     html: true,
     animation: true,
-    placement:"bottom",
-    delay: {show: 0, hide: 10.0}});
+    placement:"bottom",});
 
   setupNavigation();
 });

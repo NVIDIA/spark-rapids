@@ -115,6 +115,7 @@ let toolTipsValues = {
           "operator would accelerate on GPU.",
         "Exec Duration": "Wall-Clock time measured since the operator starts till it is completed.",
         "Exec Is Supported": "Whether the Exec is supported by RAPIDS or not.",
+        "Is Removed": "Whether the Op is removed from the migrated plan."
     },
 }
 
@@ -188,6 +189,7 @@ let UIConfig = {
                 Dom : 'Brt',
                 skipColumns: ["appName"],
                 sortTable: false,
+                fileExportPrefix: 'rapids_4_spark_qualification_output_ui_raw_data_app',
                 hideColumns: [
                     "appName", "sparkUser", "startTime", "longestSqlDuration",
                     "nonSqlTaskDurationAndOverhead", "endDurationEstimated",
@@ -200,6 +202,7 @@ let UIConfig = {
                 Dom : 'Bfrtlip',
                 skipColumns: [],
                 sortTable: true,
+                fileExportPrefix: 'rapids_4_spark_qualification_output_ui_raw_data',
                 sortColumns: [
                     {colName: "gpuRecommendation", order: "desc"},
                     {colName: "totalSpeedupFactor", order:"desc"}
@@ -274,20 +277,20 @@ let UIConfig = {
                         ]
                     },
                     "taskTypes": {
-                        header: "Are Tasks Supported",
+                        header: "Tasks GPU Support",
                         dtOpts: {
                             searching: false,
                         },
                         combiner: 'and',
                         options: [
                             {
-                                label: 'Supported',
+                                label: 'Fully Supported',
                                 value: function(rowData, rowIdx) {
                                     return rowData["unsupportedTaskDur"] <= 0.0;
                                 }
                             },
                             {
-                                label: 'Unsupported',
+                                label: 'Partially Supported',
                                 value: function(rowData, rowIdx) {
                                     return rowData["unsupportedTaskDur"] > 0;
                                 }
@@ -295,7 +298,7 @@ let UIConfig = {
                         ]
                     },
                     "speedupFactor":{
-                        header: "Speed-up Factor",
+                        header: "Speed-up",
                         dtOpts: {
                             searching: false,
                         },
@@ -345,7 +348,7 @@ let UIConfig = {
                 sortColumns: [{colName: "sqlID", order:"asc"}],
                 fileExportPrefix: 'rapids_4_spark_qualification_output_ui_execs_data_app',
                 searchableColumns: ["exec", "expr"],
-                hideColumns: ["appID", "isSupported", "shouldRemove"],
+                hideColumns: ["appID", "isRemoved"],
                 enabledPanes: ["execName", "speedupFactor", "execSupport", "stages", "shouldRemove"],
                 toolTipID: "appExecs",
             },
@@ -359,7 +362,7 @@ let UIConfig = {
                 ],
                 searchableColumns: ["appID", "exec", "expr"],
                 fileExportPrefix: 'rapids_4_spark_qualification_output_ui_execs_data',
-                hideColumns: ["appID", "isSupported", "shouldRemove"],
+                hideColumns: ["appID", "isRemoved"],
                 enabledPanes: ["execName", "speedupFactor", "execSupport", "shouldRemove"],
                 toolTipID: "appExecs",
             },
@@ -374,20 +377,20 @@ let UIConfig = {
                 },
                 "panes": {
                     "execSupport": {
-                        header: "Is Exec Supported",
+                        header: "GPU Support",
                         dtOpts: {
                             "searching": false
                         },
                         combiner: 'and',
                         options: [
                             {
-                                label: 'Supported',
+                                label: 'Yes',
                                 value: function(rowData, rowIdx) {
                                     return rowData["isSupported"];
                                 }
                             },
                             {
-                                label: 'Not Supported',
+                                label: 'No',
                                 value: function(rowData, rowIdx) {
                                     return !rowData["isSupported"];
                                 }
@@ -395,7 +398,7 @@ let UIConfig = {
                         ]
                     },
                     "shouldRemove": {
-                        header: "Should Remove Exec",
+                        header: "Is Exec Removed",
                         dtOpts: {
                             "searching": false
                         },
@@ -423,7 +426,7 @@ let UIConfig = {
                         combiner: 'and',
                     },
                     "speedupFactor": {
-                        header: "Speed-up Factor",
+                        header: "Speed-up",
                         dtOpts: {
                             "searching": false
                         },

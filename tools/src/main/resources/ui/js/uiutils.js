@@ -411,6 +411,10 @@ function setGlobalReportSummary(processedApps) {
       + qualReportSummary.tlc.statsPercentage;
 }
 
+function createAppIDLinkEnabled(tableViewType) {
+  return UIConfig.fullAppView.enabled && tableViewType === "listAppsView"
+}
+
 function createAppDetailedTableConf(
     appRecords,
     tableViewType,
@@ -420,7 +424,10 @@ function createAppDetailedTableConf(
   let recommendGPUColName = "gpuRecommendation"
   let appDetailsBaseParams = UIConfig.datatables[extraFunctionArgs.tableId];
   let appDetailsCustomParams = appDetailsBaseParams[tableViewType];
-
+  let fileExportName = appDetailsCustomParams.fileExportPrefix;
+  if (tableViewType === 'singleAppView') {
+    fileExportName =  appDetailsCustomParams.fileExportPrefix + "_" + extraFunctionArgs.appId;
+  }
   let rawDataTableConf = {
     paging: (appRecords.length > defaultPageLength),
     pageLength: defaultPageLength,
@@ -438,8 +445,8 @@ function createAppDetailedTableConf(
         className: "all",
         render:  (appId, type, row) => {
           if (type === 'display') {
-            if (UIConfig.fullAppView.enabled) {
-              return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+            if (createAppIDLinkEnabled(tableViewType)) {
+              return `<a href="${row.attemptDetailsURL}">${appId}</a>`
             }
           }
           return appId;
@@ -711,7 +718,7 @@ function createAppDetailedTableConf(
     dom: appDetailsCustomParams.Dom,
     buttons: [{
       extend: 'csv',
-      title: 'rapids_4_spark_qualification_output_ui_raw_data',
+      title: fileExportName,
       text: 'Export'
     }],
     initComplete: function(settings, json) {
@@ -853,6 +860,10 @@ function setDataTableSearchPanes(
 
     if (enabledPanes.length > 0) {
       dataTableConf.searchPanes = searchPanesConf["dtConfigurations"];
+      // limit the number of filters to 3 by default
+      if (enabledPanes.length > 3) {
+        dataTableConf.searchPanes.layout = 'columns-3';
+      }
       dataTableConf.dom = 'P' + dataTableConf.dom;
       dataTableConf.searchPanes.panes = enabledPanes;
     }
@@ -910,9 +921,13 @@ function createAppDetailsExecsTableConf(
         className: "all",
       },
       {
+        name: "isSupported",
+        data: "isSupported",
+        className: "all",
+      },
+      {
         name: "speedupFactor",
         data: "speedupFactor",
-        className: "all",
         render: function (data, type, row) {
           if (data && type === 'display') {
             return twoDecimalFormatter.format(data);
@@ -937,30 +952,23 @@ function createAppDetailsExecsTableConf(
         data: "nodeId",
       },
       {
-        name: "isSupported",
-        data: "isSupported",
-      },
-      {
         name: "stages",
         data: "stages[, ]",
-        className: "all",
       },
       {
         name: "children",
         "defaultContent":[],
         data: "children",
         render: "[, ].exec",
-        className: "all",
       },
       {
         name: "childrenNodeIDs",
         "defaultContent":[],
         data: "children",
         render: "[, ].nodeId",
-        className: "all",
       },
       {
-        name: "shouldRemove",
+        name: "isRemoved",
         data: "shouldRemove",
       },
     ],

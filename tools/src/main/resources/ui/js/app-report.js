@@ -147,10 +147,26 @@ $(document).ready(function() {
     }
   );
 
-  // set the tootTips for the table
-  $('thead th[title]').tooltip({
-    container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
-  });
+  //
+  // set tooltips for the three tables
+  //
+  $('#app-execs-details-data-container [data-toggle="tooltip"]').tooltip({
+    container: 'body',
+    html: true,
+    animation: true,
+    placement:"bottom",});
+
+  $('#app-stages-details-data-container [data-toggle="tooltip"]').tooltip({
+  container: 'body',
+    html: true,
+    animation: true,
+    placement:"bottom",});
+
+  $('#app-details-data-container [data-toggle="tooltip"]').tooltip({
+    container: 'body',
+    html: true,
+    animation: true,
+    placement:"bottom",});
 
   setupNavigation();
 });

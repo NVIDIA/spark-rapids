@@ -33,9 +33,18 @@ $(document).ready(function() {
     }
   );
 
-  // set the tootTips for the table
-  $('thead th[title]').tooltip({
-    container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
-  });
+  // Set the tootTips for the table header. Enable this when tooltips are limited to the
+  // table headers
+  // $('thead th[title]').tooltip({
+  //   container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
+  // });
+
+  // set the tootTips for the table by targeting the entire HTML Container
+  $('#app-details-data-container [data-toggle="tooltip"]').tooltip({
+    container: 'body',
+    html: true,
+    animation: true,
+    placement:"bottom",});
+
   setupNavigation();
 });
