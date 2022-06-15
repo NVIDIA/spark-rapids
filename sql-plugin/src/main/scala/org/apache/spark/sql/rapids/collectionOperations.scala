@@ -27,11 +27,12 @@ import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{RapidsErrorUtils, ShimExpression}
+import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
@@ -59,25 +60,17 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   }
 
   private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(ArrayBuffer.empty[cudf.ColumnVector]) { buffer =>
-      // build input buffer
-      children.foreach {
-        buffer += columnarEvalToColumn(_, batch).getBase
-      }
+    withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
       // run string concatenate
       GpuColumnVector.from(
-        cudf.ColumnVector.stringConcatenate(buffer.toArray[ColumnView]), StringType)
+        cudf.ColumnVector.stringConcatenate(cols.toArray[ColumnView]), StringType)
     }
   }
 
   private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(ArrayBuffer[cudf.ColumnVector]()) { buffer =>
-      // build input buffer
-      children.foreach {
-        buffer += columnarEvalToColumn(_, batch).getBase
-      }
+    withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
       // run list concatenate
-      GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(buffer: _*), dataType)
+      GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(cols: _*), dataType)
     }
   }
 }

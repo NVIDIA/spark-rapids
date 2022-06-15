@@ -133,8 +133,14 @@ def with_gpu_session(func, conf={}):
 def is_before_spark_312():
     return spark_version() < "3.1.2"
 
+def is_before_spark_314():
+    return spark_version() < "3.1.4"
+
 def is_before_spark_320():
     return spark_version() < "3.2.0"
+
+def is_before_spark_322():
+    return spark_version() < "3.2.2"
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
@@ -147,6 +153,9 @@ def is_before_spark_340():
 
 def is_spark_330_or_later():
     return spark_version() >= "3.3.0"
+
+def is_spark_321cdh():
+    return "3.2.1.3.2.717" in spark_version()
 
 def is_databricks_version_or_later(major, minor):
     spark = get_spark_i_know_what_i_am_doing()

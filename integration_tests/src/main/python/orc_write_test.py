@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
+from spark_session import is_databricks104_or_later
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *

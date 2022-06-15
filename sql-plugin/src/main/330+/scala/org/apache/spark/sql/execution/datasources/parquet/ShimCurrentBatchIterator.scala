@@ -82,8 +82,8 @@ class ShimCurrentBatchIterator(
 
   val sparkSchema = parquetColumn.sparkType.asInstanceOf[StructType]
   val parquetColumnVectors = (for (i <- 0 until sparkSchema.fields.length) yield {
-    new ParquetColumnVector(parquetColumn.children.apply(i),
-      vectors(i), capacity, MemoryMode.OFF_HEAP, missingColumns)
+    ParquetCVShims.newParquetCV(sparkSchema, i, parquetColumn.children.apply(i),
+      vectors(i), capacity, MemoryMode.OFF_HEAP, missingColumns, true)
   }).toArray
 
   private def containsPath(parquetType: Type, path: Array[String]): Boolean =

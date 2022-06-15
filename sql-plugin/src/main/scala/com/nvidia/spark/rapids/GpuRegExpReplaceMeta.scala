@@ -27,7 +27,8 @@ class GpuRegExpReplaceMeta(
     rule: DataFromReplacementRule)
   extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 
-  private var pattern: Option[String] = None
+  private var javaPattern: Option[String] = None
+  private var cudfPattern: Option[String] = None
   private var replacement: Option[String] = None
   private var canUseGpuStringReplace = false
   private var containsBackref: Boolean = false
@@ -45,9 +46,10 @@ class GpuRegExpReplaceMeta(
           canUseGpuStringReplace = true
         } else {
           try {
+            javaPattern = Some(s.toString())
             val (pat, repl) = 
                 new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
-            pattern = Some(pat)
+            cudfPattern = Some(pat)
             repl.map(GpuRegExpUtils.backrefConversion).foreach {
                 case (hasBackref, convertedRep) =>
                   containsBackref = hasBackref
@@ -81,12 +83,12 @@ class GpuRegExpReplaceMeta(
     if (canUseGpuStringReplace) {
       GpuStringReplace(lhs, regexp, rep)
     } else {
-      (pattern, replacement) match {
-        case (Some(cudfPattern), Some(cudfReplacement)) =>
+      (javaPattern, cudfPattern, replacement) match {
+        case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
           if (containsBackref) {
             GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)
           } else {
-            GpuRegExpReplace(lhs, regexp, rep, cudfPattern, cudfReplacement)
+            GpuRegExpReplace(lhs, regexp, rep, javaPattern, cudfPattern, cudfReplacement)
           }
         case _ =>
           throw new IllegalStateException("Expression has not been tagged correctly")
