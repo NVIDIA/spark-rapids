@@ -159,13 +159,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     })
   }
 
-  test("cuDF does not support null in pattern") {
-    val patterns = Seq("\u0000", "a\u0000b", "a(\u0000)b", "a[a-b][\u0000]")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support null characters in regular expressions"))
-  }
-
   test("cuDF does not support class intersection &&") {
     val patterns = Seq("[a&&b]", "[&&1]")
     patterns.foreach(pattern =>
@@ -434,7 +427,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},-./;:!^$#%&*+?<=>@\"'~`" +
-    "abc123x\\ \t\r\n\f\u000bBsdwSDWzZ"
+    "abc0123x\\ \t\r\n\f\u000b\u0000BsdwSDWzZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 

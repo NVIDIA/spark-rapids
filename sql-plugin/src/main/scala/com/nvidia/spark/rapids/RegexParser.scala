@@ -142,8 +142,7 @@ class RegexParser(pattern: String) {
       case '\\' =>
         parseEscapedCharacter()
       case '\u0000' =>
-        throw new RegexUnsupportedException(
-          "cuDF does not support null characters in regular expressions", Some(pos))
+        RegexGroup(false, RegexEscaped('0'))
       case '*' | '+' | '?' =>
         throw new RegexUnsupportedException(
           "base expression cannot start with quantifier", Some(pos))
@@ -225,7 +224,7 @@ class RegexParser(pattern: String) {
           characterClass.negated = true
         case '\u0000' =>
           throw new RegexUnsupportedException(
-            "cuDF does not support null characters in regular expressions", Some(pos))
+            "cuDF does not support null characters in character classes", Some(pos))
         case ch => 
           val nextChar: RegexCharacterClassComponent = ch match {
             case '\\' =>
@@ -234,6 +233,9 @@ class RegexParser(pattern: String) {
                   // A hex or octal representation of a meta character gets treated as an escaped 
                   // char. Example: [\x5ea] is treated as [\^a], not just [^a]
                   RegexEscaped(ch)
+                case RegexChar('\u0000') =>
+                  throw new RegexUnsupportedException(
+                    "cuDF does not support null characters in character classes", Some(pos))
                 case other => other
               }
             case '&' => 
@@ -495,9 +497,6 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
-    } else if (value == 0) {
-      throw new RegexUnsupportedException(s"cuDF does not support null characters " +
-        s"in regular expressions", Some(pos))
     }
 
     RegexHexDigit(hexDigit)
@@ -621,6 +620,7 @@ object RegexParser {
       case '\n' => "\\n"
       case '\t' => "\\t"
       case '\f' => "\\f"
+      case '\u0000' => "\\u0000"
       case '\u000b' => "\\u000b"
       case '\u0085' => "\\u0085"
       case '\u2028' => "\\u2028"
@@ -1327,21 +1327,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
         // cuDF does not support terms ending with line anchors on one side
         // of a choice, such as "^|$"
-        def endsWithLineAnchor(e: RegexAST): Boolean = {
-          e match {
-            case RegexSequence(parts) if parts.nonEmpty =>
-              val j = parts.lastIndexWhere {
-                  case RegexEmpty() => false
-                  case _ => true
-              }
-              endsWithLineAnchor(parts(j))
-            case RegexEscaped('A') => true
-            case _ => isBeginOrEndLineAnchor(e)
-          }
-        }
         if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
           throw new RegexUnsupportedException(
             "cuDF does not support terms ending with line anchors on one side of a choice")
+        }
+
+        // cuDF does not support terms ending with word boundaries on one side
+        // of a choice, such as "\\b|a"
+        if (endsWithWordBoundary(ll) || endsWithWordBoundary(rr)) {
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with word boundaries on one side of a choice")
         }
 
         RegexChoice(ll, rr)
@@ -1377,6 +1372,32 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case leaf => f(leaf)
       }
     }
+  }
+
+  private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        val j = parts.lastIndexWhere {
+            case RegexEmpty() => false
+            case _ => true
+        }
+        endsWith(parts(j), f)
+      case _ => f(regex)
+    }
+  }
+
+  private def endsWithLineAnchor(e: RegexAST): Boolean = {
+    endsWith(e, {
+      case RegexEscaped('A') => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
+  private def endsWithWordBoundary(e: RegexAST): Boolean = {
+    endsWith(e, {
+      case RegexEscaped(a) if "bB".contains(a) => true
+      case _ => false
+    })
   }
 
   private def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {
@@ -1464,6 +1485,8 @@ sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent 
   override def toRegexString: String = {
     if (a.length == 2) {
       s"\\x$a"
+    } else if (a == "0") {
+      s"\\0"
     } else {
       s"\\x{$a}"
     }
