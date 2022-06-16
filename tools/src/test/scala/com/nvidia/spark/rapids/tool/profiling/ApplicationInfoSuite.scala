@@ -420,7 +420,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(secondRow.endTime === Some(1622846441591L))
   }
 
-  test("test sqlToSTages") {
+  test("test sqlToStages") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
       new ProfileArgs(Array(s"$logDir/rp_sql_eventlog.zstd"))
@@ -442,9 +442,38 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(firstRow.sqlID === 0)
     assert(firstRow.jobID === 1)
     assert(firstRow.duration === Some(8174))
-    assert(firstRow.nodeNames.mkString(",") ===
-      Some("Exchange(9),WholeStageCodegen (1)(10),Scan(13)"))
+    assert(firstRow.nodeNames.mkString(",") === "Exchange(9),WholeStageCodegen (1)(10),Scan(13)")
   }
+
+  test("test wholeStage mapping") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    val collect = new CollectInformation(apps)
+    val wholeStageMapping = collect.getWholeStageCodeGenMapping
+
+    assert(wholeStageMapping.size == 10)
+    val firstRow = wholeStageMapping.head
+    assert(firstRow.nodeID === 0)
+    assert(firstRow.sqlID === 0)
+    assert(firstRow.parent === "WholeStageCodegen (6)")
+    assert(firstRow.child === "HashAggregate")
+    val lastRow = wholeStageMapping(9)
+    assert(firstRow.nodeID === 17)
+    assert(firstRow.sqlID === 0)
+    assert(firstRow.parent === "WholeStageCodegen (3)")
+    assert(firstRow.child === "SerializeFromObject")
+  }
+
 
   test("test multiple resource profile in single app") {
     var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
