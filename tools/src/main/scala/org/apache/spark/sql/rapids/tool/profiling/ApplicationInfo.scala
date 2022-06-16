@@ -336,7 +336,7 @@ class ApplicationInfo(
     }
   }
 
-  def aggregateSQLInfo: Seq[SQLStageInfoProfileResult] = {
+  def aggregateSQLStageInfo: Seq[SQLStageInfoProfileResult] = {
     val jobsWithSQL = jobIdToInfo.filter { case (id, j) =>
       j.sqlID.nonEmpty
     }
@@ -346,21 +346,13 @@ class ApplicationInfo(
         stages.contains(sid)
       }
       stagesInJob.map { case ((s,sa), info) =>
-        val nodeIds = sqlPlanNodeIdToStageIds.filter { case (k, v) =>
+        val nodeIds = sqlPlanNodeIdToStageIds.filter { case (_, v) =>
           v.contains(s)
         }.keys.toSeq
         val nodeNames = sqlPlan.get(j.sqlID.get).map { planInfo =>
           val nodes = SparkPlanGraph(planInfo).allNodes
           val validNodes = nodes.filter { n =>
             nodeIds.contains((j.sqlID.get, n.id))
-          }
-          val metricsForStage = allSQLMetrics.filter { m =>
-            m.stages.contains(s)
-          }
-          val withTimes = metricsForStage.filter { m =>
-            // TODO - is this ok or should we put all times?
-            val allNames = Seq("duration", "sort time", "scan time")
-            allNames.contains(m.name)
           }
           validNodes.map(n => s"${n.name}(${n.id.toString})")
         }.getOrElse(null)

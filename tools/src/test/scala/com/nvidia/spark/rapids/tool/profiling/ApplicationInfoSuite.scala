@@ -420,6 +420,32 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(secondRow.endTime === Some(1622846441591L))
   }
 
+  test("test sqlToSTages") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    val collect = new CollectInformation(apps)
+    val sqlToStageInfo = collect.getSQLToStage
+
+    assert(sqlToStageInfo.size == 4)
+    val firstRow = sqlToStageInfo.head
+    assert(firstRow.stageId === 1)
+    assert(firstRow.sqlID === 0)
+    assert(firstRow.jobID === 1)
+    assert(firstRow.duration === Some(8174))
+    assert(firstRow.nodeNames.mkString(",") ===
+      Some("Exchange(9),WholeStageCodegen (1)(10),Scan(13)"))
+  }
+
   test("test multiple resource profile in single app") {
     var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs = new ProfileArgs(Array(s"$logDir/rp_nosql_eventlog"))

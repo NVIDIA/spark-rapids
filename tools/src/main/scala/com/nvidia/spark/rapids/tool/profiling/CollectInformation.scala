@@ -135,7 +135,7 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
 
   def getSQLToStage: Seq[SQLStageInfoProfileResult] = {
     val allRows = apps.flatMap { app =>
-      app.aggregateSQLInfo
+      app.aggregateSQLStageInfo
     }
     if (allRows.size > 0) {
       case class Reverse[T](t: T)
