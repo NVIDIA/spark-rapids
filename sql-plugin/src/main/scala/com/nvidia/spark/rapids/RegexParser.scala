@@ -1485,8 +1485,6 @@ sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent 
   override def toRegexString: String = {
     if (a.length == 2) {
       s"\\x$a"
-    } else if (a == "0") {
-      s"\\0"
     } else {
       s"\\x{$a}"
     }
