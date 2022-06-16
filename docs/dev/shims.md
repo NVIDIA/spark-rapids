@@ -7,7 +7,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of 
-Apache Spark such as 3.1.x, 3.2.x, and a number of vendor releases that contain
+Apache Spark such as 3.1.x, 3.2.x, 3.3.0 and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally 
 incompatible between each other, at both source code level and even more often 
 at the binary level. The role of the Shim layer is to hide these issues from the 
