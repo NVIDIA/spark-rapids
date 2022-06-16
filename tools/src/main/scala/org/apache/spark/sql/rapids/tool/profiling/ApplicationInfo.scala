@@ -20,6 +20,7 @@ import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.planparser
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 
@@ -217,6 +218,9 @@ class ApplicationInfo(
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
+  var wholeStage: ArrayBuffer[WholeStageCodeGenResults] = ArrayBuffer[WholeStageCodeGenResults]()
+  val sqlPlanNodeIdToStageIds: mutable.HashMap[(Long, Long), Seq[Int]] =
+    mutable.HashMap.empty[(Long, Long), Seq[Int]]
 
   private lazy val eventProcessor =  new EventsProcessor(this)
 
@@ -238,15 +242,44 @@ class ApplicationInfo(
   }
 
   /**
+   *  Connects Operators to Stages by doing the following:
+   * 1. Read SparkGraph to get every Node's name and respective AccumulatorIDs.
+   * 2. Gets each stage's AccumulatorIDs.
+   * 3. Maps Operators to stages by checking for non-zero intersection of 1 and 2's AccumulatorIDs.
+   */
+  def connectOperatorToStage(): Unit = {
+    for ((sqlId, planInfo) <- sqlPlan) {
+      val planGraph = SparkPlanGraph(planInfo)
+      // Maps stages to operators by checking for non-zero intersection
+      // between nodeMetrics and stageAccumulateIDs
+      val nodeIdToStage = planGraph.allNodes.map { node =>
+        val mappedStages = SQLPlanParser.getStagesInSQLNode(node, this)
+        ((sqlId, node.id), mappedStages)
+      }.toMap
+      logWarning("nodeIdToStage  is: " + nodeIdToStage.mkString(","))
+      sqlPlanNodeIdToStageIds ++= nodeIdToStage
+    }
+  }
+
+  /**
    * Function to process SQL Plan Metrics after all events are processed
    */
   def processSQLPlanMetrics(): Unit = {
+    connectOperatorToStage
     for ((sqlID, planInfo) <- sqlPlan) {
       checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
+      planGraph.nodes.foreach { n =>
+        if (n.isInstanceOf[org.apache.spark.sql.execution.ui.SparkPlanGraphCluster]) {
+          val ch = n.asInstanceOf[org.apache.spark.sql.execution.ui.SparkPlanGraphCluster].nodes
+          ch.foreach { c =>
+            wholeStage += WholeStageCodeGenResults(index, sqlID, n.id, n.name, c.name)
+          }
+        }
+      }
       for (node <- allnodes) {
         checkGraphNodeForReads(sqlID, node)
         if (isDataSetOrRDDPlan(node.desc)) {
@@ -301,6 +334,40 @@ class ApplicationInfo(
         }
       }
     }
+  }
+
+  def aggregateSQLInfo: Seq[SQLStageInfoProfileResult] = {
+    val jobsWithSQL = jobIdToInfo.filter { case (id, j) =>
+      j.sqlID.nonEmpty
+    }
+    val sqlToStages = jobsWithSQL.flatMap { case (jobId, j) =>
+      val stages = j.stageIds
+      val stagesInJob = stageIdToInfo.filterKeys { case (sid, _) =>
+        stages.contains(sid)
+      }
+      stagesInJob.map { case ((s,sa), info) =>
+        val nodeIds = sqlPlanNodeIdToStageIds.filter { case (k, v) =>
+          v.contains(s)
+        }.keys.toSeq
+        val nodeNames = sqlPlan.get(j.sqlID.get).map { planInfo =>
+          val nodes = SparkPlanGraph(planInfo).allNodes
+          val validNodes = nodes.filter { n =>
+            nodeIds.contains((j.sqlID.get, n.id))
+          }
+          val metricsForStage = allSQLMetrics.filter { m =>
+            m.stages.contains(s)
+          }
+          val withTimes = metricsForStage.filter { m =>
+            // TODO - is this ok or should we put all times?
+            val allNames = Seq("duration", "sort time", "scan time")
+            allNames.contains(m.name)
+          }
+          validNodes.map(n => s"${n.name}(${n.id.toString})")
+        }.getOrElse(null)
+        SQLStageInfoProfileResult(index, j.sqlID.get, jobId, s, sa, info.duration, nodeNames)
+      }
+    }
+    sqlToStages.toSeq
   }
 
   private def aggregateAppInfo: Unit = {
