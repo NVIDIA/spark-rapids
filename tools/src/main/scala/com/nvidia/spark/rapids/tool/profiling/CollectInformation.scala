@@ -181,8 +181,13 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
 
   // Print SQL whole stage code gen mapping
   def getWholeStageCodeGenMapping: Seq[WholeStageCodeGenResults] = {
-    apps.flatMap { app =>
+    val allWholeStages = apps.flatMap { app =>
       app.wholeStage
+    }
+    if (allWholeStages.size > 0) {
+      allWholeStages.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID))
+    } else {
+      Seq.empty
     }
   }
 

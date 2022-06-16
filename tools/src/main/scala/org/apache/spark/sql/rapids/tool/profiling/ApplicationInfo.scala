@@ -256,7 +256,6 @@ class ApplicationInfo(
         val mappedStages = SQLPlanParser.getStagesInSQLNode(node, this)
         ((sqlId, node.id), mappedStages)
       }.toMap
-      logWarning("nodeIdToStage  is: " + nodeIdToStage.mkString(","))
       sqlPlanNodeIdToStageIds ++= nodeIdToStage
     }
   }
