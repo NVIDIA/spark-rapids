@@ -73,14 +73,16 @@ object ToolUtils extends Logging {
   }
 
   /**
-   * Convert a sequence to a single string that can be appended to a formatted text.
+   * Converts a sequence of elements to a single string that can be appended to a formatted text.
+   * Delegates to [[com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter]] to
+   * replace what is used as a text delimiter with something else.
    *
-   * @param values Input array to be converted.
-   * @param separator Input array to be converted.
-   * @param txtDelimiter The delimiter used by the output file format (i.e., comma for CSV).
-   *                     All occurrences of this delimiter are replaced by ";".
-   * @return A single string in the form of item1[separator]item2 with all txtDelimiter replaced by
-   *         semi-colons.
+   * @param values the sequence of elements to join together.
+   * @param separator the separator string to use.
+   * @param txtDelimiter the delimiter used by the output file format (i.e., comma for CSV).
+   * @return a string representation of the input sequence value. In the resulting string the string
+   *         representations (w.r.t. the method toString) of all elements are separated by
+   *         the string sep.
    */
   def renderTextField(values: Seq[Any], separator: String, txtDelimiter: String): String = {
     replaceDelimiter(values.mkString(separator), txtDelimiter)
