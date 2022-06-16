@@ -241,12 +241,7 @@ class ApplicationInfo(
     })
   }
 
-  /**
-   *  Connects Operators to Stages by doing the following:
-   * 1. Read SparkGraph to get every Node's name and respective AccumulatorIDs.
-   * 2. Gets each stage's AccumulatorIDs.
-   * 3. Maps Operators to stages by checking for non-zero intersection of 1 and 2's AccumulatorIDs.
-   */
+  // Connects Operators to Stages using AccumulatorIDs
   def connectOperatorToStage(): Unit = {
     for ((sqlId, planInfo) <- sqlPlan) {
       val planGraph = SparkPlanGraph(planInfo)

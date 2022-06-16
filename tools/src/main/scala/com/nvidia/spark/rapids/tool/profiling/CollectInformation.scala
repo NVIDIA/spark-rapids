@@ -142,6 +142,8 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
       implicit def ReverseOrdering[T: Ordering]: Ordering[Reverse[T]] =
         Ordering[T].reverse.on(_.t)
 
+      // intentionally sort this table by the duration to be able to quickly
+      // see the stage that took the longest
       allRows.sortBy(cols => (cols.appIndex, Reverse(cols.duration)))
     } else {
       Seq.empty
