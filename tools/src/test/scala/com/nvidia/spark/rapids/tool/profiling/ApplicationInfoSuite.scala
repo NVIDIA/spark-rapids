@@ -190,8 +190,11 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
     assert(sqlMetrics.size == 83)
+    val sqlMetricsWithDelim = sqlMetrics.map { metrics =>
+      metrics.copy(stages = ProfileUtils.replaceDelimiter(metrics.stages, ","))
+    }
     import sparkSession.implicits._
-    val df = sqlMetrics.toDF
+    val df = sqlMetricsWithDelim.toDF
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
     ToolTestUtils.compareDataFrames(df, dfExpect)
   }
