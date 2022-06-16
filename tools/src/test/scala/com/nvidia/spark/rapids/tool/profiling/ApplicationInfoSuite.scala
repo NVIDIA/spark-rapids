@@ -409,11 +409,15 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(firstRow.jobID === 0)
     assert(firstRow.stageIds.size === 1)
     assert(firstRow.sqlID === None)
+    assert(firstRow.startTime === 1622846402778L)
+    assert(firstRow.endTime === Some(1622846410240L))
 
     val secondRow = jobInfo(1)
     assert(secondRow.jobID === 1)
     assert(secondRow.stageIds.size === 4)
     assert(secondRow.sqlID.isDefined && secondRow.sqlID.get === 0)
+    assert(secondRow.startTime === 1622846431114L)
+    assert(secondRow.endTime === Some(1622846441591L))
   }
 
   test("test multiple resource profile in single app") {
