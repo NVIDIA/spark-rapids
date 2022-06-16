@@ -20,7 +20,7 @@ import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
-import com.nvidia.spark.rapids.tool.planparser
+import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 
@@ -308,9 +308,10 @@ class ApplicationInfo(
 
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
+          val stages = sqlPlanNodeIdToStageIds.get((sqlID, node.id)).getOrElse(Seq.empty)
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType, node.id,
-            node.name, node.desc)
+            node.name, node.desc, stages)
 
           allSQLMetrics += allMetric
           if (this.sqlPlanMetricsAdaptive.nonEmpty) {
@@ -320,7 +321,7 @@ class ApplicationInfo(
             adaptive.foreach { adaptiveMetric =>
               val allMetric = SQLMetricInfoCase(sqlID, adaptiveMetric.name,
                 adaptiveMetric.accumulatorId, adaptiveMetric.metricType, node.id,
-                node.name, node.desc)
+                node.name, node.desc, stages)
               // could make this more efficient but seems ok for now
               val exists = allSQLMetrics.filter { a =>
                 ((a.accumulatorId == adaptiveMetric.accumulatorId) && (a.sqlID == sqlID)
