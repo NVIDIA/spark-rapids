@@ -85,7 +85,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       allAppsSum: Seq[QualificationSummaryInfo]): Seq[QualificationSummaryInfo] = {
     // Default sorting for of the csv files.
     allAppsSum.sortBy(sum => {
-      (sum.estimatedInfo.estimatedGpuSpeedup)
+      (sum.estimatedInfo.recommendation, sum.estimatedInfo.estimatedGpuSpeedup)
     }).reverse
   }
 
@@ -94,11 +94,11 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       order: String): Seq[EstimatedSummaryInfo] = {
     if (QualificationArgs.isOrderAsc(order)) {
       sumsToWrite.sortBy(sum => {
-        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
+        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       })
     } else {
       sumsToWrite.sortBy(sum => {
-        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
+        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
       }).reverse
     }
   }
