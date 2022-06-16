@@ -163,7 +163,7 @@ case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
     "name", "max_value", "metricType", "stageIds")
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
-      name, max_value.toString, metricType, stages))
+      name, max_value.toString, metricType, stages)
   }
 }
 
