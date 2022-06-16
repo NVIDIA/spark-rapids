@@ -252,7 +252,7 @@ object CollectInformation extends Logging {
           val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
           Some(SQLAccumProfileResults(app.index, metric.sqlID,
             metric.nodeID, metric.nodeName, metric.accumulatorId,
-            metric.name, max, metric.metricType, metric.stages.mkString(",")))
+            metric.name, max, metric.metricType, metric.stageIds.mkString(",")))
         } else {
           None
         }

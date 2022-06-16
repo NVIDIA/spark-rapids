@@ -158,12 +158,12 @@ class SQLExecutionInfoClass(
 
 case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
     nodeName: String, accumulatorId: Long, name: String, max_value: Long,
-    metricType: String, stages: String) extends ProfileResult {
+    metricType: String, stageIds: String) extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
     "name", "max_value", "metricType", "stageIds")
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
-      name, max_value.toString, metricType, stages)
+      name, max_value.toString, metricType, stageIds)
   }
 }
 
@@ -260,7 +260,7 @@ case class SQLMetricInfoCase(
     nodeID: Long,
     nodeName: String,
     nodeDesc: String,
-    stages: Seq[Int])
+    stageIds: Seq[Int])
 
 case class DriverAccumCase(
     sqlID: Long,

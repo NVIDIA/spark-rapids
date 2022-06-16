@@ -191,7 +191,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
     assert(sqlMetrics.size == 83)
     val sqlMetricsWithDelim = sqlMetrics.map { metrics =>
-      metrics.copy(stages = ProfileUtils.replaceDelimiter(metrics.stages, ","))
+      metrics.copy(stageIds = ProfileUtils.replaceDelimiter(metrics.stageIds, ","))
     }
     import sparkSession.implicits._
     val df = sqlMetricsWithDelim.toDF
