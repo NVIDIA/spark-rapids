@@ -575,8 +575,7 @@ object RapidsConf {
   val IMPROVED_FLOAT_OPS = conf("spark.rapids.sql.improvedFloatOps.enabled")
     .doc("For some floating point operations spark uses one way to compute the value " +
       "and the underlying cudf implementation can use an improved algorithm. " +
-      "In some cases this can result in cudf producing an answer when spark overflows. " +
-      "Because this is not as compatible with spark, we have it disabled by default.")
+      "In some cases this can result in cudf producing an answer when spark overflows.")
     .booleanConf
     .createWithDefault(true)
 
