@@ -968,7 +968,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
-  private val numThreads = rapidsConf.parquetMultiThreadReadNumThreads
+  private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
   private val footerReadType = rapidsConf.parquetReaderFooterType
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
@@ -1595,10 +1595,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 }
 
-// Singleton threadpool that is used across all the tasks.
-// Please note that the TaskContext is not set in these threads and should not be used.
-object ParquetMultiFileThreadPool extends MultiFileReaderThreadPool
-
 // Parquet schema wrapper
 private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
 
@@ -1756,10 +1752,6 @@ class MultiFileParquetPartitionReader(
     val blockStartOffset = ParquetPartitionReader.PARQUET_MAGIC.length
     val updatedBlocks = computeBlockMetaData(allBlocks, blockStartOffset)
     calculateParquetOutputSize(updatedBlocks, batchContext.schema, true)
-  }
-
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   override def getBatchRunner(
@@ -2017,16 +2009,6 @@ class MultiFileCloudParquetPartitionReader(
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
     new ReadBatchRunner(footerReadType, tc, filterHandler, file, conf, filters)
-  }
-
-  /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * @param  numThreads  max number of threads to create
-   * @return ThreadPoolExecutor
-   */
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**
