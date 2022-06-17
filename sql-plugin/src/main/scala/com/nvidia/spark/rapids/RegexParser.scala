@@ -923,7 +923,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
-          terminatorChars ++= lineTerminatorChars.map(RegexChar(_))
+          terminatorChars ++= lineTerminatorChars.map(RegexChar)
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
@@ -1069,7 +1069,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // whitespace characters
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar(' '), RegexChar('\u000b'))
-          chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped(_))
+          chars ++= Seq('n', 't', 'r', 'f').map(RegexEscaped)
           if (ch.isUpper) {
             negateCharacterClass(chars) 
           } else {
@@ -1097,7 +1097,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           val chars: ListBuffer[RegexCharacterClassComponent] = ListBuffer(
             RegexChar('\u000B'), RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
           )
-          chars ++= Seq('n', 'f', 'r').map(RegexEscaped(_))
+          chars ++= Seq('n', 'f', 'r').map(RegexEscaped)
           if (ch.isUpper) {
             negateCharacterClass(chars) 
           } else {
