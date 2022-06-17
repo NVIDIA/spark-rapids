@@ -126,7 +126,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support possessive quantifier") {
     val patterns = Seq("a*+", "a|(a?|a*+)")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "possessive quantifier *+ not supported")
     )
   }
 
@@ -141,14 +142,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // note that we could choose to transpile and escape the '{' and '}' characters
     val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "token preceding '{' is not quantifiable")
     )
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
     val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
     patterns.foreach(pattern => 
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat"))
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support reptition of group containing: "))
   }
 
   test("cuDF does not support OR at BOL / EOL") {
@@ -221,7 +224,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("string anchor \\A will fall back to CPU in some repetitions") {
     val patterns = Seq(raw"(\A)*a", raw"(\A){0,}a", raw"(\A){0}a")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support reptition of group containing:")
     )
   }
 
@@ -236,7 +240,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("string anchor \\Z fall back to CPU in some repetitions") {
     val patterns = Seq(raw"a(\Z)*", raw"a(\Z){2,}")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support reptition of group containing:")
     )
   }
 
