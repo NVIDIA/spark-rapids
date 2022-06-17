@@ -1156,10 +1156,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException("empty sequence not supported", 
             sequence.position)
         }
-        if (isRegexChar(parts.head, '|') || isRegexChar(parts.last, '|')) {
-          // examples: "a|", "|b"
+        if (isRegexChar(parts.head, '|')) {
+          // example: "|b"
           throw new RegexUnsupportedException("choice with one empty side not supported", 
-            sequence.position)
+            parts.head.position)
+        }
+        if (isRegexChar(parts.last, '|')) {
+          // example: "a|"
+          throw new RegexUnsupportedException("choice with one empty side not supported", 
+            parts.last.position)
         }
         if (isRegexChar(parts.head, '{')) {
           // example: "{"
@@ -1168,7 +1173,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // note that we could choose to escape this in the transpiler rather than
           // falling back to CPU
           throw new RegexUnsupportedException("token preceding '{' is not quantifiable", 
-            sequence.position)
+            parts.head.position)
         }
         if (parts.forall(isBeginOrEndLineAnchor)) {
           throw new RegexUnsupportedException(

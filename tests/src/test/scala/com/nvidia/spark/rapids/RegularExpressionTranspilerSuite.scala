@@ -144,7 +144,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
-        "token preceding '{' is not quantifiable")
+        "token preceding '{' is not quantifiable near index 0")
     )
   }
 
@@ -310,8 +310,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test ("word boundaries will fall back to CPU - split") {
     val patterns = Seq("\\b", "\\B")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode, 
-        "word boundaries are not supported in split mode")
+      assertUnsupported(pattern, RegexSplitMode, "word boundaries are not supported in split mode")
     )
   }
 
