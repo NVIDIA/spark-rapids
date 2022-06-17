@@ -120,7 +120,7 @@ Run `--help` for more information.
 - Executors information
 - Job, stage and SQL ID information
 - SQL to stage information
-- WholeStageCodeGen to node mappings (only applies to CPU)
+- WholeStageCodeGen to node mappings (only applies to CPU plans)
 - Rapids related parameters
 - Spark Properties
 - Rapids Accelerator Jar and cuDF Jar
