@@ -466,12 +466,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(firstRow.nodeID === 0)
     assert(firstRow.sqlID === 0)
     assert(firstRow.parent === "WholeStageCodegen (6)")
-    assert(firstRow.child === "HashAggregate")
+    assert(firstRow.child === "HashAggregate(1)")
     val lastRow = wholeStageMapping(9)
     assert(lastRow.nodeID === 17)
     assert(lastRow.sqlID === 0)
     assert(lastRow.parent === "WholeStageCodegen (3)")
-    assert(lastRow.child === "SerializeFromObject")
+    assert(lastRow.child === "SerializeFromObject(19)")
   }
 
 
