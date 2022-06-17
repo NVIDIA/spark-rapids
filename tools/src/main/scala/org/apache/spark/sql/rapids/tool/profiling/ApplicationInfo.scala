@@ -270,8 +270,7 @@ class ApplicationInfo(
         if (n.isInstanceOf[org.apache.spark.sql.execution.ui.SparkPlanGraphCluster]) {
           val ch = n.asInstanceOf[org.apache.spark.sql.execution.ui.SparkPlanGraphCluster].nodes
           ch.foreach { c =>
-            val nodeNameIdStr = s"${c.name}(${c.id})"
-            wholeStage += WholeStageCodeGenResults(index, sqlID, n.id, n.name, nodeNameIdStr)
+            wholeStage += WholeStageCodeGenResults(index, sqlID, n.id, n.name, c.name, c.id)
           }
         }
       }
