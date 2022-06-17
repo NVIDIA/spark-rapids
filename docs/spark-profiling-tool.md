@@ -119,6 +119,8 @@ Run `--help` for more information.
 - Data Source information
 - Executors information
 - Job, stage and SQL ID information
+- SQL to stage information
+- WholeStageCodeGen to node mappings (only applies to CPU)
 - Rapids related parameters
 - Spark Properties
 - Rapids Accelerator Jar and cuDF Jar
@@ -263,12 +265,25 @@ Rapids Accelerator Jar and cuDF Jar:
 - Job, stage and SQL ID information(not in `compare` mode yet):
 
 ```
-+--------+-----+---------+-----+
-|appIndex|jobID|stageIds |sqlID|
-+--------+-----+---------+-----+
-|1       |0    |[0]      |null |
-|1       |1    |[1,2,3,4]|0    |
-+--------+-----+---------+-----+
++--------+-----+---------+-----+-------------+-------------+
+|appIndex|jobID|stageIds |sqlID|startTime    |endTime      |
++--------+-----+---------+-----+-------------+-------------+
+|1       |0    |[0]      |null |1622846402778|1622846410240|
+|1       |1    |[1,2,3,4]|0    |1622846431114|1622846441591|
++--------+-----+---------+-----+-------------+-------------+
+```
+
+- SQL to Stage Information (sorted by stage duration)
+
+```
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|appIndex|sqlID|jobID|stageId|stageAttemptId|Stage Duration|SQL Nodes(IDs)                                                                                                                                                     |
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|1       |0    |1    |1      |0             |8174          |Exchange(9),WholeStageCodegen (1)(10),Scan(13)                                                                                                                     |
+|1       |0    |1    |2      |0             |8154          |Exchange(16),WholeStageCodegen (3)(17),Scan(20)                                                                                                                    |
+|1       |0    |1    |3      |0             |2148          |Exchange(2),HashAggregate(4),SortMergeJoin(6),WholeStageCodegen (5)(3),Sort(8),WholeStageCodegen (2)(7),Exchange(9),Sort(15),WholeStageCodegen (4)(14),Exchange(16)|
+|1       |0    |1    |4      |0             |126           |HashAggregate(1),WholeStageCodegen (6)(0),Exchange(2)                                                                                                              |
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
 - SQL Plan Metrics for Application for each SQL plan node in each SQL:
@@ -277,15 +292,27 @@ These are also called accumulables in Spark.
 
 ```
 SQL Plan Metrics for Application:
-+--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
-|appIndex|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|
-+--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
-|1       |0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |
-|1       |0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |
-|1       |0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |
-|1       |0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |
-|1       |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
-|1       |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
++--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+--------+
+|appIndex|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|stageIds|
++--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+--------+
+|1       |0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |4,3     | 
+|1       |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |4,3     |
+```
+
+- WholeStageCodeGen to Node Mapping:
+
+```
++--------+-----+------+---------------------+-----------------------+
+|appIndex|sqlID|nodeID|SQL Node             |Child Node(ID)         |
++--------+-----+------+---------------------+-----------------------+
+|1       |0    |0     |WholeStageCodegen (6)|HashAggregate(1)       |
+|1       |0    |3     |WholeStageCodegen (5)|HashAggregate(4)       |
+|1       |0    |3     |WholeStageCodegen (5)|Project(5)             |
+|1       |0    |3     |WholeStageCodegen (5)|SortMergeJoin(6)       |
 ```
 
 - Print SQL Plans (-p option):
