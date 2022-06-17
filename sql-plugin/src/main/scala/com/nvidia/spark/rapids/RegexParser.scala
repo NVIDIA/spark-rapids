@@ -48,7 +48,8 @@ class RegexParser(pattern: String) {
   def parse(): RegexAST = {
     val ast = parseUntil(() => eof())
     if (!eof()) {
-      throw new RegexUnsupportedException("Failed to parse full regex. Stopped", Some(pos))
+      throw new RegexUnsupportedException("Failed to parse full regex. Last character parsed was", 
+        Some(pos))
     }
     ast
   }
@@ -79,23 +80,17 @@ class RegexParser(pattern: String) {
 
 
   private def parseUntil(until: () => Boolean): RegexAST = {
-    var start = pos
     val term = parseTerm(() => until() || peek().contains('|'))
-    term.position = Some(start)
     if (!eof() && peek().contains('|')) {
       consumeExpected('|')
-      start = pos
-      val right = parseUntil(until)
-      right.position = Some(start)
-      RegexChoice(term, right)
+      new RegexChoice(term, parseUntil(until), pos)
     } else {
       term
     }
   }
 
   private def parseTerm(until: () => Boolean): RegexAST = {
-    val sequence = RegexSequence(new ListBuffer())
-    sequence.position = Some(pos)
+    val sequence = new RegexSequence(new ListBuffer(), pos)
     while (!eof() && !until()) {
       parseFactor(until) match {
         case RegexSequence(parts) =>
@@ -136,8 +131,7 @@ class RegexParser(pattern: String) {
       } else {
         SimpleQuantifier(consume())
       }
-      base = RegexRepetition(base, quantifier)
-      base.position = Some(start)
+      base = new RegexRepetition(base, quantifier, start)
       quantifier.position = Some(pos-1)
     }
     base
@@ -217,8 +211,7 @@ class RegexParser(pattern: String) {
     }
 
     val start = pos
-    val characterClass = RegexCharacterClass(negated = false, characters = ListBuffer())
-    characterClass.position = Some(pos)
+    val characterClass = new RegexCharacterClass(negated = false, characters = ListBuffer(), pos)
     // loop until the end of the character class or EOF
     var characterClassComplete = false
     while (!eof() && !characterClassComplete) {
@@ -226,9 +219,7 @@ class RegexParser(pattern: String) {
       ch match {
         case '[' =>
           // treat as a literal character and add to the character class
-          val r = RegexChar(ch)
-          r.position = Some(pos-1)
-          characterClass.append(r)
+          characterClass.append(new RegexChar(ch, pos-1))
         case ']' if (!characterClass.negated && pos > start + 1) ||
             (characterClass.negated && pos > start + 2) =>
           // "[]" is not a valid character class
@@ -523,9 +514,7 @@ class RegexParser(pattern: String) {
         s"in regular expressions", Some(start))
     }
 
-    val hex = RegexHexDigit(hexDigit)
-    hex.position = Some(start-2)
-    hex
+    new RegexHexDigit(hexDigit, start - 2)
   }
 
   private def isOctalDigit(ch: Char): Boolean = ch >= '0' && ch <= '7'
@@ -536,10 +525,9 @@ class RegexParser(pattern: String) {
     // \0mnn The character with octal value 0mnn (0 <= m <= 3, 0 <= n <= 7)
 
     def parseOctalDigits(n: Integer): RegexOctalChar = {
-      val octal = RegexOctalChar(pattern.substring(pos, pos + n)) 
-      octal.position = Some(pos)
+      val octal = pattern.substring(pos, pos + n)
       pos += n
-      octal
+      new RegexOctalChar(octal, pos) 
     }
 
     if (!eof() && isOctalDigit(pattern.charAt(pos))) {
@@ -1478,11 +1466,19 @@ sealed case class RegexEmpty() extends RegexAST {
 }
 
 sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
+  def this(parts: ListBuffer[RegexAST], position: Int) = {
+    this(parts)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = parts
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 }
 
 sealed case class RegexGroup(capture: Boolean, term: RegexAST) extends RegexAST {
+  def this(capture: Boolean, term: RegexAST, position: Int) {
+    this(capture, term)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq(term)
   override def toRegexString: String = if (capture) {
     s"(${term.toRegexString})"
@@ -1492,11 +1488,19 @@ sealed case class RegexGroup(capture: Boolean, term: RegexAST) extends RegexAST 
 }
 
 sealed case class RegexChoice(a: RegexAST, b: RegexAST) extends RegexAST {
+  def this(a: RegexAST, b: RegexAST, position: Int) {
+    this(a, b)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq(a, b)
   override def toRegexString: String = s"${a.toRegexString}|${b.toRegexString}"
 }
 
 sealed case class RegexRepetition(a: RegexAST, quantifier: RegexQuantifier) extends RegexAST {
+  def this(a: RegexAST, quantifier: RegexQuantifier, position: Int) {
+    this(a, quantifier)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq(a)
   override def toRegexString: String = s"${a.toRegexString}${quantifier.toRegexString}"
 }
@@ -1504,12 +1508,20 @@ sealed case class RegexRepetition(a: RegexAST, quantifier: RegexQuantifier) exte
 sealed trait RegexQuantifier extends RegexAST
 
 sealed case class SimpleQuantifier(ch: Char) extends RegexQuantifier {
+  def this(ch: Char, position: Int) {
+    this(ch)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = ch.toString
 }
 
 sealed case class QuantifierFixedLength(length: Int)
     extends RegexQuantifier {
+  def this(length: Int, position: Int) {
+    this(length)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = {
     s"{$length}"
@@ -1518,6 +1530,10 @@ sealed case class QuantifierFixedLength(length: Int)
 
 sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int])
     extends RegexQuantifier{
+  def this(minLength: Int, maxLength: Option[Int], position: Int) {
+    this(minLength, maxLength)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = {
     maxLength match {
@@ -1532,6 +1548,11 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
 sealed trait RegexCharacterClassComponent extends RegexAST
 
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
+  def this(a: String, position: Int) {
+    this(a)
+    this.position = Some(position)
+  }
+
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = {
     if (a.length == 2) {
@@ -1543,16 +1564,28 @@ sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent 
 }
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
+  def this(a: String, position: Int) {
+    this(a)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
 
 sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
+  def this(ch: Char, position: Int) {
+    this(ch)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"$ch"
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
+  def this(a: Char, position: Int) {
+    this(a)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
@@ -1560,16 +1593,26 @@ sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
 sealed case class RegexCharacterRange(start: RegexCharacterClassComponent, 
     end: RegexCharacterClassComponent)
   extends RegexCharacterClassComponent{
+  def this(start: RegexCharacterClassComponent, end: RegexCharacterClassComponent, position: Int) {
+    this(start, end)
+    this.position = Some(position)
+  }
+
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String =  s"${start.toRegexString}-${end.toRegexString}"
-  
-  position = start.position
 }
 
 sealed case class RegexCharacterClass(
     var negated: Boolean,
     var characters: ListBuffer[RegexCharacterClassComponent])
   extends RegexAST {
+  def this (
+      negated: Boolean, 
+      characters: ListBuffer[RegexCharacterClassComponent], 
+      position: Int) {
+    this(negated, characters)
+    this.position = Some(position)
+  }
 
   override def children(): Seq[RegexAST] = characters
   def append(ch: Char): Unit = {
@@ -1623,12 +1666,20 @@ sealed case class RegexCharacterClass(
 }
 
 sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAST {
+  def this(num: Int, isNew: Boolean, position: Int) {
+    this(num, isNew)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString(): String = s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
     numCaptureGroups: Int = 0) extends RegexAST {
+  def this(parts: ListBuffer[RegexAST], numCaptureGroups: Int, position: Int) {
+    this(parts, numCaptureGroups)
+    this.position = Some(position)
+  }
   override def children(): Seq[RegexAST] = parts
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
