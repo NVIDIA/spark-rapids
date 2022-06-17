@@ -265,6 +265,7 @@ Rapids Accelerator Jar and cuDF Jar:
 - Job, stage and SQL ID information(not in `compare` mode yet):
 
 ```
+Job Information:
 +--------+-----+---------+-----+-------------+-------------+
 |appIndex|jobID|stageIds |sqlID|startTime    |endTime      |
 +--------+-----+---------+-----+-------------+-------------+
@@ -275,7 +276,10 @@ Rapids Accelerator Jar and cuDF Jar:
 
 - SQL to Stage Information (sorted by stage duration)
 
+Note that not all SQL nodes have a mapping to stage id so some nodes might be missing.
+
 ```
+SQL to Stage Information:
 +--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 |appIndex|sqlID|jobID|stageId|stageAttemptId|Stage Duration|SQL Nodes(IDs)                                                                                                                                                     |
 +--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -289,6 +293,7 @@ Rapids Accelerator Jar and cuDF Jar:
 - SQL Plan Metrics for Application for each SQL plan node in each SQL:
 
 These are also called accumulables in Spark.
+Note that not all SQL nodes have a mapping to stage id.
 
 ```
 SQL Plan Metrics for Application:
@@ -306,13 +311,15 @@ SQL Plan Metrics for Application:
 - WholeStageCodeGen to Node Mapping:
 
 ```
-+--------+-----+------+---------------------+-----------------------+
-|appIndex|sqlID|nodeID|SQL Node             |Child Node(ID)         |
-+--------+-----+------+---------------------+-----------------------+
-|1       |0    |0     |WholeStageCodegen (6)|HashAggregate(1)       |
-|1       |0    |3     |WholeStageCodegen (5)|HashAggregate(4)       |
-|1       |0    |3     |WholeStageCodegen (5)|Project(5)             |
-|1       |0    |3     |WholeStageCodegen (5)|SortMergeJoin(6)       |
+WholeStageCodeGen Mapping:
++--------+-----+------+---------------------+-------------------+------------+
+|appIndex|sqlID|nodeID|SQL Node             |Child Node         |Child NodeID|
++--------+-----+------+---------------------+-------------------+------------+
+|1       |0    |0     |WholeStageCodegen (6)|HashAggregate      |1           |
+|1       |0    |3     |WholeStageCodegen (5)|HashAggregate      |4           |
+|1       |0    |3     |WholeStageCodegen (5)|Project            |5           |
+|1       |0    |3     |WholeStageCodegen (5)|SortMergeJoin      |6           |
+|1       |0    |7     |WholeStageCodegen (2)|Sort               |8           |
 ```
 
 - Print SQL Plans (-p option):
