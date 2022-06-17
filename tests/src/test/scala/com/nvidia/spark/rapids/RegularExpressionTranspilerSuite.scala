@@ -83,10 +83,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support choice with nothing to repeat") {
+  test("cuDF does not support choice with repetition") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support repetition on one side of a choice")
     )
   }
 
@@ -148,10 +149,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
-    val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
+    var patterns = Seq("(3?)+", "(3?)*", "((3?))+")
     patterns.foreach(pattern => 
       assertUnsupported(pattern, RegexFindMode, 
-        "cuDF does not support reptition of group containing: "))
+        "cuDF does not support reptition of group containing: 3?"))
+    Seq("(3*)+").foreach(pattern => 
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support reptition of group containing: 3*"))
   }
 
   test("cuDF does not support OR at BOL / EOL") {
@@ -225,7 +229,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq(raw"(\A)*a", raw"(\A){0,}a", raw"(\A){0}a")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
-        "cuDF does not support reptition of group containing:")
+        "cuDF does not support reptition of group containing: \\A")
     )
   }
 
@@ -233,7 +237,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq(raw"(\Z)", raw"(\Z)+")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
-          "sequences that only contain '^' or '$' are not supported")
+        "sequences that only contain '^' or '$' are not supported")
     )
   }
 
@@ -241,13 +245,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq(raw"a(\Z)*", raw"a(\Z){2,}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
-        "cuDF does not support reptition of group containing:")
+        "cuDF does not support reptition of group containing: \\Z")
     )
   }
 
   test("string anchor \\Z fall back to CPU - split") {
     for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("\\Z", mode, "sequences that only contain '^' or '$' are not supported")
+      assertUnsupported("\\Z", mode, 
+        "sequences that only contain '^' or '$' are not supported")
     }
   }
 
@@ -305,7 +310,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test ("word boundaries will fall back to CPU - split") {
     val patterns = Seq("\\b", "\\B")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode, "word boundaries are not supported in split mode")
+      assertUnsupported(pattern, RegexSplitMode, 
+        "word boundaries are not supported in split mode")
     )
   }
 
@@ -861,8 +867,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val e = intercept[RegexUnsupportedException] {
       transpile(pattern, mode)
     }
-    if (!e.getMessage.startsWith(message)) {
+    val msg = e.getMessage
+    if (!msg.startsWith(message)) {
       fail(s"Pattern '$pattern': Error was [${e.getMessage}] but expected [$message]'")
+    }
+    if(!msg.contains("near index")) {
+      fail(s"Pattern '$pattern': Error was [${e.getMessage}] but does not specify index")
     }
   }
 

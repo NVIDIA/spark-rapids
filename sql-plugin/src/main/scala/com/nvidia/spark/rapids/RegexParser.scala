@@ -79,10 +79,15 @@ class RegexParser(pattern: String) {
 
 
   private def parseUntil(until: () => Boolean): RegexAST = {
+    var start = pos
     val term = parseTerm(() => until() || peek().contains('|'))
+    term.position = Some(start)
     if (!eof() && peek().contains('|')) {
       consumeExpected('|')
-      RegexChoice(term, parseUntil(until))
+      start = pos
+      val right = parseUntil(until)
+      right.position = Some(start)
+      RegexChoice(term, right)
     } else {
       term
     }
@@ -90,6 +95,7 @@ class RegexParser(pattern: String) {
 
   private def parseTerm(until: () => Boolean): RegexAST = {
     val sequence = RegexSequence(new ListBuffer())
+    sequence.position = Some(pos)
     while (!eof() && !until()) {
       parseFactor(until) match {
         case RegexSequence(parts) =>
@@ -117,11 +123,13 @@ class RegexParser(pattern: String) {
   }
 
   private def parseFactor(until: () => Boolean): RegexAST = {
+    var start = pos
     var base = parseBase()
+    base.position = Some(start)
     while (!eof() && !until()
         && (peek().exists(ch => ch == '*' || ch == '+' || ch == '?')
         || isValidQuantifierAhead())) {
-
+      start = pos
       val quantifier = if (peek().contains('{')) {
         consumeExpected('{')
         parseQuantifierOrLiteralBrace().asInstanceOf[RegexQuantifier]
@@ -129,12 +137,15 @@ class RegexParser(pattern: String) {
         SimpleQuantifier(consume())
       }
       base = RegexRepetition(base, quantifier)
+      base.position = Some(start)
+      quantifier.position = Some(pos)
     }
     base
   }
 
   private def parseBase(): RegexAST = {
-    consume() match {
+    val start = pos
+    val base: RegexAST = consume() match {
       case '(' =>
         parseGroup()
       case '[' =>
@@ -150,6 +161,8 @@ class RegexParser(pattern: String) {
       case other =>
         RegexChar(other)
     }
+    base.position = Some(start)
+    base
   }
 
   private def parseGroup(): RegexAST = {
@@ -205,6 +218,7 @@ class RegexParser(pattern: String) {
 
     val start = pos
     val characterClass = RegexCharacterClass(negated = false, characters = ListBuffer())
+    characterClass.position = Some(pos)
     // loop until the end of the character class or EOF
     var characterClassComplete = false
     while (!eof() && !characterClassComplete) {
@@ -212,7 +226,9 @@ class RegexParser(pattern: String) {
       ch match {
         case '[' =>
           // treat as a literal character and add to the character class
-          characterClass.append(ch)
+          val r = RegexChar(ch)
+          r.position = Some(pos)
+          characterClass.append(r)
         case ']' if (!characterClass.negated && pos > start + 1) ||
             (characterClass.negated && pos > start + 2) =>
           // "[]" is not a valid character class
@@ -230,7 +246,7 @@ class RegexParser(pattern: String) {
           val nextChar: RegexCharacterClassComponent = ch match {
             case '\\' =>
               getEscapedComponent() match {
-                case RegexChar(ch, _) if supportedMetaCharacters.contains(ch) =>
+                case RegexChar(ch) if supportedMetaCharacters.contains(ch) =>
                   // A hex or octal representation of a meta character gets treated as an escaped 
                   // char. Example: [\x5ea] is treated as [\^a], not just [^a]
                   RegexEscaped(ch)
@@ -247,6 +263,7 @@ class RegexParser(pattern: String) {
             case ch =>
               RegexChar(ch)
           }
+          nextChar.position = Some(pos)
           peek() match {
             case Some('-') =>
               consumeExpected('-')
@@ -448,9 +465,7 @@ class RegexParser(pattern: String) {
           ListBuffer(getCharacters("Alpha"), getCharacters("Digit")).flatten
         case "Punct" =>
           val res:ListBuffer[RegexCharacterClassComponent] = 
-              ListBuffer("!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~".zipWithIndex.map{ 
-                case (c, ind) => RegexChar(c, Some(start + ind))
-              }: _*)
+              ListBuffer("!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~".map(RegexChar): _*)
           res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'))
         case "Graph" => 
           ListBuffer(getCharacters("Alnum"), getCharacters("Punct")).flatten
@@ -468,9 +483,7 @@ class RegexParser(pattern: String) {
             RegexCharacterRange(RegexChar('a'), RegexChar('f')),
             RegexCharacterRange(RegexChar('A'), RegexChar('F')))
         case "Space" =>
-          ListBuffer(" \t\n\u000B\f\r".zipWithIndex.map {
-            case (c, ind) => RegexChar(c, Some(start + ind))
-          }: _*)
+          ListBuffer(" \t\n\u000B\f\r".map(RegexChar): _*)
         case _ => 
           throw new RegexUnsupportedException(
             s"predefined character class ${className} is not supported", Some(pos))
@@ -610,8 +623,8 @@ object RegexParser {
   def isRegExpString(s: String): Boolean = {
 
     def isRegExpString(ast: RegexAST): Boolean = ast match {
-      case RegexChar(ch, _) => regexpChars.contains(ch)
-      case RegexEscaped(_, _) => true
+      case RegexChar(ch) => regexpChars.contains(ch)
+      case RegexEscaped(_) => true
       case RegexSequence(parts) => parts.exists(isRegExpString)
       case _ => true
     }
@@ -695,8 +708,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
     e match {
-      case RegexEscaped(ch, _) if regexMetaChars.contains(ch) => Some(ch.toString)
-      case RegexChar(ch, _) if !regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexEscaped(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
       case RegexSequence(parts) =>
         parts.foldLeft[Option[String]](Some("")) { (all, x) => 
           all match {
@@ -734,12 +747,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private def isSupportedRepetitionBase(e: RegexAST): (Boolean, Option[RegexAST]) = {
     e match {
-      case RegexEscaped(ch, _) => ch match {
+      case RegexEscaped(ch) => ch match {
         case 'd' | 'w' | 's' | 'S' | 'h' | 'H' | 'v' | 'V' => (true, None)
         case _ => (false, Some(e))
       }
 
-      case RegexChar(a, _) if "$^".contains(a) =>
+      case RegexChar(a) if "$^".contains(a) =>
         // example: "$*"
         (false, Some(e))
 
@@ -748,10 +761,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
         (false, Some(e))
 
       case RegexSequence(parts) =>
-        parts.find { !isSupportedRepetitionBase(_)._1 } match {
-          case None => (true, None)
-          case unsupportedPart => (false, unsupportedPart)
+        parts.foreach { part => isSupportedRepetitionBase(part) match {
+            case (false, unsupportedPart) => return (false, unsupportedPart)
+            case _ =>
+          } 
         }
+        (true, None)
         
       case RegexGroup(_, term) =>
         isSupportedRepetitionBase(term)
@@ -804,9 +819,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     val distinctComponents = components.distinct
     val linefeedCharsInPattern = distinctComponents.flatMap {
-      case RegexChar(ch, _) if ch == '\n' || ch == '\r' => Seq(ch)
-      case RegexEscaped(ch, _) if ch == 'n' => Seq('\n')
-      case RegexEscaped(ch, _) if ch == 'r' => Seq('\r')
+      case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
+      case RegexEscaped(ch) if ch == 'n' => Seq('\n')
+      case RegexEscaped(ch) if ch == 'r' => Seq('\r')
       case _ => Seq.empty
     }
 
@@ -832,26 +847,26 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     def containsBeginAnchor(regex: RegexAST): Boolean = {
       contains(regex, {
-        case RegexChar('^', _) | RegexEscaped('A', _) => true
+        case RegexChar('^') | RegexEscaped('A') => true
         case _ => false
       })
     }
 
     def containsEndAnchor(regex: RegexAST): Boolean = {
       contains(regex, {
-        case RegexChar('$', _) | RegexEscaped('z', _) | RegexEscaped('Z', _) => true
+        case RegexChar('$') | RegexEscaped('z') | RegexEscaped('Z') => true
         case _ => false
       })
     }
 
     def containsNewline(regex: RegexAST): Boolean = {
       contains(regex, {
-        case RegexChar('\r', _) | RegexEscaped('r', _) => true
-        case RegexChar('\n', _) | RegexEscaped('n', _) => true
-        case RegexChar('\u0085', _) | RegexChar('\u2028', _) | RegexChar('\u2029', _) => true
-        case RegexEscaped('s', _) | RegexEscaped('v', _) | RegexEscaped('R', _) => true
-        case RegexEscaped('W', _) | RegexEscaped('D', _) | 
-          RegexEscaped('S', _) | RegexEscaped('V', _) =>
+        case RegexChar('\r') | RegexEscaped('r') => true
+        case RegexChar('\n') | RegexEscaped('n') => true
+        case RegexChar('\u0085') | RegexChar('\u2028') | RegexChar('\u2029') => true
+        case RegexEscaped('s') | RegexEscaped('v') | RegexEscaped('R') => true
+        case RegexEscaped('W') | RegexEscaped('D') | 
+          RegexEscaped('S') | RegexEscaped('V') =>
           // these would get transpiled to negated character classes
           // that include newlines
           true
@@ -882,7 +897,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         throw new RegexUnsupportedException(
           s"End of line/string anchor is not supported in this context: " +
             s"${toReadableString(r1.toRegexString)}" +
-            s"${toReadableString(r2.toRegexString)}")
+            s"${toReadableString(r2.toRegexString)}", r1.position)
       }
     }
 
@@ -915,14 +930,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
       previous: Option[RegexAST]): RegexAST = {
     regex match {
 
-      case RegexChar(ch, pos) => ch match {
+      case RegexChar(ch) => ch match {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
           terminatorChars ++= lineTerminatorChars.map(RegexChar(_))
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("line anchor $ is not supported in split", pos)
+          throw new RegexUnsupportedException(
+            "line anchor $ is not supported in split", regex.position)
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
           // terminators in and around the anchor
@@ -930,21 +946,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // NOTE: this applies to when using *standard* mode. In multiline mode, all these 
           // conditions will change. Currently Spark does not use multiline mode.
           previous match {
-            case Some(RegexChar('$', _)) =>
+            case Some(RegexChar('$')) =>
               // repeating the line anchor in cuDF (for example b$$) causes matches to fail, but in 
               // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
               // an empty RegexAST that outputs to empty string
               RegexEmpty()
-            case Some(RegexChar(ch, _)) if mode == RegexReplaceMode
+            case Some(RegexChar(ch)) if mode == RegexReplaceMode
                 && lineTerminatorChars.contains(ch) =>
                 throw new RegexUnsupportedException("Regex sequences with a line terminator " 
-                    + "character followed by '$' are not supported in replace mode", pos)
-            case Some(RegexChar(ch, _)) if ch == '\r' =>
+                    + "character followed by '$' are not supported in replace mode", regex.position)
+            case Some(RegexChar(ch)) if ch == '\r' =>
               // when using the the CR (\r), it prevents the line anchor from handling any other 
               // line terminator sequences, so we just output the anchor and we are finished
               // for example: \r$ -> \r$ (no transpilation)
-              RegexChar('$', pos)
-            case Some(RegexChar(ch, _)) if lineTerminatorChars.contains(ch) =>
+              RegexChar('$')
+            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
               // when using any other line terminator character, you can match any of the other
               // line terminator characters individually as part of the line anchor match.
               // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
@@ -957,10 +973,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
               RegexSequence(ListBuffer(
                 RegexRepetition(lineTerminatorMatcher(Set(ch), true,
                     mode == RegexReplaceMode), SimpleQuantifier('?')),
-                RegexChar('$', pos)))
-            case Some(RegexEscaped('b', _)) | Some(RegexEscaped('B', _)) =>
+                RegexChar('$')))
+            case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
               throw new RegexUnsupportedException(
-                      "regex sequences with \\b or \\B not supported around $", pos)
+                      "regex sequences with \\b or \\B not supported around $", regex.position)
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
@@ -978,7 +994,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException("line anchor ^ is not supported in split mode")
         case '\r' | '\n' if mode == RegexFindMode =>
           previous match {
-            case Some(RegexChar('$', _)) =>
+            case Some(RegexChar('$')) =>
               RegexEmpty()
             case _ =>
               regex
@@ -987,7 +1003,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           regex
       }
 
-      case RegexOctalChar(digits, _) =>
+      case RegexOctalChar(digits) =>
         val octal = if (digits.charAt(0) == '0' && digits.length == 4) {
           digits.substring(1)
         } else  {
@@ -1000,7 +1016,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           RegexOctalChar(octal)
         }
 
-      case RegexHexDigit(digits, _) =>
+      case RegexHexDigit(digits) =>
         val codePoint = Integer.parseInt(digits, 16)
         if (codePoint >= 128) {
           // cuDF only supports 0x00 to 0x7f hexidecimal chars
@@ -1009,7 +1025,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           RegexHexDigit(String.format("%02x", Int.box(codePoint)))
         }
 
-      case RegexEscaped(ch, pos) => ch match {
+      case RegexEscaped(ch) => ch match {
         case 'd' | 'D' =>
           // cuDF is not compatible with Java for \d  so we transpile to Java's definition
           // of [0-9]
@@ -1037,27 +1053,27 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'b' | 'B' if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/5478
           throw new RegexUnsupportedException(
-            "word boundaries are not supported in split mode", pos)
+            "word boundaries are not supported in split mode", regex.position)
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "string anchor \\A is not supported in split mode", pos)
+            "string anchor \\A is not supported in split mode", regex.position)
         case 'Z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "string anchor \\Z is not supported in split or replace mode", pos)
+            "string anchor \\Z is not supported in split or replace mode", regex.position)
         case 'z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "string anchor \\z is not supported in split mode", pos)
+            "string anchor \\z is not supported in split mode", regex.position)
         case 'z' =>
           // cuDF does not support "\z" but supports "$", which is equivalent
-          RegexChar('$', pos)
+          RegexChar('$')
         case 'Z' =>
           // \Z is really a synonymn for $. It's used in Java to preserve that behavior when
           // using modes that change the meaning of $ (such as MULTILINE or UNIX_LINES)
           previous match {
-            case Some(RegexEscaped('Z', _)) =>
+            case Some(RegexEscaped('Z')) =>
               RegexEmpty()
             case _ =>
-              rewrite(RegexChar('$', pos), replacement, previous)
+              rewrite(RegexChar('$'), replacement, previous)
           }
         case 's' | 'S' =>
           // whitespace characters
@@ -1116,16 +1132,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
       case RegexCharacterClass(negated, characters) =>
         characters.foreach {
-          case RegexChar(ch, pos) if ch == '[' || ch == ']' =>
+          case r @ RegexChar(ch) if ch == '[' || ch == ']' =>
             // examples:
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
-            throw new RegexUnsupportedException("nested character classes are not supported", pos)
+            throw new RegexUnsupportedException(
+              "nested character classes are not supported", r.position)
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map {
-            case r @ RegexChar(ch, _) if "^$.".contains(ch) => r
+            case r @ RegexChar(ch) if "^$.".contains(ch) => r
             case ch => rewrite(ch, replacement, None) match {
               case valid: RegexCharacterClassComponent => valid
               case _ =>
@@ -1188,7 +1205,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             last match {
               // when the previous character is a line anchor ($), the JVM has special handling
               // when matching against line terminator characters
-              case Some(RegexChar('$', _)) | Some(RegexEscaped('Z', _)) => 
+              case Some(RegexChar('$')) | Some(RegexEscaped('Z')) => 
                 val j = r.lastIndexWhere {
                   case RegexEmpty() => false
                   case _ => true
@@ -1210,12 +1227,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
                     r(j) = RegexSequence(
                       ListBuffer(lineTerminatorMatcher(Set.empty, true, false), RegexChar('$')))
                     popBackrefIfNecessary(false)
-                  case RegexChar(ch, pos) if ch == '\n' =>
+                  case RegexChar(ch) if ch == '\n' =>
                     // what's really needed here is negative lookahead, but that is not 
                     // supported by cuDF
                     // in this case: $\n would transpile to (?!\r)\n$
-                    throw new RegexUnsupportedException("regex sequence $\\n is not supported", pos)
-                  case RegexChar(ch, _) if "\r\u0085\u2028\u2029".contains(ch) =>
+                    throw new RegexUnsupportedException("regex sequence $\\n is not supported", 
+                      part.position)
+                  case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
                     r(j) = RegexSequence(
                       ListBuffer(
                         rewrite(part, replacement, None),
@@ -1223,13 +1241,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
                           RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
-                  case RegexEscaped('z', _) =>
+                  case RegexEscaped('z') =>
                     // \Z\z or $\z transpiles to $
                     r(j) = RegexChar('$')
                     popBackrefIfNecessary(false)
-                  case RegexEscaped(a, pos) if "bB".contains(a) =>
+                  case RegexEscaped(a) if "bB".contains(a) =>
                     throw new RegexUnsupportedException(
-                      "regex sequences with \\b or \\B not supported around $", pos)
+                      "regex sequences with \\b or \\B not supported around $", part.position)
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
@@ -1251,28 +1269,32 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // cuDF: XXXX] b[
           // see https://github.com/NVIDIA/spark-rapids/issues/4884
           throw new RegexUnsupportedException(
-            "regexp_split on GPU does not support repetition with ? or * consistently with Spark")
+            "regexp_split on GPU does not support repetition with ? or * consistently with Spark", 
+            base.position)
 
         case (_, QuantifierVariableLength(0, _)) if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/4884
           throw new RegexUnsupportedException(
             "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
-            "consistently with Spark")
+            "consistently with Spark",
+            base.position)
 
         case (_, QuantifierVariableLength(0, Some(0))) if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
-            "regex_replace and regex_split on GPU do not support repetition with {0,0}")
+            "regex_replace and regex_split on GPU do not support repetition with {0,0}",
+            base.position)
 
         case (_, QuantifierFixedLength(0)) if mode != RegexFindMode =>
           throw new RegexUnsupportedException(
-            "regex_replace and regex_split on GPU do not support repetition with {0}")
+            "regex_replace and regex_split on GPU do not support repetition with {0}",
+            base.position)
 
         case (RegexGroup(capture, term), SimpleQuantifier(ch))
             if "+*".contains(ch) && !(isSupportedRepetitionBase(term)._1) =>
           (term, ch) match {
             // \Z is not supported in groups
-            case (RegexEscaped('A', _), '+') |
-                (RegexSequence(ListBuffer(RegexEscaped('A', _))), '+') =>
+            case (RegexEscaped('A'), '+') |
+                (RegexSequence(ListBuffer(RegexEscaped('A'))), '+') =>
               // (\A)+ can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
@@ -1289,8 +1311,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             if !(isSupportedRepetitionBase(term)._1) =>
           term match {
             // \Z is not supported in groups
-            case RegexEscaped('A', _) | 
-              RegexSequence(ListBuffer(RegexEscaped('A', _))) if n > 0 =>
+            case RegexEscaped('A') | 
+              RegexSequence(ListBuffer(RegexEscaped('A'))) if n > 0 =>
               // (\A){1,} can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
@@ -1307,8 +1329,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             if !(isSupportedRepetitionBase(term)._1) =>
           term match {
             // \Z is not supported in groups
-            case RegexEscaped('A', _) | 
-              RegexSequence(ListBuffer(RegexEscaped('A', _))) if n > 0 =>
+            case RegexEscaped('A') | 
+              RegexSequence(ListBuffer(RegexEscaped('A'))) if n > 0 =>
               // (\A){1,} can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
@@ -1323,7 +1345,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           }
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
           RegexRepetition(rewrite(base, replacement, None), quantifier)
-        case (RegexEscaped(ch, _), SimpleQuantifier('+')) if "AZ".contains(ch) =>
+        case (RegexEscaped(ch), SimpleQuantifier('+')) if "AZ".contains(ch) =>
           // \A+ can be transpiled to \A (dropping the repetition)
           // \Z+ can be transpiled to \Z (dropping the repetition)
           // we use rewrite(...) here to handle logic regarding modes
@@ -1331,11 +1353,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
           rewrite(base, replacement, previous)
         // NOTE: \A* can be transpiled to \A?
         // however, \A? is not supported in libcudf yet
-        case (RegexEscaped(ch, _), QuantifierFixedLength(n)) if n > 0 && "AZ".contains(ch) =>
+        case (RegexEscaped(ch), QuantifierFixedLength(n)) if n > 0 && "AZ".contains(ch) =>
           // \A{2} can be transpiled to \A (dropping the repetition)
           // \Z{2} can be transpiled to \Z (dropping the repetition)
           rewrite(base, replacement, previous)
-        case (RegexEscaped(ch, _), QuantifierVariableLength(n,_)) if n > 0 && "AZ".contains(ch) =>
+        case (RegexEscaped(ch), QuantifierVariableLength(n,_)) if n > 0 && "AZ".contains(ch) =>
           // \A{1,5} can be transpiled to \A (dropping the repetition)
           // \Z{1,} can be transpiled to \Z (dropping the repetition)
           rewrite(base, replacement, previous)
@@ -1358,9 +1380,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val rr = rewrite(r, replacement, None)
 
         // cuDF does not support repetition on one side of a choice, such as "a*|a"
-        if (isRepetition(ll) || isRepetition(rr)) {
+        if (isRepetition(ll)) {
           throw new RegexUnsupportedException(
-            "cuDF does not support repetition on one side of a choice")
+            "cuDF does not support repetition on one side of a choice", l.position)
+        } else if (isRepetition(rr)) {
+          throw new RegexUnsupportedException(
+            "cuDF does not support repetition on one side of a choice", r.position)
         }
 
         // cuDF does not support terms ending with line anchors on one side
@@ -1373,13 +1398,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case _ => true
               }
               endsWithLineAnchor(parts(j))
-            case RegexEscaped('A', _) => true
+            case RegexEscaped('A') => true
             case _ => isBeginOrEndLineAnchor(e)
           }
         }
-        if (endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
+        if (endsWithLineAnchor(ll)) {
           throw new RegexUnsupportedException(
-            "cuDF does not support terms ending with line anchors on one side of a choice")
+            "cuDF does not support terms ending with line anchors on one side of a choice",
+            l.position)
+        } else if (endsWithLineAnchor(rr)) {
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with line anchors on one side of a choice",
+            r.position)
         }
 
         RegexChoice(ll, rr)
@@ -1422,13 +1452,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
     case RegexGroup(_, term) => isBeginOrEndLineAnchor(term)
     case RegexChoice(l, r) => isBeginOrEndLineAnchor(l) && isBeginOrEndLineAnchor(r)
     case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
-    case RegexChar(ch, _) => ch == '^' || ch == '$'
-    case RegexEscaped(ch, _) if "zZ".contains(ch) => true // \z gets translated to $
+    case RegexChar(ch) => ch == '^' || ch == '$'
+    case RegexEscaped(ch) if "zZ".contains(ch) => true // \z gets translated to $
     case _ => false
   }
 
   private def isRegexChar(expr: RegexAST, value: Char): Boolean = expr match {
-    case RegexChar(ch, _) => ch == value
+    case RegexChar(ch) => ch == value
     case _ => false
   }
 }
@@ -1436,7 +1466,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
 sealed trait RegexAST {
   def children(): Seq[RegexAST]
   def toRegexString: String
-  val position: Option[Int] = None
+  var position: Option[Int] = None
 }
 
 sealed case class RegexEmpty() extends RegexAST {
@@ -1498,8 +1528,7 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
 
 sealed trait RegexCharacterClassComponent extends RegexAST
 
-sealed case class RegexHexDigit(a: String, 
-    override val position: Option[Int] = None) extends RegexCharacterClassComponent {
+sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = {
     if (a.length == 2) {
@@ -1510,20 +1539,17 @@ sealed case class RegexHexDigit(a: String,
   }
 }
 
-sealed case class RegexOctalChar(a: String,
-    override val position: Option[Int] = None) extends RegexCharacterClassComponent {
+sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
 
-sealed case class RegexChar(ch: Char,
-    override val position: Option[Int] = None) extends RegexCharacterClassComponent {
+sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"$ch"
 }
 
-sealed case class RegexEscaped(a: Char,
-    override val position: Option[Int] = None) extends RegexCharacterClassComponent{
+sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
@@ -1534,7 +1560,7 @@ sealed case class RegexCharacterRange(start: RegexCharacterClassComponent,
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String =  s"${start.toRegexString}-${end.toRegexString}"
   
-  override val position = start.position
+  position = start.position
 }
 
 sealed case class RegexCharacterClass(
@@ -1567,7 +1593,7 @@ sealed case class RegexCharacterClass(
     }
     for (a <- characters) {
       a match {
-        case RegexChar(ch, _) if requiresEscaping(ch) =>
+        case RegexChar(ch) if requiresEscaping(ch) =>
           // cuDF has stricter escaping requirements for certain characters
           // within a character class compared to Java or Python regex
           builder.append(s"\\$ch")
