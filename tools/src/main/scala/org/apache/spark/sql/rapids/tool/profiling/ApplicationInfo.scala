@@ -259,7 +259,7 @@ class ApplicationInfo(
    * Function to process SQL Plan Metrics after all events are processed
    */
   def processSQLPlanMetrics(): Unit = {
-    connectOperatorToStage
+    connectOperatorToStage()
     for ((sqlID, planInfo) <- sqlPlan) {
       checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
