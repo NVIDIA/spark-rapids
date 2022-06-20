@@ -913,7 +913,7 @@ object RapidsConf {
   val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
     .doc("CSV reading is not 100% compatible when reading doubles.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimal.enabled")
     .doc("CSV reading is not 100% compatible when reading decimals.")
@@ -939,7 +939,7 @@ object RapidsConf {
   val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
     .doc("JSON reading is not 100% compatible when reading doubles.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
     .doc("JSON reading is not 100% compatible when reading decimals.")
