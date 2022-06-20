@@ -16,7 +16,16 @@ and the code is in the `com.nvidia.spark.rapids.tests.mortgage` package.
 Unit tests exist in the [tests]() directory. This is unconventional and is done so we can run the 
 tests on the final shaded version of the plugin. It also helps with how we collect code coverage. 
 
-Use Maven to run the unit tests via `mvn test`.
+The `tests` module depends on the `aggregator` module which shades dependencies. When running the
+tests via `mvn test`, make sure to do an install via `mvn install` for the aggregator jar to the
+local maven repository.
+The steps to run the unit tests:
+```bash
+cd <root-path-of-spark-rapids>
+mvn clean install
+cd tests
+mvn test
+```
 
 To run targeted Scala tests append `-DwildcardSuites=<comma separated list of wildcard suite
  names to execute>` to the above command. 
