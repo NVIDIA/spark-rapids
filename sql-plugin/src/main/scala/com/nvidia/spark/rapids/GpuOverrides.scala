@@ -356,7 +356,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.mode,
       cmd.catalogTable,
       cmd.fileIndex,
-      cmd.outputColumnNames)
+      cmd.outputColumnNames,
+      conf.stableSort)
   }
 }
 
@@ -405,7 +406,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       cmd.query,
       cmd.outputColumnNames,
       origProvider,
-      newProvider)
+      newProvider,
+      conf.stableSort)
   }
 }
 

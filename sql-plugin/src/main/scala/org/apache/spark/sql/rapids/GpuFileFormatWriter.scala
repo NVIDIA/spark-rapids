@@ -186,7 +186,7 @@ object GpuFileFormatWriter extends Logging {
 
     SQLExecution.checkSQLExecutionId(sparkSession)
 
-    // propagate the decription UUID into the jobs, so that committers
+    // propagate the description UUID into the jobs, so that committers
     // get an ID guaranteed to be unique.
     job.getConfiguration.set("spark.sql.sources.writeJobUUID", description.uuid)
 

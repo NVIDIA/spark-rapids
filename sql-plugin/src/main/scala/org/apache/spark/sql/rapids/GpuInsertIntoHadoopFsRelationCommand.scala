@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
     mode: SaveMode,
     catalogTable: Option[CatalogTable],
     fileIndex: Option[FileIndex],
-    outputColumnNames: Seq[String])
+    outputColumnNames: Seq[String],
+    useStableSort: Boolean)
   extends GpuDataWritingCommand {
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
@@ -258,5 +259,5 @@ case class GpuInsertIntoHadoopFsRelationCommand(
   private val isBucketed = bucketSpec.nonEmpty
 
   // We need a single batch if we have to sort the data
-  override def requireSingleBatch: Boolean = isPartitioned || isBucketed
+  override def requireSingleBatch: Boolean = useStableSort && (isPartitioned || isBucketed)
 }
