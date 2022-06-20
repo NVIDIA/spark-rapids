@@ -1008,6 +1008,7 @@
         <spark321db.version>3.2.1-databricks</spark321db.version>
         <spark322.version>3.2.2-SNAPSHOT</spark322.version>
         <spark330.version>3.3.0</spark330.version>
+        <spark331.version>3.3.1-SNAPSHOT</spark331.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
