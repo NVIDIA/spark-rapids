@@ -342,9 +342,9 @@ def test_unary_minus_ansi_no_overflow(data_gen):
     (ByteType(), BYTE_MIN)], ids=idfn)
 def test_unary_minus_ansi_overflow(data_type, value):
     """
-    We don't check the error messages because they are different for CPU and GPU
-    CPU: {name of the data type} overflow
-    GPU: One or more rows overflow for {name of the operation} operation
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: {name of the data type} overflow.
+    GPU: One or more rows overflow for {name of the operation} operation.
     """
     assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_overflow_df(spark, [value], data_type, '-a').collect(),
@@ -381,6 +381,11 @@ def test_abs_ansi_no_overflow(data_gen):
     (ShortType(), SHORT_MIN),
     (ByteType(), BYTE_MIN)], ids=idfn)
 def test_abs_ansi_overflow(data_type, value):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: {name of the data type} overflow.
+    GPU: One or more rows overflow for abs operation.
+    """
     assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_overflow_df(spark, [value], data_type, 'abs(a)').collect(),
             conf=ansi_enabled_conf,
@@ -950,6 +955,11 @@ def test_unary_minus_day_time_interval(ansi_enabled):
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_unary_minus_ansi_overflow_day_time_interval(ansi_enabled):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: long overflow.
+    GPU: One or more rows overflow for minus operation.
+    """
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), '-a').collect(),
         conf={'spark.sql.ansi.enabled': ansi_enabled},
@@ -966,6 +976,11 @@ def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_abs_ansi_overflow_day_time_interval(ansi_enabled):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: long overflow.
+    GPU: One or more rows overflow for abs operation.
+    """
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), 'abs(a)').collect(),
         conf={'spark.sql.ansi.enabled': ansi_enabled},
