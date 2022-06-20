@@ -792,6 +792,70 @@
             </modules>
         </profile>
         <profile>
+            <id>release331</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>331</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version>${spark331.version}</spark.version>
+                <spark.test.version>${spark331.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/331/scala</source>
+                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until340-all/scala</source>
+                                        <source>${project.basedir}/src/main/320+/scala</source>
+                                        <source>${project.basedir}/src/main/320+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+-noncdh/scala</source>
+                                        <source>${project.basedir}/src/main/320until340-all/scala</source>
+                                        <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/330+/scala</source>
+                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>add-test-profile-src-331</id>
+                                <goals><goal>add-test-source</goal></goals>
+                                <phase>generate-test-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/test/331/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>common</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>tools</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release340</id>
             <activation>
                 <property>
