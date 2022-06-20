@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_320, is_before_spark_330, is_databricks91_or_later
+from spark_session import *
 import pyspark.sql.functions as f
 from datetime import timedelta
 
@@ -42,10 +42,12 @@ _decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
 _decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
-_arith_decimal_gens_no_neg_scale = [
-    decimal_gen_32bit, _decimal_gen_7_7, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
+_arith_data_gens_diff_precision_scale_and_no_neg_scale = [
+    decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
     _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_0, _decimal_gen_38_10
 ]
+
+_arith_decimal_gens_no_neg_scale = _arith_data_gens_diff_precision_scale_and_no_neg_scale + [_decimal_gen_7_7]
 
 _arith_decimal_gens = _arith_decimal_gens_no_neg_scale + [
     decimal_gen_32bit_neg_scale, _decimal_gen_36_neg5, _decimal_gen_38_neg10
@@ -275,7 +277,7 @@ def test_mod_pmod_long_min_value():
             'a % -1L'),
         ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_diff_precision_scale_and_no_neg_scale, ids=idfn)
 @pytest.mark.parametrize('overflow_exp', [
     'pmod(a, cast(0 as {}))',
     'pmod(cast(-12 as {}), cast(0 as {}))',
@@ -283,11 +285,33 @@ def test_mod_pmod_long_min_value():
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
+    if is_before_spark_320():
+        exception_str = 'java.lang.ArithmeticException: divide by zero'
+    elif is_before_spark_330():
+        exception_str = 'SparkArithmeticException: divide by zero'
+    else:
+        exception_str = 'SparkArithmeticException: Division by zero'
+        
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             overflow_exp.format(string_type, string_type)).collect(),
         ansi_enabled_conf,
-        "java.lang.ArithmeticException" if is_before_spark_320() else "org.apache.spark.SparkArithmeticException")
+        exception_str)
+
+def test_cast_neg_to_decimal_err():
+    # -12 cannot be represented as decimal(7,7)
+    data_gen = _decimal_gen_7_7
+    exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)" \
+        if is_before_spark_314() or ((not is_before_spark_320()) and is_before_spark_322()) else \
+        "Decimal(compact, -120000000, 20, 0) cannot be represented as Decimal(7, 7)"
+    exception_type = "java.lang.ArithmeticException: " if is_before_spark_330() \
+        and not is_databricks104_or_later() else "org.apache.spark.SparkArithmeticException: "
+
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'cast(-12 as {})'.format(to_cast_string(data_gen.data_type))).collect(),
+        ansi_enabled_conf,
+        exception_type + exception_content)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
@@ -380,7 +404,7 @@ def test_hypot(data_gen):
             'hypot(a, b)',
         ))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale + [DecimalGen(30, 15)], ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
@@ -399,7 +423,7 @@ def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale + [DecimalGen(30, 15)], ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
@@ -463,9 +487,19 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
+_arith_data_gens_for_round = numeric_gens +  _arith_decimal_gens_no_neg_scale + [
+    decimal_gen_32bit_neg_scale,
+    DecimalGen(precision=15, scale=-8),
+    DecimalGen(precision=30, scale=-5),
+    pytest.param(_decimal_gen_36_neg5, marks=pytest.mark.skipif(
+        is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+')),
+    pytest.param(_decimal_gen_38_neg10, marks=pytest.mark.skipif(
+        is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+'))
+]
+
 @incompat
 @approximate_float
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -477,7 +511,7 @@ def test_decimal_bround(data_gen):
 
 @incompat
 @approximate_float
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -779,13 +813,19 @@ def _test_div_by_zero(ansi_mode, expr):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
+    if is_before_spark_320():
+        err_message = 'java.lang.ArithmeticException: divide by zero'
+    elif is_before_spark_330():
+        err_message = 'SparkArithmeticException: divide by zero'
+    elif is_before_spark_340():
+        err_message = 'SparkArithmeticException: Division by zero'
+    else:
+        err_message = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
 
     if ansi_mode == 'ansi':
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
                                  conf=ansi_conf,
-                                 error_message=
-                                    'java.lang.ArithmeticException: divide by zero' if is_before_spark_320() else 
-                                    'SparkArithmeticException: divide by zero')
+                                 error_message=err_message)
     else:
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
@@ -817,11 +857,15 @@ div_overflow_exprs = [
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
+    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() \
+        else 'org.apache.spark.SparkArithmeticException'
+    err_mess = ': Overflow in integral divide' if is_before_spark_340() \
+        else ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
     if ansi_enabled == 'true':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
-            error_message='java.lang.ArithmeticException: Overflow in integral divide')
+            error_message=err_exp + err_mess)
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_div_overflow_df(spark, expr),

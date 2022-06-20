@@ -10,7 +10,7 @@
 > 
 >     ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema, sqlConf)
 > 
-52,56c55
+61,65c64
 <     // Spark 2.x doesn't have the rebase mode because the changes of calendar type weren't made
 <     // so just skip the checks, since this is just explain only it would depend on how
 <     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
@@ -18,7 +18,7 @@
 <     /*
 ---
 > 
-78c77,82
+87c86,91
 <     */
 ---
 > 
@@ -27,12 +27,12 @@
 >     } else {
 >       None
 >     }
-81,82c85
+90,91c94
 <   // SPARK 2.X  - just return String rather then CompressionType
 <   def parseCompressionType(compressionType: String): Option[String] = {
 ---
 >   def parseCompressionType(compressionType: String): Option[CompressionType] = {
-84,85c87,88
+93,94c96,97
 <       case "NONE" | "UNCOMPRESSED" => Some("NONE")
 <       case "SNAPPY" => Some("SNAPPY")
 ---

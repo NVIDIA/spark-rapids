@@ -16,15 +16,11 @@
 
 /* global $, Mustache, formatDuration, jQuery, qualificationRecords, qualReportSummary */
 
-function resetCollapsableGrps(groupArr, flag) {
-  groupArr.forEach(grpElemnt => grpElemnt.collapsed = flag);
-}
-
 /*
  * HTML template used to render the application details in the collapsible
  * rows of the GPURecommendationTable.
  */
-function getExpandedAppDetails(rowData) {
+function getExpandedAppDetails() {
   let fullDetailsContent =
     '<div class=\" mt-3\">' +
     '  <a href=\"{{attemptDetailsURL}}\" target=\"_blank\" class=\"btn btn-secondary btn-lg btn-block mb-1\">Go To Full Details</button>' +
@@ -45,7 +41,7 @@ function getExpandedAppDetails(rowData) {
     '    <tr>' +
     '      <th scope=\"row\">Estimated Speed-up</th>' +
     '      <td> {{totalSpeedup_display}} </td>' +
-    '      <td> ' + toolTipsValues.gpuRecommendations.details.mathFormatted.totalSpeedup + '</td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.totalSpeedup + '</td>' +
     '    </tr>' +
     '    <tr>' +
     '      <th scope=\"row\">App Duration</th>' +
@@ -53,7 +49,7 @@ function getExpandedAppDetails(rowData) {
     '      <td> ' + toolTipsValues.gpuRecommendations["App Duration"] + '</td>' +
     '    </tr>' +
     '    <tr>' +
-    '      <th scope=\"row\">GPU Estimated Duration</th>' +
+    '      <th scope=\"row\">Estimated GPU Duration</th>' +
     '      <td> {{durationCollection.estimatedDurationWallClock}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.estimatedDuration + '</td>' +
     '    </tr>' +
@@ -64,8 +60,13 @@ function getExpandedAppDetails(rowData) {
     '    </tr>' +
     '    <tr>' +
     '      <th scope=\"row\">GPU Opportunity</th>' +
-    '      <td> {{durationCollection.accelerationOpportunity}} </td>' +
+    '      <td> {{durationCollection.gpuOpportunity}} </td>' +
     '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuOpportunity + '</td>' +
+    '    </tr>' +
+    '    <tr>' +
+    '      <th scope=\"row\">GPU Time Saved</th>' +
+    '      <td> {{durationCollection.gpuTimeSaved}} </td>' +
+    '      <td> ' + toolTipsValues.gpuRecommendations.details.gpuTimeSaved + '</td>' +
     '    </tr>' +
     '  </tbody>' +
     '</table>';
@@ -76,14 +77,12 @@ function getExpandedAppDetails(rowData) {
   return tableContent ;
 }
 
-
 function formatAppGPURecommendation ( rowData) {
-  var text = Mustache.render(getExpandedAppDetails(rowData), rowData);
-  return text;
+  return Mustache.render(getExpandedAppDetails(), rowData);
 }
 
 let definedDataTables = {};
-let gpuRecommendationTableID = "datatables.gpuRecommendations";
+let gpuRecommendationTableID = "gpuRecommendations";
 
 function expandAllGpuRowEntries() {
   expandAllGpuRows(definedDataTables[gpuRecommendationTableID]);
@@ -94,8 +93,6 @@ function collapseAllGpuRowEntries() {
 }
 
 function expandAllGpuRows(gpuTable) {
-  resetCollapsableGrps(recommendationContainer, false);
-
   // Enumerate all rows
   gpuTable.rows().every(function(){
     // If row has details collapsed
@@ -106,11 +103,9 @@ function expandAllGpuRows(gpuTable) {
     }
   });
   gpuTable.draw(false);
-
 }
 
 function collapseAllGpuRows(gpuTable) {
-  resetCollapsableGrps(recommendationContainer, true);
   // Enumerate all rows
   gpuTable.rows().every(function(){
     // If row has details expanded
@@ -123,17 +118,17 @@ function collapseAllGpuRows(gpuTable) {
   gpuTable.draw(false);
 }
 
-$(document).ready(function(){
-  // do the required filtering here
-  let attemptArray = processRawData(qualificationRecords);
-  let initGpuRecommendationConf = UIConfig[gpuRecommendationTableID];
+function createGPURecommendationTableConf(
+  attemptArray,
+  tableViewType,
+  mustacheRecord,
+  extraFunctionArgs) {
+  let initGpuRecommendationConf = UIConfig.datatables[extraFunctionArgs.tableId];
+  let initGpuRecommendationCustomConf = initGpuRecommendationConf[tableViewType];
   // Start implementation of GPU Recommendations Apps
-
-  let recommendGPUColName = "gpuRecommendation"
+  let recommendGPUColName = "recommendation"
   let totalSpeedupColumnName = "totalSpeedup"
-  let sortColumnForGPURecommend = totalSpeedupColumnName
   let gpuRecommendationConf = {
-    responsive: true,
     info: true,
     paging: (attemptArray.length > defaultPageLength),
     pageLength: defaultPageLength,
@@ -147,49 +142,28 @@ $(document).ready(function(){
         "data":           null,
         "defaultContent": ''
       },
-      {data: "appName"},
       {
+        name: "appName",
+        data: "appName"
+      },
+      {
+        name: "appId",
         data: "appId",
         render:  (appId, type, row) => {
           if (type === 'display' || type === 'filter') {
             if (UIConfig.fullAppView.enabled) {
-              return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
+              return `<a href="${row.attemptDetailsURL}">${appId}</a>`
             }
           }
           return appId;
         }
       },
       {
-        name: 'appDuration',
-        data: 'appDuration',
-        type: 'numeric',
-        searchable: false,
-        render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
-            return formatDuration(data)
-          }
-          return data;
-        },
-        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-          if (oData.estimated) {
-            $(nTd).css('color', 'blue');
-          }
-        }
-      },
-      {
-        name: totalSpeedupColumnName,
-        data: 'totalSpeedup_display',
-        searchable: false,
-        type: 'numeric',
-      },
-      {
         name: recommendGPUColName,
         data: 'gpuCategory',
         render: function (data, type, row) {
           if (type === 'display') {
-            let recommendGroup = recommendationsMap.get(data);
-            return `<span class="` + recommendGroup.getBadgeDisplay(row)
-              + `">` + recommendGroup.displayName + `</span>`;
+            return getAppBadgeHTMLWrapper(row);
           }
           return data;
         },
@@ -202,17 +176,47 @@ $(document).ready(function(){
           $(nTd).attr('data-html', "true");
           $(nTd).attr('title', toolTipVal);
         }
-      }
+      },
+      {
+        name: totalSpeedupColumnName,
+        data: 'totalSpeedup',
+        searchable: false,
+        type: 'numeric',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return row.totalSpeedup_display
+          }
+          return data;
+        },
+      },
+      {
+        name: 'appDuration',
+        data: 'appDuration',
+        type: 'numeric',
+        searchable: false,
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
+          if (oData.endDurationEstimated) {
+            $(nTd).css('color', 'blue');
+          }
+        }
+      },
     ],
     //dom with search panes
-    //dom: 'Bfrtlip',
-    //dom: '<"dtsp-dataTable"Bfrtip>',
-    dom: 'Bfrtlip',
+    dom: initGpuRecommendationCustomConf.Dom,
     initComplete: function(settings, json) {
       // Add custom Tool Tip to the headers of the table
-      $('#gpu-recommendation-table thead th').each(function () {
-        var $td = $(this);
-        var toolTipVal = toolTipsValues.gpuRecommendations[$td.text().trim()];
+      // Add custom Tool Tip to the headers of the table
+      let thLabel = extraFunctionArgs.tableDivId + ' thead th';
+      let dataTableToolTip = toolTipsValues[initGpuRecommendationCustomConf.toolTipID];
+      $(thLabel).each(function () {
+        let $td = $(this);
+        let toolTipVal = dataTableToolTip[$td.text().trim()];
         $td.attr('data-toggle', "tooltip");
         $td.attr('data-placement', "top");
         $td.attr('html', "true");
@@ -222,170 +226,81 @@ $(document).ready(function(){
     }
   };
 
-  gpuRecommendationConf.order =
-      [[getColumnIndex(gpuRecommendationConf.columns, sortColumnForGPURecommend), "desc"]];
-  if (initGpuRecommendationConf["rowgroup.enabled"] == true) {
-    gpuRecommendationConf.rowGroup = {
-      startRender: function (rows, group) {
-        // var collapsed = !!(collapsedGroups[group]);
-        let collapsedBool = recommendationsMap[group].collapsed;
-        rows.nodes().each(function (r) {
-          r.style.display = '';
-          if (collapsedBool) {
-            r.style.display = 'none';
-          }
-        });
-        // Iterate group rows and close open child rows.
-        if (collapsedBool) {
-          rows.every(function (rowIdx, tableLoop, rowLoop) {
-            if (this.child.isShown()) {
-              var tr = $(this.node());
-              this.child.hide();
+  processDatableColumns(
+    gpuRecommendationConf,
+    initGpuRecommendationConf,
+    initGpuRecommendationCustomConf,
+    mustacheRecord);
 
-              tr.removeClass('shown');
-            }
-          });
+
+  // set searchpanes
+  let optionGeneratorsFunctionsMap = new Map();
+  optionGeneratorsFunctionsMap.set("recommendation", function() {
+    let categoryOptions = [];
+    for (let i in recommendationContainer) {
+      let currOption = {
+        label: recommendationContainer[i].displayName,
+        value: function(rowData, rowIdx) {
+          return (rowData["gpuCategory"] === recommendationContainer[i].displayName);
         }
-        var arrow = collapsedBool ?
-            '<span class="collapse-table-arrow arrow-closed"></span> '
-            : ' <span class="collapse-table-arrow arrow-open"></span> ';
-
-        let toolTip = 'data-toggle=\"tooltip\" data-html=\"true\" data-placement=\"top\" '
-            + 'title=\"' + recommendationsMap[group].description + '\"';
-        var addToolTip = true;
-        return $('<tr/>')
-            .append('<td colspan=\"' + rows.columns()[0].length + '\"'
-                + (addToolTip ? toolTip : '') + '>'
-                + arrow + '&nbsp;'
-                + group
-                + ' (' + rows.count() + ')'
-                + '</td>')
-            .attr('data-name', group)
-            .toggleClass('collapsed', collapsedBool);
-      },
-      dataSrc: function (row) {
-        var recommendedGroup = recommendationContainer.find(grp => grp.isGroupOf(row))
-        return recommendedGroup.displayName;
       }
+      categoryOptions.push(currOption);
     }
-  } // rowGrouping by recommendations
+    return categoryOptions;
+  });
 
-
-  // set the dom of the tableConf
-  gpuRecommendationConf.dom = initGpuRecommendationConf["Dom"].default;
-
-  if (initGpuRecommendationConf.hasOwnProperty('searchPanes')) {
-    let searchPanesConf = initGpuRecommendationConf['searchPanes']
-    if (searchPanesConf["enabled"]) {
-      // disable searchpanes on default columns
-      gpuRecommendationConf.columnDefs = [{
-        "searchPanes": {
-          show: false,
+  optionGeneratorsFunctionsMap.set("users", function() {
+    let sparkUserOptions = [];
+    sparkUsers.forEach((data, userName) => {
+      let currOption = {
+        label: userName,
+        value: function(rowData, rowIdx) {
+          // get spark user
+          return (rowData["user"] === userName);
         },
-        "targets": ['_all']
-      }];
-      // add custom panes
-      gpuRecommendationConf.searchPanes = searchPanesConf["dtConfigurations"];
+      }
+      sparkUserOptions.push(currOption);
+    });
+    return sparkUserOptions;
+  });
 
-      // add the searchpanes to the dom
-      gpuRecommendationConf.dom = 'P' + gpuRecommendationConf.dom;
-      // add custom panes to display recommendations
-      let panesConfigurations = searchPanesConf["panes"];
-      // first define values of the first recommendation Pane
-      let gpuCatgeoryOptions = function() {
-        let categoryOptions = [];
-        for (let i in recommendationContainer) {
-          let currOption = {
-            label: recommendationContainer[i].displayName,
-            value: function(rowData, rowIdx) {
-              return (rowData["gpuCategory"] === recommendationContainer[i].displayName);
-            }
-          }
-          categoryOptions.push(currOption);
-        }
-        return categoryOptions;
-      };
-      // define the display options of the recommendation pane
-      let gpuRecommendationPane = function() {
-        let gpuPaneConfig = panesConfigurations["recommendation"];
-        let recommendationPaneConf = {};
-        recommendationPaneConf.header = gpuPaneConfig["header"];
-        recommendationPaneConf.options = gpuCatgeoryOptions();
-        recommendationPaneConf.dtOpts = {
-          "searching": gpuPaneConfig["search"],
-          "order": gpuPaneConfig["order"],
-        }
-        recommendationPaneConf.combiner = 'and';
-        return recommendationPaneConf;
-      }
-      // define searchPanes for users
-      let sparkUsersOptions = function() {
-        let sparkUserOptions = [];
-        sparkUsers.forEach((data, userName) => {
-          let currOption = {
-            label: userName,
-            value: function(rowData, rowIdx) {
-              // get spark user
-              return (rowData["user"] === userName);
-            },
-          }
-          sparkUserOptions.push(currOption);
-        });
-        return sparkUserOptions;
-      };
-      // define the display options of the user filter pane
-      let userPane = function() {
-        let userPaneConfig = panesConfigurations["users"];
-        let recommendationPaneConf = {};
-        recommendationPaneConf.header = userPaneConfig["header"];
-        recommendationPaneConf.options = sparkUsersOptions();
-        recommendationPaneConf.dtOpts = {
-          "searching": userPaneConfig["search"],
-          "order": userPaneConfig["order"],
-        }
-        recommendationPaneConf.combiner = 'and';
-        return recommendationPaneConf;
-      }
-      gpuRecommendationConf.searchPanes.panes = [
-        gpuRecommendationPane(), userPane()
-      ];
-    }
-  }
+  setDataTableSearchPanes(
+    gpuRecommendationConf,
+    initGpuRecommendationConf,
+    initGpuRecommendationCustomConf,
+    optionGeneratorsFunctionsMap);
 
   // add buttons if enabled
-  if (initGpuRecommendationConf.hasOwnProperty('buttons')) {
-    let buttonsConf = initGpuRecommendationConf['buttons'];
-    if (buttonsConf["enabled"]) {
-      // below if to avoid the buttons messed up with length page
-      // dom: "<'row'<'col-sm-12 col-md-10'><'col-sm-12 col-md-2'B>>" +
-      //      "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
-      //      "<'row'<'col-sm-12'tr>>" +
-      //      "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
-      gpuRecommendationConf["buttons"] = buttonsConf.buttons
-      gpuRecommendationConf.dom = 'B' + gpuRecommendationConf.dom
-    }
-  }
+  setDataTableButtons(
+    gpuRecommendationConf,
+    initGpuRecommendationConf,
+    initGpuRecommendationCustomConf);
 
-  var gpuRecommendationTable = $('#gpu-recommendation-table').DataTable(gpuRecommendationConf);
+  return gpuRecommendationConf;
+}
+
+$(document).ready(function(){
+  // do the required filtering here
+  let attemptArray = processRawData(qualificationRecords);
+
+  let gpuRecommendationTable = constructDataTableFromHTMLTemplate(
+    attemptArray,
+    "listAppsView",
+    createGPURecommendationTableConf,
+    {
+      tableId: "gpuRecommendations",
+      datatableContainerID: '#app-recommendations-data-container',
+      dataTableTemplate: $("#gpu-recommendation-table-template").html(),
+      tableDivId: '#gpu-recommendation-table',
+    }
+  );
 
   definedDataTables[gpuRecommendationTableID] = gpuRecommendationTable;
 
-  //TODO: we need to expand the rowGroups on search events
-  //There is a possible solution
-  // https://stackoverflow.com/questions/57692989/datatables-trigger-rowgroup-click-with-search-filter
-
-  $('#gpu-recommendation-table tbody').on('click', 'tr.dtrg-start', function () {
-    var name = $(this).data('name');
-    // we may need to hide tooltip hangs
-    // $('#gpu-recommendation-table [data-toggle="tooltip"]').tooltip('hide');
-    recommendationsMap[name].toggleCollapsed();
-    gpuRecommendationTable.draw(false);
-  });
-
   // Add event listener for opening and closing details
   $('#gpu-recommendation-table tbody').on('click', 'td.dt-control', function () {
-    var tr = $(this).closest('tr');
-    var row = gpuRecommendationTable.row( tr );
+    let tr = $(this).closest('tr');
+    let row = gpuRecommendationTable.row( tr );
 
     if ( row.child.isShown() ) {
       // This row is already open - close it
@@ -410,24 +325,21 @@ $(document).ready(function(){
   });
 
   // set the template of the report qualReportSummary
-  var template = $("#qual-report-summary-template").html();
-  var text = Mustache.render(template, qualReportSummary);
-  $("#qual-report-summary").html(text);
+  let template = $("#qual-report-summary-template").html();
+  let text = Mustache.render(template, qualReportSummary);
+  $("#qual-report-summary").html(jQuery.parseHTML(text, false));
 
-  // set the template of the Qualification runtimeInformation
-  if (false) {
-    //TODO: fill the template of the execution: last executed, how long it took..etc
-    var template = $("#qual-report-runtime-information-template").html();
-    var text = Mustache.render(template, qualReportSummary);
-    $("#qual-report-runtime-information").html(text);
-  }
-  // set the tootTips for the table
-  $('#gpu-recommendation-card [data-toggle="tooltip"]').tooltip({
-    container: 'body',
-    html: true,
-    animation: true,
-    placement:"bottom",
-    delay: {show: 0, hide: 10.0}});
+  //
+  // Set tooltips for the datatables using jQuery delegated event listener options.
+  // Note that we should always use Note that we should always use jQuery delegated event listener
+  // options as documented in app-report.js
+  //
+  $('#gpu-recommendation-table tbody').on('mouseover', 'td, th', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
+  });
 
   setupNavigation();
 });

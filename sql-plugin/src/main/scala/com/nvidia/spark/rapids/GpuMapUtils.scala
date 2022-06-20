@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -134,30 +134,4 @@ object GpuMapUtils extends Arm {
         "the key inserted at last takes precedence.")
   }
 
-  /**
-   * In Spark there are two options to deal with duplicate keys in a map. The default is to throw
-   * an exception. This can handle that use case.
-   * @param mapView the view to check to see if it has duplicate keys or not.
-   */
-  def assertNoDuplicateKeys(mapView: ColumnView): Unit = {
-    val dedupeCountCol = withResource(getKeysAsListView(mapView)) { keyListView =>
-      withResource(keyListView.dropListDuplicates) { dupsDropped =>
-        dupsDropped.countElements()
-      }
-    }
-    val sameLengthCol = withResource(dedupeCountCol) { dedupeCountCol =>
-      withResource(mapView.countElements()) { origCount =>
-        origCount.equalToNullAware(dedupeCountCol)
-      }
-    }
-    withResource(sameLengthCol) { sameLengthCol =>
-      withResource(sameLengthCol.all()) { allSame =>
-        // If this is an empty batch allSame can be null, and we don't want to throw
-        // an exception for an empty batch
-        if (allSame.isValid && !allSame.getBoolean) {
-          throw duplicateMapKeyFoundError
-        }
-      }
-    }
-  }
 }

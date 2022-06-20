@@ -16,9 +16,9 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import incompat, allow_non_gpu
+from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_spark_session, is_before_spark_330
+from spark_session import with_cpu_session, with_spark_session, is_before_spark_330
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -214,6 +214,53 @@ def test_to_unix_timestamp(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
+
+@pytest.mark.parametrize('invalid,fmt', [
+    ('2021-01/01', 'yyyy-MM-dd'),
+    ('2021/01-01', 'yyyy/MM/dd'),
+    ('2021/01', 'yyyy-MM'),
+    ('2021-01', 'yyyy/MM'),
+    ('01/02/201', 'dd/MM/yyyy'),
+    ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('01#01', 'MM-dd'),
+    ('01T01', 'MM/dd'),
+    ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
+    ('01-01', 'dd/MM'),
+    ('2021-01', 'MM/yyyy'),
+    ('2021-01', 'MM-yyyy'),
+    ('01-02-2022', 'MM/dd/yyyy'),
+    ('99-01-2022', 'MM-dd-yyyy'),
+], ids=idfn)
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+@pytest.mark.parametrize('operator', ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"], ids=idfn)
+def test_string_to_timestamp_functions_ansi_invalid(invalid, fmt, parser_policy, operator):
+    sql = "{operator}(a, '{fmt}')".format(fmt=fmt, operator=operator)
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+
+    def fun(spark):
+        df = spark.createDataFrame([(invalid,)], "a string")
+        return df.selectExpr(sql).collect()
+
+    assert_gpu_and_cpu_error(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf), error_message="Exception")
+
+
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+# first get expected string via `date_format`
+def test_string_to_timestamp_functions_ansi_valid(parser_policy):
+    expr_format = "{operator}(date_format(a, '{fmt}'), '{fmt}')"
+    formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM', 'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss',
+               'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM', 'MM/yyyy', 'MM-yyyy', 'MM/dd/yyyy', 'MM-dd-yyyy']
+    operators = ["to_unix_timestamp", "unix_timestamp", "to_timestamp", "to_date"]
+    format_operator_pairs = [(fmt, operator) for fmt in formats for operator in operators]
+    expr_list = [expr_format.format(operator=operator, fmt=fmt) for (fmt, operator) in format_operator_pairs]
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+
+    def fun(spark):
+        df = spark.createDataFrame([(datetime(1970, 8, 12, tzinfo=timezone.utc),)], "a timestamp")
+        return df.selectExpr(expr_list)
+
+    assert_gpu_and_cpu_are_equal_collect(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf))
+
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp_improved(data_gen, ansi_enabled):
@@ -281,6 +328,12 @@ def test_gettimestamp(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
+
+@pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
+def test_gettimestamp_format_MMyyyy(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "MMyyyy")))
+
 def test_gettimestamp_ansi_exception():
     assert_gpu_and_cpu_error(
         lambda spark : invalid_date_string_df(spark).select(f.to_date(f.col("a"), "yyyy-MM-dd")).collect(),
@@ -327,3 +380,24 @@ def test_date_format_maybe_incompat(data_gen, date_format):
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
+
+# Reproduce conditions for https://github.com/NVIDIA/spark-rapids/issues/5670
+# where we had a failure due to GpuCast canonicalization with timezone.
+# In this case it was doing filter after project, the way I get that to happen is by adding in the
+# input_file_name(), otherwise filter happens before project.
+@allow_non_gpu('CollectLimitExec,FileSourceScanExec,DeserializeToObjectExec')
+@ignore_order()
+def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
+    data_path = spark_tmp_path + '/CSV_DATA'
+    gen = StringGen(pattern='[0][0-9][1][8-9][1-9][1-9]', nullable=False)
+    schema = gen.data_type
+    with_cpu_session(lambda spark : gen_df(spark, gen, length=100).write.csv(data_path))
+    def do_join_cast(spark):
+        left = spark.read.csv(data_path)\
+            .selectExpr("date_format(to_date(_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")
+        right = spark.read.csv(data_path).withColumnRenamed("_c0", "r_c0")\
+            .selectExpr("date_format(to_date(r_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")\
+            .withColumnRenamed("monthly_reporting_period", "r_monthly_reporting_period")\
+            .withColumnRenamed("filename", "r_filename")
+        return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
+    assert_gpu_and_cpu_are_equal_collect(do_join_cast)

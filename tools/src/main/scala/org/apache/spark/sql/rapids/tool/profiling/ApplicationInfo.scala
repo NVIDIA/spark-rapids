@@ -28,7 +28,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 import org.apache.spark.ui.UIUtils
 
 
@@ -195,9 +195,6 @@ class ApplicationInfo(
   // resourceprofile id to resource profile info
   val resourceProfIdToInfo = new HashMap[Int, ResourceProfileInfoCase]()
 
-  // sqlId to sql info
-  val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
-
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
      ArrayBuffer[BlockManagerRemovedCase]()
 
@@ -273,7 +270,7 @@ class ApplicationInfo(
         val (_, nestedComplexTypes) = reportComplexTypes
         val potentialProbs = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
         sqlIdToInfo.get(sqlID).foreach { sql =>
-          sql.problematic = potentialProbs
+          sql.problematic = ToolUtils.formatPotentialProblems(potentialProbs)
         }
 
         // Then process SQL plan metric type

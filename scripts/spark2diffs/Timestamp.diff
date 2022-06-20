@@ -2,17 +2,17 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2021-2022, NVIDIA CORPORATION.
-20c20,21
+20c20
 < import com.nvidia.spark.rapids.ExprRule
 ---
 > import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
-> import com.nvidia.spark.rapids.shims.SparkShimImpl
-22c23,24
+22c22,23
 < import org.apache.spark.sql.catalyst.expressions.Expression
 ---
 > import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
 > import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
-29,30c31,50
+29,31c30,46
+<   // Spark 2.x doesn't have GetTimestamp
 <   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 < }
 ---
@@ -27,9 +27,6 @@
 >             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
 >             TypeSig.STRING)),
 >       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
->         override def shouldFallbackOnAnsiTimestamp: Boolean =
->           SparkShimImpl.shouldFallbackOnAnsiTimestamp
-> 
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)
 >         }

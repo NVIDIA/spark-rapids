@@ -28,10 +28,36 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
-import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.functions.{desc,udf}
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
+import org.apache.spark.sql.rapids.tool.qualification.{QualificationAppInfo, QualificationSummaryInfo}
 import org.apache.spark.sql.types._
+
+// drop the fields that won't go to DataFrame without encoders
+case class TestQualificationSummary(
+    appName: String,
+    appId: String,
+    recommendation: String,
+    estimatedGpuSpeedup: Double,
+    estimatedGpuDur: Double,
+    estimatedGpuTimeSaved: Double,
+    sqlDataframeDuration: Long,
+    sqlDataframeTaskDuration: Long,
+    appDuration: Long,
+    gpuOpportunity: Long,
+    executorCpuTimePercent: Double,
+    failedSQLIds: String,
+    readFileFormatAndTypesNotSupported: String,
+    writeDataFormat: String,
+    complexTypes: String,
+    nestedComplexTypes: String,
+    potentialProblems: String,
+    longestSqlDuration: Long,
+    nonSqlTaskDurationAndOverhead: Long,
+    unsupportedSQLTaskDuration: Long,
+    supportedSQLTaskDuration: Long,
+    taskSpeedupFactor: Double,
+    endDurationEstimated: Boolean)
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
@@ -39,6 +65,35 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+
+  private val csvDetailedFields = Seq(
+    ("App Name", StringType),
+    ("App ID", StringType),
+    ("Recommendation", StringType),
+    ("Estimated GPU Speedup", DoubleType),
+    ("Estimated GPU Duration", DoubleType),
+    ("Estimated GPU Time Saved", DoubleType),
+    ("SQL DF Duration", LongType),
+    ("SQL Dataframe Task Duration", LongType),
+    ("App Duration", LongType),
+    ("GPU Opportunity", LongType),
+    ("Executor CPU Time Percent", DoubleType),
+    ("SQL Ids with Failures", StringType),
+    ("Unsupported Read File Formats and Types", StringType),
+    ("Unsupported Write Data Format", StringType),
+    ("Complex Types", StringType),
+    ("Nested Complex Types", StringType),
+    ("Potential Problems", StringType),
+    ("Longest SQL Duration", LongType),
+    ("NONSQL Task Duration Plus Overhead", LongType),
+    ("Unsupported Task Duration", LongType),
+    ("Supported SQL DF Task Duration", LongType),
+    ("Task Speedup Factor", DoubleType),
+    ("App Duration Estimated", BooleanType))
+
+  val schema = new StructType(csvDetailedFields.map(f => StructField(f._1, f._2, true)).toArray)
+
+  def csvDetailedHeader(ind: Int) = csvDetailedFields(ind)._1
 
   override protected def beforeEach(): Unit = {
     TrampolineUtil.cleanupAnyExistingSession()
@@ -49,36 +104,26 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
-  val schema = new StructType()
-    .add("App Name", StringType, true)
-    .add("App ID", StringType, true)
-    .add("Score", DoubleType, true)
-    .add("Potential Problems", StringType, true)
-    .add("SQL Dataframe Duration", LongType, true)
-    .add("SQL Dataframe Task Duration", LongType, true)
-    .add("App Duration", LongType, true)
-    .add("Executor CPU Time Percent", DoubleType, true)
-    .add("App Duration Estimated", BooleanType, true)
-    .add("SQL Duration with Potential Problems", LongType, true)
-    .add("SQL Ids with Failures", StringType, true)
-    .add("Read Score Percent", IntegerType, true)
-    .add("Read File Format Score", DoubleType, true)
-    .add("Unsupported Read File Formats and Types", StringType, true)
-    .add("Unsupported Write Data Format", StringType, true)
-    .add("Complex Types", StringType, true)
-    .add("Nested Complex Types", StringType, true)
-    .add("Longest SQL Duration", LongType, true)
-    .add("NONSQL Task Duration Plus Overhead", LongType, true)
-    .add("Estimated Duration", DoubleType, true)
-    .add("Unsupported Duration", LongType, true)
-    .add("Speedup Duration", LongType, true)
-    .add("Speedup Factor", DoubleType, true)
-    .add("Total Speedup", DoubleType, true)
-    .add("Recommendation", StringType, true)
-
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
       Some(schema))
+  }
+
+  private def createSummaryForDF(
+      appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
+    appSums.map { appInfoRec =>
+      val sum = QualOutputWriter.createFormattedQualSummaryInfo(appInfoRec, ",")
+      TestQualificationSummary(sum.appName, sum.appId, sum.recommendation,
+        sum.estimatedGpuSpeedup, sum.estimatedGpuDur,
+        sum.estimatedGpuTimeSaved, sum.sqlDataframeDuration,
+        sum.sqlDataframeTaskDuration, sum.appDuration,
+        sum.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
+        sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
+        sum.complexTypes, sum.nestedComplexTypes, sum.potentialProblems, sum.longestSqlDuration,
+        sum.nonSqlTaskDurationAndOverhead,
+        sum.unsupportedSQLTaskDuration, sum.supportedSQLTaskDuration, sum.taskSpeedupFactor,
+        sum.endDurationEstimated)
+    }
   }
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
@@ -94,10 +139,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(exit == 0)
       val spark2 = sparkSession
       import spark2.implicits._
-      val dfTmp = appSum.toDF.drop("readFileFormats")
-      val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
+      val summaryDF = createSummaryForDF(appSum).toDF
+      val dfQual = sparkSession.createDataFrame(summaryDF.rdd, schema)
       if (shouldReturnEmpty) {
-        assert(appSum.head.sqlDataFrameDuration == 0.0)
+        assert(appSum.head.estimatedInfo.sqlDfDuration == 0.0)
       } else {
         val dfExpect = readExpectedFile(resultExpectation)
         assert(!dfQual.isEmpty)
@@ -124,7 +169,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1623281204390"))
+      assert(appSum.head.appId.equals("local-1622043423018"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -135,7 +180,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1622043423018"))
+        assert(firstRow.contains("local-1623281204390"))
       } finally {
         inputSource.close()
       }
@@ -160,7 +205,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       assert(appSum.size == 4)
-      assert(appSum.head.appId.equals("local-1623281204390"))
+      assert(appSum.head.appId.equals("local-1622043423018"))
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
         s"rapids_4_spark_qualification_output.log"
@@ -171,7 +216,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
         val firstRow = lines(3)
-        assert(firstRow.contains("local-1623281204390"))
+        assert(firstRow.contains("local-1622043423018"))
       } finally {
         inputSource.close()
       }
@@ -185,7 +230,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
         "--output-directory",
@@ -196,7 +240,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "2")
 
       val appArgs = new QualificationArgs(allArgs ++ logFiles)
-      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      val (exit, _) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
 
       val filename = s"$outpath/rapids_4_spark_qualification_output/" +
@@ -215,7 +259,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test datasource read format included") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
         "--output-directory",
@@ -244,7 +287,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test skip gpu event logs") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val logFiles = Array(s"$qualLogDir/gpu_eventlog")
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
         "--output-directory",
@@ -430,8 +472,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
-      assert(actualResult._1.equals(expectedResult(index)._1))
-      assert(actualResult._2.equals(expectedResult(index)._2))
+      assert(ToolUtils.formatComplexTypes(actualResult._1).equals(expectedResult(index)._1))
+      assert(ToolUtils.formatComplexTypes(actualResult._2).equals(expectedResult(index)._2))
       index += 1
     }
   }
@@ -446,6 +488,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val dfGen = Seq("1.32").toDF("value")
       .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
     dfGen.write.parquet(dir)
+  }
+
+  private def createIntFile(spark:SparkSession, dir:String): Unit = {
+    import spark.implicits._
+    val t1 = Seq((1, 2), (3, 4), (1, 6)).toDF("a", "b")
+    t1.write.parquet(dir)
   }
 
   test("test generate udf same") {
@@ -473,7 +521,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(appSum.size == 1)
         val probApp = appSum.head
         assert(probApp.potentialProblems.contains("UDF"))
-        assert(probApp.sqlDataFrameDuration == probApp.sqlDurationForProblematic)
+        assert(probApp.unsupportedSQLTaskDuration > 0) // only UDF is unsupported in the query.
       }
     }
   }
@@ -483,7 +531,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       TrampolineUtil.withTempDir { eventLogDir =>
         val tmpParquet = s"$outpath/decparquet"
+        val grpParquet = s"$outpath/grpParquet"
         createDecFile(sparkSession, tmpParquet)
+        createIntFile(sparkSession, grpParquet)
 
         val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
           val plusOne = udf((x: Int) => x + 1)
@@ -496,10 +546,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           // run a separate sql op using just udf
           spark.sql("SELECT plusOne(5)").collect()
           // Then run another sql op that doesn't use with decimal or udf
-          import spark.implicits._
-          val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
-          t1.createOrReplaceTempView("t1")
-          spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+          val t2 = spark.read.parquet(grpParquet)
+          val res = t2.groupBy("a").max("b").orderBy(desc("a"))
+          res
         }
 
         val allArgs = Array(
@@ -511,8 +560,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(appSum.size == 1)
         val probApp = appSum.head
         assert(probApp.potentialProblems.contains("UDF"))
-        assert(probApp.sqlDurationForProblematic > 0)
-        assert(probApp.sqlDataFrameDuration > probApp.sqlDurationForProblematic)
+        assert(probApp.unsupportedSQLTaskDuration > 0) // only UDF is unsupported in the query.
       }
     }
   }
@@ -604,22 +652,64 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(rowsSumOut.size == 2)
     val headers = rowsSumOut(0).split(",")
     val values = rowsSumOut(1).split(",")
-    assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+    val appInfo = qualApp.aggregateStats()
+    assert(appInfo.nonEmpty)
+    assert(headers.size ==
+      QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
     assert(values.size == headers.size)
-    // 2 should be the SQL DF Duration
-    assert(headers(2).contains("SQL DF"))
-    assert(values(2).toInt > 0)
+    // 3 should be the SQL DF Duration
+    assert(headers(3).contains("SQL DF"))
+    assert(values(3).toInt > 0)
     val csvDetailedOut = qualApp.getDetailed(",", false)
     val rowsDetailedOut = csvDetailedOut.split("\n")
     assert(rowsDetailedOut.size == 2)
     val headersDetailed = rowsDetailedOut(0).split(",")
     val valuesDetailed = rowsDetailedOut(1).split(",")
     assert(headersDetailed.size == QualOutputWriter
-      .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get), false).keys.size)
-    assert(valuesDetailed.size == headersDetailed.size)
-    // 2 should be the Score
-    assert(headersDetailed(2).contains("Score"))
-    assert(valuesDetailed(2).toDouble > 0)
+      .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
+    assert(headersDetailed.size == csvDetailedFields.size)
+    assert(valuesDetailed.size == csvDetailedFields.size)
+    // check all headers exists
+    for (ind <- 0 until csvDetailedFields.size) {
+      assert(csvDetailedHeader(ind).equals(headersDetailed(ind)))
+    }
+    // check that recommendation field is relevant to GPU Speed-up
+    // Note that range-check does not apply for NOT-APPLICABLE
+    val estimatedFieldsIndStart = 2
+    assert(valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0)
+    if (!valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE)) {
+      if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        QualificationAppInfo.LOWER_BOUND_STRONGLY_RECOMMENDED) {
+        assert(
+          valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
+      } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        QualificationAppInfo.LOWER_BOUND_RECOMMENDED) {
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
+      } else {
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
+      }
+    }
+
+    // check numeric fields skipping "Estimated Speed-up" on purpose
+    for (ind <- estimatedFieldsIndStart + 2  until csvDetailedFields.size) {
+      if (csvDetailedFields(ind)._1.equals(DoubleType)
+        || csvDetailedFields(ind)._1.equals(LongType)) {
+        val numValue = valuesDetailed(ind).toDouble
+        if (headersDetailed(ind).equals(csvDetailedHeader(19))) {
+          // unsupported task duration can be 0
+          assert(numValue >= 0)
+        } else if (headersDetailed(ind).equals(csvDetailedHeader(10))) {
+          // cpu percentage 0-100
+          assert(numValue >= 0.0 && numValue <= 100.0)
+        } else if (headersDetailed(ind).equals(csvDetailedHeader(6)) ||
+          headersDetailed(ind).equals(csvDetailedHeader(9))) {
+          // "SQL DF Duration" and "GPU Opportunity" cannot be larger than App Duration
+          assert(numValue >= 0 && numValue <= valuesDetailed(8).toDouble)
+        } else {
+          assert(valuesDetailed(ind).toDouble > 0)
+        }
+      }
+    }
   }
 
   test("running qualification app files") {
@@ -644,21 +734,20 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(rowsSumOut.size == 2)
         val headers = rowsSumOut(0).split(":")
         val values = rowsSumOut(1).split(":")
-        assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+        val appInfo = qualApp.aggregateStats()
+        assert(appInfo.nonEmpty)
+        assert(headers.size ==
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
         assert(values.size == headers.size)
-        // 2 should be the SQL DF Duration
-        assert(headers(2).contains("SQL DF"))
-        assert(values(2).toInt > 0)
+        // 3 should be the SQL DF Duration
+        assert(headers(3).contains("SQL DF"))
+        assert(values(3).toInt > 0)
         val detailedOut = qualApp.getDetailed(":", prettyPrint = false, reportReadSchema = true)
         val rowsDetailedOut = detailedOut.split("\n")
         assert(rowsDetailedOut.size == 2)
         val headersDetailed = rowsDetailedOut(0).split(":")
         val valuesDetailed = rowsDetailedOut(1).split(":")
-        // Read File Format Score
-        assert(headersDetailed(12).contains("Read File Format Score"))
-        assert(valuesDetailed(12).toDouble == 50.0)
-        assert(headersDetailed(13).contains("Read File Formats"))
-        assert(valuesDetailed(13).contains("JSON"))
+        // Check Read Schema contains json and parquet
         val readSchemaIndex = headersDetailed.length - 1
         assert(headersDetailed(readSchemaIndex).contains("Read Schema"))
         assert(

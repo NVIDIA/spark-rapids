@@ -85,7 +85,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
   override def doSparkListenerSQLExecutionStart(
       app: QualificationAppInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
-    logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerSQLExecutionStart(app, event)
     val sqlExecution = QualSQLExecutionInfo(
       event.executionId,
       event.time,
@@ -99,32 +99,23 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     app.sqlStart += (event.executionId -> sqlExecution)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
     app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
-    // -1 to indicate that it started but not complete
-    app.sqlDurationTime += (event.executionId -> -1)
   }
 
   override def doSparkListenerSQLExecutionEnd(
       app: QualificationAppInfo,
       event: SparkListenerSQLExecutionEnd): Unit = {
+    super.doSparkListenerSQLExecutionEnd(app, event)
     logDebug("Processing event: " + event.getClass)
     app.lastSQLEndTime = Some(event.time)
-    // app.sqlEndTime += (event.executionId -> event.time)
-    val sqlInfo = app.sqlStart.get(event.executionId)
     // only include duration if it contains no jobs that failed
-    val failedJobs = app.sqlIDtoJobFailures.get(event.executionId)
-    if (event.executionFailure.isDefined || failedJobs.isDefined) {
+    val failures = app.sqlIDtoFailures.get(event.executionId)
+    if (event.executionFailure.isDefined || failures.isDefined) {
       logWarning(s"SQL execution id ${event.executionId} had failures, skipping")
       // zero out the cpu and run times since failed
       app.sqlIDToTaskEndSum.get(event.executionId).foreach { sum =>
         sum.executorRunTime = 0
         sum.executorCPUTime = 0
       }
-      app.sqlDurationTime += (event.executionId -> 0)
-    } else {
-      // if start time not there, use event end time so duration is 0
-      val startTime = sqlInfo.map(_.startTime).getOrElse(event.time)
-      val sqlDuration = event.time - startTime
-      app.sqlDurationTime += (event.executionId -> sqlDuration)
     }
   }
 
@@ -138,7 +129,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event.stageIds.foreach { stageId =>
         app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
-      app.jobIdToSqlID(event.jobId) = sqlID
     }
   }
 
@@ -150,14 +140,30 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     app.lastJobEndTime = Some(event.time)
     if (event.jobResult != JobSucceeded) {
       app.jobIdToSqlID.get(event.jobId) match {
-        case Some(id) =>
+        case Some(sqlID) =>
           // zero out the cpu and run times since failed
-          app.sqlIDToTaskEndSum.get(id).foreach { sum =>
+          app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
             sum.executorRunTime = 0
             sum.executorCPUTime = 0
           }
-          val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(id, ArrayBuffer.empty[Int])
-          failedJobs += event.jobId
+          val failures = app.sqlIDtoFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[String])
+          val jobStr = s"Job${event.jobId}"
+          failures += jobStr
+        case None =>
+      }
+    }
+  }
+
+  override def doSparkListenerStageCompleted(
+      app: QualificationAppInfo,
+      event: SparkListenerStageCompleted): Unit = {
+    super.doSparkListenerStageCompleted(app, event)
+    if (event.stageInfo.failureReason.nonEmpty) {
+      app.stageIdToSqlID.get(event.stageInfo.stageId) match {
+        case Some(sqlID) =>
+          val failures = app.sqlIDtoFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[String])
+          val stageStr = s"Stage${event.stageInfo.stageId}"
+          failures += stageStr
         case None =>
       }
     }

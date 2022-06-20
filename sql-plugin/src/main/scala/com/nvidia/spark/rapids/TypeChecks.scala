@@ -23,6 +23,8 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 /** Trait of TypeSigUtil for different spark versions */
@@ -358,7 +360,8 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
+          TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
+          TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -419,10 +422,11 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()))) {
-          Seq(withChild(isChild, s"$dataType is not supported when the JVM system " +
-              s"timezone is set to ${ZoneId.systemDefault()}. Set the timezone to UTC to enable " +
-              s"$dataType support"))
+            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) ||
+             !TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))) {
+          Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
+              s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+              s" Set both of the timezones to UTC to enable $dataType support"))
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
         }
@@ -795,6 +799,11 @@ object TypeChecks {
    */
   def areTimestampsSupported(timezoneId: ZoneId): Boolean = {
     timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
+  }
+
+  def areTimestampsSupported(zoneIdString: String): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(zoneIdString)
+    areTimestampsSupported(zoneId)
   }
 }
 
@@ -1303,7 +1312,7 @@ class CastChecks extends ExprChecks {
 
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
       BINARY + GpuTypeShims.additionalTypesIntegralCanCastTo
-  val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY +
+  val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING +
       BINARY + GpuTypeShims.additionalTypesIntegralCanCastTo
 
   val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
@@ -2220,8 +2229,14 @@ object SupportedOpsForTools {
       ("ShuffleExchangeExec", "3.1"),
       ("FilterExec", "2.4"),
       ("HashAggregateExec", "3.4"),
-      ("SortExec", "6.0"),
-      ("SortMergeJoinExec", "14.9"))
+      ("SortExec", "5.2"),
+      ("SortMergeJoinExec", "14.1"),
+      ("ArrowEvalPythonExec", "1.2"),
+      ("AggregateInPandasExec", "1.2"),
+      ("FlatMapGroupsInPandasExec", "1.2"),
+      ("MapInPandasExec", "1.2"),
+      ("WindowInPandasExec", "1.2")
+    )
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
       if (rule.isVisible && checks.forall(_.shown)) {
@@ -2232,7 +2247,7 @@ object SupportedOpsForTools {
         val allCols = if (operatorCustomSpeedUp.contains(cpuName)) {
           Seq(cpuName, operatorCustomSpeedUp(cpuName))
         } else {
-          Seq(cpuName, "2.0")
+          Seq(cpuName, "3.0")
         }
         println(s"${allCols.mkString(",")}")
       }
@@ -2244,7 +2259,7 @@ object SupportedOpsForTools {
         val cpuName = rule.tag.runtimeClass.getSimpleName
         // We are assigning speed up of 3 to all the Exprs supported by the plugin. This can be
         // adjusted later.
-        val allCols = Seq(cpuName, "3")
+        val allCols = Seq(cpuName, "4")
         println(s"${allCols.mkString(",")}")
       }
     }

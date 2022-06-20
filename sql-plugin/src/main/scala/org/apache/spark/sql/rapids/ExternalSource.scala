@@ -16,11 +16,12 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
 import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.FileSourceScanExec
@@ -29,16 +30,20 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.v2.avro.AvroScan
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-object ExternalSource {
+object ExternalSource extends Logging {
+  val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
 
   lazy val hasSparkAvroJar = {
-    val loader = Utils.getContextOrSparkClassLoader
-
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
-    Try(loader.loadClass("org.apache.spark.sql.v2.avro.AvroScan")) match {
-      case Failure(_) => false
-      case Success(_) => true
+    Utils.classIsLoadable(avroScanClassName) && {
+      Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
+        .getOrElse {
+          logWarning("Avro library not found by the RAPIDS plugin. The Plugin jars are " +
+              "likely deployed using a static classpath spark.driver/executor.extraClassPath. " +
+              "Consider using --jars or --packages instead.")
+          false
+        }
     }
   }
 
@@ -99,7 +104,7 @@ object ExternalSource {
     if (hasSparkAvroJar) {
       format match {
         case _: AvroFileFormat =>
-          val f = GpuAvroMultiFilePartitionReaderFactory(
+          GpuAvroMultiFilePartitionReaderFactory(
             fileScan.relation.sparkSession.sessionState.conf,
             fileScan.rapidsConf,
             broadcastedConf,
@@ -110,22 +115,6 @@ object ExternalSource {
             fileScan.allMetrics,
             pushedFilters,
             fileScan.queryUsesInputFile)
-          // Now only coalescing is supported, so need to check if it can be used
-          // for the final choice.
-          if (f.canUseCoalesceFilesReader){
-            f
-          } else {
-          // Fall back to PerFile reading
-          GpuAvroPartitionReaderFactory(
-            fileScan.relation.sparkSession.sessionState.conf,
-            fileScan.rapidsConf,
-            broadcastedConf,
-            fileScan.relation.dataSchema,
-            fileScan.requiredSchema,
-            fileScan.relation.partitionSchema,
-            new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
-            fileScan.allMetrics)
-          }
         case _ =>
           // never reach here
           throw new RuntimeException(s"File format $format is not supported yet")

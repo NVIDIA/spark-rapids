@@ -18,129 +18,38 @@
 
 $(document).ready(function() {
   let attemptArray = processRawData(qualificationRecords);
-  let rawDataTableConf = {
-    // TODO: To use horizontal scroll for wide table
-    //"scrollX": true,
-    responsive: true,
-    paging: (attemptArray.length > defaultPageLength),
-    pageLength: defaultPageLength,
-    lengthMenu: defaultLengthMenu,
-    info: true,
-    data: attemptArray,
-    columns: [
-      {data: "appName"},
-      {
-        data: "appId",
-        render:  (appId, type, row) => {
-          if (type === 'display' || type === 'filter') {
-            return `<a href="${row.attemptDetailsURL}" target="_blank">${appId}</a>`
-          }
-          return appId;
-        }
-      },
-      {
-        name: 'sqlDataFrameDuration',
-        data: 'sqlDataFrameDuration',
-        searchable: false,
-        render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
-            return formatDuration(data)
-          }
-          return data;
-        },
-      },
-      {
-        name: 'sqlDataframeTaskDuration',
-        data: 'sqlDataframeTaskDuration',
-        searchable: false,
-        render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
-            return formatDuration(data)
-          }
-          return data;
-        },
-      },
-      {
-        name: 'appDuration',
-        data: 'appDuration',
-        type: 'numeric',
-        searchable: false,
-        render: function (data, type, row) {
-          if (type === 'display' || type === 'filter') {
-            return formatDuration(data)
-          }
-          return data;
-        },
-        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-          if (oData.estimated) {
-            $(nTd).css('color', 'blue');
-          }
-        }
-      },
-      {
-        data: "executorCpuTimePercent",
-        searchable: false,
-        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
-          if (oData.executorCpuTimePercent >= 0) {
-            $(nTd).css('color', totalCPUPercentageColor(oData.executorCpuTimePercent));
-            $(nTd).css('background', totalCPUPercentageStyle(oData.executorCpuTimePercent));
-          }
-        }
-      },
-      {
-        data: "sqlDurationForProblematic",
-        searchable: false,
-      },
-      {data: "failedSQLIds"},
-      {data: "readScorePercent"},
-      {data: "readFileFormatScore"},
-      {data: "readFileFormatAndTypesNotSupported"},
-      {
-        data: "writeDataFormat",
-        orderable: false,
-      },
-      {
-        data: "complexTypes",
-        orderable: false,
-      },
-      {
-        data: "nestedComplexTypes",
-        orderable: false,
-      },
-      {
-        data: "estimatedDuration",
-      },
-      {
-        data: "unsupportedDuration",
-      },
-      {
-        data: "speedupDuration",
-      },
-      {
-        data: "speedupFactor",
-      },
-      {
-        data: "totalSpeedup",
-      },
-      {
-        data: "speedupBucket",
-      },
-      {
-        data: "longestSqlDuration",
-      }
-    ],
-    // dom: "<'row'<'col-sm-12 col-md-6'B><'col-sm-12 col-md-6'>>" +
-    //      "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
-    //      "<'row'<'col-sm-12'tr>>" +
-    //      "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
-    dom: 'Bfrtlip',
-    buttons: [{
-      extend: 'csv',
-      text: 'Export'
-    }]
-  };
-  var rawAppsTable = $('#all-apps-raw-data-table').DataTable(rawDataTableConf);
-  $('#all-apps-raw-data [data-toggle="tooltip"]').tooltip();
+  //
+  // set the app details table
+  //
+  let appDetailsDataTable = constructDataTableFromHTMLTemplate(
+    attemptArray,
+    "listAppsView",
+    createAppDetailedTableConf,
+    {
+      tableId: "appDetails",
+      dataTableTemplate: $("#app-details-table-template").html(),
+      datatableContainerID: '#app-details-data-container',
+      tableDivId: '#all-apps-raw-data-table',
+    }
+  );
+
+  // Set the tootTips for the table header. Enable this when tooltips are limited to the
+  // table headers
+  // $('thead th[title]').tooltip({
+  //   container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
+  // });
+
+  //
+  // Set tooltips for the datatables using jQuery delegated event listener options.
+  // Note that we should always use Note that we should always use jQuery delegated event listener
+  // options as documented in app-report.js
+  //
+  $('tbody').on('mouseover', 'td, th', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
+  });
 
   setupNavigation();
 });

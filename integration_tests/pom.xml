@@ -22,10 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.06.0-SNAPSHOT</version>
+        <version>22.08.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>22.06.0-SNAPSHOT</version>
+    <version>22.08.0-SNAPSHOT</version>
     <properties>
         <target.classifier/>
     </properties>
@@ -272,6 +272,32 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>${maven.clean.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>clean-copy</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <filesets>
+                                    <directory>target/dependency</directory>
+                                    <includes>
+                                        <include>parquet-hadoop*.jar</include>
+                                        <include>spark-avro*.jar</include>
+                                    </includes>
+                                </filesets>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
@@ -287,6 +313,12 @@
                                     <groupId>org.apache.spark</groupId>
                                     <artifactId>spark-avro_${scala.binary.version}</artifactId>
                                     <version>${spark.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.apache.parquet</groupId>
+                                    <artifactId>parquet-hadoop</artifactId>
+                                    <version>${parquet.hadoop.version}</version>
+                                    <classifier>tests</classifier>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
