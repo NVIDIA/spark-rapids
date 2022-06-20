@@ -39,6 +39,11 @@ will vary depending on your cluster manager. Here are some example configs:
   - `--conf spark.task.resource.gpu.amount=1`
 - Specify a GPU discovery script (required on YARN and K8S):
   - `--conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh`
+- Explain why some operations of a query were not placed on a GPU or not:
+  - `--conf spark.rapids.sql.explain=ALL` will display whether each operation is placed on GPU.
+  - `--conf spark.rapids.sql.explain=NONE` will disable the log of `rapids.sql.explain`.
+  - `--conf spark.rapids.sql.explain=NOT_ON_GPU` will display only parts that did not go on the GPU,
+  and it's the default setting.
 
 See the deployment specific sections for more details and restrictions. Note that
 `spark.task.resource.gpu.amount` can be a decimal amount, so if you want multiple tasks to be run
