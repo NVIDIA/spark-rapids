@@ -31,7 +31,7 @@ case class FilterExecParser(
     // filter doesn't have duration
     val duration = None
     val exprString = node.desc.replaceFirst("Filter ", "")
-    val expressions = SQLPlanParser.parseFilterExpressions(exprString).map(_.toLowerCase)
+    val expressions = SQLPlanParser.parseFilterExpressions(exprString)
     val isAllExprsSupported = expressions.forall(expr => checker.isExprSupported(expr))
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
         isAllExprsSupported) {

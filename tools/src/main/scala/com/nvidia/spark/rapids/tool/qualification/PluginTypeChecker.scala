@@ -252,8 +252,9 @@ class PluginTypeChecker extends Logging {
   }
 
   def isExprSupported(expr: String): Boolean = {
-    if (supportedExprs.contains(expr)) {
-      val exprSupported = supportedExprs.getOrElse(expr, "NS")
+    val exprLowecase = expr.toLowerCase
+    if (supportedExprs.contains(exprLowecase)) {
+      val exprSupported = supportedExprs.getOrElse(exprLowecase, "NS")
       if (exprSupported == "S") {
         true
       } else {

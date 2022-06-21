@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.planparser
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 
@@ -249,8 +250,24 @@ object SQLPlanParser extends Logging {
     maxDuration
   }
 
+  private def getFunctionName(functionPattern: Regex, expr:String): Option[String] = {
+    val funcName = functionPattern.findFirstMatchIn(expr) match {
+      case Some(func) =>
+        val func1 = func.group(1)
+        // `cast` is not an expression hence should be ignored. In the physical plan cast is
+        // usually presented as function call for example: `cast(value#9 as date)`. We add
+        // other function names to the result.
+          if (!func1.equalsIgnoreCase("cast")) {
+            Some(func1)
+        } else None
+      case _ => logDebug(s"Incorrect expression - $expr")
+                None
+    }
+    funcName
+  }
+
   def parseFilterExpressions(exprStr: String): Array[String] = {
-    val result = ArrayBuffer[String]()
+    val parsedExpressions = ArrayBuffer[String]()
 
     // Filter ((isnotnull(s_state#68) AND (s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))
     // split on AND/OR/NOT
@@ -266,7 +283,7 @@ object SQLPlanParser extends Logging {
     }
 
     val exprSplit = if (exprStr.contains("NOT ")) {
-      result += "Not"
+      parsedExpressions += "Not"
       exprSepOR.flatMap(_.split("NOT ").map(_.trim))
     } else {
       exprSepOR
@@ -274,7 +291,6 @@ object SQLPlanParser extends Logging {
 
     // Remove paranthesis from the beginning and end to get only the expressions
     val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
-
     val functionPattern = """(\w+)\(.*\)""".r
     val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
 
@@ -284,24 +300,22 @@ object SQLPlanParser extends Logging {
         // TODO - add in arithmetic stuff (- / * )
         conditionalExprPattern.findFirstMatchIn(expr) match {
           case Some(func) =>
-            logWarning(s" found expr: $func")
+            logDebug(s" found expr: $func")
             if (func.groupCount < 3) {
               logError(s"found incomplete expression - $func")
             }
             val lhs = func.group(1)
-            functionPattern.findFirstMatchIn(lhs) match {
-              case Some(func) =>
-                val func1 = func.group(1)
-                if (!func1.toLowerCase.equals("cast")) { // cast should not be added to the result
-                  result += func1 // add function name to the result
-                }
-              case _ => // IGNORE
-            }
+            // Add function name to result
+            val functionName = getFunctionName(functionPattern, lhs)
+             functionName match {
+               case Some(func) => parsedExpressions += func
+               case _ => // NO OP
+             }
             val predicate = func.group(2)
             val rhs = func.group(3)
             // check for variable
             if (lhs.contains("#") || rhs.contains("#")) {
-              logWarning(s"expr contains # $lhs or $rhs")
+              logDebug(s"expr contains # $lhs or $rhs")
             }
             val predStr = predicate match {
               case "=" => "EqualTo"
@@ -311,26 +325,20 @@ object SQLPlanParser extends Logging {
               case "<=" => "LessThanOrEqual"
               case ">=" => "GreaterThanOrEqual"
             }
-            logWarning(s"predicate string is $predStr")
-            result += predStr
+            logDebug(s"predicate string is $predStr")
+            parsedExpressions += predStr
           // TODO - lookup function name
-          case None => logWarning(s"Incorrect expression - $expr")
+          case None => logDebug(s"Incorrect expression - $expr")
         }
       } else {
-        // likely some function call
-        functionPattern.findFirstMatchIn(expr) match {
-          case Some(func) =>
-            logWarning(s" found func: $func")
-            if (expr.length != func.group(0).length || func.groupCount == 0) {
-              logError(s"found incomplete expression - $func")
-            }
-            val funcName = func.group(1)
-            result += funcName
-          // TODO - lookup function name
-          case None => logWarning(s"Incorrect expression - $expr")
+        // likely some function call, add function name to result
+        val functionName = getFunctionName(functionPattern, expr)
+        functionName match {
+          case Some(func) => parsedExpressions += func
+          case _ => // NO OP
         }
       }
     }
-    result.toArray
+    parsedExpressions.toArray
   }
 }
