@@ -1025,6 +1025,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'b' | 'B' if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/5478
           throw new RegexUnsupportedException("word boundaries are not supported in split mode")
+        case 'b' | 'B' =>
+          previous match {
+            case Some(RegexEscaped(ch)) if "DWS".contains(ch) =>
+              throw new RegexUnsupportedException(
+                  "word boundaries around \\D, \\S, or \\W are not supported")
+            case _ =>
+              RegexEscaped(ch)
+          }
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException("string anchor \\A is not supported in split mode")
         case 'Z' if mode == RegexSplitMode =>
