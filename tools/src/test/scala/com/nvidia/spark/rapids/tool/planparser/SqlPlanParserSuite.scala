@@ -25,7 +25,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions.{broadcast, col, collect_list, explode, hex, sum}
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
+
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
@@ -258,7 +260,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(stats.nonEmpty)
     val estimatedGpuSpeed = stats.get.estimatedInfo.estimatedGpuSpeedup
     val recommendation = stats.get.estimatedInfo.recommendation
-    assert (estimatedGpuSpeed == -1)
+    assert (ToolUtils.truncateDoubleToTwoDecimal(estimatedGpuSpeed) == 1.11)
     assert(recommendation.equals("Not Applicable"))
   }
 

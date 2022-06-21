@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
 import java.util.Locale
-import java.util.concurrent.{Callable, ThreadPoolExecutor}
+import java.util.concurrent.Callable
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -184,7 +184,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
-  private val numThreads = rapidsConf.orcMultiThreadReadNumThreads
+  private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
@@ -730,10 +730,6 @@ class GpuOrcPartitionReader(
     }
   }
 }
-
-// Singleton threadpool that is used across all the tasks.
-// Please note that the TaskContext is not set in these threads and should not be used.
-object OrcMultiFileThreadPool extends MultiFileReaderThreadPool
 
 private object OrcTools extends Arm {
 
@@ -1516,20 +1512,6 @@ class MultiFileCloudOrcPartitionReader(
   }
 
   /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The requirements:
-   * 1. Same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. Different file formats have different ThreadPoolExecutors
-   *
-   * @param numThreads max number of threads to create
-   * @return ThreadPoolExecutor
-   */
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    OrcMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-  }
-
-  /**
    * File format short name used for logging and other things to uniquely identity
    * which file format is being used.
    *
@@ -1947,19 +1929,6 @@ class MultiFileOrcPartitionReader(
     // We return a size that is smaller than the initial size to avoid the re-allocate
 
     footerOffset
-  }
-
-  /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The rules:
-   * 1. same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. different file formats have different ThreadPoolExecutors
-   *
-   * @return ThreadPoolExecutor
-   */
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    OrcMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**

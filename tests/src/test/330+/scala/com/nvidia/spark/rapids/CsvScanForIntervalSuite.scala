@@ -447,8 +447,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.DAY, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
 
@@ -459,8 +459,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.DAY, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
 
@@ -470,8 +470,9 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.HOUR, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
+
       }
     }
 
@@ -481,8 +482,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.DAY, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
 
@@ -492,8 +493,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.HOUR, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
 
@@ -503,8 +504,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.MINUTE, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
 
@@ -514,8 +515,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.SECOND, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
 
@@ -525,8 +526,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.SECOND, DayTimeIntervalType.SECOND))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean) // return null because invalid
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
   }
@@ -543,8 +544,8 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
     )) { intervalCV =>
       withResource(GpuIntervalUtils.castStringToDTInterval(intervalCV,
         DayTimeIntervalType(DayTimeIntervalType.DAY, DayTimeIntervalType.DAY))) { actualCV =>
-        for (i <- 0 until actualCV.getRowCount.toInt)
-          assert(actualCV.isNull.getScalarElement(i).getBoolean)
+        // return null because invalid
+        assert(allNulls(actualCV))
       }
     }
   }
@@ -633,5 +634,11 @@ class CsvScanForIntervalSuite extends SparkQueryCompareTestSuite {
         "check if issue is fixed: https://issues.apache.org/jira/browse/SPARK-38520")
   ) {
     df => df
+  }
+
+  def allNulls(col: ColumnVector): Boolean = {
+    withResource(col.isNull) { isNull =>
+      BoolUtils.isAllValidTrue(isNull)
+    }
   }
 }

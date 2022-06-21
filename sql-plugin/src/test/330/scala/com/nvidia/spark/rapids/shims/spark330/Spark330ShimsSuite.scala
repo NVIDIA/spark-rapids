@@ -24,9 +24,7 @@ import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
 class Spark330ShimsSuite extends FunSuite {
   test("spark shims version") {
-    // temporarily allow 3.3.1 while 3.3.0 release candidates are being produced
-    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 3, 0) ||
-      SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 3, 1))
+    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 3, 0))
   }
 
   test("shuffle manager class") {
