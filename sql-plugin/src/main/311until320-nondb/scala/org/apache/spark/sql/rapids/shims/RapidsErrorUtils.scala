@@ -45,4 +45,11 @@ object RapidsErrorUtils {
   def divOverflowError(origin: Origin): ArithmeticException = {
     new ArithmeticException("Overflow in integral divide.")
   }
+
+  def arithmeticOverflowError(
+      message: String,
+      hint: String = "",
+      errorContext: String = ""): ArithmeticException = {
+    new ArithmeticException(message)
+  }
 }
