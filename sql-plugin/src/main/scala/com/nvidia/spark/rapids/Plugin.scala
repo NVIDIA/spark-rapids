@@ -100,6 +100,12 @@ object RapidsPluginUtils extends Logging {
       "More information is available at https://nvidia.github.io/spark-rapids/docs/FAQ.html#" +
       "automatic-translation-of-scala-udfs-to-apache-spark-operations" )
     }
+
+    logWarning("spark.rapids.sql.explain is set to the default value 'NOT_ON_GPU' to print " +
+        "operations not executed on GPU. Set to 'ALL' to print the complete query plan, " +
+        "display whether each operation is placed on the GPU. Set to 'NONE' to suppress the " +
+        "diagnostics about the query placement on the GPU.")
+
   }
 
   def fixupConfigs(conf: SparkConf): Unit = {
