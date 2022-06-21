@@ -76,7 +76,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     qWriter.writeExecReport(allAppsSum, order)
     qWriter.writeStageReport(allAppsSum, order)
     if (uiEnabled) {
-      QualificationReportGenerator.generateDashBoard(outputDir, allAppsSum)
+      QualificationReportGenerator.generateDashBoard(getReportOutputPath, allAppsSum)
     }
     sortedDetailed
   }
