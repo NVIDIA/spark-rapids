@@ -1005,6 +1005,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
     var ch = '\u0000'
     do {
       ch = chars(rr.nextInt(chars.length))
+      // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
     } while (skipKnownIssues && "bB".contains(ch))
     RegexEscaped(ch)
   }
@@ -1034,6 +1035,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       baseGenerators
     } else {
       baseGenerators ++ Seq[() => RegexAST](
+        // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
         () => RegexEscaped('b'),
         () => RegexEscaped('B'))
     }
