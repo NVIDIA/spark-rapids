@@ -151,7 +151,7 @@ class RegexParser(pattern: String) {
           "cuDF does not support null characters in regular expressions", Some(pos-1))
       case '*' | '+' | '?' =>
         throw new RegexUnsupportedException(
-          "base expression cannot start with quantifier", Some(pos-1))
+          "Base expression cannot start with quantifier", Some(pos-1))
       case other =>
         RegexChar(other)
     }
@@ -271,7 +271,7 @@ class RegexParser(pattern: String) {
                   characterClass.appendRange(nextChar, RegexChar(end))
                 case _ =>
                   throw new RegexUnsupportedException(
-                    "unexpected EOF while parsing character range", Some(pos))
+                    "Unexpected EOF while parsing character range", Some(pos))
               }
             case _ =>
               characterClass.append(nextChar)
@@ -423,7 +423,7 @@ class RegexParser(pattern: String) {
             RegexChar('\u001b')
           case other =>
             throw new RegexUnsupportedException(
-              s"invalid or unsupported escape character '$other'", Some(pos - 1))
+              s"Invalid or unsupported escape character '$other'", Some(pos - 1))
         }
     }
   }
@@ -475,7 +475,7 @@ class RegexParser(pattern: String) {
           ListBuffer(" \t\n\u000B\f\r".map(RegexChar): _*)
         case _ => 
           throw new RegexUnsupportedException(
-            s"predefined character class ${className} is not supported", Some(start))
+            s"Predefined character class ${className} is not supported", Some(start))
       }
     }
     consumeExpected('}')
@@ -927,7 +927,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "line anchor $ is not supported in split", regex.position)
+            "Line anchor $ is not supported in split", regex.position)
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
           // terminators in and around the anchor
@@ -965,7 +965,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexChar('$')))
             case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
               throw new RegexUnsupportedException(
-                      "regex sequences with \\b or \\B not supported around $", regex.position)
+                      "Regex sequences with \\b or \\B not supported around $", regex.position)
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
@@ -980,7 +980,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("line anchor ^ is not supported in split mode",
+          throw new RegexUnsupportedException("Line anchor ^ is not supported in split mode",
             regex.position)
         case '\r' | '\n' if mode == RegexFindMode =>
           previous match {
@@ -1043,16 +1043,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'b' | 'B' if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/5478
           throw new RegexUnsupportedException(
-            "word boundaries are not supported in split mode", regex.position)
+            "Word boundaries are not supported in split mode", regex.position)
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "string anchor \\A is not supported in split mode", regex.position)
+            "String anchor \\A is not supported in split mode", regex.position)
         case 'Z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "string anchor \\Z is not supported in split or replace mode", regex.position)
+            "String anchor \\Z is not supported in split or replace mode", regex.position)
         case 'z' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
-            "string anchor \\z is not supported in split mode", regex.position)
+            "String anchor \\z is not supported in split mode", regex.position)
         case 'z' =>
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
@@ -1127,7 +1127,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // - "[a[]" should match the literal characters "a" and "["
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException(
-              "nested character classes are not supported", r.position)
+              "Nested character classes are not supported", r.position)
           case _ =>
         }
         val components: Seq[RegexCharacterClassComponent] = characters
@@ -1153,17 +1153,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case sequence @ RegexSequence(parts) =>
         if (parts.isEmpty) {
           // examples: "", "()", "a|", "|b"
-          throw new RegexUnsupportedException("empty sequence not supported", 
+          throw new RegexUnsupportedException("Empty sequence not supported", 
             sequence.position)
         }
         if (isRegexChar(parts.head, '|')) {
           // example: "|b"
-          throw new RegexUnsupportedException("choice with one empty side not supported", 
+          throw new RegexUnsupportedException("Choice with one empty side not supported", 
             parts.head.position)
         }
         if (isRegexChar(parts.last, '|')) {
           // example: "a|"
-          throw new RegexUnsupportedException("choice with one empty side not supported", 
+          throw new RegexUnsupportedException("Choice with one empty side not supported", 
             parts.last.position)
         }
         if (isRegexChar(parts.head, '{')) {
@@ -1172,12 +1172,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // context (being at the start of a sequence) it is not quantifying anything
           // note that we could choose to escape this in the transpiler rather than
           // falling back to CPU
-          throw new RegexUnsupportedException("token preceding '{' is not quantifiable", 
+          throw new RegexUnsupportedException("Token preceding '{' is not quantifiable", 
             parts.head.position)
         }
         if (parts.forall(isBeginOrEndLineAnchor)) {
           throw new RegexUnsupportedException(
-            "sequences that only contain '^' or '$' are not supported", sequence.position)
+            "Sequences that only contain '^' or '$' are not supported", sequence.position)
         }
 
         def popBackrefIfNecessary(capture: Boolean): Unit = {
@@ -1226,7 +1226,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                     // what's really needed here is negative lookahead, but that is not 
                     // supported by cuDF
                     // in this case: $\n would transpile to (?!\r)\n$
-                    throw new RegexUnsupportedException("regex sequence $\\n is not supported", 
+                    throw new RegexUnsupportedException("Regex sequence $\\n is not supported", 
                       part.position)
                   case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
                     r(j) = RegexSequence(
@@ -1242,7 +1242,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                     popBackrefIfNecessary(false)
                   case RegexEscaped(a) if "bB".contains(a) =>
                     throw new RegexUnsupportedException(
-                      "regex sequences with \\b or \\B not supported around $", part.position)
+                      "Regex sequences with \\b or \\B not supported around $", part.position)
                   case _ =>
                     r.append(rewrite(part, replacement, last))
                 }
@@ -1299,7 +1299,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ =>
               val unsupportedTerm = isSupportedRepetitionBase(term)._2.get
               throw new RegexUnsupportedException(
-                s"cuDF does not support reptition of group containing: " +
+                s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
         case (RegexGroup(capture, term), QuantifierVariableLength(n, _))
@@ -1317,7 +1317,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ =>
               val unsupportedTerm = isSupportedRepetitionBase(term)._2.get
               throw new RegexUnsupportedException(
-                s"cuDF does not support reptition of group containing: " +
+                s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
         case (RegexGroup(capture, term), QuantifierFixedLength(n))
@@ -1335,7 +1335,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ =>
               val unsupportedTerm = isSupportedRepetitionBase(term)._2.get
               throw new RegexUnsupportedException(
-                s"cuDF does not support reptition of group containing: " +
+                s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
         case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
@@ -1359,13 +1359,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case _ if isSupportedRepetitionBase(base)._1 =>
           RegexRepetition(rewrite(base, replacement, None), quantifier)
         case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('+')) => 
-          throw new RegexUnsupportedException("possessive quantifier *+ not supported", 
+          throw new RegexUnsupportedException("Possessive quantifier *+ not supported", 
             quantifier.position)
         case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('?')) => 
-          throw new RegexUnsupportedException("lazy quantifier *? not supported", 
+          throw new RegexUnsupportedException("Lazy quantifier *? not supported", 
             quantifier.position)
         case _ =>
-          throw new RegexUnsupportedException("preceding token cannot be quantified", 
+          throw new RegexUnsupportedException("Preceding token cannot be quantified", 
             quantifier.position)
 
       }
@@ -1414,7 +1414,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case RegexSequence(parts) =>
             parts.foreach { part => isBeginOrEndLineAnchor(part) match {
               case true => throw new RegexUnsupportedException(
-                "line and string anchors are not supported in capture groups", part.position)
+                "Line and string anchors are not supported in capture groups", part.position)
               case false =>
             }}
             RegexGroup(capture, rewrite(term, replacement, None))
