@@ -994,7 +994,11 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
 
   /** Any escaped character */
   private def escapedChar: RegexEscaped = {
-    RegexEscaped(char.ch)
+    var ch = '\u0000'
+    do {
+      ch = chars(rr.nextInt(chars.length))
+    } while (skipKnownIssues && "bB".contains(ch))
+    RegexEscaped(ch)
   }
 
   private def lineTerminator: RegexAST = {
@@ -1010,16 +1014,21 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def boundaryMatch: RegexAST = {
-    val generators = Seq[() => RegexAST](
+    val baseGenerators = Seq[() => RegexAST](
       () => RegexChar('^'),
       () => RegexChar('$'),
-      () => RegexEscaped('b'),
-      () => RegexEscaped('B'),
       () => RegexEscaped('A'),
       () => RegexEscaped('G'),
       () => RegexEscaped('Z'),
       () => RegexEscaped('z')
     )
+    val generators = if (skipKnownIssues) {
+      baseGenerators
+    } else {
+      baseGenerators ++ Seq[() => RegexAST](
+        () => RegexEscaped('b'),
+        () => RegexEscaped('B'))
+    }
     generators(rr.nextInt(generators.length))()
   }
 
