@@ -249,4 +249,88 @@ object SQLPlanParser extends Logging {
     maxDuration
   }
 
+  def parseFilterExpressions(exprStr: String): Array[String] = {
+    val result = ArrayBuffer[String]()
+
+    // Filter ((isnotnull(s_state#68) AND (s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))
+    // split on AND/OR/NOT
+    val exprSepAND = if (exprStr.contains("AND")) {
+      exprStr.split(" AND ").map(_.trim)
+    } else {
+      Array(exprStr)
+    }
+    val exprSepOR = if (exprStr.contains(" OR ")) {
+      exprSepAND.flatMap(_.split(" OR ").map(_.trim))
+    } else {
+      exprSepAND
+    }
+
+    val exprSplit = if (exprStr.contains("NOT ")) {
+      result += "Not"
+      exprSepOR.flatMap(_.split("NOT ").map(_.trim))
+    } else {
+      exprSepOR
+    }
+
+    // Remove paranthesis from the beginning and end to get only the expressions
+    val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
+
+    val functionPattern = """(\w+)\(.*\)""".r
+    val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
+
+    paranRemoved.foreach { case expr =>
+      if (expr.contains(" ")) {
+        // likely some conditional expression
+        // TODO - add in arithmetic stuff (- / * )
+        conditionalExprPattern.findFirstMatchIn(expr) match {
+          case Some(func) =>
+            logWarning(s" found expr: $func")
+            if (func.groupCount < 3) {
+              logError(s"found incomplete expression - $func")
+            }
+            val lhs = func.group(1)
+            functionPattern.findFirstMatchIn(lhs) match {
+              case Some(func) =>
+                val func1 = func.group(1)
+                if (!func1.toLowerCase.equals("cast")) { // cast should not be added to the result
+                  result += func1 // add function name to the result
+                }
+              case _ => // IGNORE
+            }
+            val predicate = func.group(2)
+            val rhs = func.group(3)
+            // check for variable
+            if (lhs.contains("#") || rhs.contains("#")) {
+              logWarning(s"expr contains # $lhs or $rhs")
+            }
+            val predStr = predicate match {
+              case "=" => "EqualTo"
+              case "<=>" => "EqualNullSafe"
+              case "<" => "LessThan"
+              case ">" => "GreaterThan"
+              case "<=" => "LessThanOrEqual"
+              case ">=" => "GreaterThanOrEqual"
+            }
+            logWarning(s"predicate string is $predStr")
+            result += predStr
+          // TODO - lookup function name
+          case None => logWarning(s"Incorrect expression - $expr")
+        }
+      } else {
+        // likely some function call
+        functionPattern.findFirstMatchIn(expr) match {
+          case Some(func) =>
+            logWarning(s" found func: $func")
+            if (expr.length != func.group(0).length || func.groupCount == 0) {
+              logError(s"found incomplete expression - $func")
+            }
+            val funcName = func.group(1)
+            result += funcName
+          // TODO - lookup function name
+          case None => logWarning(s"Incorrect expression - $expr")
+        }
+      }
+    }
+    result.toArray
+  }
 }
