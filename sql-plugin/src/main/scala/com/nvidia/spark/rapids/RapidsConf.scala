@@ -724,7 +724,9 @@ object RapidsConf {
       .doc("The maximum number of threads on each executor to use for reading small " +
         "files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with COALESCING and MULTITHREADED readers, see " +
-        "spark.rapids.sql.format.parquet.reader.type for a discussion of reader types.")
+        "spark.rapids.sql.format.parquet.reader.type, " +
+        "spark.rapids.sql.format.orc.reader.type, or " +
+        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types.")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(20)
