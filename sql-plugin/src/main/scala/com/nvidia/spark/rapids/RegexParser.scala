@@ -918,7 +918,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // NOTE: this applies to when using *standard* mode. In multiline mode, all these 
           // conditions will change. Currently Spark does not use multiline mode.
           previous match {
-            case Some(RegexChar('$')) =>
+            case Some(RegexChar('$')) | Some(RegexEscaped('Z')) =>
               // repeating the line anchor in cuDF (for example b$$) causes matches to fail, but in 
               // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
               // an empty RegexAST that outputs to empty string
