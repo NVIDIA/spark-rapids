@@ -16,7 +16,9 @@ The RAPIDS Accelerator for Apache Spark combines the power of the <a href="https
 ## Performance & Cost Benefits
 Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while saving infrastructure costs.
 ![Perf-cost](/docs/img/perf-cost.png)
-*ETL for FannieMae Mortgage Dataset (~200GB) as shown in our [demo](https://databricks.com/session_na20/deep-dive-into-gpu-support-in-apache-spark-3-x). Costs based on Cloud T4 GPU instance market price & V100 GPU price on Databricks Standard edition
+*ETL for FannieMae Mortgage Dataset (~200GB) as shown in our 
+[demo](https://databricks.com/session_na20/deep-dive-into-gpu-support-in-apache-spark-3-x). Costs 
+based on Cloud T4 GPU instance market price.
 
 
 ## Ease of Use
@@ -26,12 +28,20 @@ Run your existing Apache Spark applications with no code change.  Launch Spark w
 
 The following is an example of a physical plan with operators running on the GPU: 
 
-![ease-of-use](/docs/img/ease-of-use.png)
+```
+== Physical Plan ==
+GpuColumnarToRow false
++- GpuProject [cast(c_customer_sk#0 as string) AS c_customer_sk#40]
+   +- GpuFileGpuScan parquet [c_customer_sk#0] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex[file:/tmp/customer], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<c_customer_sk:int>
+```
 
-Learn more on how to [get started](/docs/get-started/getting-started.md).
+Learn more on how to [get started](get-started/getting-started.md).
 
 ## A Unified AI framework for ETL + ML/DL 
 A single pipeline, from ingest to data preparation to model training
 ![spark3cluster](/docs/img/spark3cluster.png)
 
+## Technical Support 
 
+If you need any help or have questions on this product, please contact us : 
+spark-rapids-support@nvidia.com

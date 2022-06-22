@@ -47,7 +47,20 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    (where N is the number of GPUs per node). This will result in failed executors when starting the
    cluster.
 
-5. Databricks makes changes to the runtime without notification.
+5. Parquet rebase mode is set to "LEGACY" by default.
+
+   The following Spark configurations are set to `LEGACY` by default on Databricks:
+   
+   ```
+   spark.sql.legacy.parquet.datetimeRebaseModeInWrite
+   spark.sql.legacy.parquet.int96RebaseModeInWrite
+   ```
+   
+   These settings will cause a CPU fallback for Parquet writes involving dates and timestamps.
+   If you do not need `LEGACY` write semantics, set these configs to `EXCEPTION` which is
+   the default value in Apache Spark 3.0 and higher.
+
+6. Databricks makes changes to the runtime without notification.
 
     Databricks makes changes to existing runtimes, applying patches, without notification.
 	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
@@ -143,11 +156,11 @@ cluster.
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.04.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.06.0.jar:/databricks/spark/python
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
-8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark with RAPIDS and cuDF.
+8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your
