@@ -1089,7 +1089,8 @@ object GpuCast extends Arm {
   def castStringToFloats(
       input: ColumnVector,
       ansiEnabled: Boolean,
-      dType: DType): ColumnVector = {
+      dType: DType,
+      alreadySanitized: Boolean = false): ColumnVector = {
     // 1. identify the nans
     // 2. identify the floats. "null" and letters are not considered floats
     // 3. if ansi is enabled we want to throw an exception if the string is neither float nor nan
@@ -1101,7 +1102,13 @@ object GpuCast extends Arm {
 
     val NAN_REGEX = "^[nN][aA][nN]$"
 
-    withResource(GpuCast.sanitizeStringToFloat(input, ansiEnabled)) { sanitized =>
+    val sanitized = if (alreadySanitized) {
+      input.incRefCount()
+    } else {
+      GpuCast.sanitizeStringToFloat(input, ansiEnabled)
+    }
+
+    withResource(sanitized) { _ =>
       //Now identify the different variations of nans
       withResource(sanitized.matchesRe(NAN_REGEX)) { isNan =>
         // now check if the values are floats
