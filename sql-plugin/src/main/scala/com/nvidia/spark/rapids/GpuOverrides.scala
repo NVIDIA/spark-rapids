@@ -2633,8 +2633,7 @@ object GpuOverrides extends Logging {
                   TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
                     TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
                   TypeSig.MAP.nested(TypeSig.all)),
-                ("key", TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
-                    TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP, TypeSig.all))
+                ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all))
             case _: ArrayType =>
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProject(
