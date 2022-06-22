@@ -33,33 +33,6 @@ import org.apache.spark.util.{SerializableConfiguration, Utils}
  * spark-avro classes because `class not found` exception may throw if spark-avro does not
  * exist at runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
  */
-trait AvroProvider {
-  /** If the file format is supported as an external source */
-  def isSupportedFormat(format: FileFormat): Boolean
-
-  def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean
-
-  def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
-
-  /**
-   * Get a read file format for the input format.
-   * Better to check if the format is supported first by calling 'isSupportedFormat'
-   */
-  def getReadFileFormat(format: FileFormat): FileFormat
-
-  /**
-   * Create a multi-file reader factory for the input format.
-   * Better to check if the format is supported first by calling 'isSupportedFormat'
-   */
-  def createMultiFileReaderFactory(
-      format: FileFormat,
-      broadcastedConf: Broadcast[SerializableConfiguration],
-      pushedFilters: Array[Filter],
-      fileScan: GpuFileSourceScanExec): PartitionReaderFactory
-
-  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-}
-
 object ExternalSource extends Logging {
   val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
   lazy val hasSparkAvroJar = {

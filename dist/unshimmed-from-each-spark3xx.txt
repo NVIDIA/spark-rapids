@@ -1,3 +1,5 @@
 com/nvidia/spark/rapids/*/RapidsShuffleManager*
 org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
 spark-*-info.properties
+com/nvidia/spark/rapids/HiveProvider.class
+com/nvidia/spark/rapids/AvroProvider.class

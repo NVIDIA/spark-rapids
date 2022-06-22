@@ -30,8 +30,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
-import org.apache.spark.sql.hive.rapids.HiveProvider
-import org.apache.spark.sql.rapids.AvroProvider
 import org.apache.spark.util.MutableURLClassLoader
 
 /*
