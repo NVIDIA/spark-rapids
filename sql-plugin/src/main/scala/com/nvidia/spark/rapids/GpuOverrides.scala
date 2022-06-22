@@ -174,7 +174,9 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
         if (sparkSQLFunctions.isDefined) {
           print(s"|${sparkSQLFunctions.get}")
         }
-        print(s"|$desc|${notesMsg.isEmpty}|")
+        val incompatOps = RapidsConf.INCOMPATIBLE_OPS.asInstanceOf[ConfEntryWithDefault[Boolean]]
+        val expressionEnabled = disabledMsg.isEmpty && incompatOps.defaultValue
+        print(s"|$desc|$expressionEnabled|")
         if (notesMsg.isDefined) {
           print(s"${notesMsg.get}")
         } else {
