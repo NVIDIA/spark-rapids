@@ -302,7 +302,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\D\\B", "\\W\\B", "\\D\\b", "\\W\\b", "\\S\\b", "\\S\\B")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode,
-          "word boundaries around \\D, \\S, or \\W are not supported")
+          "Word boundaries around \\D, \\S, or \\W are not supported")
+    )
+  }
+
+  test("word boundaries around negated character class - fall back to CPU") {
+    val patterns = Seq("[^A-Z]\\B", "[^A-Z]\\b")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Word boundaries around negated character classes are not supported")
     )
   }
 
