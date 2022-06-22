@@ -918,9 +918,9 @@ updated in a future release to more closely match Spark.
 
 The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
-distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
-`approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.sql.incompatibleOps.enabled=true`.
+distribution. The results are not bit-for-bit identical with the Apache Spark implementation of
+`approximate_percentile`. This feature is enabled by default and can be disabled by setting
+`spark.rapids.sql.expression.ApproximatePercentile=false`.
 
 ## Conditionals and operations with side effects (ANSI mode)
 

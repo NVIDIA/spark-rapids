@@ -14819,7 +14819,7 @@ are limited.
 <td rowSpan="8">ApproximatePercentile</td>
 <td rowSpan="8">`percentile_approx`, `approx_percentile`</td>
 <td rowSpan="8">Approximate percentile</td>
-<td rowSpan="8">None</td>
+<td rowSpan="8">This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark</td>
 <td rowSpan="4">aggregation</td>
 <td>input</td>
 <td> </td>
