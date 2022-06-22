@@ -87,7 +87,7 @@ object RapidsPluginUtils extends Logging {
         s"support set `${RapidsConf.SQL_ENABLED}` to false.")
 
       if (conf.explain != "NONE") {
-        logWarning(s"spark.rapids.sql.explain is set to `${conf.explain}`. Set 'NONE' to " +
+        logWarning(s"spark.rapids.sql.explain is set to `${conf.explain}`. Set it to 'NONE' to " +
           "suppress the diagnostics logging about the query placement on the GPU.")
       }
 
