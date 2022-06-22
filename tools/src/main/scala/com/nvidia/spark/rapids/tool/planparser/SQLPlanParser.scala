@@ -250,16 +250,18 @@ object SQLPlanParser extends Logging {
     maxDuration
   }
 
-  private def getFunctionName(functionPattern: Regex, expr:String): Option[String] = {
+  private def getFunctionName(functionPattern: Regex, expr: String): Option[String] = {
     val funcName = functionPattern.findFirstMatchIn(expr) match {
       case Some(func) =>
         val func1 = func.group(1)
         // `cast` is not an expression hence should be ignored. In the physical plan cast is
         // usually presented as function call for example: `cast(value#9 as date)`. We add
         // other function names to the result.
-          if (!func1.equalsIgnoreCase("cast")) {
-            Some(func1)
-        } else None
+        if (!func1.equalsIgnoreCase("cast")) {
+          Some(func1)
+        } else {
+          None
+        }
       case _ => logDebug(s"Incorrect expression - $expr")
                 None
     }
