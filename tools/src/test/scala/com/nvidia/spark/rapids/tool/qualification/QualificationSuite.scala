@@ -111,12 +111,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
-    appSums.map { sum =>
-      TestQualificationSummary(sum.appName, sum.appId, sum.estimatedInfo.recommendation,
-        sum.estimatedInfo.estimatedGpuSpeedup, sum.estimatedInfo.estimatedGpuDur,
-        sum.estimatedInfo.estimatedGpuTimeSaved, sum.estimatedInfo.sqlDfDuration,
-        sum.sqlDataframeTaskDuration, sum.estimatedInfo.appDur,
-        sum.estimatedInfo.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
+    appSums.map { appInfoRec =>
+      val sum = QualOutputWriter.createFormattedQualSummaryInfo(appInfoRec, ",")
+      TestQualificationSummary(sum.appName, sum.appId, sum.recommendation,
+        sum.estimatedGpuSpeedup, sum.estimatedGpuDur,
+        sum.estimatedGpuTimeSaved, sum.sqlDataframeDuration,
+        sum.sqlDataframeTaskDuration, sum.appDuration,
+        sum.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
         sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
         sum.complexTypes, sum.nestedComplexTypes, sum.potentialProblems, sum.longestSqlDuration,
         sum.nonSqlTaskDurationAndOverhead,
@@ -471,8 +472,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
-      assert(actualResult._1.equals(expectedResult(index)._1))
-      assert(actualResult._2.equals(expectedResult(index)._2))
+      assert(ToolUtils.formatComplexTypes(actualResult._1).equals(expectedResult(index)._1))
+      assert(ToolUtils.formatComplexTypes(actualResult._2).equals(expectedResult(index)._2))
       index += 1
     }
   }
@@ -673,19 +674,22 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(csvDetailedHeader(ind).equals(headersDetailed(ind)))
     }
     // check that recommendation field is relevant to GPU Speed-up
+    // Note that range-check does not apply for NOT-APPLICABLE
     val estimatedFieldsIndStart = 2
-    if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+    assert(valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0)
+    if (!valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE)) {
+      if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
         QualificationAppInfo.LOWER_BOUND_STRONGLY_RECOMMENDED) {
-      assert(
-        valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
-    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        assert(
+          valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
+      } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
         QualificationAppInfo.LOWER_BOUND_RECOMMENDED) {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
-    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0) {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
-    } else {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE))
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
+      } else {
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
+      }
     }
+
     // check numeric fields skipping "Estimated Speed-up" on purpose
     for (ind <- estimatedFieldsIndStart + 2  until csvDetailedFields.size) {
       if (csvDetailedFields(ind)._1.equals(DoubleType)

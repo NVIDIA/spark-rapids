@@ -407,6 +407,14 @@ class RegexParser(pattern: String) {
           case 'p' =>
             consumeExpected(ch)
             parsePredefinedClass
+          case 'a' =>
+            // alert (bell) character \a
+            consumeExpected(ch)
+            RegexChar('\u0007')
+          case 'e' =>
+            // escape character \e
+            consumeExpected(ch)
+            RegexChar('\u001b')
           case other =>
             throw new RegexUnsupportedException(
               s"invalid or unsupported escape character '$other'", Some(pos - 1))
@@ -593,7 +601,7 @@ class RegexParser(pattern: String) {
 }
 
 object RegexParser {
-  private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\f')
+  private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\u0007', '\u001b', '\f')
 
   def isRegExpString(s: String): Boolean = {
 

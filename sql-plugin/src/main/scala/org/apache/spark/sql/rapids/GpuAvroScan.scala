@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
-import java.util.concurrent.{Callable, ThreadPoolExecutor}
+import java.util.concurrent.Callable
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
@@ -199,7 +199,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
-  private val numThreads = rapidsConf.avroMultiThreadReadNumThreads
+  private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
@@ -639,9 +639,6 @@ class GpuMultiFileCloudAvroPartitionReader(
       throw new RuntimeException(s"Unknown avro buffer type: ${t.getClass.getSimpleName}")
   }
 
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
-    AvroMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-
   override final def getFileFormatShortName: String = "AVRO"
 
   override def getBatchRunner(
@@ -880,9 +877,6 @@ class GpuMultiFileAvroPartitionReader(
     sendToGpuUnchecked(dataBuffer, dataSize, splits)
   }
 
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
-    AvroMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-
   override final def getFileFormatShortName: String = "AVRO"
 
   override def getBatchRunner(
@@ -944,9 +938,6 @@ class GpuMultiFileAvroPartitionReader(
     in.asInstanceOf[AvroBatchContext]
 
 }
-
-/** Singleton threadpool that is used across all the tasks. */
-object AvroMultiFileThreadPool extends MultiFileReaderThreadPool
 
 /** A tool to filter Avro blocks */
 case class AvroFileFilterHandler(

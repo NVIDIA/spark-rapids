@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-06-14
+Generated on 2022-06-17
 
 ## Release 22.06
 
@@ -143,6 +143,11 @@ Generated on 2022-06-14
 ### PRs
 |||
 |:---|:---|
+|[#5861](https://github.com/NVIDIA/spark-rapids/pull/5861)|[Doc]Add Spark3.3 support in doc for 22.06 branch[skip ci]|
+|[#5851](https://github.com/NVIDIA/spark-rapids/pull/5851)|Update 22.06 changelog to include new commits [skip ci]|
+|[#5848](https://github.com/NVIDIA/spark-rapids/pull/5848)|Update spark330shim to use released lib|
+|[#5840](https://github.com/NVIDIA/spark-rapids/pull/5840)|[DOC] Updated RapidsConf to reflect the default value of `spark.rapids.sql.improvedFloatOps.enabled` [skip ci]|
+|[#5816](https://github.com/NVIDIA/spark-rapids/pull/5816)|Update 22.06.0 changelog to latest [skip ci]|
 |[#5795](https://github.com/NVIDIA/spark-rapids/pull/5795)|Update FAQ to include local jar deployment via extraClassPath [skip ci]|
 |[#5802](https://github.com/NVIDIA/spark-rapids/pull/5802)|Update spark-rapids-jni.version to release 22.06.0|
 |[#5798](https://github.com/NVIDIA/spark-rapids/pull/5798)|Fall back to CPU for RoundCeil and RoundFloor expressions|

@@ -472,8 +472,8 @@ The HTML report is disabled by passing `--no-html-report` as described in the
 [Qualification tool options](#Qualification-tool-options) section above.  
 To browse the content of the html report:
 
-1. For HDFS or remote node, copy the directory of `${OUTPUT_FOLDER}/ui` to your local node.
-2. Open `ui/index.html` in your local machine's web-browser (Chrome/Firefox are recommended).
+1. For HDFS or remote node, copy the directory of `${OUTPUT_FOLDER}/rapids_4_spark_qualification_output/ui` to your local node.
+2. Open `rapids_4_spark_qualification_output/ui/index.html` in your local machine's web-browser (Chrome/Firefox are recommended).
 
 The HTML view renders the detailed information into tables that allow following features:
 

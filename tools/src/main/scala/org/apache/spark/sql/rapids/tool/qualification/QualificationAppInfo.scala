@@ -154,10 +154,10 @@ class QualificationAppInfo(
     res
   }
 
-  private def getAllReadFileFormats: String = {
+  private def getAllReadFileFormats: Seq[String] = {
     dataSourceInfo.map { ds =>
       s"${ds.format.toLowerCase()}[${ds.schema}]"
-    }.mkString(":")
+    }
   }
 
   private def checkUnsupportedReadFormats(): Unit = {
@@ -331,7 +331,7 @@ class QualificationAppInfo(
       // TODO - what about incomplete, do we want to change those?
       val sqlIdsWithFailures = sqlIDtoFailures.filter { case (_, v) =>
         v.size > 0
-      }.keys.mkString(",")
+      }.keys.map(_.toString).toSeq
 
       // a bit odd but force filling in notSupportFormatAndTypes
       // TODO - make this better
@@ -339,7 +339,7 @@ class QualificationAppInfo(
       val notSupportFormatAndTypesString = notSupportFormatAndTypes.map { case (format, types) =>
         val typeString = types.mkString(":").replace(",", ":")
         s"${format}[$typeString]"
-      }.mkString(";")
+      }.toSeq
       val writeFormat = writeFormatNotSupported(writeDataFormat)
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
@@ -421,10 +421,10 @@ class QualificationAppInfo(
     }
   }
 
-  private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
+  private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): Seq[String] = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.isWriteFormatsupported(writeFormat)
-    unSupportedWriteFormat.distinct.mkString(";").toUpperCase
+    unSupportedWriteFormat.distinct
   }
 }
 
@@ -476,15 +476,15 @@ case class QualSQLExecutionInfo(
 case class QualificationSummaryInfo(
     appName: String,
     appId: String,
-    potentialProblems: String,
+    potentialProblems: Seq[String],
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
-    failedSQLIds: String,
-    readFileFormatAndTypesNotSupported: String,
-    readFileFormats: String,
-    writeDataFormat: String,
-    complexTypes: String,
-    nestedComplexTypes: String,
+    failedSQLIds: Seq[String],
+    readFileFormatAndTypesNotSupported: Seq[String],
+    readFileFormats: Seq[String],
+    writeDataFormat: Seq[String],
+    complexTypes: Seq[String],
+    nestedComplexTypes: Seq[String],
     longestSqlDuration: Long,
     sqlDataframeTaskDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
@@ -541,8 +541,7 @@ object QualificationAppInfo extends Logging {
     val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
     val estimated_gpu_duration =
       (speedupOpportunityWallClock / speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-    // force GPU speedup to be -1.0 if the application is not applicable
-    val estimated_gpu_speedup = if (hasFailures) -1.0 else appDuration / estimated_gpu_duration
+    val estimated_gpu_speedup = appDuration / estimated_gpu_duration
     val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
     val recommendation = getRecommendation(estimated_gpu_speedup, hasFailures)
 
@@ -552,9 +551,9 @@ object QualificationAppInfo extends Logging {
     EstimatedSummaryInfo(appName, appId, appDuration,
       sqlDataFrameDurationToUse,
       speedupOpportunityWallClock.toLong,
-      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_duration),
-      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_speedup),
-      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_timesaved),
+      estimated_gpu_duration,
+      estimated_gpu_speedup,
+      estimated_gpu_timesaved,
       recommendation)
   }
 

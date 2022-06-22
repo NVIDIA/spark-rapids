@@ -54,7 +54,8 @@ object GpuAnsi extends Arm {
   def assertMinValueOverflow(minVal: Scalar, cv: GpuColumnVector, op: String): Unit = {
     withResource(cv.getBase.equalToNullAware(minVal)) { isMinVal =>
       if (BoolUtils.isAnyValidTrue(isMinVal)) {
-        throw new ArithmeticException(s"One or more rows overflow for $op operation.")
+        throw RapidsErrorUtils.arithmeticOverflowError(
+          s"One or more rows overflow for $op operation")
       }
     }
   }

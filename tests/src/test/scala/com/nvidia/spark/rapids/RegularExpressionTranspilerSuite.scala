@@ -205,8 +205,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("compare CPU and GPU: character range with escaped characters") {
-    val inputs = Seq("", "abc", "\r\n", "a[b\t\n \rc]d", "[\r+\n-\t[]")
-    assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]"), 
+    val inputs = Seq("", "abc", "\r\n", "12\u001b3", "a[b\t\n \rc]d", "[\r+\n-\t[]")
+    assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]", raw"[\a-\e]"), 
       inputs)
     assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"), 
       inputs)
