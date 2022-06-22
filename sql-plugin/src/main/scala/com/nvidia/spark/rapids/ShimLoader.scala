@@ -450,10 +450,7 @@ object ShimLoader extends Logging {
     newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
   }
 
-  /**
-   * Singleton Avro Provider
-   */
-  lazy val avroProvider: AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
+  def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
     "org.apache.spark.sql.rapids.AvroProviderImpl")
 
 }

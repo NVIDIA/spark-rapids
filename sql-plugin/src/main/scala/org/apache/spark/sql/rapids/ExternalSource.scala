@@ -49,22 +49,24 @@ object ExternalSource extends Logging {
     }
   }
 
+  lazy val avroProvider = ShimLoader.newAvroProvider
+
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {
     if (hasSparkAvroJar) {
-      ShimLoader.avroProvider.isSupportedFormat(format)
+      avroProvider.isSupportedFormat(format)
     } else false
   }
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
     if (hasSparkAvroJar) {
-      ShimLoader.avroProvider.isPerFileReadEnabledForFormat(format, conf)
+      avroProvider.isPerFileReadEnabledForFormat(format, conf)
     } else false
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     if (hasSparkAvroJar) {
-      ShimLoader.avroProvider.tagSupportForGpuFileSourceScan(meta)
+      avroProvider.tagSupportForGpuFileSourceScan(meta)
     }
   }
 
@@ -74,7 +76,7 @@ object ExternalSource extends Logging {
    */
   def getReadFileFormat(format: FileFormat): FileFormat = {
     if (hasSparkAvroJar) {
-      ShimLoader.avroProvider.getReadFileFormat(format)
+      avroProvider.getReadFileFormat(format)
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }
@@ -90,7 +92,7 @@ object ExternalSource extends Logging {
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
     if (hasSparkAvroJar) {
-      ShimLoader.avroProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
+      avroProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
         fileScan)
     } else {
       throw new RuntimeException(s"File format $format is not supported yet")
@@ -99,7 +101,7 @@ object ExternalSource extends Logging {
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     if (hasSparkAvroJar) {
-      ShimLoader.avroProvider.getScans
+      avroProvider.getScans
     } else Map.empty
   }
 
