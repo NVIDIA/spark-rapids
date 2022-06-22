@@ -220,7 +220,21 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
           }
         }
       case _: MapType =>
-        (_, _) => throw new UnsupportedOperationException("non-literal key is not supported")
+        (map, indices) => {
+          if (failOnError) {
+            withResource(map.getMapKeyExistence(indices)) { keyExists =>
+              withResource(keyExists.all()) { exist =>
+                if (!exist.isValid && exist.getBoolean) {
+                  map.getMapValue(indices)
+                } else {
+                  throw new NoSuchElementException("One of the keys doesn't exist")
+                }
+              }
+            }
+          } else {
+            map.getMapValue(indices)
+          }
+        }
     }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =

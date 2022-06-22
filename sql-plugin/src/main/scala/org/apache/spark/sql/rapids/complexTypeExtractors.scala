@@ -209,7 +209,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    if (failOnError){
+    if (failOnError) {
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.isValid && !exist.getBoolean) {
@@ -230,8 +230,24 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("Map lookup keys must be scalar values")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("Map lookup keys must be scalar values")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val map = lhs.getBase
+    val indices = rhs.getBase
+    if (failOnError) {
+      withResource(map.getMapKeyExistence(indices)) { keyExists =>
+        withResource(keyExists.all()) { exist =>
+          if (!exist.isValid && exist.getBoolean) {
+            map.getMapValue(indices)
+          } else {
+            throw new NoSuchElementException("One of the keys doesn't exist")
+          }
+        }
+      }
+    } else {
+      map.getMapValue(indices)
+    }
+  }
+
 
   override def left: Expression = child
 
