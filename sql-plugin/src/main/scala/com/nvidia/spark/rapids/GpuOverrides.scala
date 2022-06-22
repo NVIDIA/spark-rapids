@@ -3105,7 +3105,8 @@ object GpuOverrides extends Logging {
       "Returns the union of all the given maps",
       // Currently, GpuMapConcat supports nested values but not nested keys.
       // We will add the nested key support after
-      // https://github.com/rapidsai/cudf/pull/9452 is merged.
+      // cuDF can fully support nested types in lists::drop_list_duplicates.
+      // Issue link: https://github.com/rapidsai/cudf/issues/11093
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
