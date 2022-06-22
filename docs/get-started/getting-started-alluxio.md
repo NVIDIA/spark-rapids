@@ -221,7 +221,7 @@ NM_hostname_2
 
    - Verify Alluxio
 
-      To verify that Alluxio is running, visit [http://RM_hostname:19999](http://RM_hostname:19999)
+      To verify that Alluxio is running, visit http://RM_hostname:19999
       to see the status page of the Alluxio master.
 
 4. Mount an existing data storage to Alluxio
