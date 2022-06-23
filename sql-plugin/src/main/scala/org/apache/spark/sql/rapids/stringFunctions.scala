@@ -1224,6 +1224,9 @@ class GpuRegExpExtractAllMeta(
         if (idx < 0) {
           willNotWorkOnGpu("the specified group index cannot be less than zero")
         }
+        if(idx > 0) {
+          willNotWorkOnGpu("regexp_extract_all only supports group index of 0")
+        }
         if (idx > numGroups) {
           willNotWorkOnGpu(
             s"regex group count is $numGroups, but the specified group index is $idx")
@@ -1261,13 +1264,16 @@ case class GpuRegExpExtractAll(
       str: GpuColumnVector,
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
-
-    withResource(str.getBase.extractAllRe(cudfRegexPattern)) { extract =>
-      withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
-        isNull.ifElse(nullString, _)
+    
+    if (idx == 0) {
+      str.getBase.findAll(cudfRegexPattern, false)
+    } else {
+      withResource(str.getBase.extractAllRe(cudfRegexPattern)) { extract =>
+        withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
+          isNull.ifElse(nullString, _)
+        }
       }
-  }
-
+    }
 }
 
 class SubstringIndexMeta(
