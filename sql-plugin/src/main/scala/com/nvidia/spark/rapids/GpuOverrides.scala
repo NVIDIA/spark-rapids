@@ -4137,13 +4137,6 @@ object GpuOverrides extends Logging {
   }
 
   /**
-   * To judge whether "spark.rapids.sql.explain" is explicitly set by the users.
-   */
-  private def isSQLExplainExplicitlySet(conf: RapidsConf) : Boolean = {
-    conf.shouldExplain && conf.rapidsConfMap.containsKey(RapidsConf.EXPLAIN.key)
-  }
-
-  /**
    * Use explain mode on an active SQL plan as its processed through catalyst.
    * This path is the same as being run through the plugin running on hosts with
    * GPUs.
@@ -4152,7 +4145,7 @@ object GpuOverrides extends Logging {
     // Since we set "NOT_ON_GPU" as the default value of spark.rapids.sql.explain, here we keep
     // "ALL" as default value of "explainSetting", unless spark.rapids.sql.explain is changed
     // by the user.
-    val explainSetting = if (isSQLExplainExplicitlySet(conf)) {
+    val explainSetting = if (conf.isConfExplicitlySet(RapidsConf.EXPLAIN.key)) {
       conf.explain
     } else {
       "ALL"

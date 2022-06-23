@@ -1965,4 +1965,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     // user-provided value takes precedence, then look in defaults map
     conf.get(key).orElse(optimizerDefaults.get(key)).map(toDouble(_, key))
   }
+
+  /**
+   * To judge whether "key" is explicitly set by the users.
+   */
+  def isConfExplicitlySet(key: String): Boolean = {
+    shouldExplain && conf.contains(key)
+  }
 }
