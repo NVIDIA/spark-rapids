@@ -119,7 +119,7 @@ show_help()
    log_msg "  --help|-h                     - Shows Help."
    log_msg
    log_info "Example Usage:"
-   log_msg "  run-qualification-tests.sh --cp=\$CLASS_PATH --heap=5g"
+   log_msg "  generate-qualification-test-results.sh --cp=\$CLASS_PATH --heap=5g"
    log_msg "  This is equivalent to:"
    log_msg "    java -Xmx5g \\"
    log_msg "         -cp rapids-4-spark-tools_2.12-<version>-SNAPSHOT.jar:\$CLASS_PATH \\"
@@ -148,11 +148,13 @@ log_result()
   log_msg "${GREEN}$*"
 }
 
-log_info() {
+log_info()
+{
   log_msg "${YELLOW}$*"
 }
 
-log_debug() {
+log_debug()
+{
   if [ "${verbose_level}" -ne "0" ]; then
     echo -e "$* $ENDCOLOR"
   fi
@@ -256,7 +258,7 @@ initialize()
   set_script_output
   set_rapids_tools_classpath
 
-  print_banner "\t\t\tRun Qualifications Tool Tests"
+  print_banner "\t\t\tGenerate Qualification Test Results"
   log_info "Qualification Expectations Path : ${QUAL_REF_DIR}"
   log_info "Qualification Events Path       : ${QUAL_LOG_DIR}"
   log_info "Profiling Events Path           : ${PROF_LOG_DIR}"
