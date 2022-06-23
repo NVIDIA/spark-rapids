@@ -62,7 +62,7 @@ def test_map_entries(data_gen):
                 'map_entries(a)'))
 
 
-def get_map_value_gens():
+def get_map_value_gens(precision=18, scale=0):
     def simple_struct_value_gen():
         return StructGen([["child", IntegerGen()]])
 
@@ -75,8 +75,11 @@ def get_map_value_gens():
     def array_value_gen():
         return ArrayGen(IntegerGen(), max_length=6)
 
+    def decimal_value_gen():
+        return DecimalGen(precision, scale)
+
     return [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-            StringGen, DateGen, TimestampGen, DecimalGen,
+            StringGen, DateGen, TimestampGen, decimal_value_gen,
             simple_struct_value_gen, nested_struct_value_gen, nested_map_value_gen, array_value_gen]
 
 
@@ -340,7 +343,7 @@ def test_element_at_map_numeric_keys(data_gen):
 
 @pytest.mark.parametrize('data_gen',
                          [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
-                          for value in get_map_value_gens()],
+                          for value in get_map_value_gens(precision=37, scale=0)],
                          ids=idfn)
 def test_element_at_map_string_col_keys(data_gen):
     keys = StringGen(pattern='key_[0-9]')
