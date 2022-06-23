@@ -46,7 +46,8 @@ qual_expectations_dir=""
 
 failed_tests=0
 executed_tests=0
-
+force_overwrite=0
+verbose_level=0
 
 heap_size=$JVM_DEFAULT_HEAP_SIZE
 declare -A qualification_path_map
@@ -56,6 +57,7 @@ show_help()
    # Display Help
    log_msg
    log_msg "Run the Qualification tool to generate CSV files to update/replace Qualification expectations set."
+   log_msg
    log_msg "The script requires the following:"
    log_msg "  1- A static var \$qualification_path_map <string, array<string>> that maps between"
    log_msg "     unit-test name and the array of event logs to be processed for the test. This map"
@@ -76,9 +78,12 @@ show_help()
    log_msg "  3- Logs the result of \"diff\" between the two CSV files"
    log_msg "     diff \${qual_expectations_dir}/\$K.csv \${out-dir}/qualification-output/csv/\$K.csv"
    log_msg
-   log_msg "Finally, the script logs the result of \"diff\" for two directories:"
+   log_msg "Finally, the script executes one more check to verify that no files are missing. This case"
+   log_msg "happens when \$qualification_path_map is missing a key. The script logs the result of"
+   log_msg "\"diff\" between the two directories:"
    log_msg "     diff \${qual_expectations_dir}/ \${out-dir}/qualification-output/csv/"
-   log_msg "The script returns a non-zero value if the two folders do not match."
+   log_msg
+   log_msg "The script succeeds if all files match. Otherwise, it returns a non-zero value."
    log_msg
    log_msg "Please make sure to update the CSV files for the failing unit tests."
    log_msg
@@ -98,16 +103,19 @@ show_help()
    log_msg "                                  target directory of tools."
    log_msg "  --qual-expectations-dir=<arg> - Path of the reference CSV files."
    log_msg "                                  By default is is set to test/resources/QualificationExpectations"
-   log_msg "  --qual-events-dir=<arg>       - By default, the scripts looks for log files inside the following two"
+   log_msg "  --qual-events-dir=<arg>       - The path of the directory containing the Spark events logs used as input"
+   log_msg "                                  for the Qualification tests."
+   log_msg "                                  By default, the script looks for log files inside the following two"
    log_msg "                                  directories:"
-   log_msg "                                      - test/resources/spark-events-qualification; and"
-   log_msg "                                      - test/resources/spark-events-profiling"
-   log_msg "                                  When this argument is set in the CLI, it is the directory path of the Spark"
-   log_msg "                                  events logs used as input for the unit tests. So, the user needs to make"
-   log_msg "                                  sure that this directory has all the log files needed by the unit tests."
-   log_msg "  --prof-log-dir=<arg>          - Some the unit tests reads files located in another directory."
-   log_msg "                                  By default is is set to test/resources/spark-events-profiling"
-   log_msg "  --heap=<arg>                  - optional heap size. Default is 10g."
+   log_msg "                                      - tools/test/resources/spark-events-qualification; and"
+   log_msg "                                      - tools/test/resources/spark-events-profiling"
+   log_msg "                                  When this argument is set by the CLI, the user needs to make"
+   log_msg "                                  sure that the directory contains all the log files needed by the unit tests."
+   log_msg "  --heap=<arg>                  - Optional heap size. Default is 10g."
+   log_msg "  --force|-f                    - Overwrites the output if directory exists."
+   log_msg "                                  By default, the flag is disabled and the script fails if output directory"
+   log_msg "                                  \${out-dir/qualification-output} exists."
+   log_msg "  --verbose|-v                  - Enables debug messages. Default is disabled."
    log_msg "  --help|-h                     - Shows Help."
    log_msg
    log_info "Example Usage:"
@@ -132,7 +140,7 @@ show_help()
 
 log_error()
 {
-  log_msg "${RED}$*"
+  log_msg "${RED}$*" >&2
 }
 
 log_result()
@@ -144,6 +152,12 @@ log_info() {
   log_msg "${YELLOW}$*"
 }
 
+log_debug() {
+  if [ "${verbose_level}" -ne "0" ]; then
+    echo -e "$* $ENDCOLOR"
+  fi
+}
+
 log_msg()
 {
   echo -e "$* $ENDCOLOR"
@@ -151,9 +165,9 @@ log_msg()
 
 print_banner()
 {
-  printf '%80s\n' | tr ' ' -
+  printf '%100s\n' | tr ' ' -
   log_info "$*"
-  printf '%80s\n' | tr ' ' -
+  printf '%100s\n' | tr ' ' -
 }
 
 set_rapids_jars_from_work_dir()
@@ -166,32 +180,32 @@ set_rapids_jars_from_work_dir()
 set_rapids_jar_home()
 {
   if [ "${rapids_jar_home}" ]; then
-    log_msg "RAPIDS_JARS are passed through the arguments: ${rapids_jar_home}/*"
+    log_debug "RAPIDS_JARS are passed through the arguments: ${rapids_jar_home}/*"
   else
     set_rapids_jars_from_work_dir
-    log_msg "RAPIDS_JARS are pulled from : ${rapids_jar_home}/*"
+    log_debug "RAPIDS_JARS are pulled from : ${rapids_jar_home}/*"
   fi
 }
 
 set_rapids_tools_classpath()
 {
   tools_cp="${rapids_jar_home}/*"
-  log_msg "tools_cp:\n ${tools_cp}"
+  log_debug "tools_cp:\n\t${tools_cp}"
   # check that the java class path is set correctly
   if [ "$java_cp" ]; then
     RAPIDS_CLASS_PATH="${tools_cp}:${java_cp}"
   else
-    log_msg "The run did not define CP Dependencies"
+    log_debug "The run did not define CP Dependencies"
     RAPIDS_CLASS_PATH="${tools_cp}"
   fi
 
-  log_msg "RAPIDS CLASS_PATH is:\n ${RAPIDS_CLASS_PATH}"
+  log_debug "RAPIDS CLASS_PATH is:\n\t${RAPIDS_CLASS_PATH}"
 }
 
 set_script_output()
 {
   if [ "${script_out_dir}" ]; then
-    log_msg "Script output is set through the arguments: ${script_out_dir}"
+    log_debug "Script output is set through the arguments: ${script_out_dir}"
     # reset default values
     # Note that it is safer to use the output-directory as a parent. This avoids the mistake of
     # deleting user's data if the directory has other subdirectories.
@@ -199,12 +213,16 @@ set_script_output()
     CSV_OUT_DIR="${BATCH_OUT_DIR}/csv"
     RUNS_OUT_DIR="${BATCH_OUT_DIR}/runs-output"
   else
-    log_msg "Script output is set as default: ${BATCH_OUT_DIR}"
+    log_debug "Script output is set as default: ${BATCH_OUT_DIR}"
   fi
 
   # cleanup output folder before running tests
   if [ -d "$BATCH_OUT_DIR" ]; then
-    log_info "Output folder already exists...removing it"
+    ## folder already exists. check to overwrite it
+    if [ "$force_overwrite" -eq "0" ]; then
+      bail "Error: Output directory ${BATCH_OUT_DIR} exists.\n\tUse another directory or add \"--force\" argument to overwrite."
+    fi
+    log_info "Output folder already exists...Overwriting it"
     rm -r "$BATCH_OUT_DIR"
   fi
 }
@@ -245,7 +263,9 @@ initialize()
   log_info "Output Directory                : ${BATCH_OUT_DIR}"
   log_info "Heap Size                       : ${heap_size}"
   log_info "RAPIDS Jars Home                : ${rapids_jar_home}"
-  log_info "Classpath                       : ${java_cp}"
+  log_info "Force Overwrite                 : ${force_overwrite}"
+  log_info "Verbose                         : ${verbose_level}"
+  log_info "Classpath                       : ${java_cp:0:180}..."
 }
 
 define_qualification_tests_map()
@@ -285,7 +305,7 @@ process_qualification_output()
     mkdir -p "${CSV_OUT_DIR}"
     output_file="$qual_out_dir/rapids_4_spark_qualification_output.csv"
     csv_output_file="${CSV_OUT_DIR}/${2}.csv"
-    log_info "Start copying Output of ${2}"
+    log_info "Start copying output of ${2}"
     cp "$output_file" "$csv_output_file"
     log_info "\tSource: $output_file \n\tDestination: $csv_output_file"
 
@@ -304,8 +324,8 @@ compare_pair_files()
     log_error "Error: The two files are not identical\n\tGenerated file:$cand_file\n\tReference file:$ref_file";
     (( failed_tests++ ))
   else
-    log_result "Run Succeeded"
     log_result "\tGenerated file:$cand_file\n\tReference file:$ref_file"
+    log_result "Run Succeeded"
   fi
 }
 
@@ -361,6 +381,7 @@ run_qualification_tool()
     else
       # we do not need to exit immediately because the two directories are compared any way
       # at the end of the script
+      (( failed_tests++ ))
       log_error "FAIL: Running Qualification tool ${key}"
     fi
   done
@@ -368,7 +389,9 @@ run_qualification_tool()
 
 bail()
 {
-    printf '%s\n' "$1" >&2
+    #printf '%s\n' "$1" >&2
+    log_error "$1"
+    log_msg
     show_help
     exit 1
 }
@@ -402,8 +425,11 @@ while :; do
         --cp=?*)
             java_cp=${1#*=} # Delete everything up to "=" and assign the remainder.
             ;;
+        -f|--force)
+            force_overwrite=1
+            ;;
         -v|--verbose)
-            verbose=$((verbose + 1))  # Each -v adds 1 to verbosity.
+            verbose_level=1
             ;;
         --)              # End of all options.
             shift
