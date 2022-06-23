@@ -3,4 +3,3 @@ com/nvidia/spark/rapids/AvroProvider.class
 com/nvidia/spark/rapids/HiveProvider.class
 org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
 spark-*-info.properties
-
