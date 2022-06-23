@@ -1035,9 +1035,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
           throw new RegexUnsupportedException("word boundaries are not supported in split mode")
         case 'b' | 'B' =>
           previous match {
-            case Some(RegexEscaped(ch)) if "DWS".contains(ch) =>
+            case Some(RegexEscaped(ch)) if "DWSHV".contains(ch) =>
               throw new RegexUnsupportedException(
-                  "Word boundaries around \\D, \\S, or \\W are not supported")
+                  "Word boundaries around \\D, \\S,\\W, \\H, or \\V are not supported")
             case Some(RegexCharacterClass(negated, _)) if negated =>
               throw new RegexUnsupportedException(
                   "Word boundaries around negated character classes are not supported")
