@@ -36,7 +36,7 @@ After the command line environment is setup, log in to your GCP account.  You ca
 Dataproc cluster. Dataproc supports multiple different GPU types depending on your use case.
 Generally, T4 is a good option for use with the RAPIDS Accelerator for Spark. We do also support
 MIG on the Ampere architecture GPUs like the A100. Using
-[MIG]((https://docs.nvidia.com/datacenter/tesla/mig-user-guide/) you could request an A100 and
+[MIG](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/) you could request an A100 and
 split it up into multiple different compute instances and it runs like you have multiple
 separate GPUs.
 
