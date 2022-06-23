@@ -1970,6 +1970,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * To judge whether "key" is explicitly set by the users.
    */
   def isConfExplicitlySet(key: String): Boolean = {
-    shouldExplain && conf.contains(key)
+    conf.contains(key)
   }
 }
