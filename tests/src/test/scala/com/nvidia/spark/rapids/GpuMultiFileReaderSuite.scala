@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{Callable, ThreadPoolExecutor}
+import java.util.concurrent.Callable
 
 import ai.rapids.cudf.HostMemoryBuffer
 import org.apache.hadoop.conf.Configuration
@@ -56,9 +56,6 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
           filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
         () => null
       }
-
-      override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
-        MultiFileThreadPoolUtil.createThreadPool("testpool")
 
       override def readBatch(h: HostMemoryBuffersWithMetaDataBase): Option[ColumnarBatch] = None
 

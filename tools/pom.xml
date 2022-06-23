@@ -22,17 +22,17 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.06.0-SNAPSHOT</version>
+        <version>22.08.0-SNAPSHOT</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tools_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark tools</name>
     <description>RAPIDS Accelerator for Apache Spark tools</description>
-    <version>22.06.0-SNAPSHOT</version>
+    <version>22.08.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <properties>
-        <hadoop.version>3.1.4</hadoop.version>
+        <hadoop.version>3.3.3</hadoop.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
         <spark.version.classifier>spark311</spark.version.classifier>

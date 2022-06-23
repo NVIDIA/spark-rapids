@@ -7,7 +7,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of 
-Apache Spark such as 3.1.x, 3.2.x, and a number of vendor releases that contain
+Apache Spark such as 3.1.x, 3.2.x, 3.3.0 and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally 
 incompatible between each other, at both source code level and even more often 
 at the binary level. The role of the Shim layer is to hide these issues from the 
@@ -62,16 +62,16 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 
 Spark 3.0.2's URLs:
 ```
-jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :    
 ```
-jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes

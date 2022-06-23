@@ -16,9 +16,9 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import incompat, allow_non_gpu
+from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_spark_session, is_before_spark_330
+from spark_session import with_cpu_session, with_spark_session, is_before_spark_330
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -328,6 +328,12 @@ def test_gettimestamp(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
+
+@pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
+def test_gettimestamp_format_MMyyyy(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "MMyyyy")))
+
 def test_gettimestamp_ansi_exception():
     assert_gpu_and_cpu_error(
         lambda spark : invalid_date_string_df(spark).select(f.to_date(f.col("a"), "yyyy-MM-dd")).collect(),
@@ -374,3 +380,24 @@ def test_date_format_maybe_incompat(data_gen, date_format):
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
+
+# Reproduce conditions for https://github.com/NVIDIA/spark-rapids/issues/5670
+# where we had a failure due to GpuCast canonicalization with timezone.
+# In this case it was doing filter after project, the way I get that to happen is by adding in the
+# input_file_name(), otherwise filter happens before project.
+@allow_non_gpu('CollectLimitExec,FileSourceScanExec,DeserializeToObjectExec')
+@ignore_order()
+def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
+    data_path = spark_tmp_path + '/CSV_DATA'
+    gen = StringGen(pattern='[0][0-9][1][8-9][1-9][1-9]', nullable=False)
+    schema = gen.data_type
+    with_cpu_session(lambda spark : gen_df(spark, gen, length=100).write.csv(data_path))
+    def do_join_cast(spark):
+        left = spark.read.csv(data_path)\
+            .selectExpr("date_format(to_date(_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")
+        right = spark.read.csv(data_path).withColumnRenamed("_c0", "r_c0")\
+            .selectExpr("date_format(to_date(r_c0, 'MMyyyy'), 'MM/dd/yyyy') as monthly_reporting_period", "substring_index(substring_index(input_file_name(),'/',-1),'.',1) as filename")\
+            .withColumnRenamed("monthly_reporting_period", "r_monthly_reporting_period")\
+            .withColumnRenamed("filename", "r_filename")
+        return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
+    assert_gpu_and_cpu_are_equal_collect(do_join_cast)

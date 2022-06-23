@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{GpuRegExpUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, Literal, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
@@ -39,7 +38,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString))
+            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString, None)._1)
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -63,6 +62,15 @@ class GpuRegExpExtractMeta(
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
 
+    // Databricks doesn't have 2.x so ignore
+    /*
+    ShimLoader.getShimVersion match {
+      case _: DatabricksShimVersion if expr.subject.isInstanceOf[InputFileName] =>
+        willNotWorkOnGpu("avoiding Databricks Delta problem with regexp extract")
+      case _ =>
+    }
+    */
+
     def countGroups(regexp: RegexAST): Int = {
       regexp match {
         case RegexGroup(_, term) => 1 + countGroups(term)
@@ -75,9 +83,8 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val cudfRegexPattern = new CudfRegexTranspiler(RegexFindMode)
-            .transpile(javaRegexpPattern)
-          pattern = Some(cudfRegexPattern)
+          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
+            .transpile(javaRegexpPattern, None)._1)
           numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
         } catch {
           case e: RegexUnsupportedException =>
@@ -210,7 +217,7 @@ abstract class StringSplitRegBinaryExpMeta[INPUT <: BinaryExpression](expr: INPU
             pattern = simplified
           case None =>
             try {
-              pattern = transpiler.transpile(utf8Str.toString)
+              pattern = transpiler.transpile(utf8Str.toString, None)._1
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>
@@ -259,7 +266,7 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
             pattern = simplified
           case None =>
             try {
-              pattern = transpiler.transpile(utf8Str.toString)
+              pattern = transpiler.transpile(utf8Str.toString, None)._1
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>
@@ -284,11 +291,24 @@ class GpuStringSplitMeta(
     extends StringSplitRegBinaryExpMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
-  private var delimInfo: Option[(String, Boolean)] = None
+  private var pattern = ""
+  private var isRegExp = false
 
   override def tagExprForGpu(): Unit = {
-    // 2.x uses expr.pattern not expr.regex
-    delimInfo = checkRegExp(expr.pattern)
+    // if this is a valid regular expression, then we should check the configuration
+    // whether to run this on the GPU
+    checkRegExp(expr.pattern) match {
+      case Some((p, isRe)) =>
+        pattern = p
+        isRegExp = isRe
+      case _ => throwUncheckedDelimiterException()
+    }
+
+    // if this is a valid regular expression, then we should check the configuration
+    // whether to run this on the GPU
+    if (isRegExp) {
+      GpuRegExpUtils.tagForRegExpEnabled(this)
+    }
 
     // 2.x has no limit parameter
     /*

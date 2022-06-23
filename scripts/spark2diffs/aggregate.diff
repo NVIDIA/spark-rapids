@@ -9,16 +9,16 @@
 < import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ExprId, NamedExpression}
 ---
 > import ai.rapids.cudf
-> import ai.rapids.cudf.NvtxColor
+> import ai.rapids.cudf.{NvtxColor, NvtxRange}
 > import com.nvidia.spark.rapids.GpuMetric._
 > import com.nvidia.spark.rapids.RapidsPluginImplicits._
-> import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode, SparkShimImpl}
+> import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 > 
 > import org.apache.spark.TaskContext
 > import org.apache.spark.internal.Logging
 > import org.apache.spark.rdd.RDD
 > import org.apache.spark.sql.catalyst.InternalRow
-> import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst}
+> import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, SortOrder}
 24,25c36,44
 < import org.apache.spark.sql.execution.{SortExec, SparkPlan, TrampolineUtil}
 < import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
@@ -39,7 +39,7 @@
 < // BaseAggregateExec class in Spark 2.x
 ---
 > object AggregateUtils {
-31,32c50,827
+31,32c50,835
 < class GpuHashAggregateMeta(
 <     val agg: HashAggregateExec,
 ---
@@ -420,7 +420,7 @@
 >     }
 > 
 >     val groupingAttributes = groupingExpressions.map(_.toAttribute)
->     val ordering = groupingAttributes.map(SparkShimImpl.sortOrder(_, Ascending, NullsFirst))
+>     val ordering = groupingAttributes.map(SortOrder(_, Ascending, NullsFirst, Seq.empty))
 >     val aggBufferAttributes = groupingAttributes ++
 >         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 >     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -703,7 +703,9 @@
 >      * @return a pre-processed batch that can be later cuDF aggregated
 >      */
 >     def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
->       GpuProjectExec.project(toAggregateBatch, preStepBound)
+>       withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+>         GpuProjectExec.project(toAggregateBatch, preStepBound)
+>       }
 >     }
 > 
 >     /**
@@ -712,17 +714,19 @@
 >      * @return
 >      */
 >     def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
->       val cvs = mutable.ArrayBuffer[GpuColumnVector]()
->       cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
->         val aggFn = cudfAgg.reductionAggregate
->         val cols = GpuColumnVector.extractColumns(preProcessed)
->         val reductionCol = cols(aggOrdinals(ix))
->         withResource(aggFn(reductionCol.getBase)) { res =>
->           cvs += GpuColumnVector.from(
->             cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
+>       withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
+>         val cvs = mutable.ArrayBuffer[GpuColumnVector]()
+>         cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
+>           val aggFn = cudfAgg.reductionAggregate
+>           val cols = GpuColumnVector.extractColumns(preProcessed)
+>           val reductionCol = cols(aggOrdinals(ix))
+>           withResource(aggFn(reductionCol.getBase)) { res =>
+>             cvs += GpuColumnVector.from(
+>               cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
+>           }
 >         }
+>         new ColumnarBatch(cvs.toArray, 1)
 >       }
->       new ColumnarBatch(cvs.toArray, 1)
 >     }
 > 
 >     /**
@@ -731,23 +735,25 @@
 >      * @return a Table that has been cuDF aggregated
 >      */
 >     def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
->       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
->         val groupOptions = cudf.GroupByOptions.builder()
->           .withIgnoreNullKeys(false)
->           .withKeysSorted(isSorted)
->           .build()
+>       withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
+>         withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
+>           val groupOptions = cudf.GroupByOptions.builder()
+>             .withIgnoreNullKeys(false)
+>             .withKeysSorted(isSorted)
+>             .build()
 > 
->         val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
->           case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
->         }
+>           val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
+>             case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
+>           }
 > 
->         // perform the aggregate
->         val aggTbl = preProcessedTbl
->           .groupBy(groupOptions, groupingExpressions.indices: _*)
->           .aggregate(cudfAggsOnColumn: _*)
+>           // perform the aggregate
+>           val aggTbl = preProcessedTbl
+>             .groupBy(groupOptions, groupingExpressions.indices: _*)
+>             .aggregate(cudfAggsOnColumn: _*)
 > 
->         withResource(aggTbl) { _ =>
->           GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+>           withResource(aggTbl) { _ =>
+>             GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+>           }
 >         }
 >       }
 >     }
@@ -762,8 +768,10 @@
 >      * @return output batch from the aggregate
 >      */
 >     def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
->       withResource(resultBatch) { _ =>
->         GpuProjectExec.project(resultBatch, postStepBound)
+>       withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
+>         withResource(resultBatch) { _ =>
+>           GpuProjectExec.project(resultBatch, postStepBound)
+>         }
 >       }
 >     }
 >   }
@@ -821,7 +829,7 @@
 > abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-34,36c829,832
+34,36c837,840
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
@@ -830,7 +838,7 @@
 >     rule: DataFromReplacementRule) extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 > 
 >   val agg: BaseAggregateExec
-60a857,869
+60a865,877
 > 
 >     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
 >         && agg.aggregateExpressions.exists(expr => expr.filter.isDefined)) {
@@ -844,7 +852,7 @@
 >     if (AggregationTagging.mustReplaceBoth) {
 >       tagForMixedReplacement()
 >     }
-124a934,972
+124a942,980
 > 
 >   /** Prevent mixing of CPU and GPU aggregations */
 >   private def tagForMixedReplacement(): Unit = {
@@ -884,7 +892,7 @@
 >       childPlans.head.convertIfNeeded(),
 >       conf.gpuTargetBatchSizeBytes)
 >   }
-127,128c975,981
+127,128c983,989
 < class GpuSortAggregateExecMeta(
 <     val agg: SortAggregateExec,
 ---
@@ -895,7 +903,7 @@
 > abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggregateExec](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-130,132c983,991
+130,132c991,999
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
@@ -909,7 +917,7 @@
 >       expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] &&
 >           (expr.mode == Partial || expr.mode == PartialMerge)
 >     }
-134,141c993,994
+134,141c1001,1002
 <   val groupingExpressions: Seq[BaseExprMeta[_]] =
 <     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 <   val aggregateExpressions: Seq[BaseExprMeta[_]] =
@@ -921,7 +929,7 @@
 ---
 >   // overriding data types of Aggregation Buffers if necessary
 >   if (mayNeedAggBufferConversion) overrideAggBufTypes()
-143,144c996,1007
+143,144c1004,1015
 <   override val childExprs: Seq[BaseExprMeta[_]] =
 <     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 ---
@@ -937,7 +945,7 @@
 >       case aggMeta: TypedImperativeAggExprMeta[_] => aggMeta.supportBufferConversion
 >       case _ => true
 >     }
-147,153c1010,1054
+147,153c1018,1062
 <     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
 <     // we need to run recursive type check on the structs.
 <     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
@@ -991,9 +999,9 @@
 >         conf.gpuTargetBatchSizeBytes)
 >     } else {
 >       super.convertToGpu()
-154a1056
+154a1064
 >   }
-156c1058,1304
+156c1066,1312
 <     tagForReplaceMode()
 ---
 >   /**
@@ -1202,10 +1210,10 @@
 >         }
 >         converters.dequeue() match {
 >           case Left(converter) =>
->             SparkShimImpl.alias(converter.createExpression(ref),
+>             Alias(converter.createExpression(ref),
 >               ref.name + "_converted")(NamedExpression.newExprId)
 >           case Right(converter) =>
->             SparkShimImpl.alias(converter.createExpression(ref),
+>             Alias(converter.createExpression(ref),
 >               ref.name + "_converted")(NamedExpression.newExprId)
 >         }
 >       case retExpr =>
@@ -1243,7 +1251,7 @@
 >       agg.requiredChildDistributionExpressions, conf, parent, rule) {
 >   override def tagPlanForGpu(): Unit = {
 >     super.tagPlanForGpu()
-183,245d1330
+183,245d1338
 < 
 <   /**
 <    * Tagging checks tied to configs that control the aggregation modes that are replaced.
@@ -1307,15 +1315,15 @@
 <           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
 <     }
 <   }
-248,250d1332
+248,250d1340
 < // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 < // ObjectHashAggregate
 < /*
-254c1336
+254c1344
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-259c1341,1542
+259c1349,1550
 < */
 ---
 > /**

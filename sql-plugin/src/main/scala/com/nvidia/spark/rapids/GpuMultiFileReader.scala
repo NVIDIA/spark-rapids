@@ -27,6 +27,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -43,7 +44,7 @@ import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -89,51 +90,41 @@ trait MultiFileReaderFunctions extends Arm {
   }
 }
 
-// A tool to create a ThreadPoolExecutor
+// Singleton thread pool used across all tasks for multifile reading.
 // Please note that the TaskContext is not set in these threads and should not be used.
-object MultiFileThreadPoolUtil {
-
-  def createThreadPool(
-      threadTag: String,
-      maxThreads: Int = 20,
-      keepAliveSeconds: Long = 60): ThreadPoolExecutor = {
-    val threadFactory = new ThreadFactoryBuilder()
-      .setNameFormat(threadTag + " reader worker-%d")
-      .setDaemon(true)
-      .build()
-
-    val threadPoolExecutor = new ThreadPoolExecutor(
-      maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
-      maxThreads, // maximumPoolSize: because we use LinkedBlockingDeque, this is not used
-      keepAliveSeconds,
-      TimeUnit.SECONDS,
-      new LinkedBlockingQueue[Runnable],
-      threadFactory)
-    threadPoolExecutor.allowCoreThreadTimeOut(true)
-    threadPoolExecutor
-  }
-}
-
-/** A thread pool for multi-file reading */
-class MultiFileReaderThreadPool {
+object MultiFileReaderThreadPool extends Logging {
   private var threadPool: Option[ThreadPoolExecutor] = None
 
   private def initThreadPool(
-      threadTag: String,
-      numThreads: Int): ThreadPoolExecutor = synchronized {
+      maxThreads: Int,
+      keepAliveSeconds: Long = 60): ThreadPoolExecutor = synchronized {
     if (threadPool.isEmpty) {
-      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
+      val threadFactory = new ThreadFactoryBuilder()
+          .setNameFormat("multithreaded file reader worker-%d")
+          .setDaemon(true)
+          .build()
+
+      val threadPoolExecutor = new ThreadPoolExecutor(
+        maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
+        maxThreads, // maximumPoolSize: because we use LinkedBlockingDeque, this is not used
+        keepAliveSeconds,
+        TimeUnit.SECONDS,
+        new LinkedBlockingQueue[Runnable],
+        threadFactory)
+      threadPoolExecutor.allowCoreThreadTimeOut(true)
+      logDebug(s"Using $maxThreads for the multithreaded reader thread pool")
+      threadPool = Some(threadPoolExecutor)
     }
+
     threadPool.get
   }
 
   /**
-   * Get the existing internal thread pool or create one with the given tag and thread
-   * number if it does not exist.
-   * Note: The tag and thread number will be ignored if the thread pool is already created.
+   * Get the existing thread pool or create one with the given thread count if it does not exist.
+   * @note The thread number will be ignored if the thread pool is already created.
    */
-  def getOrCreateThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
-    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
+  def getOrCreateThreadPool(numThreads: Int): ThreadPoolExecutor = {
+    threadPool.getOrElse(initThreadPool(numThreads))
   }
 }
 
@@ -350,7 +341,8 @@ abstract class MultiFileCloudPartitionReaderBase(
       val file = files(i)
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
-      tasks.add(getThreadPool(numThreads).submit(getBatchRunner(tc, file, conf, filters)))
+      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+      tasks.add(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
@@ -376,18 +368,6 @@ abstract class MultiFileCloudPartitionReaderBase(
       file: PartitionedFile,
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
-
-  /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The requirements:
-   * 1. Same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. Different file formats have different ThreadPoolExecutors
-   *
-   * @param numThreads  max number of threads to create
-   * @return ThreadPoolExecutor
-   */
-  def getThreadPool(numThreads: Int): ThreadPoolExecutor
 
   /**
    * Decode HostMemoryBuffers in GPU
@@ -487,7 +467,8 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def addNextTaskIfNeeded(): Unit = {
     if (tasksToRun.nonEmpty && !isDone) {
       val runner = tasksToRun.dequeue()
-      tasks.add(getThreadPool(numThreads).submit(runner))
+      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+      tasks.add(threadPool.submit(runner))
     }
   }
 
@@ -542,7 +523,9 @@ trait DataBlockBase {
  *
  * The sub-class should wrap the real schema for the specific file format
  */
-trait SchemaBase
+trait SchemaBase {
+  def fieldNames: Array[String]
+}
 
 /**
  * A common trait for the extra information for different file format
@@ -668,17 +651,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     batchContext: BatchContext): Long
 
   /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The rules:
-   * 1. same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. different file formats have different ThreadPoolExecutors
-   *
-   * @return ThreadPoolExecutor
-   */
-  def getThreadPool(numThreads: Int): ThreadPoolExecutor
-
-  /**
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
@@ -793,14 +765,17 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private def readBatch(): Option[ColumnarBatch] = {
     withResource(new NvtxRange(s"$getFileFormatShortName readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkMeta = populateCurrentBlockChunk()
-      if (readDataSchema.isEmpty) {
+      if (currentChunkMeta.clippedSchema.fieldNames.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         if (currentChunkMeta.numTotalRows == 0) {
           None
         } else {
+          val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-          val emptyBatch = new ColumnarBatch(Array.empty, currentChunkMeta.numTotalRows.toInt)
+          val nullColumns = readDataSchema.safeMap(f =>
+            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+          val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
           addAllPartitionValues(Some(emptyBatch), currentChunkMeta.allPartValues,
             currentChunkMeta.rowsPerPartition, partitionSchema)
         }
@@ -882,12 +857,13 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[DataBlockBase]()
           val tc = TaskContext.get
+          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
           filesAndBlocks.foreach { case (file, blocks) =>
             val fileBlockSize = blocks.map(_.getBlockSize).sum
             // use a single buffer and slice it up for different files if we need
             val outLocal = hmb.slice(offset, fileBlockSize)
             // Third, copy the blocks for each file in parallel using background threads
-            tasks.add(getThreadPool(numThreads).submit(
+            tasks.add(threadPool.submit(
               getBatchRunner(tc, file, outLocal, blocks, offset, batchContext)))
             offset += fileBlockSize
           }

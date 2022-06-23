@@ -299,6 +299,17 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_read_orc_with_empty_clipped_schema(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', int_gen)], length=100).write.orc(data_path))
+    schema = StructType([StructField('b', IntegerType()), StructField('c', StringType())])
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).orc(data_path), conf=all_confs)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_orc_read_multiple_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     first_gen_list = [('a', int_gen), ('b', int_gen)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
@@ -550,10 +561,16 @@ def test_orc_read_with_corrupt_files(spark_tmp_path, reader_confs, v1_enabled_li
 _aggregate_orc_list_col_partition = ['COUNT']
 _aggregate_orc_list_no_col_partition = ['MAX', 'MIN']
 _aggregate_orc_list = _aggregate_orc_list_col_partition + _aggregate_orc_list_no_col_partition
-_orc_aggregate_pushdown_enabled_conf = {'spark.sql.orc.aggregatePushdown': 'true',
+_orc_aggregate_pushdown_enabled_conf = {'spark.rapids.sql.format.orc.write.enabled': 'true',
+                                        'spark.sql.orc.aggregatePushdown': 'true',
                                         "spark.sql.sources.useV1SourceList": ""}
 
 def _do_orc_scan_with_agg(spark, path, agg):
+    spark.range(10).selectExpr("id", "id % 3 as p").write.mode("overwrite").orc(path)
+    return spark.read.orc(path).selectExpr('{}(p)'.format(agg))
+
+def _do_orc_scan_with_agg_on_partitioned_column(spark, path, agg):
+    spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").orc(path)
     return spark.read.orc(path).selectExpr('{}(p)'.format(agg))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on ORC is a new feature of Spark 330')
@@ -571,11 +588,7 @@ def test_orc_scan_with_aggregate_pushdown(spark_tmp_path, aggregate):
     |    MAX    |      Y       |
     """
     data_path = spark_tmp_path + '/ORC_DATA/pushdown_00.orc'
-    # GPU ORC write with statistics is not correctly working.
-    # Create ORC file in CPU session as a workaround
-    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
-                                .orc(data_path))
-    
+
     # fallback to CPU
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
@@ -598,16 +611,10 @@ def test_orc_scan_with_aggregate_pushdown_on_col_partition(spark_tmp_path, aggre
     |   COUNT   |        Y         |      Y       |
     """
     data_path = spark_tmp_path + '/ORC_DATA/pushdown_01.orc'
-    # GPU ORC write with statistics is not correctly working.
-    # Create ORC file in CPU session as a workaround
-    # Partition column P
-    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
-                                .partitionBy("p")
-                                .orc(data_path))
-    
+
     # fallback to CPU only if aggregate is COUNT
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+            lambda spark: _do_orc_scan_with_agg_on_partitioned_column(spark, data_path, aggregate),
             exist_classes="BatchScanExec",
             non_exist_classes="GpuBatchScanExec",
             conf=_orc_aggregate_pushdown_enabled_conf)
@@ -626,14 +633,8 @@ def test_orc_scan_with_aggregate_no_pushdown_on_col_partition(spark_tmp_path, ag
     |    MAX    |        Y         |      N       |
     """
     data_path = spark_tmp_path + '/ORC_DATA/pushdown_02.orc'
-    # GPU ORC write with statistics is not correctly working.
-    # Create ORC file in CPU session as a workaround
-    # Partition column P
-    with_cpu_session(lambda spark: spark.range(10).selectExpr("id", "id % 3 as p").write
-                                .partitionBy("p")
-                                .orc(data_path))
     
     # should not fallback to CPU
     assert_gpu_and_cpu_are_equal_collect(
-                lambda spark: _do_orc_scan_with_agg(spark, data_path, aggregate),
+                lambda spark: _do_orc_scan_with_agg_on_partitioned_column(spark, data_path, aggregate),
                 conf=_orc_aggregate_pushdown_enabled_conf)

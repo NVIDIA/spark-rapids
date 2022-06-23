@@ -24,6 +24,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -35,7 +36,7 @@ import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan, TextBasedFileScan}
+import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
@@ -128,9 +129,7 @@ object GpuJsonScan {
     }
 
     if (types.contains(TimestampType)) {
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
-        meta.willNotWorkOnGpu("Only UTC zone id is supported")
-      }
+      meta.checkTimeZoneId(parsedOptions.zoneId)
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
@@ -202,7 +201,7 @@ case class GpuJsonScan(
 
     GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, metrics)
+      maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
   }
 }
 
@@ -216,7 +215,8 @@ case class GpuJsonPartitionReaderFactory(
     parsedOptions: JSONOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory {
+    metrics: Map[String, GpuMetric],
+    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -381,7 +381,7 @@ class JsonPartitionReader(
 
   override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
     withResource(sanitizeNumbers(input)) { sanitizedInput =>
-      super.castStringToFloat(sanitizedInput, dt)
+      GpuCast.castStringToFloats(sanitizedInput, ansiEnabled = false, dt, alreadySanitized = true)
     }
   }
 

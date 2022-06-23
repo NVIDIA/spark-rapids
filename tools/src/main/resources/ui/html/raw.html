@@ -101,8 +101,8 @@
           </svg></i>
           About </a>
         <div class="dash-nav-dropdown-menu">
-          <a href="https://github.com/NVIDIA/spark-rapids" target="_blank" class="dash-nav-dropdown-item">GitHub</a>
-          <a href="https://nvidia.github.io/spark-rapids/" target="_blank" class="dash-nav-dropdown-item">
+          <a href="https://github.com/NVIDIA/spark-rapids" class="dash-nav-dropdown-item">GitHub</a>
+          <a href="https://nvidia.github.io/spark-rapids/" class="dash-nav-dropdown-item">
             <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M13.5 13.5V14H14V13.5H13.5ZM13.5 2.5H14V2H13.5V2.5ZM4 5H11.5V4H4V5ZM4 7H11.5V6H4V7ZM4 9H8V8H4V9ZM13.5 11H3.5V12H13.5V11ZM3.5 14H13.5V13H3.5V14ZM2 12.5C2 13.3284 2.67157 14 3.5 14V13C3.22386 13 3 12.7761 3 12.5H2ZM3.5 11C2.67157 11 2 11.6716 2 12.5H3C3 12.2239 3.22386 12 3.5 12V11ZM13.5 2H3.5V3H13.5V2ZM2 3.5V12.5H3V3.5H2ZM14 13.5V11.5H13V13.5H14ZM14 11.5V2.5H13V11.5H14ZM3.5 2C2.67157 2 2 2.67157 2 3.5H3C3 3.22386 3.22386 3 3.5 3V2Z" fill="white"/>
             </svg></i> Docs </a>
@@ -117,7 +117,7 @@
           <path d="M6 3.5H14M6 11.5H14M6 7.5H14M2.5 2.5H4.5V4.5H2.5V2.5ZM2.5 10.5H4.5V12.5H2.5V10.5ZM2.5 6.5H4.5V8.5H2.5V6.5Z" stroke="black"/>
         </svg></i></a>
       <div class="tools">
-        <a href="https://github.com/NVIDIA/spark-rapids" target="_blank" class="tools-item">GitHub</a>
+        <a href="https://github.com/NVIDIA/spark-rapids" class="tools-item">GitHub</a>
       </div>
     </header>
     <main class="dash-content">
@@ -130,7 +130,8 @@
                 <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
               </svg>
               <strong>Disclaimer!</strong><ul>
-              <li>Additionally, estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
+              <li>Estimates provided by the Qualification tool are based on the currently supported "<em>SparkPlan</em>" or "<em>Executor Nodes</em>" used in the application. It currently does not look at the expressions or datatypes used.</li>
+              <li>Please refer to the <a href="https://nvidia.github.io/spark-rapids/docs/supported_ops.html">Supported Operators</a> guide to check the types and expressions you are using are supported.</li></ul>
               <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
               </button>
@@ -150,40 +151,7 @@
                 <div class="spur-card-title">Raw Data of all Applications</div>
               </div>
               <div class="card-body">
-                <div id="all-apps-raw-data">
-                  <table id="all-apps-raw-data-table" class="table data-table display wrap" style="width:100%">
-                    <thead>
-                    <tr>
-                      <th>App Name</th>
-                      <th>App ID</th>
-                      <th>User</th>
-                      <th>Start Time</th>
-                      <th>Recommendation</th>
-                      <th>Estimated GPU Speedup</th>
-                      <th>App Duration</th>
-                      <th>Estimated GPU Duration</th>
-                      <th>Estimated GPU Time Saved</th>
-                      <th>Task Speed-up Factor</th>
-                      <th>SQL DF Duration</th>
-                      <th>GPU Opportunity</th>
-                      <th>Unsupported Task Duration</th>
-                      <th>Supported SQL DF Task Duration</th>
-                      <th>SQL Dataframe Task Duration</th>
-                      <th>Executor CPU Time Percent</th>
-                      <th>Longest SQL Duration</th>
-                      <th>NONSQL Task Duration Plus Overhead</th>
-                      <th>App Duration Estimated</th>
-                      <th>SQL Ids with Failures</th>
-                      <th>Potential Problems</th>
-                      <th>Unsupported Read File Formats and Types</th>
-                      <th>Unsupported Write Data Format</th>
-                      <th>Complex Types</th>
-                      <th>Nested Complex Types</th>
-                      <th>Read Schema</th>
-                    </tr>
-                    </thead>
-                  </table>
-                </div>
+                <div id="app-details-data-container"></div>
               </div>
             </div>
           </div>
@@ -192,6 +160,45 @@
     </main>
   </div>
 </div>
+
+  <script id="app-details-table-template" type="text/template">
+    <div id="all-apps-raw-data">
+      <table id="all-apps-raw-data-table" class="table data-table display wrap" style="width:100%">
+        <thead>
+        <tr>
+          {{#displayCol_appName}}
+          <th>App Name</th>
+          {{/displayCol_appName}}
+          <th>App ID</th>
+          <th>User</th>
+          <th>Start Time</th>
+          <th>Recommendation</th>
+          <th>Estimated GPU Speedup</th>
+          <th>App Duration</th>
+          <th>Estimated GPU Duration</th>
+          <th>Estimated GPU Time Saved</th>
+          <th>Task Speed-up Factor</th>
+          <th>SQL DF Duration</th>
+          <th>GPU Opportunity</th>
+          <th>Unsupported Task Duration</th>
+          <th>Supported SQL DF Task Duration</th>
+          <th>SQL Dataframe Task Duration</th>
+          <th>Executor CPU Time Percent</th>
+          <th>Longest SQL Duration</th>
+          <th>NONSQL Task Duration Plus Overhead</th>
+          <th>App Duration Estimated</th>
+          <th>SQL Ids with Failures</th>
+          <th>Potential Problems</th>
+          <th>Unsupported Read File Formats and Types</th>
+          <th>Unsupported Write Data Format</th>
+          <th>Complex Types</th>
+          <th>Nested Complex Types</th>
+          <th>Read Schema</th>
+        </tr>
+        </thead>
+      </table>
+    </div>
+  </script>
 
 <!-- loading our own Javascripts -->
 <script src="../js/data-output.js"></script>
