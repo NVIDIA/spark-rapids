@@ -24,7 +24,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{broadcast, col, collect_list, explode, sum}
+import org.apache.spark.sql.functions.{broadcast, col, collect_list, explode, hex, sum}
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 
@@ -531,6 +531,28 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       for (execName <- supportedExecs) {
         val supportedExec = allChildren.filter(_.exec == execName)
         assertSizeAndSupported(1, supportedExec)
+      }
+    }
+  }
+
+  test("Expression not supported in FilterExec") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "Expressions in FilterExec") { spark =>
+        import spark.implicits._
+        val df1 = spark.sparkContext.parallelize(List(10, 20, 30, 40)).toDF
+        df1.filter(hex($"value") === "A") // hex is not supported in GPU yet.
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+        val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.size == 1)
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        val filters = allChildren.filter(_.exec == "Filter")
+        assertSizeAndNotSupported(1, filters)
       }
     }
   }
