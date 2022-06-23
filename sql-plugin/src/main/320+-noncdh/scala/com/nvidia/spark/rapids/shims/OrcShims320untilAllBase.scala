@@ -85,15 +85,14 @@ trait OrcShims320untilAllBase {
       conf: Configuration,
       orcReader: Reader,
       dataReader: DataReader,
-      gen: (StripeInformation, OrcProto.StripeFooter, Array[Int], Array[Int]) => OrcOutputStripe,
+      gen: (StripeInformation, OrcProto.StripeFooter, Array[Int])=> OrcOutputStripe,
       evolution: SchemaEvolution,
       sargApp: SargApplier,
       sargColumns: Array[Boolean],
       ignoreNonUtf8BloomFilter: Boolean,
       writerVersion: OrcFile.WriterVersion,
       fileIncluded: Array[Boolean],
-      columnMapping: Array[Int],
-      idMapping: Array[Int]): ArrayBuffer[OrcOutputStripe] = {
+      columnMapping: Array[Int]): ArrayBuffer[OrcOutputStripe] = {
 
     val orcReaderImpl = orcReader.asInstanceOf[ReaderImpl]
     val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
@@ -114,7 +113,7 @@ trait OrcShims320untilAllBase {
       }
 
       if (needStripe) {
-        result.append(gen(stripe, stripeFooter, columnMapping, idMapping))
+        result.append(gen(stripe, stripeFooter, columnMapping))
       }
     }
     result
