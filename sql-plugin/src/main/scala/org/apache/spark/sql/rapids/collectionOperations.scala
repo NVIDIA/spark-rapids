@@ -227,11 +227,13 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 if (!exist.isValid && exist.getBoolean) {
                   map.getMapValue(indices)
                 } else {
-                  throw new NoSuchElementException("One of the keys doesn't exist")
+                  val firstFalseKey = ColumnVectorUtil.getFirstFalseKey(indices, keyExists)
+                  throw RapidsErrorUtils.mapKeyNotExistError(firstFalseKey, right.dataType, origin)
                 }
               }
             }
-          } else {
+          }
+          else {
             map.getMapValue(indices)
           }
         }

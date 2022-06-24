@@ -239,7 +239,8 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
           if (!exist.isValid && exist.getBoolean) {
             map.getMapValue(indices)
           } else {
-            throw new NoSuchElementException("One of the keys doesn't exist")
+            val firstFalseKey = ColumnVectorUtil.getFirstFalseKey(indices, keyExists)
+            throw RapidsErrorUtils.mapKeyNotExistError(firstFalseKey, rhs.dataType(), origin)
           }
         }
       }
