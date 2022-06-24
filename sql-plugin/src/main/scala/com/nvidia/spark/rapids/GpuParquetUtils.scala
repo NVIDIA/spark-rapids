@@ -18,15 +18,12 @@ package com.nvidia.spark.rapids
 
 import java.util.Locale
 
-import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.types.StructType
 
 object GpuParquetUtils extends Logging {
   /**
@@ -85,41 +82,5 @@ object GpuParquetUtils extends Logging {
     block.setTotalByteSize(totalSize)
 
     block
-  }
-
-  def getBlocksInBatch(
-      blockIter: BufferedIterator[BlockMetaData],
-      readSchema: StructType,
-      maxBatchSizeRows: Int,
-      maxBatchSizeBytes: Long): Seq[BlockMetaData] = {
-    val currentChunk = new ArrayBuffer[BlockMetaData]
-    var numRows: Long = 0
-    var numBytes: Long = 0
-    var numParquetBytes: Long = 0
-
-    @tailrec
-    def readNextBatch(): Unit = {
-      if (blockIter.hasNext) {
-        val peekedRowGroup = blockIter.head
-        if (peekedRowGroup.getRowCount > Integer.MAX_VALUE) {
-          throw new UnsupportedOperationException("Too many rows in split")
-        }
-        if (numRows == 0 || numRows + peekedRowGroup.getRowCount <= maxBatchSizeRows) {
-          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readSchema,
-            peekedRowGroup.getRowCount)
-          if (numBytes == 0 || numBytes + estimatedBytes <= maxBatchSizeBytes) {
-            currentChunk += blockIter.next()
-            numRows += currentChunk.last.getRowCount
-            numParquetBytes += currentChunk.last.getTotalByteSize
-            numBytes += estimatedBytes
-            readNextBatch()
-          }
-        }
-      }
-    }
-    readNextBatch()
-    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
-        s"Estimated GPU bytes: $numBytes")
-    currentChunk
   }
 }

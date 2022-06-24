@@ -40,7 +40,6 @@ public class SparkBatch implements Batch {
 
   private final JavaSparkContext sparkContext;
   private final Table table;
-  private final SparkReadConf readConf;
   private final List<CombinedScanTask> tasks;
   private final Schema expectedSchema;
   private final boolean caseSensitive;
@@ -54,7 +53,6 @@ public class SparkBatch implements Batch {
              GpuSparkScan parentScan) {
     this.sparkContext = sparkContext;
     this.table = table;
-    this.readConf = readConf;
     this.tasks = tasks;
     this.expectedSchema = expectedSchema;
     this.caseSensitive = readConf.caseSensitive();
@@ -87,42 +85,6 @@ public class SparkBatch implements Batch {
   public PartitionReaderFactory createReaderFactory() {
     return new GpuSparkScan.ReaderFactory(parentScan.metrics());
   }
-
-//  private int batchSize() {
-//    if (parquetOnly() && parquetBatchReadsEnabled()) {
-//      return readConf.parquetBatchSize();
-//    } else if (orcOnly() && orcBatchReadsEnabled()) {
-//      return readConf.orcBatchSize();
-//    } else {
-//      return 0;
-//    }
-//  }
-//
-//  private boolean parquetOnly() {
-//    return tasks.stream().allMatch(task -> !task.isDataTask() && onlyFileFormat(task, FileFormat.PARQUET));
-//  }
-//
-//  private boolean parquetBatchReadsEnabled() {
-//    return readConf.parquetVectorizationEnabled() && // vectorization enabled
-//        expectedSchema.columns().size() > 0 && // at least one column is projected
-//        expectedSchema.columns().stream().allMatch(c -> c.type().isPrimitiveType()); // only primitives
-//  }
-//
-//  private boolean orcOnly() {
-//    return tasks.stream().allMatch(task -> !task.isDataTask() && onlyFileFormat(task, FileFormat.ORC));
-//  }
-//
-//  private boolean orcBatchReadsEnabled() {
-//    return readConf.orcVectorizationEnabled() && // vectorization enabled
-//        tasks.stream().noneMatch(TableScanUtil::hasDeletes); // no delete files
-//  }
-//
-//  private boolean onlyFileFormat(CombinedScanTask task, FileFormat fileFormat) {
-//    return task.files().stream().allMatch(fileScanTask -> fileScanTask.file().format().equals(fileFormat));
-//  }
-
-  // TODO: See if latest Iceberg code has the same issues with lacking equals/hashCode on batch
-  //       causing exchange to not be reused
 
   @Override
   public boolean equals(Object o) {
