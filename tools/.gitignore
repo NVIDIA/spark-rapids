@@ -6,3 +6,5 @@ event_log_profiling.log
 **/ui/assets/
 **/ui-dependencies-cache/
 **/ui/js/data-output.js
+## ignore output folders of the test scripts
+**/dev/qualification-output/

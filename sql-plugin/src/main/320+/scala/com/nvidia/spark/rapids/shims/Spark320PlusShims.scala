@@ -214,7 +214,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
               case _: DayTimeIntervalType => // Supported
             }
           }
-          checkTimeZoneId(timeAdd.timeZoneId)
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =

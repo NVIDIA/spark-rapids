@@ -1438,25 +1438,27 @@ case class GpuHashAggregateExec(
       makeSpillCallback(allMetrics))
 
     // cache in a local variable to avoid serializing the full child plan
+    val inputAttrs = inputAttributes
     val groupingExprs = groupingExpressions
     val aggregateExprs = aggregateExpressions
     val aggregateAttrs = aggregateAttributes
     val resultExprs = resultExpressions
     val modeInfo = AggregateModeInfo(uniqueModes)
+    val targetBatchSize = configuredTargetBatchSize
 
     val rdd = child.executeColumnar()
 
     rdd.mapPartitions { cbIter =>
       new GpuHashAggregateIterator(
         cbIter,
-        inputAttributes,
+        inputAttrs,
         groupingExprs,
         aggregateExprs,
         aggregateAttrs,
         resultExprs,
         modeInfo,
         aggMetrics,
-        configuredTargetBatchSize)
+        targetBatchSize)
     }
   }
 

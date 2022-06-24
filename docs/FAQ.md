@@ -10,7 +10,7 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, or 3.2.1 of
+The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1 or 3.3.0 of
 Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
 be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -147,9 +147,10 @@ An Apache Spark plan is transformed and optimized into a set of operators called
 This plan is then run through a set of rules to translate it to a version that runs on the GPU.
 If you want to know what will run on the GPU and what will not along with an explanation why you
 can set [spark.rapids.sql.explain](configs.md#sql.explain) to `ALL`. If you just want to see the
-operators not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being
-broken down into multiple jobs, and in those cases a separate log message might be output for each
-job. These are logged each time a query is compiled into an `RDD`, not just when the job runs.
+operators not on the GPU you may set it to `NOT_ON_GPU` (which is the default setting value). Be
+aware that some queries end up being broken down into multiple jobs, and in those cases a separate
+log message might be output for each job. These are logged each time a query is compiled into an
+`RDD`, not just when the job runs.
 Because of this calling `explain` on a DataFrame will also trigger this to be logged.
 
 The format of each line follows the pattern
@@ -519,6 +520,10 @@ If you are getting a warning `Avro library not found by the RAPIDS plugin.` or i
 `java.lang.NoClassDefFoundError: org/apache/spark/sql/v2/avro/AvroScan` error, make sure you ran the 
 Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to 
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator. 
+
+Note, you can add locally installed jars for external packages such as Avro Data Sources and the RAPIDS Accelerator jars via  `spark.driver.extraClassPath` (--driver-class-path in the client mode) on the driver side, and `spark.executor.extraClassPath` on the executor side. However, you should not mix the deploy methods for either of the external modules.  Either deploy both Spark Avro and RAPIDS Accelerator jars as local jars via `extraClassPath` settings or use the `--jars` or `--packages` options.
+
+As a consequence, per  Issue #5796, if you also use the RAPIDS Shuffle Manager, your deployment option may be limited to the extraClassPath method.
 
 ### What is the default RMM pool allocator?
 

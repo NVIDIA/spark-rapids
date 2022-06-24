@@ -210,12 +210,12 @@ abstract class AppBase(
     }
   }
 
-  protected def reportComplexTypes: (String, String) = {
+  protected def reportComplexTypes: (Seq[String], Seq[String]) = {
     if (dataSourceInfo.size != 0) {
       val schema = dataSourceInfo.map { ds => ds.schema }
       AppBase.parseReadSchemaForNestedTypes(schema)
     } else {
-      ("", "")
+      (Seq(), Seq())
     }
   }
 
@@ -223,8 +223,8 @@ abstract class AppBase(
     sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetOrRDDCase.contains(sqlID) }
   }
 
-  protected def getPotentialProblemsForDf: String = {
-    probNotDataset.values.flatten.toSet.mkString(":")
+  protected def getPotentialProblemsForDf: Seq[String] = {
+    probNotDataset.values.flatten.toSet.toSeq
   }
 
   // This is to append potential issues such as UDF, decimal type determined from
@@ -233,11 +233,12 @@ abstract class AppBase(
   // in the `Potential Problems` section in the csv file. Section `Unsupported Nested Complex
   // Types` has information on the exact nested complex types which are not supported for a
   // particular application.
-  protected def getAllPotentialProblems(dFPotentialProb: String, nestedComplex: String): String = {
-    val nestedComplexType = if (nestedComplex.nonEmpty) "NESTED COMPLEX TYPE" else ""
+  protected def getAllPotentialProblems(
+      dFPotentialProb: Seq[String], nestedComplex: Seq[String]): Seq[String] = {
+    val nestedComplexType = if (nestedComplex.nonEmpty) Seq("NESTED COMPLEX TYPE") else Seq("")
     val result = if (dFPotentialProb.nonEmpty) {
       if (nestedComplex.nonEmpty) {
-        s"$dFPotentialProb:$nestedComplexType"
+        dFPotentialProb ++ nestedComplexType
       } else {
         dFPotentialProb
       }
@@ -251,7 +252,7 @@ abstract class AppBase(
 object AppBase {
 
   def parseReadSchemaForNestedTypes(
-      schema: ArrayBuffer[String]): (String, String) = {
+      schema: ArrayBuffer[String]): (Seq[String], Seq[String]) = {
     val tempStringBuilder = new StringBuilder()
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
     var angleBracketsCount = 0
@@ -335,11 +336,6 @@ object AppBase {
       string.contains("array<") || string.contains("struct<") || string.contains("map<")
     })
 
-    // Since it is saved as csv, replace commas with ;
-    val complexTypesResult = complexTypes.filter(_.nonEmpty).mkString(";").replace(",", ";")
-    val nestedComplexTypesResult = nestedComplexTypes.filter(
-      _.nonEmpty).mkString(";").replace(",", ";")
-
-    (complexTypesResult, nestedComplexTypesResult)
+    (complexTypes.filter(_.nonEmpty), nestedComplexTypes.filter(_.nonEmpty))
   }
 }

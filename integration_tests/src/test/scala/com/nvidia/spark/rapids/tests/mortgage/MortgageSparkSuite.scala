@@ -43,7 +43,7 @@ class MortgageSparkSuite extends FunSuite {
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.rapids.sql.explain", true)
+      .config("spark.rapids.sql.explain", "ALL")
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.hasNans", false)

@@ -94,7 +94,7 @@ class PluginTypeChecker extends Logging {
 
   private def readSupportedExprs: Map[String, String] = {
     val source = Source.fromResource(SUPPORTED_EXPRS_FILE)
-    readSupportedOperators(source)
+    readSupportedOperators(source).map(x => (x._1.toLowerCase, x._2))
   }
 
   private def readSupportedTypesForPlugin: (
@@ -247,6 +247,22 @@ class PluginTypeChecker extends Logging {
       }
     } else {
       logDebug(s"Exec $exec does not exist in supported execs file")
+      false
+    }
+  }
+
+  def isExprSupported(expr: String): Boolean = {
+    val exprLowercase = expr.toLowerCase
+    if (supportedExprs.contains(exprLowercase)) {
+      val exprSupported = supportedExprs.getOrElse(exprLowercase, "NS")
+      if (exprSupported == "S") {
+        true
+      } else {
+        logDebug(s"Expression explicitly not supported, value: $exprSupported")
+        false
+      }
+    } else {
+      logDebug(s"Expr $expr does not exist in supported execs file")
       false
     }
   }

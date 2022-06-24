@@ -130,6 +130,9 @@ def with_gpu_session(func, conf={}):
     copy['spark.rapids.sql.test.validateExecsInGpuPlan'] = ','.join(get_validate_execs_in_gpu_plan())
     return with_spark_session(func, conf=copy)
 
+def is_before_spark_312():
+    return spark_version() < "3.1.2"
+
 def is_before_spark_314():
     return spark_version() < "3.1.4"
 

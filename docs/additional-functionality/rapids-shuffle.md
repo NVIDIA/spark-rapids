@@ -286,6 +286,7 @@ In this section, we are using a docker container built using the sample dockerfi
    | 3.2.0           | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
    | 3.2.1           | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
    | 3.2.1 CDH       | com.nvidia.spark.rapids.spark321cdh.RapidsShuffleManager |
+   | 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
    | Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
    | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 

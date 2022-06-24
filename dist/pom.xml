@@ -46,13 +46,13 @@
             313,
             320,
             321,
-            321cdh
+            321cdh,
+            330
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
             322,
-            330,
-            340
+            331
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
@@ -92,14 +92,14 @@
                 - a downstream distro
                 - a snapshot
             for testing while minimizing the build time
-            TODO add 3.3.0-SNAPSHOT
             -->
             <id>minimumFeatureVersionMix</id>
             <properties>
                 <included_buildvers>
                     312,
                     320,
-                    321cdh
+                    321cdh,
+                    330
                 </included_buildvers>
             </properties>
         </profile>

@@ -164,12 +164,9 @@ object GpuFloorCeil {
   }
 }
 
-case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
-  override def dataType: DataType = child.dataType match {
-    case dt: DecimalType =>
-      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
-    case _ => LongType
-  }
+case class GpuCeil(child: Expression, outputType: DataType)
+    extends CudfUnaryMathExpression("CEIL") {
+  override def dataType: DataType = outputType
 
   override def hasSideEffects: Boolean = true
 
@@ -240,12 +237,9 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
   }
 }
 
-case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
-  override def dataType: DataType = child.dataType match {
-    case dt: DecimalType =>
-      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
-    case _ => LongType
-  }
+case class GpuFloor(child: Expression, outputType: DataType)
+    extends CudfUnaryMathExpression("FLOOR") {
+  override def dataType: DataType = outputType
 
   override def hasSideEffects: Boolean = true
 

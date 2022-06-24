@@ -346,10 +346,16 @@ def test_unary_minus_ansi_no_overflow(data_gen):
     (ShortType(), SHORT_MIN),
     (ByteType(), BYTE_MIN)], ids=idfn)
 def test_unary_minus_ansi_overflow(data_type, value):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: {name of the data type} overflow.
+    GPU: One or more rows overflow for {name of the operation} operation.
+    """
     assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_overflow_df(spark, [value], data_type, '-a').collect(),
             conf=ansi_enabled_conf,
-            error_message='ArithmeticException')
+            error_message='java.lang.ArithmeticException' if is_before_spark_330() else \
+                          'org.apache.spark.SparkArithmeticException')
 
 # This just ends up being a pass through.  There is no good way to force
 # a unary positive into a plan, because it gets optimized out, but this
@@ -380,10 +386,16 @@ def test_abs_ansi_no_overflow(data_gen):
     (ShortType(), SHORT_MIN),
     (ByteType(), BYTE_MIN)], ids=idfn)
 def test_abs_ansi_overflow(data_type, value):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: {name of the data type} overflow.
+    GPU: One or more rows overflow for abs operation.
+    """
     assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_overflow_df(spark, [value], data_type, 'abs(a)').collect(),
             conf=ansi_enabled_conf,
-            error_message='ArithmeticException')
+            error_message='java.lang.ArithmeticException' if is_before_spark_330() else \
+                          'org.apache.spark.SparkArithmeticException')
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -409,13 +421,12 @@ def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
 
-# This test should be enabled to run on GPU as part of https://github.com/NVIDIA/spark-rapids/issues/5797
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
-@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_floor_scale_zero(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'), 'RoundFloor')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'),
+            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @allow_non_gpu('ProjectExec')
@@ -429,13 +440,12 @@ def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
 
-# This test should be enabled to run on GPU as part of https://github.com/NVIDIA/spark-rapids/issues/5797
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Ceil function is not supported before Spark 3.3.0')
-@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_ceil_scale_zero(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'), 'RoundCeil')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'),
+            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
 
 @pytest.mark.parametrize('data_gen', [_decimal_gen_36_neg5, _decimal_gen_38_neg10], ids=idfn)
 def test_floor_ceil_overflow(data_gen):
@@ -960,10 +970,15 @@ def test_unary_minus_day_time_interval(ansi_enabled):
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_unary_minus_ansi_overflow_day_time_interval(ansi_enabled):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: long overflow.
+    GPU: One or more rows overflow for minus operation.
+    """
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), '-a').collect(),
         conf={'spark.sql.ansi.enabled': ansi_enabled},
-        error_message='ArithmeticException')
+        error_message='SparkArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
@@ -976,10 +991,15 @@ def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_abs_ansi_overflow_day_time_interval(ansi_enabled):
+    """
+    We don't check the error messages because they are different on CPU and GPU.
+    CPU: long overflow.
+    GPU: One or more rows overflow for abs operation.
+    """
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), 'abs(a)').collect(),
         conf={'spark.sql.ansi.enabled': ansi_enabled},
-        error_message='ArithmeticException')
+        error_message='SparkArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])

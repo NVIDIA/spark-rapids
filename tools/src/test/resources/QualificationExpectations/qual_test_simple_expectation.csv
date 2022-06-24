@@ -1,5 +1,5 @@
 App Name,App ID,Recommendation,Estimated GPU Speedup,Estimated GPU Duration,Estimated GPU Time Saved,SQL DF Duration,SQL Dataframe Task Duration,App Duration,GPU Opportunity,Executor CPU Time Percent,SQL Ids with Failures,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types,Potential Problems,Longest SQL Duration,NONSQL Task Duration Plus Overhead,Unsupported Task Duration,Supported SQL DF Task Duration,Task Speedup Factor,App Duration Estimated
-Rapids Spark Profiling Tool Unit Tests,local-1622043423018,Recommended,1.71,9524.81,6794.18,12434,132257,16319,10589,37.7,"","",JSON,"","","",7143,4717,19616,112641,2.79,false
-Rapids Spark Profiling Tool Unit Tests,local-1623281204390,Not Recommended,1.0,6239.82,0.17,2032,4666,6240,0,46.27,"",JSON[string:bigint:int],JSON,"","",UDF,1209,5793,4664,2,1.25,false
-Spark shell,local-1651187225439,Not Recommended,1.0,355542.35,94.64,760,180,355637,350,87.88,"",JSON[string:bigint:int],"","","","",498,343411,97,83,1.37,false
-Spark shell,local-1651188809790,Not Recommended,1.0,166199.97,15.02,911,283,166215,45,81.18,"",JSON[string:bigint:int],"","","",UDF,715,133608,269,14,1.50,false
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,Recommended,1.71,9497.79,6821.2,12434,132257,16319,10589,37.7,"","",JSON,"","","",7143,4717,19616,112641,2.81,false
+Spark shell,local-1651187225439,Not Recommended,1.0,355496.4,140.59,760,180,355637,350,87.88,"",JSON[string:bigint:int],"","","","",498,343411,97,83,1.67,false
+Spark shell,local-1651188809790,Not Recommended,1.0,166192.46,22.53,911,283,166215,45,81.18,"",JSON[string:bigint:int],"","","",UDF,715,133608,269,14,2.0,false
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,Not Recommended,1.0,6239.7,0.29,2032,4666,6240,0,46.27,"",JSON[string:bigint:int],JSON,"","",UDF,1209,5793,4664,2,1.5,false
