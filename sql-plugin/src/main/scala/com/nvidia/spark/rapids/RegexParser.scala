@@ -404,8 +404,7 @@ class RegexParser(pattern: String) {
             parseHexDigit
           case '0' =>
             parseOctalDigit
-          case 'p' =>
-            consumeExpected(ch)
+          case 'p' | 'P' =>
             parsePredefinedClass
           case 'a' =>
             // alert (bell) character \a
@@ -423,6 +422,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parsePredefinedClass: RegexCharacterClass = {
+    val negated = consume().isUpper
     consumeExpected('{')
     val start = pos 
     while(!eof() && pattern.charAt(pos).isLetter) {
@@ -473,7 +473,7 @@ class RegexParser(pattern: String) {
       }
     }
     consumeExpected('}')
-    RegexCharacterClass(negated = false, characters = getCharacters(className))
+    RegexCharacterClass(negated, characters = getCharacters(className))
   }
 
   private def isHexDigit(ch: Char): Boolean = ch.isDigit ||
@@ -804,6 +804,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
       case RegexEscaped(ch) if ch == 'n' => Seq('\n')
       case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+      case RegexCharacterRange(RegexChar(start), RegexChar(end)) =>
+        if (start <= '\n' && end >= '\r') {
+          Seq('\n', '\r')
+        } else if (start <= '\n' && end >= '\n') {
+          Seq('\n')
+        } else if (start <= '\r' && end >= '\r') {
+          Seq('\r')
+        } else {
+          Seq.empty
+        }
       case _ => Seq.empty
     }
 
