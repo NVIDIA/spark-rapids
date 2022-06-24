@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -234,16 +234,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
     val map = lhs.getBase
     val indices = rhs.getBase
     if (failOnError) {
-      withResource(map.getMapKeyExistence(indices)) { keyExists =>
-        withResource(keyExists.all()) { exist =>
-          if (!exist.isValid && exist.getBoolean) {
-            map.getMapValue(indices)
-          } else {
-            val firstFalseKey = ColumnVectorUtil.getFirstFalseKey(indices, keyExists)
-            throw RapidsErrorUtils.mapKeyNotExistError(firstFalseKey, rhs.dataType(), origin)
-          }
-        }
-      }
+      GpuMapUtils.getMapValueOrThrow(map, indices, rhs.dataType(), origin)
     } else {
       map.getMapValue(indices)
     }
