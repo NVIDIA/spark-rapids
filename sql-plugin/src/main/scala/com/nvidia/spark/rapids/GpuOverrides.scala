@@ -4260,8 +4260,24 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
+  def isDeltaLogQuery(plan: SparkPlan): Boolean = {
+    val deltaLogScans = PlanUtils.findOperators(plan, {
+      case f: FileSourceScanExec =>
+        f.relation.inputFiles.exists(_.contains("_delta_log"))
+      case rdd: RDDScanExec =>
+        // TODO check FilePartition paths instead of checking the name?
+        rdd.inputRDD.name.contains("Delta Table State")
+      case _ =>
+        false
+    })
+    deltaLogScans.nonEmpty
+  }
+
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
+    if (isDeltaLogQuery(plan)) {
+      wrap.entirePlanWillNotWork("Delta Lake metadata queries are not efficient on GPU")
+    }
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
       if (conf.shouldExplain) {
