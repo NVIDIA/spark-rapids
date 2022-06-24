@@ -29,6 +29,14 @@ import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
+  test("string split - limit = 0,1") {
+    val patterns = Set("[^A-Z]+", "[0-9]+", ":", "o", "[:o]")
+    val data = Seq("abc", "123", "1\n2\n3\n", "boo:and:foo")
+    for(Seq(0, 1) <- limit) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
     // that fail to compile in cuDF and to check that the transpiler detects these correctly.
