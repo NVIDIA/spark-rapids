@@ -85,6 +85,12 @@ object RapidsPluginUtils extends Logging {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to false.")
+
+      if (conf.explain != "NONE") {
+        logWarning(s"spark.rapids.sql.explain is set to `${conf.explain}`. Set it to 'NONE' to " +
+          "suppress the diagnostics logging about the query placement on the GPU.")
+      }
+
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
         s"set `${RapidsConf.SQL_ENABLED}` to false. To change the mode, " +

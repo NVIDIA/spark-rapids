@@ -4142,7 +4142,11 @@ object GpuOverrides extends Logging {
    * GPUs.
    */
   private def explainCatalystSQLPlan(updatedPlan: SparkPlan, conf: RapidsConf): Unit = {
-    val explainSetting = if (conf.shouldExplain) {
+    // Since we set "NOT_ON_GPU" as the default value of spark.rapids.sql.explain, here we keep
+    // "ALL" as default value of "explainSetting", unless spark.rapids.sql.explain is changed
+    // by the user.
+    val explainSetting = if (conf.shouldExplain &&
+      conf.isConfExplicitlySet(RapidsConf.EXPLAIN.key)) {
       conf.explain
     } else {
       "ALL"
