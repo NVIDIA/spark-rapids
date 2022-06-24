@@ -223,6 +223,7 @@ class RegexParser(pattern: String) {
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
         case '\u0000' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/5909
           throw new RegexUnsupportedException(
             "cuDF does not support null characters in character classes", Some(pos))
         case ch => 
@@ -234,6 +235,7 @@ class RegexParser(pattern: String) {
                   // char. Example: [\x5ea] is treated as [\^a], not just [^a]
                   RegexEscaped(ch)
                 case RegexChar('\u0000') =>
+                  // see https://github.com/NVIDIA/spark-rapids/issues/5909
                   throw new RegexUnsupportedException(
                     "cuDF does not support null characters in character classes", Some(pos))
                 case other => other
@@ -432,7 +434,7 @@ class RegexParser(pattern: String) {
         case "Upper" => 
           ListBuffer(RegexCharacterRange(RegexChar('A'), RegexChar('Z')))
         case "ASCII" =>
-          // should be \u0000-\u007f but we do not support the null terminator \u0000 
+          // should be \u0000-\u007f, see: https://github.com/NVIDIA/spark-rapids/issues/5909
           ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u007f')))
         case "Alpha" => 
           ListBuffer(getCharacters("Lower"), getCharacters("Upper")).flatten
@@ -452,7 +454,7 @@ class RegexParser(pattern: String) {
         case "Blank" =>
           ListBuffer(RegexChar(' '), RegexEscaped('t'))
         case "Cntrl" =>
-          // should be \u0001-\u001f but we do not support the null terminator \u0000 
+          // should be \u0000-\u001f, see: https://github.com/NVIDIA/spark-rapids/issues/5909
           ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u001f')), 
             RegexChar('\u007f'))
         case "XDigit" =>
