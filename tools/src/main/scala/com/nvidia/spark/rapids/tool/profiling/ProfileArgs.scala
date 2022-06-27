@@ -15,9 +15,9 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
-import org.apache.spark.sql.rapids.tool.AppFilterImpl
-
 import org.rogach.scallop.{ScallopConf, ScallopOption}
+
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
 
 class ProfileArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
 

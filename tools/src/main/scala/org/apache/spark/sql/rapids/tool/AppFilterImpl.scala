@@ -27,10 +27,9 @@ import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
 import com.nvidia.spark.rapids.tool.qualification.QualificationArgs
 import org.apache.hadoop.conf.Configuration
+import org.rogach.scallop.{ScallopConf, ScallopOption}
 
 import org.apache.spark.internal.Logging
-
-import org.rogach.scallop.{ScallopConf, ScallopOption}
 
 class AppFilterImpl(
     numRows: Int,
@@ -93,7 +92,6 @@ class AppFilterImpl(
     } else {
       apps
     }
-
     appTimeFiltered.map(_.eventlog)
   }
 
