@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
+
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
 class ProfileArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
@@ -79,6 +81,11 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
         "times out, it will report what it was able to process up until the timeout.",
       default = Some(86400))
+  val startAppTime: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Filter event logs whose application start occurred within the past specified " +
+        "time period. Valid time periods are min(minute),h(hours),d(days),w(weeks)," +
+        "m(months). If a period is not specified it defaults to days.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest-filesystem") ||
@@ -90,6 +97,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   validate(timeout) {
     case timeout if (timeout > 3) => Right(Unit)
     case _ => Left("Error, timeout must be greater than 3 seconds.")
+  }
+
+  validate(startAppTime) {
+    case time if (AppFilterImpl.parseAppTimePeriod(time) > 0L) => Right(Unit)
+    case _ => Left("Time period specified, must be greater than 0 and valid periods " +
+      "are min(minute),h(hours),d(days),w(weeks),m(months).")
   }
 
   verify()

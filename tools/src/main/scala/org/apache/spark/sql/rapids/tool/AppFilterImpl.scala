@@ -24,10 +24,13 @@ import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
 import com.nvidia.spark.rapids.tool.qualification.QualificationArgs
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
+
+import org.rogach.scallop.{ScallopConf, ScallopOption}
 
 class AppFilterImpl(
     numRows: Int,
@@ -44,7 +47,7 @@ class AppFilterImpl(
   private val threadFactory = new ThreadFactoryBuilder()
       .setDaemon(true).setNameFormat("qualAppFilter" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
-  private val qualFilterthreadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+  private val appFilterthreadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
       .asInstanceOf[ThreadPoolExecutor]
 
   private class FilterThread(path: EventLogInfo) extends Runnable {
@@ -53,26 +56,50 @@ class AppFilterImpl(
 
   def filterEventLogs(
       allPaths: Seq[EventLogInfo],
-      appArgs: QualificationArgs): Seq[EventLogInfo] = {
+      appArgs: ScallopConf): Seq[EventLogInfo] = {
     allPaths.foreach { path =>
       try {
-        qualFilterthreadPool.submit(new FilterThread(path))
+        appFilterthreadPool.submit(new FilterThread(path))
       } catch {
         case e: Exception =>
           logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
       }
     }
     // wait for the threads to finish processing the files
-    qualFilterthreadPool.shutdown()
-    if (!qualFilterthreadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+    appFilterthreadPool.shutdown()
+    if (!appFilterthreadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
       logError(s"Processing log files took longer then $waitTimeInSec seconds," +
-          " stopping processing any more event logs")
-      qualFilterthreadPool.shutdownNow()
+        " stopping processing any more event logs")
+      appFilterthreadPool.shutdownNow()
     }
 
     // This will be required to do the actual filtering
-    val apps = appsForFiltering.asScala
+    val apps: Seq[AppFilterReturnParameters] = appsForFiltering.asScala.toSeq
 
+    appArgs match {
+      case profileArgs:ProfileArgs =>
+        filterEventLogsInternal(apps, profileArgs)
+      case qualificationArgs: QualificationArgs =>
+        filterEventLogsInternal(apps, qualificationArgs)
+    }
+  }
+
+  private def filterEventLogsInternal(
+       apps: Seq[AppFilterReturnParameters],
+       appArgs: ProfileArgs): Seq[EventLogInfo] = {
+    val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
+      val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs.startAppTime)
+      apps.filter(_.appInfo.appStartInfo.exists(_.startTime >= msTimeToFilter))
+    } else {
+      apps
+    }
+
+    appTimeFiltered.map(_.eventlog)
+  }
+
+  private def filterEventLogsInternal(
+      apps: Seq[AppFilterReturnParameters],
+      appArgs: QualificationArgs): Seq[EventLogInfo] = {
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
     val userName = appArgs.userName.getOrElse("")
@@ -138,7 +165,7 @@ class AppFilterImpl(
     }
 
     val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
-      val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs)
+      val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs.startAppTime)
       val logicFiltered = if (appArgs.any()) {
         apps
       } else {
@@ -257,9 +284,9 @@ class AppFilterImpl(
 
 object AppFilterImpl {
 
-  def parseAppTimePeriodArgs(appArgs: QualificationArgs): Long = {
-    if (appArgs.startAppTime.isSupplied) {
-      val appStartStr = appArgs.startAppTime.getOrElse("")
+  def parseAppTimePeriodArgs(startAppTime: ScallopOption[String]): Long = {
+    if (startAppTime.isSupplied) {
+      val appStartStr = startAppTime.getOrElse("")
       parseAppTimePeriod(appStartStr)
     } else {
       0L
