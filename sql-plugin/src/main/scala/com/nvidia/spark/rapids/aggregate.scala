@@ -1321,7 +1321,7 @@ class GpuSortAggregateExecMeta(
             willNotWorkOnGpu("one of the preceding SortExec's cannot be replaced")
           } else {
             // But if this includes a first or last aggregate and the sort includes more than what
-            // the group by requires we cannot drop the dor. For example
+            // the group by requires we cannot drop the sort. For example
             // if the group by is on a single key "a", but the ordering is on "a" and "b", then
             // we have to keep the sort, so that the rows are ordered to take "b" into account
             // before first/last work on it.
