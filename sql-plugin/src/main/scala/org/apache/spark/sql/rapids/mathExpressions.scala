@@ -23,6 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -198,7 +199,9 @@ case class GpuCeil(child: Expression, outputType: DataType)
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+                throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+                  input, outOfBounds, dt, outputType
+                )
               }
             }
           }
@@ -272,7 +275,9 @@ case class GpuFloor(child: Expression, outputType: DataType)
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+                throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+                  input, outOfBounds, dt, outputType
+                )
               }
             }
           }
