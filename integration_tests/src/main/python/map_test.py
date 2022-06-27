@@ -353,6 +353,17 @@ def test_get_map_value_element_at_map_dec_col_keys(data_gen):
         conf={'spark.sql.ansi.enabled': False})
 
 @pytest.mark.parametrize('data_gen',
+                         [MapGen(StringGen(pattern='key', nullable=False), IntegerGen(nullable=False), max_length=1, min_length=1, nullable=False)],
+                         ids=idfn)
+@pytest.mark.parametrize('ansi', [True, False], ids=idfn)
+def test_get_map_value_element_at_map_string_col_keys_ansi(data_gen, ansi):
+    keys = StringGen(pattern='key', nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'element_at(a, b)', 'a[b]'),
+        conf={'spark.sql.ansi.enabled': ansi})
+
+@pytest.mark.parametrize('data_gen',
                          [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
                           for value in get_map_value_gens(precision=37, scale=0)],
                          ids=idfn)

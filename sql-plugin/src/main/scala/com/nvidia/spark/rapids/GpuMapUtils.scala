@@ -48,7 +48,7 @@ object GpuMapUtils extends Arm {
       origin: Origin): ColumnVector = {
     withResource(map.getMapKeyExistence(indices)) { keyExists =>
       withResource(keyExists.all()) { exist =>
-        if (!exist.isValid && exist.getBoolean) {
+        if (exist.isValid && exist.getBoolean) {
           map.getMapValue(indices)
         } else {
           val firstFalseKey = getFirstFalseKey(indices, keyExists)
