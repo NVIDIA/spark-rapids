@@ -206,13 +206,12 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       if (hasConstant) {
         throw new UnsupportedOperationException("constant column in list");
       }
-      Type originalElement = list.getFields().get(0);
+      GroupType repeated = list.getType(0).asGroupType();
+      Type originalElement = repeated.getType(0);
       if (Objects.equals(element, originalElement)) {
         return list;
-      } else if (originalElement.isRepetition(Type.Repetition.REPEATED)) {
-        return list.withNewFields(element);
       }
-      return list.withNewFields(list.getType(0).asGroupType().withNewFields(element));
+      return list.withNewFields(repeated.withNewFields(element));
     }
 
     @Override
