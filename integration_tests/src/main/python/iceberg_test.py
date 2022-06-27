@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session
@@ -77,3 +77,18 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, iceberg_gens):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table_name)))
+
+@iceberg
+@allow_non_gpu("BatchScanExec")
+@pytest.mark.parametrize("disable_conf", ["spark.rapids.sql.format.iceberg.enabled",
+                                          "spark.rapids.sql.format.iceberg.read.enabled"])
+def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
+    table = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        spark.sql("CREATE TABLE {} (id BIGINT, data STRING) USING ICEBERG".format(table))
+        spark.sql("INSERT INTO {} VALUES (1, 'a'), (2, 'b'), (3, 'c')".format(table))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_fallback_collect(
+        lambda spark : spark.sql("SELECT * from {}".format(table)),
+        "BatchScanExec",
+        conf = {disable_conf : "false"})

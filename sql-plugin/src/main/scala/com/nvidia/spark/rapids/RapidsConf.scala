@@ -1016,7 +1016,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_ICEBERG_READ = conf("spark.rapids.sql.format.iceberg.enabled")
+  val ENABLE_ICEBERG_READ = conf("spark.rapids.sql.format.iceberg.read.enabled")
     .doc("When set to false disables Iceberg input acceleration")
     .booleanConf
     .createWithDefault(true)
