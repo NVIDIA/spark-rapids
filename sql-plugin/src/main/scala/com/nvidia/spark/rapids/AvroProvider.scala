@@ -49,4 +49,8 @@ trait AvroProvider {
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+
+  def isSupportedScan(scan: Scan): Boolean
+
+  def copyScanWithInputFileTrue(scan: Scan): Scan
 }

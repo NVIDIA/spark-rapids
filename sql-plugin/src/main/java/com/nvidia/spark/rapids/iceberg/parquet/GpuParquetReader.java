@@ -142,7 +142,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       ParquetPartitionReader partReader = new ParquetPartitionReader(conf, partFile,
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           sparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, metrics,
-          true, true, true);
+          true, true, true, false);
 
       return new GpuIcebergReader(expectedSchema, partReader, deleteFilter, idToConstant);
     } catch (IOException e) {
