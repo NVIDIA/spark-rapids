@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -45,8 +45,7 @@ class AcceleratedColumnarToRowIterator(
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
-  // This only works on fixedWidth types for now...
-  assert(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
+
   // We want to remap the rows to improve packing.  This means that they should be sorted by
   // the largest alignment to the smallest.
 
@@ -56,7 +55,7 @@ class AcceleratedColumnarToRowIterator(
     .zipWithIndex
     .sortWith {
       (x, y) =>
-        DecimalUtil.getDataTypeSize(x._1.dataType) > DecimalUtil.getDataTypeSize(y._1.dataType)
+        JCudfUtil.getDataTypeOrder(x._1.dataType) > JCudfUtil.getDataTypeOrder(y._1.dataType)
     }.map(_._2)
     .toArray
   // For unpackMap the nth entry is the index in the row that came back for the original
@@ -111,9 +110,10 @@ class AcceleratedColumnarToRowIterator(
           // most 184 double/long values. Spark by default limits codegen to 100 fields
           // "spark.sql.codegen.maxFields". So, we are going to be cautious and start with that
           // until we have tested it more. We branching over the size of the output to know which
-          // kernel to call. If schema.length < 100 we call the fixed-width optimized version,
-          // otherwise the generic one
-          withResource(if (schema.length < 100) {
+          // kernel to call.
+          // If the cudfUnsafeRow fits the criteria, we call the fixed-width
+          // optimized version, otherwise the generic one.
+          withResource(if (JCudfUtil.fitsOptimizedConversion(outputRow)) {
             table.convertToRowsFixedWidthOptimized()
           } else {
             table.convertToRows()
@@ -274,7 +274,7 @@ object CudfRowTransitions {
   def isSupportedType(dataType: DataType): Boolean = dataType match {
     // Only fixed width for now...
     case ByteType | ShortType | IntegerType | LongType |
-         FloatType | DoubleType | BooleanType | DateType | TimestampType => true
+         FloatType | DoubleType | BooleanType | DateType | TimestampType | StringType => true
     case dt: DecimalType if dt.precision <= Decimal.MAX_LONG_DIGITS => true
     case _ => false
   }
