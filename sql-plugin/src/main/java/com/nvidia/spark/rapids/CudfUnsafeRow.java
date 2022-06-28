@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.DType;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.SpecializedGettersReader;
@@ -55,14 +56,47 @@ public final class CudfUnsafeRow extends InternalRow {
   public static int getRowSizeEstimate(Attribute[] attributes) {
     // This needs to match what is in cudf and what is in the constructor.
     int offset = 0;
-    for (Attribute attr : attributes) {
-      int length = GpuColumnVector.getNonNestedRapidsType(attr.dataType()).getSizeInBytes();
+    int varLenIndex = attributes.length;
+    int bitSetWidthInBytes = calculateBitSetWidthInBytes(attributes.length);
+    for (int i = 0; i < attributes.length; i++) {
+      Attribute attr = attributes[i];
+      DataType dataType = attr.dataType();
+      if (!JCudfUtil.isFixedLength(dataType)) {
+        // First variable length column. jump to process t
+        varLenIndex = i;
+        break;
+      }
+      int length = GpuColumnVector.getNonNestedRapidsType(dataType).getSizeInBytes();
       offset = alignOffset(offset, length);
       offset += length;
     }
-    int bitSetWidthInBytes = calculateBitSetWidthInBytes(attributes.length);
+    if (varLenIndex < attributes.length) {
+      // For variable length variables, data size can be affected by alignment.
+      // Therefore, adjust the validity first to get the correct offset of the data.
+      // Align the offset of variable length records (8-byte aligned).
+      offset = alignOffset(offset, JCudfUtil.JCUDF_VAR_LENGTH_FIELD_ALIGNMENT);
+      // 8 bytes are needed for each variable size field (offset, elements).
+      int validityOffset =
+          offset + (attributes.length - varLenIndex) * JCudfUtil.JCUDF_VAR_LENGTH_FIELD_SIZE;
+      // Offset now points to the beginning of variable length data
+      offset = validityOffset + bitSetWidthInBytes;
+      for (; varLenIndex < attributes.length; varLenIndex++) {
+        Attribute attr = attributes[varLenIndex];
+        DType rapidsType = GpuColumnVector.getNonNestedRapidsType(attr.dataType());
+        // Get an estimate size for the column.
+        int length = JCudfUtil.getEstimateSizeForVarLengthTypes(rapidsType);
+        // For variable-length, alignment and length are not equivalent.
+        int alignment = JCudfUtil.getDataAlignmentForDataType(rapidsType);
+        offset = alignOffset(offset, alignment);
+        offset += length;
+      }
+    } else {
+      // All columns are fixed length. update the offset by adding validity bits.
+      offset = offset + bitSetWidthInBytes;
+    }
+
     // Each row is 64-bit aligned
-    return alignOffset(offset + bitSetWidthInBytes, 8);
+    return alignOffset(offset, JCudfUtil.JCUDF_ROW_ALIGNMENT);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -89,6 +123,12 @@ public final class CudfUnsafeRow extends InternalRow {
    * The size of this row's backing data, in bytes.
    */
   private int sizeInBytes;
+
+  /**
+   * A rough estimate of the row size in bytes during initialization.
+   * This estimate does not count for the alignment.
+   */
+  private final int initialSizeEstimate;
 
   /**
    * A mapping from the user facing ordinal to the index in the underlying row.
@@ -132,22 +172,39 @@ public final class CudfUnsafeRow extends InternalRow {
    */
   public CudfUnsafeRow(Attribute[] attributes, int[] remapping) {
     int offset = 0;
+    int length = 0;
+    int varLengthDataSize = 0;
     startOffsets = new int[attributes.length];
     for (int i = 0; i < attributes.length; i++) {
       Attribute attr = attributes[i];
-      int length = GpuColumnVector.getNonNestedRapidsType(attr.dataType()).getSizeInBytes();
-      assert length > 0 : "Only fixed width types are currently supported.";
-      offset = alignOffset(offset, length);
+      DataType dataType = attr.dataType();
+      DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType);
+      if (JCudfUtil.isFixedLength(dataType)) {
+        length = rapidsType.getSizeInBytes();
+        offset = alignOffset(offset, length);
+      } else {
+        // for variable length dataType, we add 8 bytes for each column.
+        length = JCudfUtil.JCUDF_VAR_LENGTH_FIELD_SIZE;
+        offset = alignOffset(offset, JCudfUtil.JCUDF_VAR_LENGTH_FIELD_ALIGNMENT);
+        // update the variable length data without alignment.
+        varLengthDataSize += JCudfUtil.getEstimateSizeForVarLengthTypes(rapidsType);
+      }
       startOffsets[i] = offset;
       offset += length;
     }
-    fixedWidthSizeInBytes = offset;
+    this.fixedWidthSizeInBytes = offset;
+    // set the initial approximate rowSize.
+    this.initialSizeEstimate = alignOffset(
+        offset + calculateBitSetWidthInBytes(attributes.length) + varLengthDataSize,
+        JCudfUtil.JCUDF_ROW_ALIGNMENT);
     this.remapping = remapping;
     assert startOffsets.length == remapping.length;
   }
 
   // for serializer
-  public CudfUnsafeRow() {}
+  public CudfUnsafeRow() {
+    initialSizeEstimate = 0;
+  }
 
   @Override
   public int numFields() { return startOffsets.length; }
@@ -253,12 +310,12 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public UTF8String getUTF8String(int ordinal) {
-//    if (isNullAt(ordinal)) return null;
-//    final long offsetAndSize = getLong(ordinal);
-//    final int offset = (int) (offsetAndSize >> 32);
-//    final int size = (int) offsetAndSize;
-//    return UTF8String.fromAddress(null, address + offset, size);
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET");
+    if (isNullAt(ordinal)) return null;
+    final long columnOffset = getFieldAddressFromOrdinal(ordinal);
+    final int offset = Platform.getInt(null, columnOffset);
+    // increment 4 bytes to read the number of elements
+    final int size = Platform.getInt(null, columnOffset + 4);
+    return UTF8String.fromAddress(null, address + offset, size);
   }
 
   @Override
@@ -396,5 +453,9 @@ public final class CudfUnsafeRow extends InternalRow {
   public boolean anyNull() {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET");
 //    return BitSetMethods.anySet(baseObject, address, bitSetWidthInBytes / 8);
+  }
+
+  public int getInitialSizeEstimate() {
+    return initialSizeEstimate;
   }
 }
