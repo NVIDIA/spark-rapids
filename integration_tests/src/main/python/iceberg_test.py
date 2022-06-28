@@ -101,7 +101,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
 @iceberg
 @allow_non_gpu("BatchScanExec")
 @pytest.mark.parametrize("disable_conf", ["spark.rapids.sql.format.iceberg.enabled",
-                                          "spark.rapids.sql.format.iceberg.read.enabled"])
+                                          "spark.rapids.sql.format.iceberg.read.enabled"], ids=idfn)
 def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
     table = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
@@ -121,8 +121,10 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
     ("uncompressed", None),
     ("snappy", None),
     ("gzip", None),
-    ("lz4", "Unsupported compression type"),
-    ("zstd", "Zstandard compression is experimental")])
+    pytest.param(("lz4", "Unsupported compression type"),
+                 marks=pytest.mark.skipif(is_before_spark_320(),
+                                          reason="Hadoop with Spark 3.1.x does not support lz4 by default")),
+    ("zstd", "Zstandard compression is experimental")], ids=idfn)
 def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_info):
     codec, error_msg = codec_info
     table = spark_tmp_table_factory.get()
@@ -140,3 +142,91 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
             lambda : with_gpu_session(lambda spark : spark.sql(query).collect()), error_msg)
     else:
         assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql(query))
+
+@iceberg
+@pytest.mark.parametrize("key_gen", [int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_64bit], ids=idfn)
+def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = two_col_df(spark, key_gen, long_gen).orderBy("a")
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG PARTITIONED BY (a) ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT a FROM {}".format(table)))
+
+@iceberg
+def test_iceberg_input_meta(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen).orderBy("a")
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG PARTITIONED BY (a) ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql(
+            "SELECT a, input_file_name(), input_file_block_start(), input_file_block_length() " + \
+            "FROM {}".format(table)))
+
+@iceberg
+def test_iceberg_disorder_read_schema(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = three_col_df(spark, long_gen, string_gen, float_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT b,c,a FROM {}".format(table)))
+
+@iceberg
+def test_iceberg_read_appended_table(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+def test_iceberg_read_history(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        # SQL does not have syntax to read history table
+        lambda spark : spark.read.format("iceberg").load("default.{}.history".format(table)))
+
+# test appended data
+# test column removed and more data appended
+# test column added and more data appended
+# test column type changed and more data appended
+# test reordering struct fields and appending more data
+# test column names swapped
+# test time-travel with snapshot IDs and timestamps
+# iceberg metadata queries (metadata table select, etc.)
+# test reading data between two snapshot IDs
+# https://iceberg.apache.org/docs/latest/spark-queries/
+# test v2 deletes (position and equality)
