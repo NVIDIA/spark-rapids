@@ -178,7 +178,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   }
 
   static class ReaderFactory implements PartitionReaderFactory {
-    private scala.collection.immutable.Map<String, GpuMetric> metrics;
+    private final scala.collection.immutable.Map<String, GpuMetric> metrics;
 
     public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics) {
       this.metrics = metrics;

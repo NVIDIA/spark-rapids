@@ -20,50 +20,14 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 import java.util.function.Function;
 
-import org.apache.iceberg.expressions.Literal;
 import org.apache.iceberg.types.Type;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.PrimitiveType;
 
 public class ParquetConversions {
   private ParquetConversions() {
-  }
-
-  @SuppressWarnings("unchecked")
-  static <T> Literal<T> fromParquetPrimitive(Type type, PrimitiveType parquetType, Object value) {
-    switch (type.typeId()) {
-      case BOOLEAN:
-        return (Literal<T>) Literal.of((Boolean) value);
-      case INTEGER:
-      case DATE:
-        return (Literal<T>) Literal.of((Integer) value);
-      case LONG:
-      case TIME:
-      case TIMESTAMP:
-        return (Literal<T>) Literal.of((Long) value);
-      case FLOAT:
-        return (Literal<T>) Literal.of((Float) value);
-      case DOUBLE:
-        return (Literal<T>) Literal.of((Double) value);
-      case STRING:
-        Function<Object, Object> stringConversion = converterFromParquet(parquetType);
-        return (Literal<T>) Literal.of((CharSequence) stringConversion.apply(value));
-      case UUID:
-        Function<Object, Object> uuidConversion = converterFromParquet(parquetType);
-        return (Literal<T>) Literal.of((UUID) uuidConversion.apply(value));
-      case FIXED:
-      case BINARY:
-        Function<Object, Object> binaryConversion = converterFromParquet(parquetType);
-        return (Literal<T>) Literal.of((ByteBuffer) binaryConversion.apply(value));
-      case DECIMAL:
-        Function<Object, Object> decimalConversion = converterFromParquet(parquetType);
-        return (Literal<T>) Literal.of((BigDecimal) decimalConversion.apply(value));
-      default:
-        throw new IllegalArgumentException("Unsupported primitive type: " + type);
-    }
   }
 
   static Function<Object, Object> converterFromParquet(PrimitiveType parquetType, Type icebergType) {

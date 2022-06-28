@@ -17,18 +17,15 @@
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import java.util.Map;
-import java.util.Set;
 
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
-import com.nvidia.spark.rapids.iceberg.orc.GpuORC;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
-import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
@@ -37,8 +34,6 @@ import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMappingParser;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.relocated.com.google.common.collect.Sets;
-import org.apache.iceberg.types.TypeUtil;
 
 import org.apache.spark.rdd.InputFileBlockHolder;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
@@ -99,24 +94,6 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
           .withMaxBatchSizeBytes(maxBatchSizeBytes)
           .withDebugDumpPrefix(parquetDebugDumpPrefix)
           .withMetrics(metrics);
-
-      if (nameMapping != null) {
-        builder.withNameMapping(NameMappingParser.fromJson(nameMapping));
-      }
-
-      iter = builder.build();
-    } else if (task.file().format() == FileFormat.ORC) {
-      Set<Integer> constantFieldIds = idToConstant.keySet();
-      Set<Integer> metadataFieldIds = MetadataColumns.metadataFieldIds();
-      Sets.SetView<Integer> constantAndMetadataFieldIds = Sets.union(constantFieldIds, metadataFieldIds);
-      Schema schemaWithoutConstantAndMetadataFields = TypeUtil.selectNot(expectedSchema, constantAndMetadataFieldIds);
-      GpuORC.ReadBuilder builder = GpuORC.read(location)
-          .project(schemaWithoutConstantAndMetadataFields)
-          .split(task.start(), task.length())
-          .readerExpectedSchema(expectedSchema)
-          .constants(idToConstant)
-          .filter(task.residual())
-          .caseSensitive(caseSensitive);
 
       if (nameMapping != null) {
         builder.withNameMapping(NameMappingParser.fromJson(nameMapping));
