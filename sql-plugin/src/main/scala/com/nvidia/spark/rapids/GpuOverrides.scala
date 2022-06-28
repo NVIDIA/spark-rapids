@@ -2907,7 +2907,24 @@ object GpuOverrides extends Logging {
         }
       }
     ),
-
+    expr[ArrayIntersect](
+      "Returns an array of the elements in the intersection of array1 and array2, without" +
+        " duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayIntersect](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayIntersect(lhs, rhs)
+        }
+      }
+    ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +

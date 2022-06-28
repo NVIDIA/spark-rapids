@@ -695,6 +695,58 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
   }
 }
 
+case class GpuArrayIntersect(left: Expression, right: Expression)
+    extends GpuBinaryExpression with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult = 
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else { 
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_intersect requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def dataType: DataType = left.dataType
+
+  override def nullable: Boolean = false
+
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // Unlike set intersection, array intersection must preserve the order the items 
+    // from both arrays
+    withResource(ColumnView.setIntersect(lhs.getBase, rhs.getBase)) { setResult =>
+      setResult
+    } 
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
 class GpuSequenceMeta(
     expr: Sequence,
     conf: RapidsConf,
