@@ -14,10 +14,10 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
-from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session
+from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
 
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
@@ -35,7 +35,7 @@ iceberg_gens_list = [
      ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))
     ] + iceberg_map_gens + decimal_gens ]
 
-@allow_non_gpu('BatchScanExec')
+@allow_non_gpu("BatchScanExec")
 @iceberg
 def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
@@ -54,11 +54,12 @@ def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
                     reason="AQE+DPP not supported until Spark 3.2.0+ and AQE+DPP not supported on Databricks")
 def test_iceberg_aqe_dpp(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = two_col_df(spark, int_gen, int_gen)
-        df.createOrReplaceTempView("df")
+        df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} (a INT, b INT) USING ICEBERG PARTITIONED BY (a)".format(table))
-        spark.sql("INSERT INTO {} SELECT * FROM df".format(table))
+        spark.sql("INSERT INTO {} SELECT * FROM {}".format(table, tmpview))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * from {} as X JOIN {} as Y ON X.a = Y.a WHERE Y.a > 0".format(table, table)),
@@ -66,17 +67,36 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory):
               "spark.sql.optimizer.dynamicPartitionPruning.enabled": "true"})
 
 @iceberg
-@pytest.mark.parametrize('iceberg_gens', iceberg_gens_list, ids=idfn)
-def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, iceberg_gens):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(iceberg_gens)]
-    table_name = spark_tmp_table_factory.get()
+@pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
+def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
-        df.createOrReplaceTempView("df")
-        spark.sql("CREATE TABLE {} USING ICEBERG AS SELECT * FROM df".format(table_name))
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG AS SELECT * FROM {}".format(table, tmpview))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)))
+        lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@pytest.mark.parametrize("data_gens", [[long_gen]], ids=idfn)
+@pytest.mark.parametrize("iceberg_format", ["orc", "avro"], ids=idfn)
+def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg_format):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = gen_df(spark, gen_list)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "TBLPROPERTIES('write.format.default' = '{}') ".format(iceberg_format) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_py4j_exception(
+        lambda : with_gpu_session(lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect()),
+        "UnsupportedOperationException")
 
 @iceberg
 @allow_non_gpu("BatchScanExec")
@@ -89,6 +109,34 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
         spark.sql("INSERT INTO {} VALUES (1, 'a'), (2, 'b'), (3, 'c')".format(table))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_fallback_collect(
-        lambda spark : spark.sql("SELECT * from {}".format(table)),
+        lambda spark : spark.sql("SELECT * FROM {}".format(table)),
         "BatchScanExec",
         conf = {disable_conf : "false"})
+
+@iceberg
+# Compression codec to test and whether the codec is supported by cudf
+# Note that compression codecs brotli and lzo need extra jars
+# https://githbub.com/NVIDIA/spark-rapids/issues/143
+@pytest.mark.parametrize("codec_info", [
+    ("uncompressed", None),
+    ("snappy", None),
+    ("gzip", None),
+    ("lz4", "Unsupported compression type"),
+    ("zstd", "Zstandard compression is experimental")])
+def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_info):
+    codec, error_msg = codec_info
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} (id BIGINT, data BIGINT) USING ICEBERG ".format(table) + \
+                  "TBLPROPERTIES('write.parquet.compression-codec' = '{}')".format(codec))
+        spark.sql("INSERT INTO {} SELECT * FROM {}".format(table, tmpview))
+    with_cpu_session(setup_iceberg_table)
+    query = "SELECT * FROM {}".format(table)
+    if error_msg:
+        assert_py4j_exception(
+            lambda : with_gpu_session(lambda spark : spark.sql(query).collect()), error_msg)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql(query))
