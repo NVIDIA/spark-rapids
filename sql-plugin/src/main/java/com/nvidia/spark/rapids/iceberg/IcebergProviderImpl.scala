@@ -44,6 +44,10 @@ class IcebergProviderImpl extends IcebergProvider {
           }
 
           FileFormatChecks.tag(this, a.readSchema(), IcebergFormatType, ReadFileOp)
+
+          if (GpuSparkBatchQueryScan.isMetadataScan(a)) {
+            willNotWorkOnGpu("scan is a metadata scan")
+          }
         }
 
         override def convertToGpu(): Scan = GpuSparkBatchQueryScan.fromCpu(a, conf)

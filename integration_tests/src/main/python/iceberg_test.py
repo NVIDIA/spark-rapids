@@ -202,7 +202,9 @@ def test_iceberg_read_appended_table(spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
 
 @iceberg
-def test_iceberg_read_history(spark_tmp_table_factory):
+# Some metadata files have types that are not supported on the GPU yet (e.g.: BinaryType)
+@allow_non_gpu("BatchScanExec", "ProjectExec")
+def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
@@ -215,18 +217,19 @@ def test_iceberg_read_history(spark_tmp_table_factory):
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
     with_cpu_session(setup_iceberg_table)
-    assert_gpu_and_cpu_are_equal_collect(
-        # SQL does not have syntax to read history table
-        lambda spark : spark.read.format("iceberg").load("default.{}.history".format(table)))
+    for subtable in ["all_data_files", "all_manifests", "files", "history",
+                     "manifests", "partitions", "snapshots"]:
+        # SQL does not have syntax to read table metadata
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read.format("iceberg").load("default.{}.{}".format(table, subtable)),
+            "BatchScanExec")
 
-# test appended data
 # test column removed and more data appended
 # test column added and more data appended
 # test column type changed and more data appended
 # test reordering struct fields and appending more data
 # test column names swapped
 # test time-travel with snapshot IDs and timestamps
-# iceberg metadata queries (metadata table select, etc.)
 # test reading data between two snapshot IDs
 # https://iceberg.apache.org/docs/latest/spark-queries/
 # test v2 deletes (position and equality)

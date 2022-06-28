@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.iceberg.spark.source;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -80,6 +81,19 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
   private List<FileScanTask> files = null; // lazy cache of files
   private List<CombinedScanTask> tasks = null; // lazy cache of tasks
 
+  // Check for file scan tasks that are reported as data tasks.
+  // Null/empty tasks are assumed to be for scans not best performed by the GPU.
+  @SuppressWarnings("unchecked")
+  public static boolean isMetadataScan(Scan cpuInstance) throws IllegalAccessException {
+    List<CombinedScanTask> tasks = (List<CombinedScanTask>) FieldUtils.readField(cpuInstance, "tasks", true);
+    if (tasks == null || tasks.isEmpty()) {
+      return true;
+    }
+    Iterator<FileScanTask> taskIter = tasks.get(0).files().iterator();
+    return !taskIter.hasNext() || taskIter.next().isDataTask();
+  }
+
+  @SuppressWarnings("unchecked")
   public static GpuSparkBatchQueryScan fromCpu(Scan cpuInstance, RapidsConf rapidsConf) throws IllegalAccessException {
     Table table = (Table) FieldUtils.readField(cpuInstance, "table", true);
     SparkReadConf readConf = SparkReadConf.fromReflect(FieldUtils.readField(cpuInstance, "readConf", true));
