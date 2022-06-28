@@ -1113,9 +1113,10 @@ def test_sorted_groupby_first_last(data_gen):
         f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
-        # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
+        # We set parallelism and partitions to 1 to prevent nondeterministic results because
+        # of distributed setups.
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
-        conf = {'spark.rapids.sql.explain': 'ALL'})
+        conf = {'spark.sql.shuffle.partitions': '1'})
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
