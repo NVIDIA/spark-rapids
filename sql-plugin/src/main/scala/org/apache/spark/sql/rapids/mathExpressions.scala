@@ -199,7 +199,7 @@ case class GpuCeil(child: Expression, outputType: DataType)
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+                throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
                   input, outOfBounds, dt, outputType
                 )
               }
@@ -275,7 +275,7 @@ case class GpuFloor(child: Expression, outputType: DataType)
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+                throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
                   input, outOfBounds, dt, outputType
                 )
               }
@@ -785,4 +785,33 @@ case class GpuPow(left: Expression, right: Expression)
 case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
   override def unaryOp: UnaryOp = UnaryOp.RINT
   override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+private object RoundingErrorUtil extends Arm {
+  /**
+   * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
+   *
+   * @param values A decimal column which contains values that try to cast.
+   * @param outOfBounds A boolean column that indicates which value cannot be casted. 
+   * Users must make sure that there is at least one `true` in this column.
+   * @param fromType The current decimal type.
+   * @param toType The type to cast.
+   * @param context The error context, default value is "".
+   */
+  def cannotChangeDecimalPrecisionError(      
+      values: GpuColumnVector,
+      outOfBounds: ColumnVector,
+      fromType: DecimalType,
+      toType: DecimalType,
+      context: String = ""): ArithmeticException = {
+    val row_id = withResource(outOfBounds.copyToHost()) {hcv =>
+      (0.toLong until outOfBounds.getRowCount())
+        .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
+        .get
+    }
+    val value = withResource(values.copyToHost()){hcv =>  
+      hcv.getDecimal(row_id.toInt, fromType.precision, fromType.scale)
+    }
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(value, toType)
+  }
 }

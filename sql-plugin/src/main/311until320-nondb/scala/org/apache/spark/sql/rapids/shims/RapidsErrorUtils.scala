@@ -16,13 +16,10 @@
 
 package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector}
-
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.types.{DataType, DecimalType}
+import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
-object RapidsErrorUtils extends Arm {
+object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     // Follow the Spark string format before 3.3.0
@@ -56,30 +53,10 @@ object RapidsErrorUtils extends Arm {
     new ArithmeticException(message)
   }
 
-  /**
-   * Wrapper of the `cannotChangeDecimalPrecisionError` in Spark.
-   *
-   * @param values A decimal column which contains values that try to cast.
-   * @param outOfBounds A boolean column that indicates which value cannot be casted. 
-   * Users must make sure that there is at least one `true` in this column.
-   * @param fromType The current decimal type.
-   * @param toType The type to cast.
-   * @param context The error context, default value is "".
-   */
   def cannotChangeDecimalPrecisionError(      
-      values: GpuColumnVector,
-      outOfBounds: ColumnVector,
-      fromType: DecimalType,
+      value: Decimal,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {
-    val row_id = withResource(outOfBounds.copyToHost()) {hcv =>
-      (0.toLong until outOfBounds.getRowCount())
-        .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
-        .get
-    }
-    val value = withResource(values.copyToHost()){hcv =>  
-      hcv.getDecimal(row_id.toInt, fromType.precision, fromType.scale)
-    }
     new ArithmeticException(s"${value.toDebugString} cannot be represented as " +
       s"Decimal(${toType.precision}, ${toType.scale}).")
   }
