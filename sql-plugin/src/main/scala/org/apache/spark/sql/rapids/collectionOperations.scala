@@ -197,7 +197,14 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
           }
         }
       case _: MapType =>
-        (_, _) => throw new UnsupportedOperationException("non-literal key is not supported")
+        (map, indices) => {
+          if (failOnError) {
+            GpuMapUtils.getMapValueOrThrow(map, indices, right.dataType, origin)
+          }
+          else {
+            map.getMapValue(indices)
+          }
+        }
     }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =
