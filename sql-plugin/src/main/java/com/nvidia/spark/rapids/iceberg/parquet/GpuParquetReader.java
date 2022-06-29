@@ -40,6 +40,7 @@ import org.apache.iceberg.io.CloseableGroup;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMapping;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
@@ -54,6 +55,11 @@ import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Types.MessageTypeBuilder;
 
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
+import org.apache.spark.sql.types.ArrayType;
+import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.MapType;
+import org.apache.spark.sql.types.Metadata;
+import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -134,15 +140,16 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
         }
       }
 
-      StructType sparkSchema = SparkSchemaUtil.convertWithoutConstants(expectedSchema, idToConstant);
       MessageType fileReadSchema = buildFileReadSchema(fileSchema);
       Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
           fileReadSchema, filteredRowGroups, caseSensitive);
+      StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
+          expectedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
       // reuse Parquet scan code to read the raw data from the file
       ParquetPartitionReader parquetPartReader = new ParquetPartitionReader(conf, partFile,
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
-          sparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, metrics,
+          partReaderSparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, metrics,
           true, true, true, false);
       PartitionReaderWithBytesRead partReader = new PartitionReaderWithBytesRead(parquetPartReader);
 
@@ -174,6 +181,66 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
+  /** Generate the Spark schema corresponding to a Parquet schema and expected Iceberg schema */
+  private static class SparkSchemaConverter extends TypeWithSchemaVisitor<DataType> {
+    @Override
+    public DataType message(Types.StructType iStruct, MessageType message, List<DataType> fields) {
+      return struct(iStruct, message, fields);
+    }
+
+    @Override
+    public DataType struct(Types.StructType iStruct, GroupType struct, List<DataType> fieldTypes) {
+      List<Type> parquetFields = struct.getFields();
+      List<StructField> fields = Lists.newArrayListWithExpectedSize(fieldTypes.size());
+
+      for (int i = 0; i < parquetFields.size(); i += 1) {
+        Type parquetField = parquetFields.get(i);
+
+        Preconditions.checkArgument(
+            !parquetField.isRepetition(Type.Repetition.REPEATED),
+            "Fields cannot have repetition REPEATED: %s", parquetField);
+
+        boolean isNullable = parquetField.isRepetition(Type.Repetition.OPTIONAL);
+        StructField field = new StructField(parquetField.getName(), fieldTypes.get(i),
+            isNullable, Metadata.empty());
+        fields.add(field);
+      }
+
+      return new StructType(fields.toArray(new StructField[0]));
+    }
+
+    @Override
+    public DataType list(Types.ListType iList, GroupType array, DataType elementType) {
+      GroupType repeated = array.getType(0).asGroupType();
+      Type element = repeated.getType(0);
+
+      Preconditions.checkArgument(
+          !element.isRepetition(Type.Repetition.REPEATED),
+          "Elements cannot have repetition REPEATED: %s", element);
+
+      boolean isNullable = element.isRepetition(Type.Repetition.OPTIONAL);
+      return new ArrayType(elementType, isNullable);
+    }
+
+    @Override
+    public DataType map(Types.MapType iMap, GroupType map, DataType keyType, DataType valueType) {
+      GroupType keyValue = map.getType(0).asGroupType();
+      Type value = keyValue.getType(1);
+
+      Preconditions.checkArgument(
+          !value.isRepetition(Type.Repetition.REPEATED),
+          "Values cannot have repetition REPEATED: %s", value);
+
+      boolean isValueNullable = value.isRepetition(Type.Repetition.OPTIONAL);
+      return new MapType(keyType, valueType, isValueNullable);
+    }
+
+    @Override
+    public DataType primitive(org.apache.iceberg.types.Type.PrimitiveType iPrimitive, PrimitiveType primitiveType) {
+      return SparkSchemaUtil.convert(iPrimitive);
+    }
+  }
+
   private static class ReorderColumns extends TypeWithSchemaVisitor<Type> {
     private final Map<Integer, ?> idToConstant;
 
@@ -185,7 +252,6 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     public Type message(Types.StructType expected, MessageType message, List<Type> fields) {
       MessageTypeBuilder builder = org.apache.parquet.schema.Types.buildMessage();
       List<Type> newFields = filterAndReorder(expected, fields);
-      // TODO: Avoid re-creating type if nothing changed
       for (Type type : newFields) {
         builder.addField(type);
       }
@@ -194,7 +260,6 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
     @Override
     public Type struct(Types.StructType expected, GroupType struct, List<Type> fields) {
-      // TODO: Avoid re-creating type if nothing changed
       List<Type> newFields = filterAndReorder(expected, fields);
       return struct.withNewFields(newFields);
     }

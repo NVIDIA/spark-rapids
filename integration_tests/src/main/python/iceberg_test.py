@@ -37,6 +37,7 @@ iceberg_gens_list = [
 
 @allow_non_gpu("BatchScanExec")
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
@@ -67,6 +68,7 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory):
               "spark.sql.optimizer.dynamicPartitionPruning.enabled": "true"})
 
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
@@ -100,6 +102,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
 
 @iceberg
 @allow_non_gpu("BatchScanExec")
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("disable_conf", ["spark.rapids.sql.format.iceberg.enabled",
                                           "spark.rapids.sql.format.iceberg.read.enabled"], ids=idfn)
 def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
@@ -114,6 +117,7 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
         conf = {disable_conf : "false"})
 
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 # Compression codec to test and whether the codec is supported by cudf
 # Note that compression codecs brotli and lzo need extra jars
 # https://githbub.com/NVIDIA/spark-rapids/issues/143
@@ -144,6 +148,7 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
         assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql(query))
 
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("key_gen", [int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_64bit], ids=idfn)
 def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen):
     table = spark_tmp_table_factory.get()
@@ -158,6 +163,7 @@ def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen):
         lambda spark : spark.sql("SELECT a FROM {}".format(table)))
 
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_input_meta(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -173,6 +179,7 @@ def test_iceberg_input_meta(spark_tmp_table_factory):
             "FROM {}".format(table)))
 
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_disorder_read_schema(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -186,6 +193,7 @@ def test_iceberg_disorder_read_schema(spark_tmp_table_factory):
         lambda spark : spark.sql("SELECT b,c,a FROM {}".format(table)))
 
 @iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_read_appended_table(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -204,6 +212,7 @@ def test_iceberg_read_appended_table(spark_tmp_table_factory):
 @iceberg
 # Some metadata files have types that are not supported on the GPU yet (e.g.: BinaryType)
 @allow_non_gpu("BatchScanExec", "ProjectExec")
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -224,12 +233,111 @@ def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
             lambda spark : spark.read.format("iceberg").load("default.{}.{}".format(table, subtable)),
             "BatchScanExec")
 
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_read_timetravel(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_snapshots(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+        return spark.sql("SELECT snapshot_id FROM default.{}.snapshots ".format(table) + \
+                         "ORDER BY committed_at").head()[0]
+    first_snapshot_id = with_cpu_session(setup_snapshots)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.option("snapshot-id", first_snapshot_id) \
+            .format("iceberg").load("default.{}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_incremental_read(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_snapshots(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+        df = binary_op_df(spark, long_gen, seed=2)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+        return spark.sql("SELECT snapshot_id FROM default.{}.snapshots ".format(table) + \
+                         "ORDER BY committed_at").collect()
+    snapshots = with_cpu_session(setup_snapshots)
+    start_snapshot, end_snapshot = [ row[0] for row in snapshots[:2] ]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read \
+            .option("start-snapshot-id", start_snapshot) \
+            .option("end-snapshot-id", end_snapshot) \
+            .format("iceberg").load("default.{}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_reorder_columns(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} ALTER COLUMN b FIRST".format(table))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_rename_column(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} RENAME COLUMN a TO c".format(table))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_column_names_swapped(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} RENAME COLUMN a TO c".format(table))
+        spark.sql("ALTER TABLE {} RENAME COLUMN b TO a".format(table))
+        spark.sql("ALTER TABLE {} RENAME COLUMN c TO b".format(table))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
 # test column removed and more data appended
 # test column added and more data appended
-# test column type changed and more data appended
-# test reordering struct fields and appending more data
-# test column names swapped
-# test time-travel with snapshot IDs and timestamps
-# test reading data between two snapshot IDs
-# https://iceberg.apache.org/docs/latest/spark-queries/
 # test v2 deletes (position and equality)

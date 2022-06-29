@@ -24,17 +24,13 @@ import java.util.stream.Collectors;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.exceptions.ValidationException;
-import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.math.LongMath;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 
 import org.apache.spark.sql.types.DataType;
-import org.apache.spark.sql.types.Metadata;
-import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import org.apache.spark.sql.types.StructType$;
 
 /**
  * Helper methods for working with Spark/Hive metadata.
@@ -63,33 +59,6 @@ public class SparkSchemaUtil {
    */
   public static DataType convert(Type type) {
     return TypeUtil.visit(type, new TypeToSparkType());
-  }
-
-  public static StructType convertWithoutConstants(Schema schema, Map<Integer, ?> idToConstant) {
-    return (StructType) TypeUtil.visit(schema, new TypeToSparkType() {
-      @Override
-      public DataType struct(Types.StructType struct, List<DataType> fieldResults) {
-        List<Types.NestedField> fields = struct.fields();
-
-        List<StructField> sparkFields = Lists.newArrayListWithExpectedSize(fieldResults.size());
-        for (int i = 0; i < fields.size(); i += 1) {
-          Types.NestedField field = fields.get(i);
-          // skip fields that are constants
-          if (idToConstant.containsKey(field.fieldId())) {
-            continue;
-          }
-          DataType type = fieldResults.get(i);
-          StructField sparkField = StructField.apply(
-              field.name(), type, field.isOptional(), Metadata.empty());
-          if (field.doc() != null) {
-            sparkField = sparkField.withComment(field.doc());
-          }
-          sparkFields.add(sparkField);
-        }
-
-        return StructType$.MODULE$.apply(sparkFields);
-      }
-    });
   }
 
   /**
