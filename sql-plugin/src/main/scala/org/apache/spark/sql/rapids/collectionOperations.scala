@@ -717,13 +717,18 @@ case class GpuArrayIntersect(left: Expression, right: Expression)
 
   override def nullable: Boolean = false
 
+  private def arrayIntersect(array1: ColumnVector, array2: ColumnVector): ColumnVector = {
+    withResource(ColumnView.setIntersect(array1, array2)) { setResult =>
+      withResource(array1.listIndexOf(setResult, ColumnView.FindOptions.FIND_FIRST)) { indices =>
+        array1.extractListElement(indices)
+      }
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     // Unlike set intersection, array intersection must preserve the order the items 
     // from both arrays
-    withResource(ColumnView.setIntersect(lhs.getBase, rhs.getBase)) { setResult =>
-      setResult
-    } 
+    arrayIntersect(lhs.getBase, rhs.getBase)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
