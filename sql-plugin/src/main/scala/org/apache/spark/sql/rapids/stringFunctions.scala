@@ -1516,7 +1516,15 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
         // Same as splitting as many times as possible
         str.getBase.stringSplitRecord(pattern, -1, isRegExp)
       case 1 =>
-        str.getBase
+        // Short circuit GPU and just return a list containing the original input string
+        withResource(str.getBase.isNull) { isNull =>
+          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
+            nullStringList =>
+              withResource(ColumnVector.makeList(str.getBase)) { list => 
+                  isNull.ifElse(nullStringList, list)
+              }
+          }
+        }
       case n =>
         str.getBase.stringSplitRecord(pattern, n, isRegExp)
     }
