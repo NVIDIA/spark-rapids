@@ -338,6 +338,24 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
 
+@iceberg
+@ignore_order(local=True)
+def test_iceberg_add_column(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} ADD COLUMNS (c DOUBLE)".format(table))
+        df = three_col_df(spark, long_gen, long_gen, double_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
 # test column removed and more data appended
 # test column added and more data appended
 # test v2 deletes (position and equality)

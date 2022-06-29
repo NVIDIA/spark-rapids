@@ -21,6 +21,7 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import scala.collection.Seq;
 
@@ -44,6 +45,7 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -140,7 +142,11 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
         }
       }
 
-      MessageType fileReadSchema = buildFileReadSchema(fileSchema);
+      ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ? new ReorderColumns(idToConstant)
+          : new ReorderColumnsFallback(idToConstant);
+      MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
+          expectedSchema.asStruct(), fileSchema, reorder);
+
       Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
           fileReadSchema, filteredRowGroups, caseSensitive);
       StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
@@ -153,7 +159,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           true, true, true, false);
       PartitionReaderWithBytesRead partReader = new PartitionReaderWithBytesRead(parquetPartReader);
 
-      return new GpuIcebergReader(expectedSchema, partReader, deleteFilter, idToConstant);
+      Map<Integer, ?> updatedConstants = addNullsForMissingFields(idToConstant, reorder.getMissingFields());
+      return new GpuIcebergReader(expectedSchema, partReader, deleteFilter, updatedConstants);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create/close reader for file: " + input, e);
     }
@@ -167,18 +174,15 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
-  // Filter out any unreferenced and metadata columns and reorder the columns
-  // to match the expected schema.
-  private MessageType buildFileReadSchema(MessageType fileSchema) {
-    if (ParquetSchemaUtil.hasIds(fileSchema)) {
-      return (MessageType)
-          TypeWithSchemaVisitor.visit(expectedSchema.asStruct(), fileSchema,
-              new ReorderColumns(idToConstant));
-    } else {
-      return (MessageType)
-          TypeWithSchemaVisitor.visit(expectedSchema.asStruct(), fileSchema,
-              new ReorderColumnsFallback(idToConstant));
+  private Map<Integer, ?> addNullsForMissingFields(Map<Integer, ?> idToConstant, Set<Integer> missingFields) {
+    if (missingFields.isEmpty()) {
+      return idToConstant;
     }
+    Map<Integer, ?> updated = Maps.newHashMap(idToConstant);
+    for (Integer field : missingFields) {
+      updated.put(field, null);
+    }
+    return updated;
   }
 
   /** Generate the Spark schema corresponding to a Parquet schema and expected Iceberg schema */
@@ -243,9 +247,14 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
   private static class ReorderColumns extends TypeWithSchemaVisitor<Type> {
     private final Map<Integer, ?> idToConstant;
+    private final Set<Integer> missingFields = Sets.newHashSet();
 
     public ReorderColumns(Map<Integer, ?> idToConstant) {
       this.idToConstant = idToConstant;
+    }
+
+    public Set<Integer> getMissingFields() {
+      return missingFields;
     }
 
     @Override
@@ -326,6 +335,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           Type newField = typesById.get(id);
           if (newField != null) {
             reorderedFields.add(newField);
+          } else {
+            missingFields.add(id);
           }
         }
       }
