@@ -450,7 +450,8 @@ def test_ceil_scale_zero(data_gen):
 
 @pytest.mark.parametrize('data_gen', [_decimal_gen_36_neg5, _decimal_gen_38_neg10], ids=idfn)
 def test_floor_ceil_overflow(data_gen):
-    exception_type = "java.lang.ArithmeticException" if is_before_spark_330() else "SparkArithmeticException"
+    exception_type = "java.lang.ArithmeticException" if is_before_spark_330() and not is_databricks104_or_later() \
+        else "SparkArithmeticException"
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('floor(a)').collect(),
         conf={},
