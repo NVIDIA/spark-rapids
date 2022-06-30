@@ -41,7 +41,16 @@ def main():
         (master_addr, params.private_key_file, params.jar_path, params.spark_conf, params.base_spark_pom_version,
          params.script_dest, ' '.join(params.script_args))
     print("ssh command: %s" % ssh_command)
-    subprocess.check_call(ssh_command, shell=True)
+    try:
+        subprocess.check_call(ssh_command, shell=True)
+    finally:
+        print("Copying test report tarball back")
+        report_path_prefix = params.jar_path if params.jar_path else "/home/ubuntu/spark-rapids"
+        rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\"" \
+            " ubuntu@%s:%s/integration_tests/target/run_dir/TEST-pytest-*.xml ./" % \
+            (params.private_key_file, master_addr, report_path_prefix)
+        print("rsync command: %s" % rsync_command)
+        subprocess.check_call(rsync_command, shell = True)
 
 
 if __name__ == '__main__':

@@ -279,6 +279,124 @@ function createGPURecommendationTableConf(
   return gpuRecommendationConf;
 }
 
+function getGPURecommendationTableTemplate() {
+  return `
+      <div id=\"apps-recommendations-data\">
+        <table id=\"gpu-recommendation-table\" class=\"table display\" style=\"width:100%\">
+          <thead>
+          <tr>
+            <th></th>
+            <th>
+              App Name
+            </th>
+            <th>
+              App ID
+            </th>
+            <th>
+              Recommendation
+            </th>
+            <th>
+              Estimated Speed-up
+            </th>
+            <th>
+              App Duration
+            </th>
+          </tr>
+          </thead>
+        </table>
+      </div>
+  `;
+}
+
+function getGlobalStatisticsTemplate() {
+  return `
+      <div class="row dash-row">
+        <div class="col-xl-4">
+          <div class="stats stats-primary">
+            <h3 class="stats-title"> {{totalApps.header}} </h3>
+            <div class="stats-content">
+              <div class="stats-icon">
+                <svg width="1.05em"
+                     height="1.05em"
+                     viewBox="0 0 16 16"
+                     fill="none"
+                     xmlns="http://www.w3.org/2000/svg">
+                  <path d="M6.5 13.5V10.5H3.5V13.5H6.5ZM6.5 13.5H9.5M6.5 13.5V6.5H9.5V13.5M9.5 13.5H12.5V2.5H9.5V13.5Z"
+                        stroke="white"/>
+                </svg>
+              </div>
+              <div class="stats-data">
+                <div class="stats-number"> {{totalApps.numeric}}</div>
+                <div class="stats-change">
+                  <span class="stats-percentage"> {{totalApps.totalAppsDurations}} </span>
+                  <span class="stats-timeframe"> {{totalApps.totalAppsDurationLabel}} </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-4">
+          <div class="stats stats-success ">
+            <h3 class="stats-title"> {{candidates.header}} </h3>
+            <div class="stats-content">
+              <div class="stats-icon">
+                <svg width="1.05em"
+                     height="1.05em"
+                     viewBox="0 0 16 16"
+                     fill="none"
+                     xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1.5 6.5H2V9.5H1.5M6.5 1.5V2H9.5V1.5M14.5 6.5H14V9.5H14.5M6.5 14.5V14H9.5V14.5M14.5 14.5H1.5V1.5H14.5V14.5ZM4.5 4.5H5.5V5.5H4.5V4.5ZM4.5 7.5H5.5V8.5H4.5V7.5ZM4.5 10.5H5.5V11.5H4.5V10.5ZM7.5 4.5H8.5V5.5H7.5V4.5ZM7.5 7.5H8.5V8.5H7.5V7.5ZM7.5 10.5H8.5V11.5H7.5V10.5ZM10.5 4.5H11.5V5.5H10.5V4.5ZM10.5 7.5H11.5V8.5H10.5V7.5ZM10.5 10.5H11.5V11.5H10.5V10.5Z"
+                        stroke="white"/>
+                </svg>
+              </div>
+              <div class="stats-data">
+                <div class="stats-number"> {{candidates.numeric}} </div>
+                <div class="stats-change">
+                  <span class="stats-percentage"> {{candidates.statsPercentage}} </span>
+                  <span class="stats-timeframe"> {{candidates.statsTimeFrame}} </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-4">
+          <div class="stats stats-info">
+            <h3 class="stats-title"> {{speedups.header}} </h3>
+            <div class="stats-content">
+              <div class="stats-icon">
+                <svg width="1.05em" height="1.05em"
+                viewBox="0 0 16 16"
+                     fill="none"
+                     xmlns="http://www.w3.org/2000/svg">
+                  <g clip-path="url(#clip0_2_1921)">
+                    <path d="M8.5 7.99V8L2.5 11.5V4.5L8.5 7.99Z" stroke="white"/>
+                    <path d="M14.5 8L8.5 11.5V4.5L14.5 8Z" stroke="white"/>
+                  </g>
+                  <defs>
+                    <clipPath id="clip0_2_1921">
+                      <rect width="1.05em" height="1.05em" fill="white"/>
+                    </clipPath>
+                  </defs>
+                </svg>
+              </div>
+              <div class="stats-data">
+                <div class="stats-number"> {{speedups.numeric}} </div>
+                <div class="stats-change">
+                  <span class="stats-percentage"> {{speedups.totalSqlDataframeTaskDuration}} </span>
+                  <span class="stats-timeframe"> {{speedups.totalSqlDFDurationsLabel}} </span>
+                </div>
+                <div class="stats-change">
+                  <span class="stats-percentage"> {{speedups.statsPercentage}} </span>
+                  <span class="stats-timeframe"> {{speedups.statsTimeFrame}} </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+  `;
+}
+
 $(document).ready(function(){
   // do the required filtering here
   let attemptArray = processRawData(qualificationRecords);
@@ -290,7 +408,7 @@ $(document).ready(function(){
     {
       tableId: "gpuRecommendations",
       datatableContainerID: '#app-recommendations-data-container',
-      dataTableTemplate: $("#gpu-recommendation-table-template").html(),
+      dataTableTemplate: getGPURecommendationTableTemplate(),
       tableDivId: '#gpu-recommendation-table',
     }
   );
@@ -325,8 +443,7 @@ $(document).ready(function(){
   });
 
   // set the template of the report qualReportSummary
-  let template = $("#qual-report-summary-template").html();
-  let text = Mustache.render(template, qualReportSummary);
+  let text = Mustache.render(getGlobalStatisticsTemplate(), qualReportSummary);
   $("#qual-report-summary").html(jQuery.parseHTML(text, false));
 
   //

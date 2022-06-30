@@ -69,37 +69,35 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
-    val estimatedSorted = sortForExecutiveSummary(allAppsSum.map(_.estimatedInfo), order)
-    qWriter.writeReport(allAppsSum, estimatedSorted, numRows)
-    val sortedDetailed = sortForCSVDetailedReport(allAppsSum)
-    qWriter.writeDetailedReport(sortedDetailed)
+    val sortedDescDetailed = sortDescForDetailedReport(allAppsSum)
+    qWriter.writeReport(allAppsSum, sortForExecutiveSummary(sortedDescDetailed, order), numRows)
+    qWriter.writeDetailedReport(sortedDescDetailed)
     qWriter.writeExecReport(allAppsSum, order)
     qWriter.writeStageReport(allAppsSum, order)
     if (uiEnabled) {
       QualificationReportGenerator.generateDashBoard(getReportOutputPath, allAppsSum)
     }
-    sortedDetailed
+    sortedDescDetailed
   }
 
-  private def sortForCSVDetailedReport(
+  private def sortDescForDetailedReport(
       allAppsSum: Seq[QualificationSummaryInfo]): Seq[QualificationSummaryInfo] = {
-    // Default sorting for of the csv files.
+    // Default sorting for of the csv files. Use the endTime to break the tie.
     allAppsSum.sortBy(sum => {
-      (sum.estimatedInfo.recommendation, sum.estimatedInfo.estimatedGpuSpeedup)
+      (sum.estimatedInfo.recommendation, sum.estimatedInfo.estimatedGpuSpeedup,
+        sum.estimatedInfo.estimatedGpuTimeSaved, sum.startTime + sum.estimatedInfo.appDur)
     }).reverse
   }
 
-  // Sorting for the pretty printed executive summary
-  private def sortForExecutiveSummary(sumsToWrite: Seq[EstimatedSummaryInfo],
+  // Sorting for the pretty printed executive summary.
+  // The sums elements is ordered in descending order. so, only we need to reverse it if the order
+  // is ascending
+  private def sortForExecutiveSummary(appsSumDesc: Seq[QualificationSummaryInfo],
       order: String): Seq[EstimatedSummaryInfo] = {
     if (QualificationArgs.isOrderAsc(order)) {
-      sumsToWrite.sortBy(sum => {
-        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
-      })
+      appsSumDesc.reverse.map(_.estimatedInfo)
     } else {
-      sumsToWrite.sortBy(sum => {
-        (sum.recommendation, sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
-      }).reverse
+      appsSumDesc.map(_.estimatedInfo)
     }
   }
 

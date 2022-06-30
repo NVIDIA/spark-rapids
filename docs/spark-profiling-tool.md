@@ -528,11 +528,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   applications). Default is false.
       --csv                       Output each table to a CSV file as well
                                   creating the summary text file.
-  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
-                                  processing.eg: 100-newest-filesystem (for
-                                  processing newest 100 event logs). eg:
-                                  100-oldest-filesystem (for processing oldest
-                                  100 event logs)
+  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs based on
+                                  application start timestamp for processing.
+                                  Filesystem based filtering happens before
+                                  application based filtering (see start-app-time).
+                                  eg: 100-newest-filesystem (for processing newest
+                                  100 event logs). eg: 100-oldest-filesystem (for
+                                  processing oldest 100 event logs).
   -g, --generate-dot              Generate query visualizations in DOT format.
                                   Default is false
       --generate-timeline         Write an SVG graph out for the full
@@ -553,6 +555,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   -p, --print-plans               Print the SQL plans to a file named
                                   'planDescriptions.log'.
                                   Default is false.
+  -s, --start-app-time  <arg>     Filter event logs whose application start
+                                  occurred within the past specified time
+                                  period. Valid time periods are
+                                  min(minute),h(hours),d(days),w(weeks),m(months).
+                                  If a period is not specified it defaults to
+                                  days.
   -t, --timeout  <arg>            Maximum time in seconds to wait for the event
                                   logs to be processed. Default is 24 hours
                                   (86400 seconds) and must be greater than 3

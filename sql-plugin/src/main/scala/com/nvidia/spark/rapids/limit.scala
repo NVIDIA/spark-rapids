@@ -296,10 +296,14 @@ case class GpuTopN(
     val sortTime = gpuLongMetric(SORT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val callback = GpuMetric.makeSpillCallback(allMetrics)
+    val localLimit = limit
+    val localProjectList = projectList
+    val childOutput = child.output
+
     child.executeColumnar().mapPartitions { iter =>
-      val topN = GpuTopN(limit, sorter, iter, opTime, sortTime, concatTime,
+      val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
         inputBatches, inputRows, outputBatches, outputRows, callback)
-      if (projectList != child.output) {
+      if (localProjectList != childOutput) {
         topN.map { batch =>
           GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
         }

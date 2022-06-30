@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -84,6 +84,7 @@ do
       CLASSES="${CLASSES}\n$PACKAGE.${CLASS}"
     done
   done
+  FOUND_REFS=""
   # dedupe
   for CLASS in $(echo -e $CLASSES|sort|uniq|xargs)
   do
@@ -94,13 +95,14 @@ do
     set -ex
     echo -e "looking for class ${CLASS} and ${FOUND}\n"
     if [ ${FOUND} -ne 0 ]; then 
-      printf "%s\t%s\t%s\t%s\n" "P1" "${COMMIT_ID}" "${COMMIT_MSG}" "${CLASS}" >> ${PRIORITIZED_COMMITS}
-      printf "%s\t%s\n" "${COMMIT_ID}" "${CLASS}" >> ${AUDIT_PLUGIN_LOG}
-      break
+      FOUND_REFS="$FOUND_REFS ${CLASS},"
     fi
   fi
   done
-  if [ ${FOUND} -eq 0 ]; then
+  if [ ! -z "${FOUND_REFS}" ]; then
+    printf "%s\t%s\t%s\n" "P1" "${COMMIT_ID}" "${COMMIT_MSG}" >> ${PRIORITIZED_COMMITS}
+    printf "%s\t%s\t%s\n" "${COMMIT_ID}" "${FOUND_REFS}" >> ${AUDIT_PLUGIN_LOG}
+  else 
     printf "%s\t%s\t%s\n" "P?" "${COMMIT_ID}" "${COMMIT_MSG}" >> ${PRIORITIZED_COMMITS}
   fi
 done < <(cat ${COMMIT_DIFF_LOG})
