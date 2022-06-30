@@ -142,7 +142,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
     }
   }
@@ -167,7 +167,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
     }
   }
@@ -711,7 +711,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/application_1603128018386_7846")
 
@@ -738,7 +738,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/local-1651188809790")
 
@@ -768,7 +768,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         tempDir.getAbsolutePath,
         eventLog1,
         eventLog2))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/compare")
 
@@ -798,7 +798,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         tempDir.getAbsolutePath,
         eventLog1,
         eventLog2))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/combined")
 

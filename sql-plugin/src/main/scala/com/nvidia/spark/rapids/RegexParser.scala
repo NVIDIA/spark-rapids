@@ -147,8 +147,7 @@ class RegexParser(pattern: String) {
       case '\\' =>
         parseEscapedCharacter()
       case '\u0000' =>
-        throw new RegexUnsupportedException(
-          "cuDF does not support null characters in regular expressions", Some(pos-1))
+        RegexGroup(false, RegexEscaped('0'))
       case '*' | '+' | '?' =>
         throw new RegexUnsupportedException(
           "Base expression cannot start with quantifier", Some(pos-1))
@@ -231,8 +230,9 @@ class RegexParser(pattern: String) {
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
         case '\u0000' =>
+          // see https://github.com/NVIDIA/spark-rapids/issues/5909
           throw new RegexUnsupportedException(
-            "cuDF does not support null characters in regular expressions", Some(pos-1))
+            "cuDF does not support null characters in character classes", Some(pos-1))
         case ch => 
           val nextChar: RegexCharacterClassComponent = ch match {
             case '\\' =>
@@ -241,6 +241,10 @@ class RegexParser(pattern: String) {
                   // A hex or octal representation of a meta character gets treated as an escaped 
                   // char. Example: [\x5ea] is treated as [\^a], not just [^a]
                   RegexEscaped(ch)
+                case RegexChar('\u0000') =>
+                  // see https://github.com/NVIDIA/spark-rapids/issues/5909
+                  throw new RegexUnsupportedException(
+                    "cuDF does not support null characters in character classes", Some(pos))
                 case other => other
               }
             case '&' => 
@@ -410,8 +414,7 @@ class RegexParser(pattern: String) {
             parseHexDigit
           case '0' =>
             parseOctalDigit
-          case 'p' =>
-            consumeExpected(ch)
+          case 'p' | 'P' =>
             parsePredefinedClass
           case 'a' =>
             // alert (bell) character \a
@@ -429,6 +432,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parsePredefinedClass: RegexCharacterClass = {
+    val negated = consume().isUpper
     consumeExpected('{')
     val start = pos 
     while(!eof() && pattern.charAt(pos).isLetter) {
@@ -444,7 +448,7 @@ class RegexParser(pattern: String) {
         case "Upper" => 
           ListBuffer(RegexCharacterRange(RegexChar('A'), RegexChar('Z')))
         case "ASCII" =>
-          // should be \u0000-\u007f but we do not support the null terminator \u0000 
+          // should be \u0000-\u007f, see: https://github.com/NVIDIA/spark-rapids/issues/5909
           ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u007f')))
         case "Alpha" => 
           ListBuffer(getCharacters("Lower"), getCharacters("Upper")).flatten
@@ -464,7 +468,7 @@ class RegexParser(pattern: String) {
         case "Blank" =>
           ListBuffer(RegexChar(' '), RegexEscaped('t'))
         case "Cntrl" =>
-          // should be \u0001-\u001f but we do not support the null terminator \u0000 
+          // should be \u0000-\u001f, see: https://github.com/NVIDIA/spark-rapids/issues/5909
           ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u001f')), 
             RegexChar('\u007f'))
         case "XDigit" =>
@@ -479,7 +483,7 @@ class RegexParser(pattern: String) {
       }
     }
     consumeExpected('}')
-    RegexCharacterClass(negated = false, characters = getCharacters(className))
+    RegexCharacterClass(negated, characters = getCharacters(className))
   }
 
   private def isHexDigit(ch: Char): Boolean = ch.isDigit ||
@@ -509,11 +513,7 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit", Some(start))
-    } else if (value == 0) {
-      throw new RegexUnsupportedException(s"cuDF does not support null characters " +
-        s"in regular expressions", Some(start))
     }
-
     new RegexHexDigit(hexDigit, start - 2)
   }
 
@@ -635,6 +635,7 @@ object RegexParser {
       case '\n' => "\\n"
       case '\t' => "\\t"
       case '\f' => "\\f"
+      case '\u0000' => "\\u0000"
       case '\u000b' => "\\u000b"
       case '\u0085' => "\\u0085"
       case '\u2028' => "\\u2028"
@@ -811,6 +812,16 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
       case RegexEscaped(ch) if ch == 'n' => Seq('\n')
       case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+      case RegexCharacterRange(RegexChar(start), RegexChar(end)) =>
+        if (start <= '\n' && end >= '\r') {
+          Seq('\n', '\r')
+        } else if (start <= '\n' && end >= '\n') {
+          Seq('\n')
+        } else if (start <= '\r' && end >= '\r') {
+          Seq('\r')
+        } else {
+          Seq.empty
+        }
       case _ => Seq.empty
     }
 
@@ -1385,18 +1396,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
         // cuDF does not support terms ending with line anchors on one side
         // of a choice, such as "^|$"
-        def endsWithLineAnchor(e: RegexAST): Boolean = {
-          e match {
-            case RegexSequence(parts) if parts.nonEmpty =>
-              val j = parts.lastIndexWhere {
-                  case RegexEmpty() => false
-                  case _ => true
-              }
-              endsWithLineAnchor(parts(j))
-            case RegexEscaped('A') => true
-            case _ => isBeginOrEndLineAnchor(e)
-          }
-        }
         if (endsWithLineAnchor(ll)) {
           throw new RegexUnsupportedException(
             "cuDF does not support terms ending with line anchors on one side of a choice",
@@ -1404,6 +1403,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else if (endsWithLineAnchor(rr)) {
           throw new RegexUnsupportedException(
             "cuDF does not support terms ending with line anchors on one side of a choice",
+            r.position)
+        }
+
+        // cuDF does not support terms ending with word boundaries on one side
+        // of a choice, such as "\\b|a"
+        if (endsWithWordBoundary(ll)) {
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with word boundaries on one side of a choice", 
+            l.position)
+        } else if (endsWithWordBoundary(rr)) {
+          throw new RegexUnsupportedException(
+            "cuDF does not support terms ending with word boundaries on one side of a choice", 
             r.position)
         }
 
@@ -1441,6 +1452,32 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case leaf => f(leaf)
       }
     }
+  }
+
+  private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        val j = parts.lastIndexWhere {
+            case RegexEmpty() => false
+            case _ => true
+        }
+        endsWith(parts(j), f)
+      case _ => f(regex)
+    }
+  }
+
+  private def endsWithLineAnchor(e: RegexAST): Boolean = {
+    endsWith(e, {
+      case RegexEscaped('A') => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
+  private def endsWithWordBoundary(e: RegexAST): Boolean = {
+    endsWith(e, {
+      case RegexEscaped(a) if "bB".contains(a) => true
+      case _ => false
+    })
   }
 
   private def isBeginOrEndLineAnchor(regex: RegexAST): Boolean = regex match {

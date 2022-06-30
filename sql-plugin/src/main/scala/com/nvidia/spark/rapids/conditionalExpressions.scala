@@ -209,13 +209,18 @@ case class GpuIf(
 
     val gpuTrueExpr = trueExpr.asInstanceOf[GpuExpression]
     val gpuFalseExpr = falseExpr.asInstanceOf[GpuExpression]
+    val trueExprHasSideEffects = gpuTrueExpr.hasSideEffects
+    val falseExprHasSideEffects = gpuFalseExpr.hasSideEffects
 
     withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
-      if (isAllTrue(pred)) {
+      // It is unlikely that pred is all true or all false, and in many cases it is as expensive
+      // to calculate isAllTrue as it would be to calculate the expression so only do it when
+      // it would help with side effect processing, because that is very expensive to do.
+      if (falseExprHasSideEffects && isAllTrue(pred)) {
         GpuExpressionsUtils.columnarEvalToColumn(trueExpr, batch)
-      } else if (isAllFalse(pred)) {
+      } else if (trueExprHasSideEffects && isAllFalse(pred)) {
         GpuExpressionsUtils.columnarEvalToColumn(falseExpr, batch)
-      } else if (gpuTrueExpr.hasSideEffects || gpuFalseExpr.hasSideEffects) {
+      } else if (trueExprHasSideEffects || falseExprHasSideEffects) {
         conditionalWithSideEffects(batch, pred, gpuTrueExpr, gpuFalseExpr)
       } else {
         withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>

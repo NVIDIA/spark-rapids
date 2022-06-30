@@ -1045,6 +1045,19 @@ def test_predefined_character_classes():
             'regexp_replace(a, "\\\\p{Cntrl}", "x")',
             'regexp_replace(a, "\\\\p{XDigit}", "x")',
             'regexp_replace(a, "\\\\p{Space}", "x")',
+            'regexp_replace(a, "\\\\P{Lower}", "x")',
+            'regexp_replace(a, "\\\\P{Upper}", "x")',
+            'regexp_replace(a, "\\\\P{ASCII}", "x")',
+            'regexp_replace(a, "\\\\P{Alpha}", "x")',
+            'regexp_replace(a, "\\\\P{Digit}", "x")',
+            'regexp_replace(a, "\\\\P{Alnum}", "x")',
+            'regexp_replace(a, "\\\\P{Punct}", "x")',
+            'regexp_replace(a, "\\\\P{Graph}", "x")',
+            'regexp_replace(a, "\\\\P{Print}", "x")',
+            'regexp_replace(a, "\\\\P{Blank}", "x")',
+            'regexp_replace(a, "\\\\P{Cntrl}", "x")',
+            'regexp_replace(a, "\\\\P{XDigit}", "x")',
+            'regexp_replace(a, "\\\\P{Space}", "x")',
         ),
         conf=_regexp_conf)
 
@@ -1075,15 +1088,6 @@ def test_rlike_null_pattern():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike NULL'))
-
-@allow_non_gpu('ProjectExec', 'RLike')
-def test_rlike_fallback_null_pattern():
-    gen = mk_str_gen('[abcd]{1,3}')
-    assert_gpu_fallback_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'a rlike "a\u0000"'),
-            'RLike',
-        conf=_regexp_conf)
 
 @allow_non_gpu('ProjectExec', 'RLike')
 def test_rlike_fallback_empty_group():
