@@ -340,6 +340,26 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_alter_column_type(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = three_col_df(spark, int_gen, float_gen, DecimalGen(precision=7, scale=3))
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} ALTER COLUMN a TYPE BIGINT".format(table))
+        spark.sql("ALTER TABLE {} ALTER COLUMN b TYPE DOUBLE".format(table))
+        spark.sql("ALTER TABLE {} ALTER COLUMN c TYPE DECIMAL(17, 3)".format(table))
+        df = three_col_df(spark, long_gen, double_gen, DecimalGen(precision=17, scale=3))
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_add_column(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()

@@ -23,12 +23,14 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 import ai.rapids.cudf.Scalar;
+import com.nvidia.spark.rapids.GpuCast;
 import com.nvidia.spark.rapids.GpuColumnVector;
 import com.nvidia.spark.rapids.GpuScalar;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.CloseableIterator;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
@@ -85,7 +87,8 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
       if (deleteFilter != null) {
         throw new UnsupportedOperationException("Delete filter is not supported");
       }
-      return addConstantColumns(batch);
+      ColumnarBatch updatedBatch = addConstantColumns(batch);
+      return addUpcastsIfNeeded(updatedBatch);
     }
   }
 
@@ -126,6 +129,33 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
       }
     }
     return result;
+  }
+
+  private ColumnarBatch addUpcastsIfNeeded(ColumnarBatch batch) {
+    GpuColumnVector[] columns = null;
+    try {
+      List<Types.NestedField> expectedColumnTypes = expectedSchema.columns();
+      Preconditions.checkState(expectedColumnTypes.size() == batch.numCols(),
+          "Expected to load " + expectedColumnTypes.size() + " columns, found " + batch.numCols());
+      columns = GpuColumnVector.extractColumns(batch);
+      for (int i = 0; i < batch.numCols(); i++) {
+        DataType expectedSparkType = SparkSchemaUtil.convert(expectedColumnTypes.get(i).type());
+        GpuColumnVector oldColumn = columns[i];
+        columns[i] = GpuColumnVector.from(
+            GpuCast.doCast(oldColumn.getBase(), oldColumn.dataType(), expectedSparkType, false, false, false),
+            expectedSparkType);
+      }
+      ColumnarBatch newBatch = new ColumnarBatch(columns, batch.numRows());
+      columns = null;
+      return newBatch;
+    } finally {
+      batch.close();
+      if (columns != null) {
+        for (ColumnVector c : columns) {
+          c.close();
+        }
+      }
+    }
   }
 
   private static class ConstantDetector extends TypeUtil.SchemaVisitor<Boolean> {

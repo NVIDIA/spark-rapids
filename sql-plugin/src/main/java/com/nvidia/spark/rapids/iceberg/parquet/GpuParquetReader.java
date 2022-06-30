@@ -50,6 +50,7 @@ import org.apache.iceberg.types.Types;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.parquet.schema.DecimalMetadata;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
@@ -59,6 +60,12 @@ import org.apache.parquet.schema.Types.MessageTypeBuilder;
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
 import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DecimalType$;
+import org.apache.spark.sql.types.DoubleType$;
+import org.apache.spark.sql.types.FloatType$;
+import org.apache.spark.sql.types.IntegerType$;
+import org.apache.spark.sql.types.LongType;
+import org.apache.spark.sql.types.LongType$;
 import org.apache.spark.sql.types.MapType;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -241,7 +248,24 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
     @Override
     public DataType primitive(org.apache.iceberg.types.Type.PrimitiveType iPrimitive, PrimitiveType primitiveType) {
-      return SparkSchemaUtil.convert(iPrimitive);
+      // If up-casts are needed, load as the pre-cast Spark type, and this will be up-cast in GpuIcebergReader.
+      switch (iPrimitive.typeId()) {
+        case LONG:
+          if (primitiveType.getPrimitiveTypeName().equals(PrimitiveType.PrimitiveTypeName.INT32)) {
+            return IntegerType$.MODULE$;
+          }
+          return LongType$.MODULE$;
+        case DOUBLE:
+          if (primitiveType.getPrimitiveTypeName().equals(PrimitiveType.PrimitiveTypeName.FLOAT)) {
+            return FloatType$.MODULE$;
+          }
+          return DoubleType$.MODULE$;
+        case DECIMAL:
+          DecimalMetadata metadata = primitiveType.getDecimalMetadata();
+          return DecimalType$.MODULE$.apply(metadata.getPrecision(), metadata.getScale());
+        default:
+          return SparkSchemaUtil.convert(iPrimitive);
+      }
     }
   }
 
