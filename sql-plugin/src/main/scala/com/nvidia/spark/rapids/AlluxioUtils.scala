@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.FileNotFoundException
+
 import scala.io.Source
 import scala.sys.process.Process
 
@@ -35,16 +37,15 @@ object AlluxioUtils extends Logging {
   // from Alluxio's conf alluxio-site.properties
   // We require an environment variable "ALLUXIO_HOME"
   // This function will only read once from ALLUXIO/conf.
-  private def getAlluxioMasterHost() : Unit = {
+  private def readAlluxioMasterHost():Unit = {
     if (alluxioMasterHost.isEmpty) {
       var host = ""
       var port = "19998"
-      val alluxio_home = scala.util.Properties.envOrNone("ALLUXIO_HOME")
-      if (alluxio_home.isEmpty) {
-        throw new RuntimeException("No environment variable ALLUXIO_HOME is set.")
-      }
-      val buffered_source = Source.fromFile(alluxio_home.get + "/conf/alluxio-site.properties")
+      // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
+      val alluxio_home = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
+      var buffered_source : Source = null
       try {
+        buffered_source = Source.fromFile(alluxio_home + "/conf/alluxio-site.properties")
         for (line <- buffered_source.getLines) {
           if (line.startsWith("alluxio.master.hostname")) {
             host = line.split('=')(1).trim
@@ -52,8 +53,13 @@ object AlluxioUtils extends Logging {
             port = line.split('=')(1).trim
           }
         }
+      } catch {
+        case e: FileNotFoundException =>
+          throw new RuntimeException(s"Not found Alluxio config in " +
+            s"$alluxio_home/conf/alluxio-site.properties, " +
+            "please check if ALLUXIO_HOME is set correctly")
       } finally {
-        buffered_source.close
+        if (buffered_source != null) buffered_source.close
       }
 
       if (host.isEmpty) {
@@ -75,7 +81,11 @@ object AlluxioUtils extends Logging {
   }
 
   // path is like "s3://foo/test...", it mounts bucket "foo" by calling the alluxio CLI
-  def autoMountBucket(scheme: String, bucket: String): Unit = {
+  // And we'll append --option to set access_key and secret_key if existing.
+  // Suppose the key doesn't exist when using like Databricks's instance profile
+  private def autoMountBucket(scheme: String, bucket: String,
+                      access_key: Option[String],
+                      secret_key: Option[String]): Unit = {
     val remote_path = scheme + "//" + bucket
     if (!mountedBuckets.contains(bucket)) {
       // not mount yet, call mount command
@@ -87,20 +97,47 @@ object AlluxioUtils extends Logging {
 
       val params = command.tails.collect{
         case Seq(first, _, _*) => first
-        case Seq(last) => last + s" /$bucket $remote_path"
+        case Seq(last) => if (access_key.isEmpty) {
+            last + s" /$bucket $remote_path"
+          } else {
+            last + s" --option s3a.accessKeyId=${access_key.get} " +
+              s"--option s3a.secretKey=${secret_key.get} /$bucket $remote_path"
+          }
       }.toSeq
-      logInfo(s"Run command $params")
+      logInfo(s"Run command ${params.last}")
       val output = Process(params).!
       if (output != 0) {
         throw new RuntimeException(s"Mount bucket $bucket failed $output")
       }
-      logInfo(s"Mounted remote $remote_path to /$bucket in Alluxio")
+      logInfo(s"Mounted remote $remote_path to /$bucket in Alluxio $output")
       mountedBuckets(bucket) = remote_path
     } else if (mountedBuckets(bucket).equals(remote_path)) {
       logInfo(s"Already mounted remote $remote_path to /$bucket in Alluxio")
     } else {
       throw new RuntimeException(s"Found a same bucket name in $remote_path " +
         s"and ${mountedBuckets(bucket)}")
+    }
+  }
+
+  // first try to get fs.s3a.access.key from spark config
+  // second try to get from environment variables
+  private def getKeyAndSecret(relation: HadoopFsRelation) : (Option[String], Option[String]) = {
+    val hadoopAccessKey =
+      relation.sparkSession.sparkContext.hadoopConfiguration.get("fs.s3a.access.key")
+    val hadoopSecretKey =
+      relation.sparkSession.sparkContext.hadoopConfiguration.get("fs.s3a.secret.key")
+    if (hadoopAccessKey != null && hadoopSecretKey != null) {
+      (Some(hadoopAccessKey), Some(hadoopSecretKey))
+    } else {
+      val accessKey = relation.sparkSession.conf.getOption("spark.hadoop.fs.s3a.access.key")
+      val secretKey = relation.sparkSession.conf.getOption("spark.hadoop.fs.s3a.secret.key")
+      if (accessKey.isDefined && secretKey.isDefined) {
+        (accessKey, secretKey)
+      } else {
+        val envAccessKey = scala.util.Properties.envOrNone("AWS_ACCESS_KEY_ID")
+        val envSecretKey = scala.util.Properties.envOrNone("AWS_ACCESS_SECRET_KEY")
+        (envAccessKey, envSecretKey)
+      }
     }
   }
 
@@ -113,14 +150,14 @@ object AlluxioUtils extends Logging {
     val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
     val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
+    val (access_key, secret_key) = getKeyAndSecret(relation)
     alluxioMountCmd = conf.getAlluxioMountCmd
 
     val replaceFunc = if (alluxioPathsReplace.isDefined) {
       // alluxioPathsReplace: Seq("key->value", "key1->value1")
       // turn the rules to the Map with eg
       // { s3://foo -> alluxio://0.1.2.3:19998/foo,
-      //   gs://bar -> alluxio://0.1.2.3:19998/bar,
-      //   s3://baz -> alluxio://0.1.2.3:19998/baz }
+      //   gs://bar -> alluxio://0.1.2.3:19998/bar }
       val replaceMapOption = alluxioPathsReplace.map(rules => {
         rules.map(rule => {
           val split = rule.split("->")
@@ -150,16 +187,16 @@ object AlluxioUtils extends Logging {
       } else {
         None
       }
-    } else if (alluxioAutoMountEnabled) { // alluxio master host is set
+    } else if (alluxioAutoMountEnabled) {
       Some((f: Path) => {
         val pathStr = f.toString
         if (pathStr.matches(alluxioBucketRegex)) {
-          getAlluxioMasterHost()
+          readAlluxioMasterHost()
 
           val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
-          autoMountBucket(scheme, bucket)
+          autoMountBucket(scheme, bucket, access_key, secret_key)
 
-          // replace s3:/foo/.. to alluxio://alluxioMasterHost/foo/...
+          // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
           val newPath = new Path(pathStr.replaceFirst(
             scheme + "/", "alluxio://" + alluxioMasterHost.get))
           logInfo(s"Replace $pathStr to ${newPath.toString}")
