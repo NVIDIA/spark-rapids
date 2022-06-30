@@ -526,7 +526,7 @@ object RapidsConf {
   val IMPROVED_TIMESTAMP_OPS =
     conf("spark.rapids.sql.improvedTimeOps.enabled")
       .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          " directly to seconds without first converting to microseconds")
+          "directly to seconds without first converting to microseconds")
       .booleanConf
       .createWithDefault(false)
 
@@ -1286,7 +1286,7 @@ object RapidsConf {
       "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of " +
       "a query that did not go on the GPU")
     .stringConf
-    .createWithDefault("NONE")
+    .createWithDefault("NOT_ON_GPU")
 
   val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
     .internal()
@@ -1982,5 +1982,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   private def getOptionalCost(key: String) = {
     // user-provided value takes precedence, then look in defaults map
     conf.get(key).orElse(optimizerDefaults.get(key)).map(toDouble(_, key))
+  }
+
+  /**
+   * To judge whether "key" is explicitly set by the users.
+   */
+  def isConfExplicitlySet(key: String): Boolean = {
+    conf.contains(key)
   }
 }

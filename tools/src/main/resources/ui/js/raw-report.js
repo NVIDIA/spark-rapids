@@ -27,7 +27,7 @@ $(document).ready(function() {
     createAppDetailedTableConf,
     {
       tableId: "appDetails",
-      dataTableTemplate: $("#app-details-table-template").html(),
+      dataTableTemplate: getAppDetailsTableTemplate(),
       datatableContainerID: '#app-details-data-container',
       tableDivId: '#all-apps-raw-data-table',
     }

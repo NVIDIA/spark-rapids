@@ -129,8 +129,8 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
   test("supported Expressions") {
     val checker = new PluginTypeChecker
     val result = checker.getSupportedExprs
-    assert(result.contains("Add"))
-    assert(result("Add") == "S")
-    assert(result.contains("IsNull"))
+    assert(result.contains("add"))
+    assert(result("add") == "S")
+    assert(result.contains("isnull"))
   }
 }

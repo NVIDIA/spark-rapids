@@ -1190,6 +1190,48 @@ function createAppDetailsStagesTableConf(
   return stagesDataTableConf;
 }
 
+function getAppDetailsTableTemplate() {
+  return `
+      <div id="all-apps-raw-data">
+        <table id="all-apps-raw-data-table" class="table data-table display wrap" style="width:100%">
+          <thead>
+          <tr>
+            {{#displayCol_appName}}
+            <th>App Name</th>
+            {{/displayCol_appName}}
+            <th>App ID</th>
+            <th>User</th>
+            <th>Start Time</th>
+            <th>Recommendation</th>
+            <th>Estimated GPU Speedup</th>
+            <th>App Duration</th>
+            <th>Estimated GPU Duration</th>
+            <th>Estimated GPU Time Saved</th>
+            <th>Task Speed-up Factor</th>
+            <th>SQL DF Duration</th>
+            <th>GPU Opportunity</th>
+            <th>Unsupported Task Duration</th>
+            <th>Supported SQL DF Task Duration</th>
+            <th>SQL Dataframe Task Duration</th>
+            <th>Executor CPU Time Percent</th>
+            <th>Executor CPU Time Percent</th>
+            <th>Longest SQL Duration</th>
+            <th>NONSQL Task Duration Plus Overhead</th>
+            <th>App Duration Estimated</th>
+            <th>SQL Ids with Failures</th>
+            <th>Potential Problems</th>
+            <th>Unsupported Read File Formats and Types</th>
+            <th>Unsupported Write Data Format</th>
+            <th>Complex Types</th>
+            <th>Nested Complex Types</th>
+            <th>Read Schema</th>
+          </tr>
+          </thead>
+        </table>
+      </div>
+  `;
+}
+
 function setupNavigation() {
   $(".dash-nav-dropdown-toggle").click(function () {
     $(this).closest(".dash-nav-dropdown")
@@ -1205,5 +1247,4 @@ function setupNavigation() {
   $(".menu-toggle").click(function () {
     $(".dash").toggleClass("dash-compact");
   });
-
 }
