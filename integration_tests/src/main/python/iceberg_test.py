@@ -339,7 +339,7 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
 
 @iceberg
-@ignore_order(local=True)
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_add_column(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -356,6 +356,86 @@ def test_iceberg_add_column(spark_tmp_table_factory):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
 
-# test column removed and more data appended
-# test column added and more data appended
-# test v2 deletes (position and equality)
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_remove_column(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} DROP COLUMN a".format(table))
+        df = unary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_add_partition_field(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, int_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("ALTER TABLE {} ADD PARTITION FIELD b".format(table))
+        df = binary_op_df(spark, int_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_drop_partition_field(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, int_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} (a INT, b INT) USING ICEBERG PARTITIONED BY (b)".format(table))
+        spark.sql("INSERT INTO {} SELECT * FROM {}".format(table, tmpview))
+        spark.sql("ALTER TABLE {} DROP PARTITION FIELD b".format(table))
+        df = binary_op_df(spark, int_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+def test_iceberg_v1_delete(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("DELETE FROM {} WHERE a < 0".format(table))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
+
+@iceberg
+def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "TBLPROPERTIES('format-version' = 2, 'write.delete.mode' = 'merge-on-read') " + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        spark.sql("DELETE FROM {} WHERE a < 0".format(table))
+    with_cpu_session(setup_iceberg_table)
+    assert_py4j_exception(
+        lambda : with_gpu_session(lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect()),
+        "UnsupportedOperationException: Delete filter is not supported")
