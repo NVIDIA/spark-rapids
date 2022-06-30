@@ -396,7 +396,8 @@ def test_array_max_q1():
     assert_gpu_and_cpu_are_equal_collect(q1)
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens_no_null, ids=idfn)
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=False)),
@@ -406,13 +407,27 @@ def test_array_intersect(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
-            # 'array_intersect(a, b)',
-            # 'array_intersect(a, array())',
-            # 'array_intersect(array(), b)',
-            # 'array_intersect(a, null)',
-            # 'array_intersect(null, b)',
-            'array_intersect(a, a)',
-            # 'array_intersect(a, array({}))',
+            'sort_array(array_intersect(a, b))',
+            'sort_array(array_intersect(a, b))',
+            'array_intersect(a, array())',
+            'array_intersect(array(), b)',
+            'sort_array(array_intersect(a, a))',
         )
     )
     
+def test_array_union(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=False)),
+        ('b', ArrayGen(data_gen, nullable=False))],
+        nullable=False)
+    literal = gen_scalar(data_gen, force_no_nulls=True)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_union(a, b))',
+            'sort_array(array_union(a, b))',
+            'array_union(a, array())',
+            'array_union(array(), b)',
+            'sort_array(array_union(a, a))',
+        )
+    )

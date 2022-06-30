@@ -695,8 +695,31 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
   }
 }
 
+trait GpuArraySetOperation extends GpuBinaryExpression {
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
 case class GpuArrayIntersect(left: Expression, right: Expression)
-    extends GpuBinaryExpression with ExpectsInputTypes {
+    extends GpuArraySetOperation with ExpectsInputTypes {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
 
@@ -717,38 +740,8 @@ case class GpuArrayIntersect(left: Expression, right: Expression)
 
   override def nullable: Boolean = false
 
-  private def arrayIntersect(array1: ColumnVector, array2: ColumnVector): ColumnVector = {
-    withResource(ColumnView.setIntersect(array1, array2)) { setResult =>
-      withResource(array1.listIndexOf(setResult, ColumnView.FindOptions.FIND_FIRST)) { indices =>
-        array1.extractListElement(indices)
-      }
-    }
-  }
-
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    // Unlike set intersection, array intersection must preserve the order the items 
-    // from both arrays
-    arrayIntersect(lhs.getBase, rhs.getBase)
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
-      doColumnar(left, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
-      doColumnar(lhs, right)
-    }
-  }
-
-  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
-        doColumnar(left, right)
-      }
-    }
+    ColumnView.setIntersect(lhs.getBase, rhs.getBase)
   }
 }
 
