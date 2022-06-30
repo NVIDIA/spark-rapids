@@ -52,6 +52,7 @@ public class SparkReadConf {
   private final Map<String, String> readOptions;
   private final SparkConfParser confParser;
 
+  @SuppressWarnings("unchecked")
   public static SparkReadConf fromReflect(Object obj) throws IllegalAccessException {
     SparkSession spark = SparkSession.active();
     Table table = (Table) FieldUtils.readField(obj, "table", true);

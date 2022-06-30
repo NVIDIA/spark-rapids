@@ -88,6 +88,7 @@ public class ParquetMetricsRowGroupFilter {
       this.valueCounts = Maps.newHashMap();
       this.conversions = Maps.newHashMap();
       for (ColumnChunkMetaData col : rowGroup.getColumns()) {
+        @SuppressWarnings("deprecation")
         PrimitiveType colType = fileSchema.getType(col.getPath().toArray()).asPrimitiveType();
         if (colType.getId() != null) {
           int id = colType.getId().intValue();
@@ -554,12 +555,12 @@ public class ParquetMetricsRowGroupFilter {
    * @param valueCount Number of values in the row group
    * @return true if nonNull values exist and no other stats can be used
    */
-  static boolean hasNonNullButNoMinMax(Statistics statistics, long valueCount) {
+  static boolean hasNonNullButNoMinMax(Statistics<?> statistics, long valueCount) {
     return statistics.getNumNulls() < valueCount &&
         (statistics.getMaxBytes() == null || statistics.getMinBytes() == null);
   }
 
-  private static boolean mayContainNull(Statistics statistics) {
+  private static boolean mayContainNull(Statistics<?> statistics) {
     return !statistics.isNumNullsSet() || statistics.getNumNulls() > 0;
   }
 }
