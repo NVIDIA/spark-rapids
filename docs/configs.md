@@ -227,7 +227,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.If"></a>spark.rapids.sql.expression.If|`if`|IF expression|true|None|
 <a name="sql.expression.In"></a>spark.rapids.sql.expression.In|`in`|IN operator|true|None|
 <a name="sql.expression.InSet"></a>spark.rapids.sql.expression.InSet| |INSET operator|true|None|
-<a name="sql.expression.InitCap"></a>spark.rapids.sql.expression.InitCap|`initcap`|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|false|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
+<a name="sql.expression.InitCap"></a>spark.rapids.sql.expression.InitCap|`initcap`|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|true|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
 <a name="sql.expression.InputFileBlockLength"></a>spark.rapids.sql.expression.InputFileBlockLength|`input_file_block_length`|Returns the length of the block being read, or -1 if not available|true|None|
 <a name="sql.expression.InputFileBlockStart"></a>spark.rapids.sql.expression.InputFileBlockStart|`input_file_block_start`|Returns the start offset of the block being read, or -1 if not available|true|None|
 <a name="sql.expression.InputFileName"></a>spark.rapids.sql.expression.InputFileName|`input_file_name`|Returns the name of the file being read, or empty string if not available|true|None|
@@ -252,7 +252,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Log1p"></a>spark.rapids.sql.expression.Log1p|`log1p`|Natural log 1 + expr|true|None|
 <a name="sql.expression.Log2"></a>spark.rapids.sql.expression.Log2|`log2`|Log base 2|true|None|
 <a name="sql.expression.Logarithm"></a>spark.rapids.sql.expression.Logarithm|`log`|Log variable base|true|None|
-<a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|`lower`, `lcase`|String lowercase operator|false|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
+<a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|`lower`, `lcase`|String lowercase operator|true|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
 <a name="sql.expression.MakeDecimal"></a>spark.rapids.sql.expression.MakeDecimal| |Create a Decimal from an unscaled long value for some aggregation optimizations|true|None|
 <a name="sql.expression.MapConcat"></a>spark.rapids.sql.expression.MapConcat|`map_concat`|Returns the union of all the given maps|true|None|
 <a name="sql.expression.MapEntries"></a>spark.rapids.sql.expression.MapEntries|`map_entries`|Returns an unordered array of all entries in the given map|true|None|
@@ -332,13 +332,13 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.UnboundedPreceding$"></a>spark.rapids.sql.expression.UnboundedPreceding$| |Special boundary for a window frame, indicating all rows preceding the current row|true|None|
 <a name="sql.expression.UnixTimestamp"></a>spark.rapids.sql.expression.UnixTimestamp|`unix_timestamp`|Returns the UNIX timestamp of current or specified time|true|None|
 <a name="sql.expression.UnscaledValue"></a>spark.rapids.sql.expression.UnscaledValue| |Convert a Decimal to an unscaled long value for some aggregation optimizations|true|None|
-<a name="sql.expression.Upper"></a>spark.rapids.sql.expression.Upper|`upper`, `ucase`|String uppercase operator|false|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
+<a name="sql.expression.Upper"></a>spark.rapids.sql.expression.Upper|`upper`, `ucase`|String uppercase operator|true|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
 <a name="sql.expression.WeekDay"></a>spark.rapids.sql.expression.WeekDay|`weekday`|Returns the day of the week (0 = Monday...6=Sunday)|true|None|
 <a name="sql.expression.WindowExpression"></a>spark.rapids.sql.expression.WindowExpression| |Calculates a return value for every input row of a table based on a group (or "window") of rows|true|None|
 <a name="sql.expression.WindowSpecDefinition"></a>spark.rapids.sql.expression.WindowSpecDefinition| |Specification of a window function, indicating the partitioning-expression, the row ordering, and the width of the window|true|None|
 <a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|`year`|Returns the year from a date or timestamp|true|None|
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression| |Aggregate expression|true|None|
-<a name="sql.expression.ApproximatePercentile"></a>spark.rapids.sql.expression.ApproximatePercentile|`percentile_approx`, `approx_percentile`|Approximate percentile|false|This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark. To enable it, set spark.rapids.sql.incompatibleOps.enabled|
+<a name="sql.expression.ApproximatePercentile"></a>spark.rapids.sql.expression.ApproximatePercentile|`percentile_approx`, `approx_percentile`|Approximate percentile|true|This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark|
 <a name="sql.expression.Average"></a>spark.rapids.sql.expression.Average|`avg`, `mean`|Average aggregate operator|true|None|
 <a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, not supported in reduction|true|None|
 <a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction|true|None|
