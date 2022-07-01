@@ -716,37 +716,40 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
 
     val rowBaseObj = ctx.freshName("rowBaseObj")
     val rowBaseOffset = ctx.freshName("rowBaseOffset")
+    // define the variable that holds the current byte offset in the variable width section.
+    val cudfDataOffsetTmp = ctx.freshName("cudfDataOffset")
 
     val sparkValidityOffset = UnsafeRow.calculateBitSetWidthInBytes(schema.length)
     // This needs to match what is in cudf and CudfUnsafeRow
-    var cudfOffset = 0
     // scalastyle:off line.size.limit
-    // The map will execute here because schema is an array. Not sure if there is a better way to
-    // do this or not
-    val copyData = schema.zipWithIndex.map { pair =>
-      val attr = pair._1
-      val colIndex = pair._2
-      // This only works on fixed width types
-      val length = DecimalUtil.getDataTypeSize(attr.dataType)
-      cudfOffset = CudfUnsafeRow.alignOffset(cudfOffset, length)
-      val ret = length match {
-        case 1 => s"Platform.putByte(null, startAddress + $cudfOffset, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
-        case 2 => s"Platform.putShort(null, startAddress + $cudfOffset, Platform.getShort($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
-        case 4 => s"Platform.putInt(null, startAddress + $cudfOffset, Platform.getInt($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
-        case 8 => s"Platform.putLong(null, startAddress + $cudfOffset, Platform.getLong($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
-//        case 16 => s"Platform.setDecimal(null, startAddress + $cudfOffset, getDecimal($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
-        case _ => throw new IllegalStateException(s"$length  NOT SUPPORTED YET")
+    // Create helper to calculate the offsets and use it to generate the code.
+    val jcudfRowVisitor = JCudfUtil.getJCudfRowVisitor(schema)
+
+    val cudfDataOffsetInit = s"$cudfDataOffsetTmp = ${jcudfRowVisitor.getVariableDataOffset};"
+
+    val copyData = (0 until schema.length).map { colIndex =>
+      // advance the cursor to the next column
+      jcudfRowVisitor.getNextCol
+      val cudfColOff = jcudfRowVisitor.getColOffset()
+      val colLength = jcudfRowVisitor.getColLength()
+      val ret = jcudfRowVisitor.getColLength() match {
+        // strings return -15
+        case -15 => s"$cudfDataOffsetTmp += copyUTF8StringInto($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}, $cudfColOff, $cudfDataOffsetTmp);"
+        case 1 => s"Platform.putByte(null, startAddress + $cudfColOff, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case 2 => s"Platform.putShort(null, startAddress + $cudfColOff, Platform.getShort($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case 4 => s"Platform.putInt(null, startAddress + $cudfColOff, Platform.getInt($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case 8 => s"Platform.putLong(null, startAddress + $cudfColOff, Platform.getLong($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        //        case 16 => s"Platform.setDecimal(null, startAddress + $cudfOffset, getDecimal($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case _ => throw new IllegalStateException(s"$colLength  NOT SUPPORTED YET")
       }
-      cudfOffset += length
       ret
     }
 
     val sparkValidityTmp = ctx.freshName("unsafeRowTmp")
 
-    val cudfValidityStart = cudfOffset
-    val cudfBitSetWidthInBytes = CudfUnsafeRow.calculateBitSetWidthInBytes(schema.length)
+    val cudfValidityStart = jcudfRowVisitor.getValidityBytesOffset()
 
-    val copyValidity = (0 until cudfBitSetWidthInBytes).map { cudfValidityByteIndex =>
+    val copyValidity = (0 until jcudfRowVisitor.getValiditySizeInBytes()).map { cudfValidityByteIndex =>
       var ret = ""
       val byteOffsetInSparkLong = cudfValidityByteIndex % 8
       if (byteOffsetInSparkLong == 0) {
@@ -757,9 +760,6 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
       ret += s"Platform.putByte(null, startAddress + ${cudfValidityStart + cudfValidityByteIndex}, (byte)(0xFF & ~($sparkValidityTmp >> ${byteOffsetInSparkLong * 8})));"
       ret
     }
-
-    // Each row is 64-bit aligned
-    val rowLength = CudfUnsafeRow.alignOffset(cudfOffset + cudfBitSetWidthInBytes, 8)
 
     // First copy the data, validity we will copy afterwards
 
@@ -834,16 +834,39 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |    return new int[] {dataOffset, currentRow};
          |  }
          |
+         |  private int copyUTF8StringInto(
+         |      Object src, long baseOffset, int cudfColOffset, int dataDstOffset) {
+         |    // get the offset and the size from Spark UnsafeFormat
+         |    final long strOffsetAndSize = Platform.getLong(src, baseOffset);
+         |    final int strOffset = (int) (strOffsetAndSize >> 32);
+         |    final int strSize = (int) strOffsetAndSize;
+         |    // set the offset and length in the fixed width section.
+         |    Platform.putInt(null, cudfColOffset, dataDstOffset);
+         |    Platform.putInt(null, cudfColOffset + 4, strSize);
+         |    // copy the data
+         |    Platform.copyMemory(src, baseOffset, null, dataDstOffset, strSize);
+         |    return strSize;
+         |  }
+         |
+         |  private int getCudfRowLength(int bytesOffset) {
+         |    // Each row is 64-bit aligned
+         |    return (bytesOffset + 7) & -8;
+         |  }
+         |
          |  private int copyInto(UnsafeRow input, long startAddress, long endAddress) {
          |    Object $rowBaseObj = input.getBaseObject();
          |    long $rowBaseOffset = input.getBaseOffset();
+         |
+         |    long $cudfDataOffsetTmp;
+         |    ${cudfDataOffsetInit}
+         |
          |    ${copyData.mkString("\n")}
          |
          |    // validity
          |    long $sparkValidityTmp;
          |    ${copyValidity.mkString("\n")}
          |
-         |    return $rowLength;
+         |    return getCudfRowLength($cudfDataOffsetTmp);
          |  }
          |
          |  ${ctx.declareAddedFunctions()}
