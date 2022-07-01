@@ -1313,24 +1313,35 @@ class GpuSortAggregateExecMeta(
 
     // Make sure this is the last check - if this is SortAggregate, the children can be sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a
-    // HashAggregate.  We don't want to do this if there is a first or last aggregate,
-    // because dropping the sort will make them no longer deterministic.
-    // In the future we might be able to pull the sort functionality into the aggregate so
-    // we can sort a single batch at a time and sort the combined result as well which would help
-    // with data skew.
-    val hasFirstOrLast = agg.aggregateExpressions.exists { agg =>
-      agg.aggregateFunction match {
-        case _: First | _: Last => true
-        case _ => false
-      }
-    }
-    if (canThisBeReplaced && !hasFirstOrLast) {
+    // HashAggregate.
+    if (canThisBeReplaced) {
       childPlans.foreach { plan =>
         if (plan.wrapped.isInstanceOf[SortExec]) {
           if (!plan.canThisBeReplaced) {
             willNotWorkOnGpu("one of the preceding SortExec's cannot be replaced")
           } else {
-            plan.shouldBeRemoved("replacing sort aggregate with hash aggregate")
+            // But if this includes a first or last aggregate and the sort includes more than what
+            // the group by requires we cannot drop the sort. For example
+            // if the group by is on a single key "a", but the ordering is on "a" and "b", then
+            // we have to keep the sort, so that the rows are ordered to take "b" into account
+            // before first/last work on it.
+            val hasFirstOrLast = agg.aggregateExpressions.exists { agg =>
+              agg.aggregateFunction match {
+                case _: First | _: Last => true
+                case _ => false
+              }
+            }
+            val shouldRemoveSort = if (hasFirstOrLast) {
+              val sortedOrder = plan.wrapped.asInstanceOf[SortExec].sortOrder
+              val groupByRequiredOrdering = agg.requiredChildOrdering.head
+              sortedOrder == groupByRequiredOrdering
+            } else {
+              true
+            }
+
+            if (shouldRemoveSort) {
+              plan.shouldBeRemoved("replacing sort aggregate with hash aggregate")
+            }
           }
         }
       }

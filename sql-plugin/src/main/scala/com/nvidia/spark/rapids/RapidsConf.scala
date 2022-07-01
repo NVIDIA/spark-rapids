@@ -526,7 +526,7 @@ object RapidsConf {
   val IMPROVED_TIMESTAMP_OPS =
     conf("spark.rapids.sql.improvedTimeOps.enabled")
       .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          " directly to seconds without first converting to microseconds")
+          "directly to seconds without first converting to microseconds")
       .booleanConf
       .createWithDefault(false)
 

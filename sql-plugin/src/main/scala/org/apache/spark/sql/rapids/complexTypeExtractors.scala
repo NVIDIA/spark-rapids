@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -209,7 +209,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    if (failOnError){
+    if (failOnError) {
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.isValid && !exist.getBoolean) {
@@ -230,8 +230,16 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("Map lookup keys must be scalar values")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("Map lookup keys must be scalar values")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val map = lhs.getBase
+    val indices = rhs.getBase
+    if (failOnError) {
+      GpuMapUtils.getMapValueOrThrow(map, indices, rhs.dataType(), origin)
+    } else {
+      map.getMapValue(indices)
+    }
+  }
+
 
   override def left: Expression = child
 
