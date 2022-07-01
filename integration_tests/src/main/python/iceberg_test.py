@@ -235,6 +235,7 @@ def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.skipif(is_before_spark_320(), reason="Spark 3.1.x has a catalog bug precluding scope prefix in table names")
 def test_iceberg_read_timetravel(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -256,6 +257,7 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.skipif(is_before_spark_320(), reason="Spark 3.1.x has a catalog bug precluding scope prefix in table names")
 def test_iceberg_incremental_read(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -408,7 +410,7 @@ def test_iceberg_add_partition_field(spark_tmp_table_factory):
         df = binary_op_df(spark, int_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
-                  "SELECT * FROM {}".format(tmpview))
+                  "SELECT * FROM {} ORDER BY b".format(tmpview))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
 
@@ -421,7 +423,7 @@ def test_iceberg_drop_partition_field(spark_tmp_table_factory):
         df = binary_op_df(spark, int_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} (a INT, b INT) USING ICEBERG PARTITIONED BY (b)".format(table))
-        spark.sql("INSERT INTO {} SELECT * FROM {}".format(table, tmpview))
+        spark.sql("INSERT INTO {} SELECT * FROM {} ORDER BY b".format(table, tmpview))
         spark.sql("ALTER TABLE {} DROP PARTITION FIELD b".format(table))
         df = binary_op_df(spark, int_gen)
         df.createOrReplaceTempView(tmpview)
@@ -445,6 +447,7 @@ def test_iceberg_v1_delete(spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.sql("SELECT * FROM {}".format(table)))
 
 @iceberg
+@pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
 def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
