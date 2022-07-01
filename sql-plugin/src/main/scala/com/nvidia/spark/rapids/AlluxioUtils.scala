@@ -104,7 +104,8 @@ object AlluxioUtils extends Logging {
               s"--option s3a.secretKey=${secret_key.get} /$bucket $remote_path"
           }
       }.toSeq
-      logInfo(s"Run command ${params.last}")
+      val id = Thread.currentThread().getId()
+      logInfo(s"Run command ${params.last} in thread $id")
       val output = Process(params).!
       if (output != 0) {
         throw new RuntimeException(s"Mount bucket $bucket failed $output")
