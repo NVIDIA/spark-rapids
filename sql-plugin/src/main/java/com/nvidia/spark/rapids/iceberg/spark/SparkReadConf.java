@@ -31,6 +31,7 @@ import org.apache.spark.sql.SparkSession;
 
 /**
  * A class for common Iceberg configs for Spark reads.
+ * Derived from Apache Iceberg's SparkReadConf class.
  * <p>
  * If a config is set at multiple levels, the following order of precedence is used (top to bottom):
  * <ol>

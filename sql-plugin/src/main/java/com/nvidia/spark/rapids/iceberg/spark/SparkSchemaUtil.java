@@ -34,6 +34,7 @@ import org.apache.spark.sql.types.StructType;
 
 /**
  * Helper methods for working with Spark/Hive metadata.
+ * Derived from Apache Iceberg's SparkSchemaUtil class.
  */
 public class SparkSchemaUtil {
   private SparkSchemaUtil() {

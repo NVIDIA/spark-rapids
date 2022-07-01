@@ -28,6 +28,7 @@ import org.apache.parquet.io.DelegatingSeekableInputStream;
 import org.apache.parquet.io.InputFile;
 import org.apache.parquet.io.SeekableInputStream;
 
+/** Derived from Apache Iceberg's ParquetIO class. */
 public class ParquetIO {
   private ParquetIO() {
   }

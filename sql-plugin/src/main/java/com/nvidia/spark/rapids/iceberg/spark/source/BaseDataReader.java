@@ -56,6 +56,7 @@ import org.apache.spark.unsafe.types.UTF8String;
 
 /**
  * Base class of Spark readers.
+ * Derived from Apache Spark's BaseDataReader class.
  *
  * @param <T> is the Java class returned by this reader whose objects contain one or more rows.
  */

@@ -26,6 +26,7 @@ import org.apache.iceberg.types.Type;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.PrimitiveType;
 
+/** Derived from Apache Iceberg's ParquetConversions class. */
 public class ParquetConversions {
   private ParquetConversions() {
   }

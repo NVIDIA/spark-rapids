@@ -40,6 +40,10 @@ import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+/**
+ * Takes a partition reader output and adds any constant columns and deletion filters
+ * that need to be applied after the data is loaded from the raw data files.
+ */
 public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
   private final Schema expectedSchema;
   private final PartitionReader<ColumnarBatch> partReader;

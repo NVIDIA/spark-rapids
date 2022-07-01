@@ -166,7 +166,7 @@ export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
 run_iceberg_tests() {
-  ICEBERG_VERSION="0.13.1"
+  ICEBERG_VERSION="0.13.2"
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
 

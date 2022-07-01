@@ -2145,6 +2145,9 @@ object SupportedOpsDocs {
         totalCount += 2
     }
     println("</table>")
+    println("### Apache Iceberg Support")
+    println("Support for Apache Iceberg has additional limitations. See the")
+    println("[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.")
     // scalastyle:on line.size.limit
   }
 

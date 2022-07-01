@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg.spark;
 
+/** Derived from Apache Iceberg's SparkSQLProperties class. */
 public class SparkSQLProperties {
 
   private SparkSQLProperties() {

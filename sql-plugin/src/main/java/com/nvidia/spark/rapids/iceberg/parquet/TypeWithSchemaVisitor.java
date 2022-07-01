@@ -29,6 +29,7 @@ import org.apache.parquet.schema.Type;
 
 /**
  * Visitor for traversing a Parquet type with a companion Iceberg type.
+ * Derived from Apache Iceberg's TypeWithSchemaVisitor class.
  *
  * @param <T> the Java class returned by the visitor
  */

@@ -38,7 +38,7 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.spark.rdd.InputFileBlockHolder;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
-/** GPU version of Apache Iceberg's BatchDataReader */
+/** GPU version of Apache Iceberg's BatchDataReader. */
 class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
   private final Schema expectedSchema;
   private final String nameMapping;

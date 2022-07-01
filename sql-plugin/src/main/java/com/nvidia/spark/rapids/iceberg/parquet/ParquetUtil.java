@@ -23,6 +23,7 @@ import org.apache.parquet.column.Encoding;
 import org.apache.parquet.column.EncodingStats;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 
+/** Derived from Apache Iceberg's ParquetUtil class. */
 public class ParquetUtil {
   // not meant to be instantiated
   private ParquetUtil() {

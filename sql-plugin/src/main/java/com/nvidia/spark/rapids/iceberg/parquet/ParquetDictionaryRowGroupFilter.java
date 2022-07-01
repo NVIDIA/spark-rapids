@@ -47,6 +47,7 @@ import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 
+/** Derived from Apache Iceberg's ParquetDictionaryRowGroupFilter class. */
 public class ParquetDictionaryRowGroupFilter {
   private final Schema schema;
   private final Expression expr;

@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids.iceberg.spark;
 
 /**
- * Spark DF read options
+ * Spark DF read options.
+ * Derived from Apache Iceberg's SparkReadOptions class.
  */
 public class SparkReadOptions {
 

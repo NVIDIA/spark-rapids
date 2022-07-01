@@ -20,6 +20,7 @@ import java.util.OptionalLong;
 
 import org.apache.spark.sql.connector.read.Statistics;
 
+/** Derived from Apache Iceberg's Stats class. */
 public class Stats implements Statistics {
   private final OptionalLong sizeInBytes;
   private final OptionalLong numRows;

@@ -31,6 +31,7 @@ import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Types;
 
+/** Derived from Apache Iceberg's ApplyNameMapping Parquet support class. */
 public class ApplyNameMapping extends ParquetTypeVisitor<Type> {
   private static final String LIST_ELEMENT_NAME = "element";
   private static final String MAP_KEY_NAME = "key";

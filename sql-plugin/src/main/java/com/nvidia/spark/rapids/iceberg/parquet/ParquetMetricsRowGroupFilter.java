@@ -44,6 +44,7 @@ import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 
+/** Derived from Apache Iceberg's ParquetMetricsRowGroupFilter class. */
 public class ParquetMetricsRowGroupFilter {
   private static final int IN_PREDICATE_LIMIT = 200;
 

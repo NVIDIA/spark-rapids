@@ -36,6 +36,7 @@ import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
 import org.apache.spark.util.SerializableConfiguration;
 
+/** Derived from Apache Iceberg's SparkBatch class. */
 public class SparkBatch implements Batch {
 
   private final JavaSparkContext sparkContext;

@@ -76,7 +76,7 @@ TEST_MODE=${TEST_MODE:-'IT_ONLY'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
-ICEBERG_VERSION=0.13.1
+ICEBERG_VERSION=0.13.2
 ICEBERG_SPARK_VER=$(echo $BASE_SPARK_VER | cut -d. -f1,2)
 ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \

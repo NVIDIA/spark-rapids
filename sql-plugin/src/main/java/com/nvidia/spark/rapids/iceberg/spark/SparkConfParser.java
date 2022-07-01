@@ -28,6 +28,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.spark.sql.RuntimeConfig;
 import org.apache.spark.sql.SparkSession;
 
+/** Derived from Apache Iceberg's SparkConfParser class. */
 public class SparkConfParser {
 
   private final Map<String, String> properties;

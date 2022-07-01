@@ -27,6 +27,7 @@ import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 
+/** Derived from Apache Iceberg's ParquetTypeVisitor class. */
 public class ParquetTypeVisitor<T> {
   private final Deque<String> fieldNames = Lists.newLinkedList();
 

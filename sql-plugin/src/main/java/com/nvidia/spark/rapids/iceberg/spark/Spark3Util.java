@@ -30,6 +30,7 @@ import org.apache.iceberg.util.ByteBuffers;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.NamedReference;
 
+/** Derived from Apache Iceberg's Spark3Util class. */
 public class Spark3Util {
 
   private Spark3Util() {

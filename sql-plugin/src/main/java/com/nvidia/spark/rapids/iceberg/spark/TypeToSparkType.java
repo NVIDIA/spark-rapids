@@ -41,6 +41,7 @@ import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType$;
 import org.apache.spark.sql.types.TimestampType$;
 
+/** Derived from Apache Iceberg's TypeToSparkType class. */
 public class TypeToSparkType extends TypeUtil.SchemaVisitor<DataType> {
   TypeToSparkType() {
   }

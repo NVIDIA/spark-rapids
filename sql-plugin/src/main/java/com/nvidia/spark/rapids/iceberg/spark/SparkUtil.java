@@ -20,6 +20,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 
+/** Derived from Apache Iceberg's SparkUtil class. */
 public class SparkUtil {
 
   public static final String TIMESTAMP_WITHOUT_TIMEZONE_ERROR = String.format("Cannot handle timestamp without" +

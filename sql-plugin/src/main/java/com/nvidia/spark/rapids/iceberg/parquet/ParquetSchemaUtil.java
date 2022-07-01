@@ -25,6 +25,7 @@ import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Types.MessageTypeBuilder;
 
+/** Derived from Apache Iceberg's ParquetSchemaUtil class. */
 public class ParquetSchemaUtil {
   private ParquetSchemaUtil() {
   }

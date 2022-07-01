@@ -460,7 +460,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     }
 
     override val childExprs: Seq[BaseExprMeta[_]] = {
-      // We want to leave the runtime filters as CPU expressions, so leave them out of the expressions
+      // We want to leave the runtime filters as CPU expressions
       p.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
     }
 
