@@ -58,6 +58,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
   protected final GpuMetric numInputRows;
   protected final GpuMetric numOutputRows;
   protected final GpuMetric numOutputBatches;
+  protected final boolean fitsOptimizedConversion;
 
   protected InternalRowToColumnarBatchIterator(
       Iterator<InternalRow> input,
@@ -70,7 +71,10 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
       GpuMetric numOutputRows,
       GpuMetric numOutputBatches) {
     this.input = input;
-    int sizePerRowEstimate = CudfUnsafeRow.getRowSizeEstimate(schema);
+    JCudfUtil.JCudfRowOffsetsEstimator cudfRowEstimator = JCudfUtil.getJCudfRowEstimator(schema);
+    int sizePerRowEstimate = cudfRowEstimator.getEstimateSize();
+    // caches if the row fits the CUDF kernel optimization
+    fitsOptimizedConversion = JCudfUtil.fitsOptimizedConversion(cudfRowEstimator);
     numRowsEstimate = (int)Math.max(1,
         Math.min(Integer.MAX_VALUE - 1, goal.targetSizeBytes() / sizePerRowEstimate));
     dataLength = ((long) sizePerRowEstimate) * numRowsEstimate;
@@ -166,11 +170,9 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     }
     try (NvtxRange ignored = buildRange;
          ColumnVector cv = devColumn;
-         Table tab = rapidsTypes.length < 100 ?
+         Table tab = fitsOptimizedConversion ?
              // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means
-             // at most 184 double/long values. We are branching over the size of the output to
-             // know which kernel to call. If rapidsTypes.length < 100 we call the fixed-width
-             // optimized version, otherwise the generic one
+             // at most 184 double/long values.
              Table.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
              Table.convertFromRows(cv, rapidsTypes)) {
       return GpuColumnVector.from(tab, outputTypes);
