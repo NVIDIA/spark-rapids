@@ -20,7 +20,7 @@ import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
-object RapidsErrorUtils extends {
+object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     if (isElementAtF) {
