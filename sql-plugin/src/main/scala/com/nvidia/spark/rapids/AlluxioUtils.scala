@@ -74,7 +74,7 @@ object AlluxioUtils extends Logging {
         alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
         // load mounted point by call Alluxio mount command.
         // We also can get from REST API http://alluxio_master:alluxio_web_port/api/v1/master/info.
-        val (ret, output) = runAlluxioCmd(null)
+        val (ret, output) = runAlluxioCmd(" fs mount")
         if (ret == 0) {
           // parse the output, E.g.
           // s3a://bucket-foo/        on  /bucket-foo
@@ -110,14 +110,10 @@ object AlluxioUtils extends Logging {
 
   private def runAlluxioCmd(param : String) : (Int,
     scala.collection.mutable.ArrayBuffer[String]) = {
-    val params = if (param != null) {
-      alluxioCmd.tails.collect {
+    val params = alluxioCmd.tails.collect {
         case Seq(first, _, _*) => first
         case Seq(last) => last + param
       }.toSeq
-    } else {
-      alluxioCmd
-    }
     val id = Thread.currentThread().getId()
     logInfo(s"Run command ${params.last} in thread $id")
     val out : scala.collection.mutable.ArrayBuffer[String] =
