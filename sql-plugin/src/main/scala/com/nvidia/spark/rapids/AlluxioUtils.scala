@@ -81,7 +81,7 @@ object AlluxioUtils extends Logging {
           // s3a://bucket-another/    on  /bucket-another
           // /local_path              on  /
           for (line <- output) {
-            val items = line.split(" ")
+            val items = line.split(" +")
             logInfo(line)
             // We only support s3 remote path for now,
             // need to change below if we want to support other type of cloud storage
