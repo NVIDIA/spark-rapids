@@ -1296,11 +1296,12 @@ object RapidsConf {
     .stringConf
     .createWithDefault("^s3a{0,1}://.*")
 
-  val ALLUXIO_MOUNT_CMD = conf("spark.rapids.alluxio.mount.cmd")
-    .doc("Provide the command to mount a cloud path to Alluxio. " +
-      "E.g. \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly\", it means: " +
+  val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
+    .doc("Provide the Alluxio command, which is used to mount or get information. " +
+      "E.g. \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
       "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
       "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
+      "to mount s3://bucket-foo to /bucket-foo. " +
       "the delimiter \",\" is used to convert to Seq[String] " +
       "when you need to use a special user to run the mount command.")
     .stringConf
@@ -1955,7 +1956,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
-  lazy val getAlluxioMountCmd: Option[Seq[String]] = get(ALLUXIO_MOUNT_CMD)
+  lazy val getAlluxioCmd: Option[Seq[String]] = get(ALLUXIO_CMD)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

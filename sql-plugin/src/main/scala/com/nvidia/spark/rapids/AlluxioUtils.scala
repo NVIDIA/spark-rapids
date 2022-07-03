@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.FileNotFoundException
 
 import scala.io.Source
-import scala.sys.process.Process
+import scala.sys.process.{Process, ProcessLogger}
 
 import org.apache.hadoop.fs.Path
 
@@ -30,43 +30,70 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
   val mountedBuckets: scala.collection.mutable.Map[String, String] = scala.collection.mutable.Map()
-  var alluxioMountCmd: Option[Seq[String]] = None
+  var alluxioCmd: Seq[String] = null
   var alluxioMasterHost: Option[String] = None
+  var alluxio_home: String = "/opt/alluxio-2.8.0"
+  var isInit: Boolean = false
 
   // Read out alluxio.master.hostname, alluxio.master.rpc.port
   // from Alluxio's conf alluxio-site.properties
   // We require an environment variable "ALLUXIO_HOME"
   // This function will only read once from ALLUXIO/conf.
-  private def readAlluxioMasterHost():Unit = {
-    if (alluxioMasterHost.isEmpty) {
-      var host = ""
-      var port = "19998"
-      // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
-      val alluxio_home = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
-      var buffered_source : Source = null
-      try {
-        buffered_source = Source.fromFile(alluxio_home + "/conf/alluxio-site.properties")
-        for (line <- buffered_source.getLines) {
-          if (line.startsWith("alluxio.master.hostname")) {
-            host = line.split('=')(1).trim
-          } else if (line.startsWith("alluxio.master.rpc.port")) {
-            port = line.split('=')(1).trim
+  private def initAlluxioInfo(conf: RapidsConf): Unit = {
+    alluxio_home = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
+    alluxioCmd = conf.getAlluxioCmd.getOrElse(
+      Seq("su", "ubuntu", "-c", s"$alluxio_home/bin/alluxio"))
+    this.synchronized {
+      if (!isInit) {
+        // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
+        var alluxio_port: String = "19998"
+        var alluxio_master: String = null
+        var buffered_source: Source = null
+        try {
+          buffered_source = Source.fromFile(alluxio_home + "/conf/alluxio-site.properties")
+          for (line <- buffered_source.getLines) {
+            if (line.startsWith("alluxio.master.hostname")) {
+              alluxio_master = line.split('=')(1).trim
+            } else if (line.startsWith("alluxio.master.rpc.port")) {
+              alluxio_port = line.split('=')(1).trim
+            }
+          }
+        } catch {
+          case e: FileNotFoundException =>
+            throw new RuntimeException(s"Not found Alluxio config in " +
+              s"$alluxio_home/conf/alluxio-site.properties, " +
+              "please check if ALLUXIO_HOME is set correctly")
+        } finally {
+          if (buffered_source != null) buffered_source.close
+        }
+
+        if (alluxio_master == null) {
+          throw new RuntimeException(
+            s"Can't find alluxio.master.hostname from $alluxio_home/conf/alluxio-site.properties.")
+        }
+        alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
+        // load mounted point by call Alluxio mount command.
+        // We also can get from REST API http://alluxio_master:alluxio_web_port/api/v1/master/info.
+        val (ret, output) = runAlluxioCmd(null)
+        if (ret == 0) {
+          // parse the output, E.g.
+          // s3a://bucket-foo/        on  /bucket-foo
+          // s3a://bucket-another/    on  /bucket-another
+          // /local_path              on  /
+          for (line <- output) {
+            val items = line.split(" ")
+            // We only support s3 remote path for now,
+            // need to change below if we want to support other type of cloud storage
+            if (items.length >= 3 && items(0).startsWith("s3") && !items(2).equals("/")) {
+              val bucket = items(2).substring(1)
+              val remote_path = items(0).substring(0, items(0).length-1)
+              mountedBuckets(bucket) = remote_path
+              logInfo(s"Found mounted bucket $remote_path to /$bucket")
+            }
           }
         }
-      } catch {
-        case e: FileNotFoundException =>
-          throw new RuntimeException(s"Not found Alluxio config in " +
-            s"$alluxio_home/conf/alluxio-site.properties, " +
-            "please check if ALLUXIO_HOME is set correctly")
-      } finally {
-        if (buffered_source != null) buffered_source.close
+        isInit = true
       }
-
-      if (host.isEmpty) {
-        throw new RuntimeException(
-          "Can't find alluxio.master.hostname from ALLUXIO_HOME/conf/alluxio-site.properties.")
-      }
-      alluxioMasterHost = Some(host + ":" + port)
     }
   }
 
@@ -80,6 +107,24 @@ object AlluxioUtils extends Logging {
     (scheme, bucket)
   }
 
+  private def runAlluxioCmd(param : String) : (Int,
+    scala.collection.mutable.ArrayBuffer[String]) = {
+    val params = if (param == null) {
+      alluxioCmd.tails.collect {
+        case Seq(first, _, _*) => first
+        case Seq(last) => last + param
+      }.toSeq
+    } else {
+      alluxioCmd
+    }
+    val id = Thread.currentThread().getId()
+    logInfo(s"Run command ${params.last} in thread $id")
+    val out : scala.collection.mutable.ArrayBuffer[String] =
+      new scala.collection.mutable.ArrayBuffer[String](10)
+    val ret = Process(params).!(ProcessLogger(out += _, _ => Unit))
+    (ret, out)
+  }
+
   // path is like "s3://foo/test...", it mounts bucket "foo" by calling the alluxio CLI
   // And we'll append --option to set access_key and secret_key if existing.
   // Suppose the key doesn't exist when using like Databricks's instance profile
@@ -89,24 +134,13 @@ object AlluxioUtils extends Logging {
     val remote_path = scheme + "//" + bucket
     if (!mountedBuckets.contains(bucket)) {
       // not mount yet, call mount command
-      val command : Seq[String] = if (alluxioMountCmd.isDefined) {
-        alluxioMountCmd.get
-      } else {
-        Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly")
-      }
-
-      val params = command.tails.collect{
-        case Seq(first, _, _*) => first
-        case Seq(last) => if (access_key.isEmpty) {
-            last + s" /$bucket $remote_path"
-          } else {
-            last + s" --option s3a.accessKeyId=${access_key.get} " +
-              s"--option s3a.secretKey=${secret_key.get} /$bucket $remote_path"
-          }
-      }.toSeq
-      val id = Thread.currentThread().getId()
-      logInfo(s"Run command ${params.last} in thread $id")
-      val output = Process(params).!
+      val parameter = if (access_key.isEmpty) {
+          s" fs mount --readonly /$bucket $remote_path"
+        } else {
+          s" fs mount --readonly --option s3a.accessKeyId=${access_key.get} " +
+            s"--option s3a.secretKey=${secret_key.get} /$bucket $remote_path"
+        }
+      val (output, _) = runAlluxioCmd(parameter)
       if (output != 0) {
         throw new RuntimeException(s"Mount bucket $bucket failed $output")
       }
@@ -151,8 +185,6 @@ object AlluxioUtils extends Logging {
     val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
     val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
-    val (access_key, secret_key) = getKeyAndSecret(relation)
-    alluxioMountCmd = conf.getAlluxioMountCmd
 
     val replaceFunc = if (alluxioPathsReplace.isDefined) {
       // alluxioPathsReplace: Seq("key->value", "key1->value1")
@@ -192,7 +224,8 @@ object AlluxioUtils extends Logging {
       Some((f: Path) => {
         val pathStr = f.toString
         if (pathStr.matches(alluxioBucketRegex)) {
-          readAlluxioMasterHost()
+          initAlluxioInfo(conf)
+          val (access_key, secret_key) = getKeyAndSecret(relation)
 
           val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
           autoMountBucket(scheme, bucket, access_key, secret_key)
