@@ -109,7 +109,7 @@ object AlluxioUtils extends Logging {
 
   private def runAlluxioCmd(param : String) : (Int,
     scala.collection.mutable.ArrayBuffer[String]) = {
-    val params = if (param == null) {
+    val params = if (param != null) {
       alluxioCmd.tails.collect {
         case Seq(first, _, _*) => first
         case Seq(last) => last + param
