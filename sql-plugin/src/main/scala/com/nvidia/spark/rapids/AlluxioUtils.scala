@@ -82,6 +82,7 @@ object AlluxioUtils extends Logging {
           // /local_path              on  /
           for (line <- output) {
             val items = line.split(" ")
+            logInfo(line)
             // We only support s3 remote path for now,
             // need to change below if we want to support other type of cloud storage
             if (items.length >= 3 && items(0).startsWith("s3") && !items(2).equals("/")) {
