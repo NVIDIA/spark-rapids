@@ -771,7 +771,7 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 }
 
 object GpuRegExpUtils {
-  private def parseAST(pattern: String): RegexAST = {
+  def parseAST(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
   }
 
@@ -863,6 +863,17 @@ object GpuRegExpUtils {
       }
     }
     isASTEmptyRepetition(parseAST(pattern))
+  }
+
+  /**
+    * Returns the number of groups in regexp 
+    * (includes both capturing and non-capturing groups)
+    */
+  def countGroups(regexp: RegexAST): Int = {
+    regexp match {
+      case RegexGroup(_, term) => 1 + countGroups(term)
+      case other => other.children().map(countGroups).sum
+    }
   }
 
 }
@@ -1063,13 +1074,6 @@ class GpuRegExpExtractMeta(
       case _ =>
     }
 
-    def countGroups(regexp: RegexAST): Int = {
-      regexp match {
-        case RegexGroup(_, term) => 1 + countGroups(term)
-        case other => other.children().map(countGroups).sum
-      }
-    }
-
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
@@ -1077,7 +1081,7 @@ class GpuRegExpExtractMeta(
           // verify that we support this regex and can transpile it to cuDF format
           pattern = Some(new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern, None)._1)
-          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
+          numGroups = GpuRegExpUtils.countGroups(GpuRegExpUtils.parseAST(javaRegexpPattern))
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
@@ -1189,19 +1193,6 @@ class GpuRegExpExtractAllMeta(
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
 
-//    ShimLoader.getShimVersion match {
-//      case _: DatabricksShimVersion if expr.subject.isInstanceOf[InputFileName] =>
-//        willNotWorkOnGpu("avoiding Databricks Delta problem with regexp extract")
-//      case _ =>
-//    }
-
-    def countGroups(regexp: RegexAST): Int = {
-      regexp match {
-        case RegexGroup(_, term) => 1 + countGroups(term)
-        case other => other.children().map(countGroups).sum
-      }
-    }
-
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
@@ -1209,7 +1200,7 @@ class GpuRegExpExtractAllMeta(
           // verify that we support this regex and can transpile it to cuDF format
           pattern = Some(new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern, None)._1)
-          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
+          numGroups = GpuRegExpUtils.countGroups(GpuRegExpUtils.parseAST(javaRegexpPattern))
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
@@ -1247,14 +1238,15 @@ class GpuRegExpExtractAllMeta(
 }
 
 case class GpuRegExpExtractAll(
-    subject: Expression,
+    str: Expression,
     regexp: Expression,
     idx: Expression,
     cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
 
+  override def dataType: DataType = ArrayType(StringType, containsNull = true)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
-  override def first: Expression = subject
+  override def first: Expression = str
   override def second: Expression = regexp
   override def third: Expression = idx
 
@@ -1264,16 +1256,10 @@ case class GpuRegExpExtractAll(
       str: GpuColumnVector,
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
-    
-    if (idx == 0) {
-      str.getBase.findAll(cudfRegexPattern, false)
-    } else {
-      withResource(str.getBase.extractAllRe(cudfRegexPattern)) { extract =>
-        withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
-          isNull.ifElse(nullString, _)
-        }
-      }
-    }
+
+    val intIdx = idx.getValue.asInstanceOf[Int]
+    str.getBase.extractAllRecord(cudfRegexPattern, intIdx)
+  }
 }
 
 class SubstringIndexMeta(

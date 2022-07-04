@@ -1132,3 +1132,14 @@ def test_rlike_fallback_possessive_quantifier():
                 'a rlike "a*+"'),
                 'RLike',
         conf=_regexp_conf)
+
+def test_regexp_extract_all_idx_zero():
+    gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 0)',
+                'regexp_extract_all(a, "(a)(b)", 0)',
+                'regexp_extract_all(a, "([a-z0-9]([abcd]))", 0)',
+                'regexp_extract_all(a, "(\\\\d+)-(\\\\d+)", 0)',
+            ),
+        conf=_regexp_conf)
