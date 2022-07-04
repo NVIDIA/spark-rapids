@@ -335,9 +335,15 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate with Arm {
   override val name: String = "CudfSum"
 }
 
-class CudfMax(override val dataType: DataType) extends CudfAggregate {
+class CudfMax(override val dataType: DataType) extends CudfAggregate with Arm {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.max
+    (col: cudf.ColumnVector) => col.getType() match {
+      case DType.FLOAT32 if withResource(col.isNan()) (_.any().getBoolean()) => 
+        cudf.Scalar.fromFloat(Float.NaN)
+      case DType.FLOAT64 if withResource(col.isNan()) (_.any().getBoolean()) => 
+        cudf.Scalar.fromDouble(Double.NaN)
+      case _ => col.max()
+    }
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.max()
   override val name: String = "CudfMax"

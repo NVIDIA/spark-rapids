@@ -598,17 +598,17 @@ Last,S,`last`; `last_value`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,
 Last,S,`last`; `last_value`,None,reduction,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,PS,PS,NS
 Last,NS,`last`; `last_value`,None,window,input,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS
 Last,NS,`last`; `last_value`,None,window,result,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS,NS
-Max,S,`max`,None,aggregation,input,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
+Max,S,`max`,None,aggregation,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
 Max,S,`max`,None,aggregation,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
-Max,S,`max`,None,reduction,input,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
+Max,S,`max`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
 Max,S,`max`,None,reduction,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
-Max,S,`max`,None,window,input,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
+Max,S,`max`,None,window,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
 Max,S,`max`,None,window,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
-Min,S,`min`,None,aggregation,input,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
+Min,S,`min`,None,aggregation,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
 Min,S,`min`,None,aggregation,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
-Min,S,`min`,None,reduction,input,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
+Min,S,`min`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
 Min,S,`min`,None,reduction,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
-Min,S,`min`,None,window,input,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
+Min,S,`min`,None,window,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
 Min,S,`min`,None,window,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
 PivotFirst,S, ,None,aggregation,pivotColumn,S,S,S,S,S,PS,PS,S,PS,S,S,S,NS,NS,NS,NS,NS,NS
 PivotFirst,S, ,None,aggregation,valueColumn,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NS,NS,NS

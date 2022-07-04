@@ -997,7 +997,7 @@ def test_count_distinct_with_nan_floats(data_gen):
 non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
         # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
+        FloatGen(special_cases=[]), DoubleGen(special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
@@ -1020,7 +1020,7 @@ def test_first_last_reductions_nested_types(data_gen):
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 def test_generic_reductions(data_gen):
-    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         # Coalesce and sort are to make sure that first and last, which are non-deterministic
         # become deterministic
@@ -1728,7 +1728,7 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
 # test min max on single level structure
 #
 gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(no_nans = True), DoubleGen(no_nans = True),
+    float_gen, double_gen,
     string_gen, boolean_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),
@@ -1748,21 +1748,21 @@ def test_min_max_for_single_level_struct(data_gen):
         lambda spark : gen_df(spark, df_gen),
         "hash_agg_table",
         'select b, max(a) from hash_agg_table group by b',
-        _no_nans_float_conf)
+        _nans_float_conf)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, df_gen),
         "hash_agg_table",
         'select max(a) from hash_agg_table',
-        _no_nans_float_conf)
+        _nans_float_conf)
 
     # test min
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, df_gen, length=1024),
         "hash_agg_table",
         'select b, min(a) from hash_agg_table group by b',
-        _no_nans_float_conf)
+        _nans_float_conf)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, df_gen, length=1024),
         "hash_agg_table",
         'select min(a) from hash_agg_table',
-        _no_nans_float_conf)
+        _nans_float_conf)
