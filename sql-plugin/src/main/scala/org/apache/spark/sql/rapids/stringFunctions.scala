@@ -771,7 +771,7 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 }
 
 object GpuRegExpUtils {
-  def parseAST(pattern: String): RegexAST = {
+  private def parseAST(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
   }
 
@@ -869,11 +869,14 @@ object GpuRegExpUtils {
     * Returns the number of groups in regexp 
     * (includes both capturing and non-capturing groups)
     */
-  def countGroups(regexp: RegexAST): Int = {
-    regexp match {
-      case RegexGroup(_, term) => 1 + countGroups(term)
-      case other => other.children().map(countGroups).sum
-    }
+  def countGroups(pattern: String): Int = {
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+   }
+   countGroups(parseAST(pattern))
   }
 
 }
@@ -1081,7 +1084,7 @@ class GpuRegExpExtractMeta(
           // verify that we support this regex and can transpile it to cuDF format
           pattern = Some(new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern, None)._1)
-          numGroups = GpuRegExpUtils.countGroups(GpuRegExpUtils.parseAST(javaRegexpPattern))
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
@@ -1200,7 +1203,7 @@ class GpuRegExpExtractAllMeta(
           // verify that we support this regex and can transpile it to cuDF format
           pattern = Some(new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern, None)._1)
-          numGroups = GpuRegExpUtils.countGroups(GpuRegExpUtils.parseAST(javaRegexpPattern))
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)

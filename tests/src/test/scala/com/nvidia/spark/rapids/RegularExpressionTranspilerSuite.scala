@@ -28,25 +28,6 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
-  test("extract all") {
-    val ret = gpuExtractAll("(\\d+)-(\\d+)", Seq("100-200, 300-400"))
-    for(arr <- ret) {
-      println(s"[${arr.mkString(", ")}]")
-    }
-  }
-
-  def gpuExtractAll(pattern: String, input: Seq[String]): Seq[Array[String]] = {
-    withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      withResource(cv.extractAllRecord(pattern, 0)) { x =>
-        withResource(x.copyToHost()) { hcv =>
-          (0 until hcv.getRowCount.toInt).map(i => {
-            val list = hcv.getList(i)
-            list.toArray(new Array[String](list.size()))
-          })
-        }
-      }
-    }
-  }
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
