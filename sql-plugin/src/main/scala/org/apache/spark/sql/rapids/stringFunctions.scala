@@ -866,9 +866,9 @@ object GpuRegExpUtils {
   }
 
   /**
-    * Returns the number of groups in regexp 
-    * (includes both capturing and non-capturing groups)
-    */
+   * Returns the number of groups in regexp 
+   * (includes both capturing and non-capturing groups)
+   */
   def countGroups(pattern: String): Int = {
     def countGroups(regexp: RegexAST): Int = {
       regexp match {
