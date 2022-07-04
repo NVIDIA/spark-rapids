@@ -718,17 +718,44 @@ trait GpuArraySetOperation extends GpuBinaryExpression {
   }
 }
 
+case class GpuArrayExcept(left: Expression, right: Expression)
+    extends GpuArraySetOperation with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_intersect requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def dataType: DataType = left.dataType
+
+  override def nullable: Boolean = false
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.setDifference(lhs.getBase, rhs.getBase)
+  }
+}
+
 case class GpuArrayIntersect(left: Expression, right: Expression)
     extends GpuArraySetOperation with ExpectsInputTypes {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
 
-  override def checkInputDataTypes(): TypeCheckResult = 
+  override def checkInputDataTypes(): TypeCheckResult =
     (left.dataType, right.dataType) match {
     case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
       if (ldt.sameType(rdt)) {
         TypeCheckResult.TypeCheckSuccess
-      } else { 
+      } else {
         TypeCheckResult.TypeCheckFailure(
           s"Array_intersect requires both array params to have the same subType: $ldt != $rdt")
       }
@@ -742,6 +769,60 @@ case class GpuArrayIntersect(left: Expression, right: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     ColumnView.setIntersect(lhs.getBase, rhs.getBase)
+  }
+}
+
+case class GpuArrayUnion(left: Expression, right: Expression)
+    extends GpuArraySetOperation with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_union requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def dataType: DataType = left.dataType
+
+  override def nullable: Boolean = false
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.setUnion(lhs.getBase, rhs.getBase)
+  }
+}
+
+case class GpuArraysOverlap(left: Expression, right: Expression)
+    extends GpuArraySetOperation with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_union requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def dataType: DataType = left.dataType
+
+  override def nullable: Boolean = false
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.setOverlap(lhs.getBase, rhs.getBase)
   }
 }
 
