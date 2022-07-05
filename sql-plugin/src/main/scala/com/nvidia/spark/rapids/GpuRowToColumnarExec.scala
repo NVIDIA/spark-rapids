@@ -857,7 +857,7 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |    Object $rowBaseObj = input.getBaseObject();
          |    long $rowBaseOffset = input.getBaseOffset();
          |
-         |    long $cudfDataOffsetTmp;
+         |    int $cudfDataOffsetTmp;
          |    ${cudfDataOffsetInit}
          |
          |    ${copyData.mkString("\n")}
