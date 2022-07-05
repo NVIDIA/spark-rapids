@@ -201,7 +201,7 @@ object GpuAdd extends Arm {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw new ArithmeticException("One or more rows overflow for Add operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError("One or more rows overflow for Add operation.")
         }
       }
     }
