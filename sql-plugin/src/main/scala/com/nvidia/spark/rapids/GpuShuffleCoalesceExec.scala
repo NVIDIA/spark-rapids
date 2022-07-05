@@ -204,13 +204,13 @@ class GpuShuffleCoalesceIterator(iter: Iterator[HostConcatResult],
       throw new NoSuchElementException("No more columnar batches")
     }
     withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-      withResource(iter.next()) { hostConcatResult =>
-        // We acquire the GPU regardless of whether `hostConcatResult`
-        // is an empty batch or not, because the downstream tasks expect
-        // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
-        // generate GPU data from batches that are empty.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
-        withResource(new MetricRange(opTimeMetric)) { _ =>
+      withResource(new MetricRange(opTimeMetric)) { _ =>
+        withResource(iter.next()) { hostConcatResult =>
+          // We acquire the GPU regardless of whether `hostConcatResult`
+          // is an empty batch or not, because the downstream tasks expect
+          // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
+          // generate GPU data from batches that are empty.
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
           val batch = cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
           outputBatchesMetric += 1
           outputRowsMetric += batch.numRows()
