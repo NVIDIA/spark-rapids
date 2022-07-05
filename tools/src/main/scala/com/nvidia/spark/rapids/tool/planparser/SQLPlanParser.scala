@@ -82,7 +82,7 @@ object SQLPlanParser extends Logging {
   def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Set[Int] = {
     val nodeAccums = node.metrics.map(_.accumulatorId)
     nodeAccums.flatMap { nodeAccumId =>
-      app.accumulatorToStage.get(nodeAccumId)
+      app.accumulatorToStages.get(nodeAccumId)
     }.flatten.toSet
   }
 

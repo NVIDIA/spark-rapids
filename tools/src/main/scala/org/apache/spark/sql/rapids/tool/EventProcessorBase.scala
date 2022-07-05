@@ -399,8 +399,8 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       stage.info.submissionTime)
     val stageAccumulatorIds = event.stageInfo.accumulables.values.map { m => m.id }.toSeq
     stageAccumulatorIds.foreach { accumId =>
-      val existingStages = app.accumulatorToStage.getOrElse(accumId, Set.empty)
-      app.accumulatorToStage.put(accumId, existingStages + event.stageInfo.stageId)
+      val existingStages = app.accumulatorToStages.getOrElse(accumId, Set.empty)
+      app.accumulatorToStages.put(accumId, existingStages + event.stageInfo.stageId)
     }
   }
 
