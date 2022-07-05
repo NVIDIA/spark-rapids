@@ -427,7 +427,7 @@ def test_array_union(data_gen):
             'sort_array(array_union(a, b))',
             'sort_array(array_union(b, a))',
             'sort_array(array_union(a, array()))',
-            'sort_array(array_union(array(), b))',
+            # 'sort_array(array_union(array(), b))',
             'sort_array(array_union(a, a))',
         )
     )
