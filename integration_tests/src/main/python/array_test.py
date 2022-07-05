@@ -407,9 +407,9 @@ def test_array_intersect(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'sort_array(array_intersect(a, b))',
-            'sort_array(array_intersect(a, b))',
-            'array_intersect(a, array())',
-            'array_intersect(array(), b)',
+            'sort_array(array_intersect(b, a))',
+            'sort_array(array_intersect(a, array()))',
+            'sort_array(array_intersect(array(), b))',
             'sort_array(array_intersect(a, a))',
         )
     )
@@ -425,16 +425,16 @@ def test_array_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'sort_array(array_union(a, b))',
-            'sort_array(array_union(a, b))',
-            'array_union(a, array())',
-            'array_union(array(), b)',
+            'sort_array(array_union(b, a))',
+            'sort_array(array_union(a, array()))',
+            'sort_array(array_union(array(), b))',
             'sort_array(array_union(a, a))',
         )
     )
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
     FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
-def test_array_difference(data_gen):
+def test_array_except(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=False)),
         ('b', ArrayGen(data_gen, nullable=False))],
@@ -442,11 +442,11 @@ def test_array_difference(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
-            'sort_array(array_difference(a, b))',
-            'sort_array(array_difference(a, b))',
-            'array_difference(a, array())',
-            'array_difference(array(), b)',
-            'sort_array(array_difference(a, a))',
+            'sort_array(array_except(a, b))',
+            'sort_array(array_except(b, a))',
+            'sort_array(array_except(a, array()))',
+            'sort_array(array_except(array(), b))',
+            'sort_array(array_except(a, a))',
         )
     )
 
@@ -460,10 +460,12 @@ def test_arrays_overlap(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
+            'a',
+            'b',
             'arrays_overlap(a, b)',
-            'arrays_overlap(a, b)',
-            'arrays_overlap(a, array())',
-            'arrays_overlap(array(), b)',
-            'arrays_overlap(a, a)',
+            # 'arrays_overlap(b, a)',
+            # 'arrays_overlap(a, array())',
+            # 'arrays_overlap(array(), b)',
+            # 'arrays_overlap(a, a)',
         )
     )

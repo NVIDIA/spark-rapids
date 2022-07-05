@@ -817,12 +817,45 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
       TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
   }
 
-  override def dataType: DataType = left.dataType
+  override def dataType: DataType = BooleanType
 
-  override def nullable: Boolean = false
+  override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    ColumnView.setOverlap(lhs.getBase, rhs.getBase)
+    // Spark's arrays_overlap() function will return null if either array is null, so 
+    // we check if either array is null
+    val bothNonEmpty = withResource(lhs.getBase.countElements) { leftCount => 
+      withResource(rhs.getBase.countElements) { rightCount => 
+        withResource(Scalar.fromInt(0)) { zero =>
+          withResource(leftCount.greaterThan(zero)) { leftNonEmpty =>
+            withResource(rightCount.greaterThan(zero)) { rightNonEmpty => 
+              leftNonEmpty.and(rightNonEmpty)
+            }
+          }
+        }
+      }
+    }
+    val eitherHasNulls = withResource(lhs.getBase.listContainsNulls) { leftHasNulls =>
+      withResource(rhs.getBase.listContainsNulls) { rightHasNulls => 
+        leftHasNulls.or(rightHasNulls)
+      }
+    }
+    withResource(bothNonEmpty) { _ =>
+      withResource(eitherHasNulls) { _ => 
+        withResource(ColumnView.listOverlap(lhs.getBase, rhs.getBase)) { overlaps => 
+          withResource(overlaps.not) { notOverlap =>
+            withResource(bothNonEmpty.and(eitherHasNulls)) { nonEmptyAndHasNull =>
+              withResource(nonEmptyAndHasNull.and(notOverlap)) { returnNull =>
+                returnNull.ifElse(
+                  GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, BooleanType),
+                  overlaps
+                )
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 

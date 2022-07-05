@@ -2963,9 +2963,7 @@ object GpuOverrides extends Logging {
       "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
       "have no common element and they are both non-empty and either of them contains a null " + 
       "element null is returned, false otherwise.",
-      ExprChecks.binaryProject(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
-        TypeSig.ARRAY.nested(TypeSig.all),
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("array1",
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.ARRAY.nested(TypeSig.all)),
