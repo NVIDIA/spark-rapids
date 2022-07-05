@@ -281,7 +281,7 @@ python generate_custom_image.py \
     --machine-type n1-standard-4 \
     --accelerator type=$GPU_NAME,count=$GPU_COUNT \
     --disk-size 200 \
-    --subnetwork default 
+    --subnet default 
 ```
 
 See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more
@@ -313,7 +313,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --metadata=rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
     --enable-component-gateway \
-    --subnetwork=default 
+    --subnet=default 
 ```
 
 The new cluster should be up and running within 3-4 minutes!

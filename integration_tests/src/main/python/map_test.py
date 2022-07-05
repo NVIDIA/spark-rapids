@@ -62,7 +62,7 @@ def test_map_entries(data_gen):
                 'map_entries(a)'))
 
 
-def get_map_value_gens():
+def get_map_value_gens(precision=18, scale=0):
     def simple_struct_value_gen():
         return StructGen([["child", IntegerGen()]])
 
@@ -75,8 +75,11 @@ def get_map_value_gens():
     def array_value_gen():
         return ArrayGen(IntegerGen(), max_length=6)
 
+    def decimal_value_gen():
+        return DecimalGen(precision, scale)
+
     return [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-            StringGen, DateGen, TimestampGen, DecimalGen,
+            StringGen, DateGen, TimestampGen, decimal_value_gen,
             simple_struct_value_gen, nested_struct_value_gen, nested_map_value_gen, array_value_gen]
 
 
@@ -338,6 +341,62 @@ def test_element_at_map_numeric_keys(data_gen):
             'element_at(a, 999)'),
         conf={'spark.sql.ansi.enabled': False})
 
+@pytest.mark.parametrize('data_gen',
+                         [MapGen(DecimalGen(precision=35, scale=2, nullable=False), value(), max_length=6)
+                          for value in get_map_value_gens(precision=37, scale=0)],
+                         ids=idfn)
+def test_get_map_value_element_at_map_dec_col_keys(data_gen):
+    keys = DecimalGen(precision=35, scale=2)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'element_at(a, b)', 'a[b]'),
+        conf={'spark.sql.ansi.enabled': False})
+
+@pytest.mark.parametrize('data_gen',
+                         [MapGen(StringGen(pattern='key', nullable=False), IntegerGen(nullable=False), max_length=1, min_length=1, nullable=False)],
+                         ids=idfn)
+@pytest.mark.parametrize('ansi', [True, False], ids=idfn)
+def test_get_map_value_element_at_map_string_col_keys_ansi(data_gen, ansi):
+    keys = StringGen(pattern='key', nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'element_at(a, b)', 'a[b]'),
+        conf={'spark.sql.ansi.enabled': ansi})
+
+@pytest.mark.parametrize('data_gen',
+                         [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
+                          for value in get_map_value_gens(precision=37, scale=0)],
+                         ids=idfn)
+def test_get_map_value_element_at_map_string_col_keys(data_gen):
+    keys = StringGen(pattern='key_[0-9]')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'element_at(a, b)', 'a[b]'),
+        conf={'spark.sql.ansi.enabled': False})
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_element_at_map_string_col_keys_ansi_fail(data_gen):
+    keys = StringGen(pattern='NOT_FOUND')
+    message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
+    assert_gpu_and_cpu_error(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'element_at(a, b)').collect(),
+        conf=test_conf,
+        error_message=message)
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_get_map_value_string_col_keys_ansi_fail(data_gen):
+    keys = StringGen(pattern='NOT_FOUND')
+    message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
+    # For 3.3.0+ strictIndexOperator should not affect element_at
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
+    assert_gpu_and_cpu_error(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'a[b]').collect(),
+        conf=test_conf,
+        error_message=message)
 
 @pytest.mark.parametrize('data_gen',
                          [MapGen(DateGen(nullable=False), value(), max_length=6)

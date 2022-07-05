@@ -1214,7 +1214,6 @@ function getAppDetailsTableTemplate() {
             <th>Supported SQL DF Task Duration</th>
             <th>SQL Dataframe Task Duration</th>
             <th>Executor CPU Time Percent</th>
-            <th>Executor CPU Time Percent</th>
             <th>Longest SQL Duration</th>
             <th>NONSQL Task Duration Plus Overhead</th>
             <th>App Duration Estimated</th>
