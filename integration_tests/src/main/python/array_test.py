@@ -403,7 +403,6 @@ def test_array_intersect(data_gen):
         [('a', ArrayGen(data_gen, nullable=False)),
         ('b', ArrayGen(data_gen, nullable=False))],
         nullable=False)
-    literal = gen_scalar(data_gen, force_no_nulls=True)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
@@ -415,12 +414,13 @@ def test_array_intersect(data_gen):
         )
     )
     
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_union(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=False)),
         ('b', ArrayGen(data_gen, nullable=False))],
         nullable=False)
-    literal = gen_scalar(data_gen, force_no_nulls=True)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
@@ -429,5 +429,41 @@ def test_array_union(data_gen):
             'array_union(a, array())',
             'array_union(array(), b)',
             'sort_array(array_union(a, a))',
+        )
+    )
+
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+def test_array_difference(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=False)),
+        ('b', ArrayGen(data_gen, nullable=False))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_difference(a, b))',
+            'sort_array(array_difference(a, b))',
+            'array_difference(a, array())',
+            'array_difference(array(), b)',
+            'sort_array(array_difference(a, a))',
+        )
+    )
+
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+def test_arrays_overlap(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=False)),
+        ('b', ArrayGen(data_gen, nullable=False))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'arrays_overlap(a, b)',
+            'arrays_overlap(a, b)',
+            'arrays_overlap(a, array())',
+            'arrays_overlap(array(), b)',
+            'arrays_overlap(a, a)',
         )
     )
