@@ -201,7 +201,9 @@ object GpuAdd extends Arm {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError("One or more rows overflow for Add operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(
+            "One or more rows overflow for Add operation."
+          )
         }
       }
     }
@@ -319,7 +321,9 @@ case class GpuSubtract(
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError("One or more rows overflow for Subtract operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(
+            "One or more rows overflow for Subtract operation."
+          )
         }
       }
     }
