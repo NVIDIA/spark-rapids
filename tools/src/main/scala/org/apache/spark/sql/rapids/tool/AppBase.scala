@@ -60,8 +60,7 @@ abstract class AppBase(
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
   val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
-  val accumulatorToStage: HashMap[Long, Int] = new HashMap[Long, Int]()
-
+  val accumulatorToStage: HashMap[Long, Set[Int]] = new HashMap[Long, Set[Int]]()
 
   var driverAccumMap: HashMap[Long, ArrayBuffer[DriverAccumCase]] =
     HashMap[Long, ArrayBuffer[DriverAccumCase]]()
