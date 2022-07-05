@@ -35,7 +35,7 @@ class ExecInfo(
     val nodeId: Long,
     val isSupported: Boolean,
     val children: Option[Seq[ExecInfo]], // only one level deep
-    val stages: Seq[Int] = Seq.empty,
+    val stages: Set[Int] = Set.empty,
     val shouldRemove: Boolean = false) {
   private def childrenToString = {
     val str = children.map { c =>
@@ -79,12 +79,11 @@ object SQLPlanParser extends Logging {
     PlanInfo(appID, sqlID, execInfos)
   }
 
-  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
+  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Set[Int] = {
     val nodeAccums = node.metrics.map(_.accumulatorId)
-    val res = nodeAccums.flatMap { nodeAccumId =>
+    nodeAccums.flatMap { nodeAccumId =>
       app.accumulatorToStage.get(nodeAccumId)
-    }.flatten.toSet.toSeq
-    res.sorted.reverse
+    }.flatten.toSet
   }
 
   private val skipUDFCheckExecs = Seq("ArrowEvalPython", "AggregateInPandas",
