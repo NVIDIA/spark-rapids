@@ -1039,7 +1039,7 @@ def test_subtraction_overflow_with_ansi_enabled_day_time_interval(ansi_enabled):
             StructType([StructField('a', DayTimeIntervalType()), StructField('b', DayTimeIntervalType())])
         ).selectExpr('a - b').collect(),
         conf={'spark.sql.ansi.enabled': ansi_enabled},
-        error_message='ArithmeticException')
+        error_message='SparkArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_unary_positive_day_time_interval():

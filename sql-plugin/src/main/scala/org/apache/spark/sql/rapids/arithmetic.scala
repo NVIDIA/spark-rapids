@@ -319,7 +319,7 @@ case class GpuSubtract(
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw new ArithmeticException("One or more rows overflow for Subtract operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError("One or more rows overflow for Subtract operation.")
         }
       }
     }
