@@ -460,12 +460,10 @@ def test_arrays_overlap(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
-            'a',
-            'b',
             'arrays_overlap(a, b)',
-            # 'arrays_overlap(b, a)',
-            # 'arrays_overlap(a, array())',
-            # 'arrays_overlap(array(), b)',
-            # 'arrays_overlap(a, a)',
+            'arrays_overlap(b, a)',
+            'arrays_overlap(a, array())',
+            'arrays_overlap(array(), b)',
+            'arrays_overlap(a, a)',
         )
     )
