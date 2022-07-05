@@ -4267,7 +4267,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         f.relation.inputFiles.exists(_.contains("_delta_log"))
       case rdd: RDDScanExec =>
         // TODO check FilePartition paths instead of checking the name?
-        rdd.inputRDD.name.contains("Delta Table State")
+        rdd.inputRDD != null && rdd.inputRDD.name != null &&
+          rdd.inputRDD.name.contains("Delta Table State")
       case _ =>
         false
     })
