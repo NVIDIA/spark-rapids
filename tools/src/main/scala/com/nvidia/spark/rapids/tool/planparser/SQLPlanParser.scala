@@ -81,13 +81,9 @@ object SQLPlanParser extends Logging {
 
   def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
     val nodeAccums = node.metrics.map(_.accumulatorId)
-    app.stageAccumulators.flatMap { case (stageId, stageAccums) =>
-      if (nodeAccums.intersect(stageAccums).nonEmpty) {
-        Some(stageId)
-      } else {
-        None
-      }
-    }.toSeq
+    nodeAccums.flatMap { nodeAccumId =>
+      app.accumulatorToStage.get(nodeAccumId)
+    }
   }
 
   private val skipUDFCheckExecs = Seq("ArrowEvalPython", "AggregateInPandas",
