@@ -422,12 +422,16 @@ def test_array_union(data_gen):
         ('b', ArrayGen(data_gen, nullable=False))],
         nullable=False)
 
+    # The 4th item in this integration test here is left commmented out here
+    # There is an issue with running that item with collect(), which affects
+    # the integration test here.
+    # See this issue (https://github.com/NVIDIA/spark-rapids/issues/5957) 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'sort_array(array_union(a, b))',
             'sort_array(array_union(b, a))',
             'sort_array(array_union(a, array()))',
-            # 'sort_array(array_union(array(), b))',
+            # 'sort_array(array_union(array(), b))', # see https://github.com/NVIDIA/spark-rapids/issues/5957
             'sort_array(array_union(a, a))',
         )
     )
