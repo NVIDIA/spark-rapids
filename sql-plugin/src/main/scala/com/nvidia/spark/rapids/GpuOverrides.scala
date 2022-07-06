@@ -4272,7 +4272,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
           rdd.inputRDD.name.startsWith("Delta Table State") &&
-          rdd.inputRDD.name.endsWith("/_delta_log") &&
+          rdd.inputRDD.name.endsWith("/_delta_log")
       case _ =>
         false
     })
