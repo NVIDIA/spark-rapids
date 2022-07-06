@@ -1218,9 +1218,6 @@ class GpuRegExpExtractAllMeta(
         if (idx < 0) {
           willNotWorkOnGpu("the specified group index cannot be less than zero")
         }
-        if(idx > 0) {
-          willNotWorkOnGpu("regexp_extract_all only supports group index of 0")
-        }
         if (idx > numGroups) {
           willNotWorkOnGpu(
             s"regex group count is $numGroups, but the specified group index is $idx")
@@ -1236,7 +1233,7 @@ class GpuRegExpExtractAllMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtractAll(str, regexp, idx, cudfPattern)
+    GpuRegExpExtractAll(str, regexp, idx, numGroups, cudfPattern)
   }
 }
 
@@ -1244,6 +1241,7 @@ case class GpuRegExpExtractAll(
     str: Expression,
     regexp: Expression,
     idx: Expression,
+    numGroups: Int,
     cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
 
@@ -1261,7 +1259,38 @@ case class GpuRegExpExtractAll(
       idx: GpuScalar): ColumnVector = {
 
     val intIdx = idx.getValue.asInstanceOf[Int]
-    str.getBase.extractAllRecord(cudfRegexPattern, intIdx)
+
+    val extractedWithNulls = withResource(str.getBase.extractAllRecord(cudfRegexPattern, intIdx)) { allExtracted =>
+      withResource(allExtracted.countElements) { listSizes =>
+        withResource(listSizes.max) { maxSize =>
+          val maxSizeInt = maxSize.getInt
+          val stringCols: Seq[ColumnVector] = Range(intIdx - 1, maxSizeInt, numGroups).map { i =>
+            withResource(ColumnVector.fromScalar(Scalar.fromInt(i), allExtracted.getRowCount.toInt)) { index =>
+              allExtracted.extractListElement(index)
+            }
+          }
+          ColumnVector.makeList(stringCols: _*)
+        }
+      }
+    }
+    withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+      withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
+        withResource(stringCol.isNotNull) { isNotNull =>
+          withResource(isNotNull.makeListFromOffsets(extractedWithNulls.getRowCount, offsetsCol)) { booleanMask => 
+            extractedWithNulls.applyBooleanMask(booleanMask)
+          }
+        }
+      }
+    }
+
+    /*
+    1. pull out strings column (getChildColumnView[1])
+    2. produce booleans from strings list (isNotNull)
+    3. pull out offets (getChildColumnView[0]) and create 
+    4. create boolean mask using isNotNull.makeListFromOffsets(offsets)
+    4. apply boolean mask
+
+    */
   }
 }
 
