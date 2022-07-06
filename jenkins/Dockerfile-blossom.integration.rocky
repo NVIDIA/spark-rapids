@@ -35,7 +35,6 @@ RUN yum update -y && \
     yum install epel-release -y && \
     yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect parallel rsync zip unzip
 
-# The default mvn verision is 3.0.5 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.
 ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"
 RUN wget ${URM_URL}/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
