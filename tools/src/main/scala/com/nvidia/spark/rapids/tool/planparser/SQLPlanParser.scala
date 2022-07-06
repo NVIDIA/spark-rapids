@@ -35,7 +35,7 @@ class ExecInfo(
     val nodeId: Long,
     val isSupported: Boolean,
     val children: Option[Seq[ExecInfo]], // only one level deep
-    val stages: Seq[Int] = Seq.empty,
+    val stages: Set[Int] = Set.empty,
     val shouldRemove: Boolean = false) {
   private def childrenToString = {
     val str = children.map { c =>
@@ -79,15 +79,11 @@ object SQLPlanParser extends Logging {
     PlanInfo(appID, sqlID, execInfos)
   }
 
-  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
+  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Set[Int] = {
     val nodeAccums = node.metrics.map(_.accumulatorId)
-    app.stageAccumulators.flatMap { case (stageId, stageAccums) =>
-      if (nodeAccums.intersect(stageAccums).nonEmpty) {
-        Some(stageId)
-      } else {
-        None
-      }
-    }.toSeq
+    nodeAccums.flatMap { nodeAccumId =>
+      app.accumulatorToStages.get(nodeAccumId)
+    }.flatten.toSet
   }
 
   private val skipUDFCheckExecs = Seq("ArrowEvalPython", "AggregateInPandas",
@@ -125,7 +121,7 @@ object SQLPlanParser extends Logging {
         case "ColumnarToRow" =>
           // ignore ColumnarToRow to row for now as assume everything is columnar
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
-            isSupported = false, None, Seq.empty, shouldRemove=true)
+            isSupported = false, None, Set.empty, shouldRemove=true)
         case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
           // create data source table doesn't show the format so we can't determine
           // if we support it
