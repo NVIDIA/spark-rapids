@@ -20,12 +20,10 @@ import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.DecimalType;
-import scala.Tuple2;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 import static org.apache.spark.sql.types.DataTypes.*;
@@ -170,12 +168,6 @@ public final class JCudfUtil {
         // all other types are aligned based on the size.
         return rapidsType.getSizeInBytes();
     }
-  }
-
-  public static int[] getPackedSchema(Attribute[] attributes) {
-    Tuple2[] tuples = new Tuple2[attributes.length];
-    int[] result = new int[attributes.length];
-    return result;
   }
 
   /**
