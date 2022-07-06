@@ -4264,11 +4264,15 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
       case f: FileSourceScanExec =>
-        // TODO make this check more specific
-        f.relation.inputFiles.exists(_.contains("_delta_log"))
+        // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
+        f.relation.inputFiles.exists(name =>
+          name.contains("/_delta_log/") && name.endsWith(".json"))
       case rdd: RDDScanExec =>
-        rdd.inputRDD != null && rdd.inputRDD.name != null &&
-          rdd.inputRDD.name.contains("Delta Table State")
+        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
+        rdd.inputRDD != null &&
+          rdd.inputRDD.name != null &&
+          rdd.inputRDD.name.startsWith("Delta Table State") &&
+          rdd.inputRDD.name.endsWith("/_delta_log") &&
       case _ =>
         false
     })
