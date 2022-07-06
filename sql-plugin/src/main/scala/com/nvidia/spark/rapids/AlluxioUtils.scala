@@ -40,10 +40,11 @@ object AlluxioUtils extends Logging {
   // We require an environment variable "ALLUXIO_HOME"
   // This function will only read once from ALLUXIO/conf.
   private def initAlluxioInfo(conf: RapidsConf): Unit = {
-    alluxio_home = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
-    alluxioCmd = conf.getAlluxioCmd.getOrElse(
-      Seq("su", "ubuntu", "-c", s"$alluxio_home/bin/alluxio"))
     this.synchronized {
+      alluxio_home = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
+      alluxioCmd = conf.getAlluxioCmd.getOrElse(
+        Seq("su", "ubuntu", "-c", s"$alluxio_home/bin/alluxio"))
+
       if (!isInit) {
         // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
         var alluxio_port: String = "19998"
@@ -129,25 +130,27 @@ object AlluxioUtils extends Logging {
                       access_key: Option[String],
                       secret_key: Option[String]): Unit = {
     val remote_path = scheme + "//" + bucket
-    if (!mountedBuckets.contains(bucket)) {
-      // not mount yet, call mount command
-      val parameter = if (access_key.isEmpty) {
+    this.synchronized {
+      if (!mountedBuckets.contains(bucket)) {
+        // not mount yet, call mount command
+        val parameter = if (access_key.isEmpty) {
           s" fs mount --readonly /$bucket $remote_path"
         } else {
           s" fs mount --readonly --option s3a.accessKeyId=${access_key.get} " +
             s"--option s3a.secretKey=${secret_key.get} /$bucket $remote_path"
         }
-      val (output, _) = runAlluxioCmd(parameter)
-      if (output != 0) {
-        throw new RuntimeException(s"Mount bucket $bucket failed $output")
+        val (output, _) = runAlluxioCmd(parameter)
+        if (output != 0) {
+          throw new RuntimeException(s"Mount bucket $bucket failed $output")
+        }
+        logInfo(s"Mounted remote $remote_path to /$bucket in Alluxio $output")
+        mountedBuckets(bucket) = remote_path
+      } else if (mountedBuckets(bucket).equals(remote_path)) {
+        logInfo(s"Already mounted remote $remote_path to /$bucket in Alluxio")
+      } else {
+        throw new RuntimeException(s"Found a same bucket name in $remote_path " +
+          s"and ${mountedBuckets(bucket)}")
       }
-      logInfo(s"Mounted remote $remote_path to /$bucket in Alluxio $output")
-      mountedBuckets(bucket) = remote_path
-    } else if (mountedBuckets(bucket).equals(remote_path)) {
-      logInfo(s"Already mounted remote $remote_path to /$bucket in Alluxio")
-    } else {
-      throw new RuntimeException(s"Found a same bucket name in $remote_path " +
-        s"and ${mountedBuckets(bucket)}")
     }
   }
 
