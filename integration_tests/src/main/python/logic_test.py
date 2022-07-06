@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
+from spark_session import is_before_spark_330
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -78,7 +79,7 @@ def test_logical_with_side_effect(ansi_enabled, lhs_arg, int_arg, logic_op):
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: do_it(spark, lhs_arg, int_arg, logic_op).collect(),
             conf=ansi_conf,
-            error_message="ArithmeticException")
+            error_message="java.lang.ArithmeticException" if is_before_spark_330() else "SparkArithmeticException")
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: do_it(spark, lhs_arg, int_arg, logic_op),

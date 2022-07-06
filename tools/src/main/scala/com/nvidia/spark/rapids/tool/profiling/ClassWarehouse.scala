@@ -260,7 +260,7 @@ case class SQLMetricInfoCase(
     nodeID: Long,
     nodeName: String,
     nodeDesc: String,
-    stageIds: Seq[Int])
+    stageIds: Set[Int])
 
 case class DriverAccumCase(
     sqlID: Long,
