@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.LinkedHashMap
+import scala.collection.mutable
 
 import org.scalatest.FunSuite
 
@@ -53,21 +53,31 @@ class JCudfUtilSuite extends FunSuite with Logging {
     ("col-bool-23", IntegerType))
 
   private val schema = new StructType(fieldsArray.map(f => StructField(f._1, f._2, true)).toArray)
-  private val typeOrderMap = LinkedHashMap[DataType, Int](
+  private val typeOrderMap = mutable.LinkedHashMap[DataType, Int](
     StringType -> 39,
     DoubleType -> 80,
     LongType -> 80,
     BooleanType -> 10,
     IntegerType -> 40)
 
-  private val dataTypeAlignmentMap = LinkedHashMap[DataType, Int](
+  private val dataTypeAlignmentMap = mutable.LinkedHashMap[DataType, Int](
     StringType -> 1,
     DoubleType -> 8,
     LongType -> 8,
     BooleanType -> 1,
     IntegerType -> 4)
 
-  test("test dataTypeOrder used for sorting columns in CUDF") {
+  private val expectedPackedOffsets : Array[Int] =
+    Array(0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 100, 104, 112, 120, 128, 136, 144,
+      152, 160, 168, 169)
+
+  private val expectedPackedMap : Array[Int] =
+    Array(4, 5, 6, 7, 8, 9, 10, 17, 18, 19, 20, 21, 2, 23, 0, 3, 11, 12, 13, 14, 15, 16, 1, 22)
+
+  private val expectedUnPackedMap : Array[Int] =
+    Array(14, 22, 12, 15, 0, 1, 2, 3, 4, 5, 6, 16, 17, 18, 19, 20, 21, 7, 8, 9, 10, 11, 23, 13)
+
+  test("test dataType Order used for sorting columns in JCudf") {
     schema.foreach { colF =>
       assert(JCudfUtil.getDataTypeOrder(colF.dataType) == typeOrderMap(colF.dataType))
     }
@@ -81,27 +91,63 @@ class JCudfUtilSuite extends FunSuite with Logging {
     }
   }
 
-  test("test offset calculations") {
-    val expectedPackedMap: Array[Int] =
-      Array(4, 5, 6, 7, 8, 9, 10, 17, 18, 19, 20, 21, 2, 23, 0, 3, 11, 12, 13, 14, 15, 16, 1, 22)
-    val expectedUnpackedMap: Array[Int] =
-      Array(14, 22, 12, 15, 0, 1, 2, 3, 4, 5, 6, 16, 17, 18, 19, 20, 21, 7, 8, 9, 10, 11, 23, 13)
-    val expectedOffsets: Array[Int] =
-      Array(0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 100, 104, 112, 120, 128, 136, 144,
-        152, 160, 168, 169)
+  test("test JCudf offset calculations") {
     // test packing
     val attributes = TrampolineUtil.toAttributes(schema)
     val packedMaps = CudfRowTransitions.reorderSchemaToPackedColumns(attributes)
     assert(packedMaps.deep == expectedPackedMap.deep)
     val unpackedMap = CudfRowTransitions.getUnpackedMapForSchema(packedMaps)
-    assert(unpackedMap.deep == expectedUnpackedMap.deep)
+    assert(unpackedMap.deep == expectedUnPackedMap.deep)
     // test offset calculator
     val startOffsets: Array[Int] = new Array[Int](attributes.length)
     val jCudfBuilder = JCudfUtil.getJCudfRowEstimator(packedMaps.map(attributes(_)))
-    val fixedWidthSize = jCudfBuilder.setColumnOffsets(startOffsets)
+    val validityBytesOffset = jCudfBuilder.setColumnOffsets(startOffsets)
 
     assert(jCudfBuilder.hasVarSizeData)
-    assert(170 == fixedWidthSize)
-    assert(startOffsets.deep == expectedOffsets.deep)
+    assert(170 == validityBytesOffset)
+    assert(startOffsets.deep == expectedPackedOffsets.deep)
+  }
+
+  test("test JCudf Row Visitor used in CodeGen with packed Schema") {
+    val attributes = TrampolineUtil.toAttributes(schema)
+    val packedMaps = CudfRowTransitions.reorderSchemaToPackedColumns(attributes)
+    val packedAttributes = packedMaps.map(attributes(_))
+    val cudfRowVisitor = JCudfUtil.getJCudfRowVisitor(packedAttributes)
+    val stringColumns = packedMaps.filter(packedAttributes(_).dataType.isInstanceOf[StringType])
+
+    assert(cudfRowVisitor.getValidityBytesOffset == 170)
+    assert(cudfRowVisitor.getValiditySizeInBytes == (attributes.length + 7) / 8)
+    var varDataOffsetRef = 173
+    val cudfDataOffset = cudfRowVisitor.getVariableDataOffset
+    assert(cudfDataOffset == 170 + cudfRowVisitor.getValiditySizeInBytes)
+    assert(cudfDataOffset == 173)
+    (0 until schema.length).map { colIndex =>
+      cudfRowVisitor.getNextCol
+      val cudfColOff = cudfRowVisitor.getColOffset
+      assert(cudfColOff == expectedPackedOffsets(colIndex))
+      val colLength = cudfRowVisitor.getColLength
+      colLength match {
+        case -15 =>
+          assert(packedAttributes(colIndex).dataType.isInstanceOf[StringType])
+          // assume length is 20;
+          varDataOffsetRef += 20
+        case _ => assert(!stringColumns.contains(colIndex))
+      }
+    }
+    assert(varDataOffsetRef == cudfDataOffset + 20 * stringColumns.length)
+  }
+
+  test("test JCudf Row Size Estimator for unpacked schema") {
+    val attributes = TrampolineUtil.toAttributes(schema)
+    val cudfRowEstimator = JCudfUtil.getJCudfRowEstimator(attributes.toArray)
+    val sizePerRowEstimate = cudfRowEstimator.getEstimateSize
+    val stringColumns = attributes.count(_.dataType.isInstanceOf[StringType])
+    // validity offset is 176
+    // size of validity is 3 bytes
+    // data size is number of strings * JCUDF_TYPE_STRING_LENGTH_ESTIMATE
+    val estimatedSize = JCudfUtil.alignOffset(
+      176 + 3 + stringColumns * JCudfUtil.JCUDF_TYPE_STRING_LENGTH_ESTIMATE,
+      JCudfUtil.JCUDF_ROW_ALIGNMENT)
+    assert(sizePerRowEstimate == estimatedSize)
   }
 }
