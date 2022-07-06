@@ -51,18 +51,10 @@ class AcceleratedColumnarToRowIterator(
 
   // for packMap the nth entry is the index of the original input column that we want at
   // the nth entry.
-  private val packMap: Array[Int] = schema
-    .zipWithIndex
-    .sortWith {
-      (x, y) =>
-        JCudfUtil.getDataTypeOrder(x._1.dataType) > JCudfUtil.getDataTypeOrder(y._1.dataType)
-    }.map(_._2)
-    .toArray
+  private val packMap: Array[Int] = CudfRowTransitions.reorderSchemaToPackedColumns(schema)
+
   // For unpackMap the nth entry is the index in the row that came back for the original
-  private val unpackMap: Array[Int] = packMap
-      .zipWithIndex
-      .sortWith(_._1 < _._1)
-      .map(_._2)
+  private val unpackMap: Array[Int] = CudfRowTransitions.getUnpackedMapForSchema(packMap)
 
   private val outputRow = new CudfUnsafeRow(packMap.map(schema(_)), unpackMap)
   private var baseDataAddress: Long = -1
@@ -281,6 +273,23 @@ object CudfRowTransitions {
 
   def areAllSupported(schema: Seq[Attribute]): Boolean =
     schema.forall(att => isSupportedType(att.dataType))
+
+  def reorderSchemaToPackedColumns(originalSchema: Seq[Attribute]): Array[Int] = {
+    val packedColumns: Array[Int] = originalSchema
+      .zipWithIndex
+      .sortWith {
+        (x, y) =>
+          JCudfUtil.getDataTypeOrder(x._1.dataType) > JCudfUtil.getDataTypeOrder(y._1.dataType)
+      }.map(_._2).toArray
+    packedColumns
+  }
+
+  def getUnpackedMapForSchema(packedCols: Array[Int]) : Array[Int] = {
+    packedCols
+      .zipWithIndex
+      .sortWith(_._1 < _._1)
+      .map(_._2)
+  }
 }
 
 case class GpuColumnarToRowExec(
