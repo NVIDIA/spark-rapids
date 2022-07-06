@@ -1484,10 +1484,6 @@ class GpuStringSplitMeta(
 
     extractLit(expr.limit) match {
       case Some(Literal(n: Int, _)) =>
-        if (n == 0 || n == 1) {
-          // https://github.com/NVIDIA/spark-rapids/issues/4720
-          willNotWorkOnGpu("limit of 0 or 1 is not supported")
-        }
       case _ =>
         willNotWorkOnGpu("only literal limit is supported")
     }
@@ -1515,8 +1511,23 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
-    val intLimit = limit.getValue.asInstanceOf[Int]
-    str.getBase.stringSplitRecord(pattern, intLimit, isRegExp)
+    limit.getValue.asInstanceOf[Int] match {
+      case 0 =>
+        // Same as splitting as many times as possible
+        str.getBase.stringSplitRecord(pattern, -1, isRegExp)
+      case 1 =>
+        // Short circuit GPU and just return a list containing the original input string
+        withResource(str.getBase.isNull) { isNull =>
+          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
+            nullStringList =>
+              withResource(ColumnVector.makeList(str.getBase)) { list => 
+                  isNull.ifElse(nullStringList, list)
+              }
+          }
+        }
+      case n =>
+        str.getBase.stringSplitRecord(pattern, n, isRegExp)
+    }
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
