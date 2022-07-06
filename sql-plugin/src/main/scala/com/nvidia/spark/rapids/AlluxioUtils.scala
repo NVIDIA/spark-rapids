@@ -93,6 +93,8 @@ object AlluxioUtils extends Logging {
               logInfo(s"Found mounted bucket $remote_path to /$bucket")
             }
           }
+        } else {
+          logWarning(s"Failed to run alluxio fs mount $ret")
         }
         isInit = true
       }
@@ -115,8 +117,7 @@ object AlluxioUtils extends Logging {
         case Seq(first, _, _*) => first
         case Seq(last) => last + param
       }.toSeq
-    val id = Thread.currentThread().getId()
-    logInfo(s"Run command ${params.last} in thread $id")
+    logInfo(s"Run command ${params.last}")
     val out : scala.collection.mutable.ArrayBuffer[String] =
       new scala.collection.mutable.ArrayBuffer[String](10)
     val ret = Process(params).!(ProcessLogger(out += _, _ => Unit))
@@ -141,12 +142,12 @@ object AlluxioUtils extends Logging {
         }
         val (output, _) = runAlluxioCmd(parameter)
         if (output != 0) {
-          throw new RuntimeException(s"Mount bucket $bucket failed $output")
+          throw new RuntimeException(s"Mount bucket $remote_path to /$bucket failed $output")
         }
-        logInfo(s"Mounted remote $remote_path to /$bucket in Alluxio $output")
+        logInfo(s"Mounted bucket $remote_path to /$bucket in Alluxio $output")
         mountedBuckets(bucket) = remote_path
       } else if (mountedBuckets(bucket).equals(remote_path)) {
-        logInfo(s"Already mounted remote $remote_path to /$bucket in Alluxio")
+        logInfo(s"Already mounted bucket $remote_path to /$bucket in Alluxio")
       } else {
         throw new RuntimeException(s"Found a same bucket name in $remote_path " +
           s"and ${mountedBuckets(bucket)}")
