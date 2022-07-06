@@ -734,7 +734,7 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
       val colLength = jcudfRowVisitor.getColLength()
       val ret = jcudfRowVisitor.getColLength() match {
         // strings return -15
-        case -15 => s"$cudfDataOffsetTmp += copyUTF8StringInto($colIndex, $rowBaseObj,  $rowBaseOffset, $sparkValidityOffset, $cudfColOff, $cudfDataOffsetTmp);"
+        case -15 => s"$cudfDataOffsetTmp += copyUTF8StringInto($colIndex, $rowBaseObj,  $rowBaseOffset, $sparkValidityOffset, startAddress, $cudfColOff, $cudfDataOffsetTmp);"
         case 1 => s"Platform.putByte(null, startAddress + $cudfColOff, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
         case 2 => s"Platform.putShort(null, startAddress + $cudfColOff, Platform.getShort($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
         case 4 => s"Platform.putInt(null, startAddress + $cudfColOff, Platform.getInt($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
@@ -835,13 +835,15 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |  }
          |
          |  private int copyUTF8StringInto(
-         |      int ordinal, Object src, long baseOffset, int sparkValidityOffset, int cudfColOffset, int dataDstOffset) {
+         |      int ordinal, Object src, long baseOffset, int sparkValidityOffset,
+         |      long startAddress, int cudfColOffset, int dataDstOffset) {
+         |    final long unsafeCudfColOffset = startAddress + cudfColOffset;
          |    // check that the field is not null
          |    if (!org.apache.spark.unsafe.bitset.BitSetMethods.isSet(src, baseOffset, ordinal)) {
-         |      // this string is null
-         |      // the size should be 0, the address is 0 since no data is stored.
-         |      Platform.putInt(null, cudfColOffset, 0);
-         |      Platform.putInt(null, cudfColOffset + 4, 0);
+         |      // The string is null. This assumes that we keep the offset position.
+         |      // The size should be 0, the address is 0 since no data is stored.
+         |      Platform.putInt(null, unsafeCudfColOffset, 0);
+         |      Platform.putInt(null, unsafeCudfColOffset + 4, 0);
          |      return 0;
          |    }
          |    // calculate the spark offset
@@ -851,10 +853,10 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |    final int strOffset = (int) (strOffsetAndSize >> 32);
          |    final int strSize = (int) strOffsetAndSize;
          |    // set the offset and length in the fixed width section.
-         |    Platform.putInt(null, cudfColOffset, dataDstOffset);
-         |    Platform.putInt(null, cudfColOffset + 4, strSize);
+         |    Platform.putInt(null, unsafeCudfColOffset, dataDstOffset);
+         |    Platform.putInt(null, unsafeCudfColOffset + 4, strSize);
          |    // copy the data
-         |    Platform.copyMemory(src, strOffset, null, dataDstOffset, strSize);
+         |    Platform.copyMemory(src, strOffset, null, startAddress + dataDstOffset, strSize);
          |    return strSize;
          |  }
          |
