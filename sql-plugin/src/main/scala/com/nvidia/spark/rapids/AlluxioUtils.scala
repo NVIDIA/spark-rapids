@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids
 
 import java.io.FileNotFoundException
+import java.util.Properties
 
-import scala.io.Source
+import scala.io.{BufferedSource, Source}
 import scala.sys.process.{Process, ProcessLogger}
 
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{FileIndex, HadoopFsRelation, InMemoryFileIndex}
@@ -47,20 +47,17 @@ object AlluxioUtils extends Logging {
 
       if (!isInit) {
         // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
-        var alluxio_port: String = "19998"
+        var alluxio_port: String = null
         var alluxio_master: String = null
-        var buffered_source: Source = null
+        var buffered_source: BufferedSource = null
         try {
           buffered_source = Source.fromFile(alluxio_home + "/conf/alluxio-site.properties")
-          for (line <- buffered_source.getLines) {
-            if (line.startsWith("alluxio.master.hostname")) {
-              alluxio_master = line.split('=')(1).trim
-            } else if (line.startsWith("alluxio.master.rpc.port")) {
-              alluxio_port = line.split('=')(1).trim
-            }
-          }
+          val prop : Properties = new Properties()
+          prop.load(buffered_source.bufferedReader())
+          alluxio_master = prop.getProperty("alluxio.master.hostname")
+          alluxio_port = prop.getProperty("alluxio.master.rpc.port", "19998")
         } catch {
-          case e: FileNotFoundException =>
+          case FileNotFoundException =>
             throw new RuntimeException(s"Not found Alluxio config in " +
               s"$alluxio_home/conf/alluxio-site.properties, " +
               "please check if ALLUXIO_HOME is set correctly")
@@ -74,7 +71,6 @@ object AlluxioUtils extends Logging {
         }
         alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
         // load mounted point by call Alluxio mount command.
-        // We also can get from REST API http://alluxio_master:alluxio_web_port/api/v1/master/info.
         val (ret, output) = runAlluxioCmd(" fs mount")
         if (ret == 0) {
           // parse the output, E.g.
@@ -82,7 +78,7 @@ object AlluxioUtils extends Logging {
           // s3a://bucket-another/    on  /bucket-another
           // /local_path              on  /
           for (line <- output) {
-            val items = line.split(" +")
+            val items = line.trim.split(" +")
             logInfo(line)
             // We only support s3 remote path for now,
             // need to change below if we want to support other type of cloud storage
