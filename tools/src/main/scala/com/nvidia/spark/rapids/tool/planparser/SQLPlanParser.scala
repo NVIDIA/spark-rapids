@@ -268,6 +268,25 @@ object SQLPlanParser extends Logging {
     funcName
   }
 
+  def parseProjectExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // remove the alias names before parsing
+    val pattern = """(AS) ([(\w# )]+)""".r
+    // This is to split multiple column names in Project. Project may have a function on a column.
+    // This will contain array of columns names specified in ProjectExec.
+    val paranRemoved = pattern.replaceAllIn(exprStr.replace("),", "::"), "")
+        .split(",").map(_.trim).map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
+    val functionPattern = """(\w+)\(.*\)""".r
+    paranRemoved.foreach { case expr =>
+      val functionName = getFunctionName(functionPattern, expr)
+      functionName match {
+        case Some(func) => parsedExpressions += func
+        case _ => // NO OP
+      }
+    }
+    parsedExpressions.toArray
+  }
+
   def parseFilterExpressions(exprStr: String): Array[String] = {
     val parsedExpressions = ArrayBuffer[String]()
 
