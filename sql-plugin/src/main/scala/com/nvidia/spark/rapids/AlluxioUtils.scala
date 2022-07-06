@@ -57,7 +57,7 @@ object AlluxioUtils extends Logging {
           alluxio_master = prop.getProperty("alluxio.master.hostname")
           alluxio_port = prop.getProperty("alluxio.master.rpc.port", "19998")
         } catch {
-          case FileNotFoundException =>
+          case e: FileNotFoundException =>
             throw new RuntimeException(s"Not found Alluxio config in " +
               s"$alluxio_home/conf/alluxio-site.properties, " +
               "please check if ALLUXIO_HOME is set correctly")
