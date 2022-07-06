@@ -20,10 +20,12 @@ import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.DecimalType;
+import scala.Tuple2;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import static org.apache.spark.sql.types.DataTypes.*;
@@ -117,29 +119,33 @@ public final class JCudfUtil {
   /**
    * A method that represents the order of datatypes.
    * It is used to order the datatypes in order to generate a packed schema.
-   * The order of all fixed length types is positive, while the variable length data types are
-   * represented by negative values.
-   * For fixed columns, alignment is equivalent to the type size in bytes.
-   * For variable length data types, the order is a function of the equivalent data alignment.
+   * We should be careful on how we want to sort the references to variable-width columns.
+   * Currently, we sort columns by the descending order of their data length.
+   * For variable width data types, reference to variable-width data are 4-bytes aligned.
+   * However, var-width data should be placed in ascending order of their alignment to reduce
+   * packing following the validity bytes.
    *
    * For example, Strings are 1-byte aligned while Structs are 8-byte aligned. Therefore, Struct
    * columns are aligned first in the JCUDF.
-   * TypeOrder(String) = 1 - 16 = -15
-   * TypeOrder(Struct) = 8 - 16 = -8
+   * TypeOrder(Integer) = 40
+   * TypeOrder(String)  = 40 - 1 = 39
+   * TypeOrder(Struct)  = 40 - 8 = 32
    *
    * @param dt the type of the data column.
-   * @return the size of the datatype in bytes if dt is a fixed size typ.
-   *         Otherwise, it returns a negative value (dataType_alignment - 16).
+   * @return the size of the datatype in bytes multiplied by 10 if dt is a fixed size type.
+   *         Otherwise, it subtracts the alignment from 40.
    */
   public static int getDataTypeOrder(DataType dt) {
     if (isFixedLength(dt)) {
       // for fixed sized data, order is equivalent to the type size
-      return getSizeForFixedLengthDataType(dt);
+      return getSizeForFixedLengthDataType(dt) * 10;
     }
     // For variable data types, return negative number to indicate alignment.
     // The bigger the alignment the higher the order of the data type.
     DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dt);
-    return getDataAlignmentForDataType(rapidsType) - JCUDF_MAX_TYPE_ORDER;
+    int orderVal = JCUDF_VAR_LENGTH_FIELD_ALIGNMENT * 10;
+    return orderVal - getDataAlignmentForDataType(rapidsType);
+        //getDataAlignmentForDataType(rapidsType) - JCUDF_MAX_TYPE_ORDER;
   }
 
   /**
@@ -164,6 +170,12 @@ public final class JCudfUtil {
         // all other types are aligned based on the size.
         return rapidsType.getSizeInBytes();
     }
+  }
+
+  public static int[] getPackedSchema(Attribute[] attributes) {
+    Tuple2[] tuples = new Tuple2[attributes.length];
+    int[] result = new int[attributes.length];
+    return result;
   }
 
   /**
@@ -356,7 +368,6 @@ public final class JCudfUtil {
      *
      * @param ind index of the column
      * @return the offset of the colum.
-     *         returns -15 if the datatype is a string.
      */
     private int calcColOffset(int ind) {
       int res;
