@@ -740,8 +740,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val data = Range(0, 1000)
       .map(_ => dataGen.nextString())
 
+    val skipUnicodeIssues = validDataChars match {
+      case None => true
+      case _ => false
+    }
+
     // generate patterns that are valid on both CPU and GPU
-    val fuzzer = new FuzzRegExp(validPatternChars)
+    val fuzzer = new FuzzRegExp(validPatternChars, skipUnicodeIssues = skipUnicodeIssues)
     val patterns = HashSet[String]()
     while (patterns.size < 5000) {
       val pattern = fuzzer.generate(0).toRegexString
@@ -908,7 +913,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
  * See https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html for
  * Java regular expression syntax.
  */
-class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
+class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
+    skipUnicodeIssues: Boolean = false) {
   private val maxDepth = 5
   private val rr = new Random(0)
 
@@ -1016,7 +1022,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
     do {
       ch = chars(rr.nextInt(chars.length))
       // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
-    } while (skipKnownIssues && "bB".contains(ch))
+    } while (skipUnicodeIssues && "bB".contains(ch))
     RegexEscaped(ch)
   }
 
@@ -1041,7 +1047,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       () => RegexEscaped('Z'),
       () => RegexEscaped('z')
     )
-    val generators = if (skipKnownIssues) {
+    val generators = if (skipUnicodeIssues) {
       baseGenerators
     } else {
       baseGenerators ++ Seq[() => RegexAST](
