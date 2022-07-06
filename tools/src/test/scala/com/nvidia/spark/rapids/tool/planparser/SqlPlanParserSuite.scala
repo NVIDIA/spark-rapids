@@ -559,14 +559,14 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("Expressions supported in ProjectExec") {
-    TrampolineUtil.withTempDir { outputLoc =>
+    TrampolineUtil.withTempDir { parquetoutputLoc =>
       TrampolineUtil.withTempDir { eventLogDir =>
         val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
           "ProjectExprsSupported") { spark =>
           import spark.implicits._
           val df1 = Seq(9.9, 10.2, 11.6, 12.5).toDF("value")
-          df1.write.parquet(s"$outputLoc/testtext")
-          val df2 = spark.read.parquet(s"$outputLoc/testtext")
+          df1.write.parquet(s"$parquetoutputLoc/testtext")
+          val df2 = spark.read.parquet(s"$parquetoutputLoc/testtext")
           df2.select(df2("value").cast(StringType), ceil(df2("value")), df2("value"))
         }
         val pluginTypeChecker = new PluginTypeChecker()
@@ -587,14 +587,14 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("Expressions not supported in ProjectExec") {
-    TrampolineUtil.withTempDir { outputLoc =>
+    TrampolineUtil.withTempDir { parquetoutputLoc =>
       TrampolineUtil.withTempDir { eventLogDir =>
         val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
           "ProjectExprsNotSupported") { spark =>
           import spark.implicits._
           val df1 = spark.sparkContext.parallelize(List(10, 20, 30, 40)).toDF
-          df1.write.parquet(s"$outputLoc/testtext")
-          val df2 = spark.read.parquet(s"$outputLoc/testtext")
+          df1.write.parquet(s"$parquetoutputLoc/testtext")
+          val df2 = spark.read.parquet(s"$parquetoutputLoc/testtext")
           df2.select(hex($"value") === "A")
         }
         val pluginTypeChecker = new PluginTypeChecker()
