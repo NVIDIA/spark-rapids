@@ -806,8 +806,9 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    // Spark's arrays_overlap() function will return null if either array is null, so 
-    // we check if either array is null
+    // Spark's arrays_overlap() function will return null when both arrays are non-empty,
+    // they have no-non null overlapping elements and either array contains at least one null
+    // value, so we have to handle that here.
     val bothNonEmpty = withResource(lhs.getBase.countElements) { leftCount => 
       withResource(rhs.getBase.countElements) { rightCount => 
         withResource(Scalar.fromInt(0)) { zero =>
