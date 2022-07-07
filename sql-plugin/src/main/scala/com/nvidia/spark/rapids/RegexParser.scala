@@ -734,7 +734,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case _ => false
     }
   }
-  
+
   private def getUnsupportedRepetitionBase(e: RegexAST): Option[RegexAST] = {
     e match {
       case RegexEscaped(ch) => ch match {
@@ -752,7 +752,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexSequence(parts) =>
         parts.foreach { part => getUnsupportedRepetitionBase(part) match {
             case r @ Some(_) => return r
-            case _ =>
+            case None =>
           } 
         }
         None
