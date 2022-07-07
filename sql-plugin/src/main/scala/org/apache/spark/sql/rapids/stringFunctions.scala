@@ -1010,7 +1010,7 @@ case class GpuRegExpReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    // For empty strings and a regex containing only a zero-match reptition, 
+    // For empty strings and a regex containing only a zero-match repetition, 
     // the behavior in some versions of Spark is different. 
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
     if (RegExpShim.reproduceEmptyStringBug() && 
