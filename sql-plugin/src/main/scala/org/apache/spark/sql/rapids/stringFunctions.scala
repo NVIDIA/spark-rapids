@@ -1258,39 +1258,49 @@ case class GpuRegExpExtractAll(
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
 
-    val intIdx = idx.getValue.asInstanceOf[Int]
+    idx.getValue.asInstanceOf[Int] match {
+      case 0 => 
+        str.getBase.extractAllRecord(cudfRegexPattern, 0)
+      case intIdx =>
+        // Extract matches corresponding to idx. cuDF's extract_all_record does not support 
+        // group idx, so we must manually extract the relevant matches. Example:
+        // Given the pattern (\d+)-(\d+) and idx=1
+        //
+        // |      Input      |      Java       |               cuDF             |
+        // |-----------------|-----------------|--------------------------------|
+        // | '1-2, 3-4, 5-6' | ['1', '3', '5'] | ['1', '2', '3', '4', '5', '6'] |
+        //
+        // Since idx=1 and the pattern has 2 capture groups, we take the 1st element and every
+        // 2nd element afterwards from the cuDF list
 
-    val extractedWithNulls = withResource(str.getBase.extractAllRecord(cudfRegexPattern, intIdx)) { allExtracted =>
-      withResource(allExtracted.countElements) { listSizes =>
-        withResource(listSizes.max) { maxSize =>
-          val maxSizeInt = maxSize.getInt
-          val stringCols: Seq[ColumnVector] = Range(intIdx - 1, maxSizeInt, numGroups).map { i =>
-            withResource(ColumnVector.fromScalar(Scalar.fromInt(i), allExtracted.getRowCount.toInt)) { index =>
-              allExtracted.extractListElement(index)
+        val rowCount = str.getRowCount
+        
+        val extractedWithNulls = withResource(
+          str.getBase.extractAllRecord(cudfRegexPattern, intIdx)) { allExtracted =>
+            withResource(allExtracted.countElements) { listSizes =>
+              withResource(listSizes.max) { maxSize =>
+                val maxSizeInt = maxSize.getInt
+                val stringCols: Seq[ColumnVector] = Range(intIdx - 1, maxSizeInt, numGroups).map { 
+                  i =>
+                    withResource(ColumnVector.fromScalar(Scalar.fromInt(i), rowCount.toInt)) { 
+                      index => allExtracted.extractListElement(index)
+                    }
+                }
+                ColumnVector.makeList(stringCols: _*)
+              }
             }
           }
-          ColumnVector.makeList(stringCols: _*)
-        }
-      }
-    }
-    withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
-      withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
-        withResource(stringCol.isNotNull) { isNotNull =>
-          withResource(isNotNull.makeListFromOffsets(extractedWithNulls.getRowCount, offsetsCol)) { booleanMask => 
-            extractedWithNulls.applyBooleanMask(booleanMask)
+        // Filter out null values in the lists
+        withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+          withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
+            withResource(stringCol.isNotNull) { isNotNull =>
+              withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask => 
+                extractedWithNulls.applyBooleanMask(booleanMask)
+              }
+            }
           }
         }
-      }
     }
-
-    /*
-    1. pull out strings column (getChildColumnView[1])
-    2. produce booleans from strings list (isNotNull)
-    3. pull out offets (getChildColumnView[0]) and create 
-    4. create boolean mask using isNotNull.makeListFromOffsets(offsets)
-    4. apply boolean mask
-
-    */
   }
 }
 
