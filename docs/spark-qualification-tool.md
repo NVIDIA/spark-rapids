@@ -368,11 +368,12 @@ As mentioned before, the tool does not guarantee the applications with the highe
 accelerated the most. Please refer to [Supported Operators](./supported_ops.md) section.
 
 In addition to the _recommendation_, the Qualification tool reports a set of metrics in tasks of SQL Dataframe operations
-within the scope of: "_Entire App_"; "_Stages_"; and "_Execs_". The list of fields are described in details in
-[Fields Interpretations](#fields-interpretations) section. Then we describe the output formats and their file
+within the scope of: "_Entire App_"; "_Stages_"; and "_Execs_". The report is divided into three main levels. The fields
+of each level are described in details in the following sections: [Detailed App Report](#detailed-app-report),
+[Stages report](#stages-report), and [Execs report](#execs-report). Then we describe the output formats and their file
 locations in [Output Formats](#output-formats) section.
 
-### Detailed App Report
+### Detailed App report
 
 The report represents the entire app execution, including unsupported operators and non-SQL operations. 
 
@@ -434,8 +435,6 @@ For each stage used in SQL operations, the Qualification tool generates the foll
    see [Supported Operators](./supported_ops.md).
 6. Stage Estimated: True or False indicates if we had to estimate the stage duration.
 
-Note that this report is currently limited to the CSV file format and not supported in the HTML report.
-
 ### Execs report
 
 The Qualification tool generates a report of the "Exec" in the "_SparkPlan_" or "_Executor Nodes_" along with the estimated
@@ -457,8 +456,6 @@ details on limitations on UDFs and unsupported operators.
 10. Exec Children
 11. Exec Children Node Ids
 12. Exec Should Remove
-
-Note that this report is currently limited to the CSV file format and not supported in the HTML report.
 
 ## Output Formats
 
@@ -502,6 +499,10 @@ the results.
    download folder.
 
 ![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-header-01.png)
+
+#### App-Details View
+
+
 
 #### Raw Data
 
