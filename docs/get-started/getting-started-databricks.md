@@ -34,7 +34,7 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more detail. 
 
 2. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
-   would normally benefit from DPP or query failures.
+   would normally benefit from DPP.   With DPP on, queries may fail on Databricks when using the plugin.
 
    ```bash 
    spark.sql.optimizer.dynamicPartitionPruning.enabled false
