@@ -722,7 +722,7 @@ case class GpuArrayExcept(left: Expression, right: Expression)
 
   override def dataType: DataType = left.dataType
 
-  override def nullable: Boolean = false
+  override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     ColumnView.setDifference(lhs.getBase, rhs.getBase)
@@ -749,7 +749,7 @@ case class GpuArrayIntersect(left: Expression, right: Expression)
 
   override def dataType: DataType = left.dataType
 
-  override def nullable: Boolean = false
+  override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     ColumnView.setIntersect(lhs.getBase, rhs.getBase)
@@ -776,7 +776,7 @@ case class GpuArrayUnion(left: Expression, right: Expression)
 
   override def dataType: DataType = left.dataType
 
-  override def nullable: Boolean = false
+  override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     ColumnView.setUnion(lhs.getBase, rhs.getBase)

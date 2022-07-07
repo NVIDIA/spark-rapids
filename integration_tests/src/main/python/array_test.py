@@ -400,8 +400,8 @@ def test_array_max_q1():
     FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_intersect(data_gen):
     gen = StructGen(
-        [('a', ArrayGen(data_gen, nullable=False)),
-        ('b', ArrayGen(data_gen, nullable=False))],
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
         nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
@@ -418,8 +418,8 @@ def test_array_intersect(data_gen):
     FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_union(data_gen):
     gen = StructGen(
-        [('a', ArrayGen(data_gen, nullable=False)),
-        ('b', ArrayGen(data_gen, nullable=False))],
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
         nullable=False)
 
     # The 4th item in this integration test here is left commented out here
@@ -440,8 +440,8 @@ def test_array_union(data_gen):
     FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_except(data_gen):
     gen = StructGen(
-        [('a', ArrayGen(data_gen, nullable=False)),
-        ('b', ArrayGen(data_gen, nullable=False))],
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
         nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
@@ -458,8 +458,8 @@ def test_array_except(data_gen):
     FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_arrays_overlap(data_gen):
     gen = StructGen(
-        [('a', ArrayGen(data_gen, nullable=False)),
-        ('b', ArrayGen(data_gen, nullable=False))],
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
         nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
