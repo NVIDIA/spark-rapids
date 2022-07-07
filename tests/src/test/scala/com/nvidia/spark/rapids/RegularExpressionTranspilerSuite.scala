@@ -20,8 +20,7 @@ import java.util.regex.Pattern
 import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, CudfException, Scalar}
-import com.nvidia.spark.rapids.GpuColumnVector.debug
+import ai.rapids.cudf.{ColumnVector, CudfException}
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 import org.scalatest.FunSuite
 
