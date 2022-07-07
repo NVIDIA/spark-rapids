@@ -21,6 +21,8 @@ set -ex
 
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
+## export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
+export LC_ALL="en_US.UTF-8"
 
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
 MVN="mvn ${MVN_OPT}"
