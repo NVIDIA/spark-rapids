@@ -35,7 +35,7 @@ class ExecInfo(
     val nodeId: Long,
     val isSupported: Boolean,
     val children: Option[Seq[ExecInfo]], // only one level deep
-    val stages: Seq[Int] = Seq.empty,
+    val stages: Set[Int] = Set.empty,
     val shouldRemove: Boolean = false) {
   private def childrenToString = {
     val str = children.map { c =>
@@ -79,15 +79,11 @@ object SQLPlanParser extends Logging {
     PlanInfo(appID, sqlID, execInfos)
   }
 
-  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Seq[Int] = {
+  def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Set[Int] = {
     val nodeAccums = node.metrics.map(_.accumulatorId)
-    app.stageAccumulators.flatMap { case (stageId, stageAccums) =>
-      if (nodeAccums.intersect(stageAccums).nonEmpty) {
-        Some(stageId)
-      } else {
-        None
-      }
-    }.toSeq
+    nodeAccums.flatMap { nodeAccumId =>
+      app.accumulatorToStages.get(nodeAccumId)
+    }.flatten.toSet
   }
 
   private val skipUDFCheckExecs = Seq("ArrowEvalPython", "AggregateInPandas",
@@ -125,7 +121,7 @@ object SQLPlanParser extends Logging {
         case "ColumnarToRow" =>
           // ignore ColumnarToRow to row for now as assume everything is columnar
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
-            isSupported = false, None, Seq.empty, shouldRemove=true)
+            isSupported = false, None, Set.empty, shouldRemove=true)
         case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
           // create data source table doesn't show the format so we can't determine
           // if we support it
@@ -268,6 +264,30 @@ object SQLPlanParser extends Logging {
     funcName
   }
 
+  def parseProjectExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // Project [cast(value#136 as string) AS value#144, CEIL(value#136) AS CEIL(value)#143L]
+    // remove the alias names before parsing
+    val pattern = """(AS) ([(\w# )]+)""".r
+    // This is to split multiple column names in Project. Project may have a function on a column.
+    // This will contain array of columns names specified in ProjectExec. Below regex will first
+    // remove the alias names from the string followed by a split which produces an array containing
+    // column names. Finally we remove the paranthesis from the beginning and end to get only
+    // the expressions. Result will be as below.
+    // paranRemoved = Array(cast(value#136 as string), CEIL(value#136))
+    val paranRemoved = pattern.replaceAllIn(exprStr.replace("),", "::"), "")
+        .split(",").map(_.trim).map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
+    val functionPattern = """(\w+)\(.*\)""".r
+    paranRemoved.foreach { case expr =>
+      val functionName = getFunctionName(functionPattern, expr)
+      functionName match {
+        case Some(func) => parsedExpressions += func
+        case _ => // NO OP
+      }
+    }
+    parsedExpressions.toArray
+  }
+
   def parseFilterExpressions(exprStr: String): Array[String] = {
     val parsedExpressions = ArrayBuffer[String]()
 
@@ -326,6 +346,7 @@ object SQLPlanParser extends Logging {
               case ">" => "GreaterThan"
               case "<=" => "LessThanOrEqual"
               case ">=" => "GreaterThanOrEqual"
+              case "+" => "Add"
             }
             logDebug(s"predicate string is $predStr")
             parsedExpressions += predStr

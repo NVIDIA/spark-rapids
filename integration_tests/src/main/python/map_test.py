@@ -390,12 +390,10 @@ def test_element_at_map_string_col_keys_ansi_fail(data_gen):
 def test_get_map_value_string_col_keys_ansi_fail(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
-    # For 3.3.0+ strictIndexOperator should not affect element_at
-    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
         lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
             'a[b]').collect(),
-        conf=test_conf,
+        conf=ansi_enabled_conf,
         error_message=message)
 
 @pytest.mark.parametrize('data_gen',
