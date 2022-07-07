@@ -163,8 +163,7 @@ object GpuOrcScan extends Arm {
     DType.DTypeEnum.FLOAT64 -> 7,
     DType.DTypeEnum.DECIMAL32  -> 8,
     DType.DTypeEnum.DECIMAL64  -> 9,
-    DType.DTypeEnum.DECIMAL128 -> 10,
-  )
+    DType.DTypeEnum.DECIMAL128 -> 10)
 
   /**
    * Cast the input column to the target type, and replace overflow rows with nulls.
