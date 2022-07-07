@@ -211,7 +211,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: java.util.Map[String, String]): Unit = {
     try {
       // if configured, re-register checking leaks hook.
-      ReRegisterCheckLeakHook
+      ReRegisterCheckLeakHook()
 
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
@@ -266,7 +266,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   /**
    * Re-register leaks checking hook if configured.
    */
-  private def ReRegisterCheckLeakHook: Unit = {
+  private def ReRegisterCheckLeakHook(): Unit = {
     // DEFAULT_SHUTDOWN_THREAD in MemoryCleaner is responsible to check the leaks at shutdown time,
     // it expects all other hooks are done before the checking
     // as other hooks will close some resources.
