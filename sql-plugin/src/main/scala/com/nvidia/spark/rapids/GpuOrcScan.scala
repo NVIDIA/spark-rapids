@@ -153,17 +153,18 @@ object GpuOrcScan extends Arm {
     }
   }
 
-  private lazy val numericLevels = Map(
-    DType.DTypeEnum.BOOL8 -> 1,
-    DType.DTypeEnum.INT8  -> 2,
-    DType.DTypeEnum.INT16 -> 3,
-    DType.DTypeEnum.INT32 -> 4,
-    DType.DTypeEnum.INT64 -> 5,
-    DType.DTypeEnum.FLOAT32 -> 6,
-    DType.DTypeEnum.FLOAT64 -> 7,
-    DType.DTypeEnum.DECIMAL32  -> 8,
-    DType.DTypeEnum.DECIMAL64  -> 9,
-    DType.DTypeEnum.DECIMAL128 -> 10)
+  private lazy val numericLevels = Seq(
+    DType.DTypeEnum.BOOL8,
+    DType.DTypeEnum.INT8,
+    DType.DTypeEnum.INT16,
+    DType.DTypeEnum.INT32,
+    DType.DTypeEnum.INT64,
+    DType.DTypeEnum.FLOAT32,
+    DType.DTypeEnum.FLOAT64,
+    DType.DTypeEnum.DECIMAL32,
+    DType.DTypeEnum.DECIMAL64,
+    DType.DTypeEnum.DECIMAL128
+  ).zipWithIndex.toMap
 
   /**
    * Cast the input column to the target type, and replace overflow rows with nulls.
@@ -428,7 +429,7 @@ case class OrcPartitionReaderContext(
 
 /** Collections of some common functions for ORC */
 trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionReaderBase =>
-  private val orcFormat = Some("avro")
+  private val orcFormat = Some("orc")
 
   def debugDumpPrefix: Option[String]
 
