@@ -40,6 +40,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStag
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.util.QueryExecutionListener
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -270,23 +271,15 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     // it expects all other hooks are done before the checking
     // as other hooks will close some resources.
 
-    val REF_COUNT_DEBUG_STR = System.getProperty(MemoryCleaner.REF_COUNT_DEBUG_KEY, "false")
-    if (REF_COUNT_DEBUG_STR.equalsIgnoreCase("true")) {
-      MemoryCleaner.removeDefaultShutdownHook()
+    if (MemoryCleaner.configuredDefaultShutdownHook) {
       // Shutdown hooks are executed concurrently in JVM, and there is no execution order guarantee.
       // See the doc of `Runtime.addShutdownHook`.
-      // Some resources are closed in Spark hooks.
       // Here we should wait Spark hooks to be done, or a false leak will be detected.
       // See issue: https://github.com/NVIDIA/spark-rapids/issues/5854
       //
-      // `Spark ShutdownHookManager` leverages `Hadoop ShutdownHookManager` to manage hooks with
-      // priority. The priority parameter will guarantee the execution order.
-      //
-      // Here also use `Hadoop ShutdownHookManager` to add a lower priority hook.
+      // Here use `Spark ShutdownHookManager` to manage hooks with priority.
       // 20 priority is small enough, will run after Spark hooks.
-      // Note: `ShutdownHookManager.get()` is a singleton
-      org.apache.hadoop.util.ShutdownHookManager.get().addShutdownHook(
-        MemoryCleaner.DEFAULT_SHUTDOWN_RUNNABLE, 20)
+      TrampolineUtil.addShutdownHook(20, MemoryCleaner.removeDefaultShutdownHook())
     }
   }
 
