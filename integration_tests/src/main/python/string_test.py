@@ -1142,17 +1142,16 @@ def test_regexp_extract_all_idx_zero():
             ),
         conf=_regexp_conf)
 
-# https://github.com/NVIDIA/spark-rapids/issues/4283
-@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
-def test_regexp_extract_all_idx_positive_fallback():
+def test_regexp_extract_all_idx_positive():
     gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark : unary_op_df(spark, gen).selectExpr(
-            'regexp_extract_all(a, "([a-d]+).*([0-9])", 1)',
-        ),
-        conf=_regexp_conf,
-        exist_classes= "ProjectExec",
-        non_exist_classes= "GpuProjectExec")
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 1)',
+                'regexp_extract_all(a, "(a)(b)", 2)',
+                'regexp_extract_all(a, "([a-z0-9]((([abcd](\\\\d?)))))", 3)',
+                'regexp_extract_all(a, "(\\\\d+)-(\\\\d+)", 2)',
+            ),
+        conf=_regexp_conf)
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_negative():

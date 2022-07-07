@@ -29,51 +29,6 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
-  test("extract all") {
-    gpuExtractAll("(\\d+)-(\\d+)", Seq("100-200, 300-400", "1-2, 3-4, 5-6, 7-8", "10-20"))
-  }
-
-  def gpuExtractAll(pattern: String, input: Seq[String]): Seq[Array[String]] = {
-    withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      val intIdx = 1
-
-      val extractedWithNulls = withResource(cv.extractAllRecord(pattern, intIdx)) { allExtracted =>
-        withResource(allExtracted.countElements) { listSizes =>
-          withResource(listSizes.max) { maxSize =>
-            val maxSizeInt = maxSize.getInt
-            val stringCols: Seq[ColumnVector] = Range(intIdx - 1, maxSizeInt, 2).map { i =>
-              withResource(ColumnVector.fromScalar(Scalar.fromInt(i), allExtracted.getRowCount.toInt)) { index =>
-                allExtracted.extractListElement(index)
-              }
-            }
-            ColumnVector.makeList(stringCols: _*)
-          }
-        }
-      }
-
-      debug("extractedWithNulls: ", extractedWithNulls.asInstanceOf[ColumnView])
-      println("===============================")
-
-      val x = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
-        withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
-          withResource(stringCol.isNotNull) { isNotNull =>
-            withResource(isNotNull.makeListFromOffsets(extractedWithNulls.getRowCount, offsetsCol)) { booleanMask => 
-              extractedWithNulls.applyBooleanMask(booleanMask)
-            }
-          }
-        }
-      }
-      debug("x: ", x.asInstanceOf[ColumnView])
-      println("===============================")
-
-      withResource(x.copyToHost()) { hcv =>
-        (0 until hcv.getRowCount.toInt).map(i => {
-          val list = hcv.getList(i)
-          list.toArray(new Array[String](list.size()))
-        })
-      }
-    }
-  }
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
