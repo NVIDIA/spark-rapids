@@ -568,6 +568,7 @@ The following Apache Spark regular expression functions and expressions are supp
 - `RLIKE`
 - `regexp`
 - `regexp_extract`
+- `regexp_extract_all`
 - `regexp_like`
 - `regexp_replace`
 - `string_split`
@@ -606,6 +607,7 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - `regexp_replace` does not support back-references
+- `regexp_extract_all` only supports group index 0
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
