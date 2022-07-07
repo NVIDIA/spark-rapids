@@ -398,7 +398,10 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
     stage.duration = ProfileUtils.optionLongMinusOptionLong(stage.completionTime,
       stage.info.submissionTime)
     val stageAccumulatorIds = event.stageInfo.accumulables.values.map { m => m.id }.toSeq
-    app.stageAccumulators.put(event.stageInfo.stageId, stageAccumulatorIds)
+    stageAccumulatorIds.foreach { accumId =>
+      val existingStages = app.accumulatorToStages.getOrElse(accumId, Set.empty)
+      app.accumulatorToStages.put(accumId, existingStages + event.stageInfo.stageId)
+    }
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {

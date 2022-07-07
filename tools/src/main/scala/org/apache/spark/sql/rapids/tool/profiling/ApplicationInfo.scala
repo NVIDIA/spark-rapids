@@ -219,8 +219,8 @@ class ApplicationInfo(
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
   var wholeStage: ArrayBuffer[WholeStageCodeGenResults] = ArrayBuffer[WholeStageCodeGenResults]()
-  val sqlPlanNodeIdToStageIds: mutable.HashMap[(Long, Long), Seq[Int]] =
-    mutable.HashMap.empty[(Long, Long), Seq[Int]]
+  val sqlPlanNodeIdToStageIds: mutable.HashMap[(Long, Long), Set[Int]] =
+    mutable.HashMap.empty[(Long, Long), Set[Int]]
 
   private lazy val eventProcessor =  new EventsProcessor(this)
 
@@ -302,7 +302,7 @@ class ApplicationInfo(
 
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
-          val stages = sqlPlanNodeIdToStageIds.get((sqlID, node.id)).getOrElse(Seq.empty)
+          val stages = sqlPlanNodeIdToStageIds.get((sqlID, node.id)).getOrElse(Set.empty)
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType, node.id,
             node.name, node.desc, stages)

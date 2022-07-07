@@ -174,7 +174,10 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
         if (sparkSQLFunctions.isDefined) {
           print(s"|${sparkSQLFunctions.get}")
         }
-        print(s"|$desc|${notesMsg.isEmpty}|")
+        val incompatOps = RapidsConf.INCOMPATIBLE_OPS.asInstanceOf[ConfEntryWithDefault[Boolean]]
+        val expressionEnabled = disabledMsg.isEmpty &&
+          (incompatDoc.isEmpty || incompatOps.defaultValue)
+        print(s"|$desc|$expressionEnabled|")
         if (notesMsg.isDefined) {
           print(s"${notesMsg.get}")
         } else {
@@ -3434,7 +3437,7 @@ object GpuOverrides extends Logging {
           aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
       }).incompat("the GPU implementation of approx_percentile is not bit-for-bit " +
-          s"compatible with Apache Spark. To enable it, set ${RapidsConf.INCOMPATIBLE_OPS}"),
+          s"compatible with Apache Spark"),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
