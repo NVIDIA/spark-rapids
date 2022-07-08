@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.FileNotFoundException
+import java.net.URI
 import java.util.Properties
 
 import scala.io.{BufferedSource, Source}
@@ -33,7 +34,7 @@ object AlluxioUtils extends Logging {
   val mountedBuckets: scala.collection.mutable.Map[String, String] = scala.collection.mutable.Map()
   var alluxioCmd: Seq[String] = null
   var alluxioMasterHost: Option[String] = None
-  var alluxio_home: String = "/opt/alluxio-2.8.0"
+  var alluxioHome: String = "/opt/alluxio-2.8.0"
   var isInit: Boolean = false
 
   // Read out alluxio.master.hostname, alluxio.master.rpc.port
@@ -42,9 +43,9 @@ object AlluxioUtils extends Logging {
   // This function will only read once from ALLUXIO/conf.
   private def initAlluxioInfo(conf: RapidsConf): Unit = {
     this.synchronized {
-      alluxio_home = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
+      alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
       alluxioCmd = conf.getAlluxioCmd.getOrElse(
-        Seq("su", "ubuntu", "-c", s"$alluxio_home/bin/alluxio"))
+        Seq("su", "ubuntu", "-c", s"$alluxioHome/bin/alluxio"))
 
       if (!isInit) {
         // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
@@ -52,7 +53,7 @@ object AlluxioUtils extends Logging {
         var alluxio_master: String = null
         var buffered_source: BufferedSource = null
         try {
-          buffered_source = Source.fromFile(alluxio_home + "/conf/alluxio-site.properties")
+          buffered_source = Source.fromFile(alluxioHome + "/conf/alluxio-site.properties")
           val prop : Properties = new Properties()
           prop.load(buffered_source.bufferedReader())
           alluxio_master = prop.getProperty("alluxio.master.hostname")
@@ -60,7 +61,7 @@ object AlluxioUtils extends Logging {
         } catch {
           case e: FileNotFoundException =>
             throw new RuntimeException(s"Not found Alluxio config in " +
-              s"$alluxio_home/conf/alluxio-site.properties, " +
+              s"$alluxioHome/conf/alluxio-site.properties, " +
               "please check if ALLUXIO_HOME is set correctly")
         } finally {
           if (buffered_source != null) buffered_source.close
@@ -68,7 +69,7 @@ object AlluxioUtils extends Logging {
 
         if (alluxio_master == null) {
           throw new RuntimeException(
-            s"Can't find alluxio.master.hostname from $alluxio_home/conf/alluxio-site.properties.")
+            s"Can't find alluxio.master.hostname from $alluxioHome/conf/alluxio-site.properties.")
         }
         alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
         // load mounted point by call Alluxio mount command.
@@ -81,13 +82,14 @@ object AlluxioUtils extends Logging {
           for (line <- output) {
             val items = line.trim.split(" +")
             logInfo(line)
-            // We only support s3 remote path for now,
-            // need to change below if we want to support other type of cloud storage
-            if (items.length >= 3 && items(0).startsWith("s3") && !items(2).equals("/")) {
-              val bucket = items(2).substring(1)
-              val remote_path = items(0).substring(0, items(0).length-1)
-              mountedBuckets(bucket) = remote_path
-              logInfo(s"Found mounted bucket $remote_path to /$bucket")
+            if (items.length >= 3) {
+              val uri = new URI(items(0))
+              // record all the mounted point which has scheme like s3 s3a or gs
+              // though we only support s3, s3a now
+              if (uri.getScheme() != null) {
+                mountedBuckets(items(2)) = items(0)
+                logInfo(s"Found mounted bucket ${items(0)} to ${items(2)}")
+              }
             }
           }
         } else {
@@ -127,27 +129,32 @@ object AlluxioUtils extends Logging {
   private def autoMountBucket(scheme: String, bucket: String,
                       access_key: Option[String],
                       secret_key: Option[String]): Unit = {
-    val remote_path = scheme + "//" + bucket
+    // to match the output of alluxio fs mount, append / to remote_path
+    // and add / before bucket name for absolute path in Alluxio
+    val remote_path = scheme + "//" + bucket + "/"
+    val local_bucket = "/" + bucket
     this.synchronized {
-      if (!mountedBuckets.contains(bucket)) {
+      if (!mountedBuckets.contains(local_bucket)) {
         // not mount yet, call mount command
-        val parameter = if (access_key.isEmpty) {
-          s" fs mount --readonly /$bucket $remote_path"
-        } else {
-          s" fs mount --readonly --option s3a.accessKeyId=${access_key.get} " +
-            s"--option s3a.secretKey=${secret_key.get} /$bucket $remote_path"
-        }
+        // we only support s3 or s3a bucket for now.
+        // To support other cloud storage, we need to support credential parameters for the others
+        val parameter = " fs mount --readonly " +(
+          if (access_key.isDefined && secret_key.isDefined) {
+            s"--option s3a.accessKeyId=${access_key.get} " +
+            s"--option s3a.secretKey=${secret_key.get} " } else "") +
+          s"$local_bucket $remote_path"
+
         val (output, _) = runAlluxioCmd(parameter)
         if (output != 0) {
-          throw new RuntimeException(s"Mount bucket $remote_path to /$bucket failed $output")
+          throw new RuntimeException(s"Mount bucket $remote_path to $local_bucket failed $output")
         }
-        logInfo(s"Mounted bucket $remote_path to /$bucket in Alluxio $output")
-        mountedBuckets(bucket) = remote_path
-      } else if (mountedBuckets(bucket).equals(remote_path)) {
-        logInfo(s"Already mounted bucket $remote_path to /$bucket in Alluxio")
+        logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio $output")
+        mountedBuckets(local_bucket) = remote_path
+      } else if (mountedBuckets(local_bucket).equals(remote_path)) {
+        logInfo(s"Already mounted bucket $remote_path to $local_bucket in Alluxio")
       } else {
         throw new RuntimeException(s"Found a same bucket name in $remote_path " +
-          s"and ${mountedBuckets(bucket)}")
+          s"and ${mountedBuckets(local_bucket)}")
       }
     }
   }

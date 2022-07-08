@@ -248,6 +248,8 @@ NM_hostname_2
 ## RAPIDS Configuration
 
 There are two ways to leverage Alluxio in RAPIDS.
+We also provide an auto mount way for AWS S3 bucket if you install Alluxio in your Spark cluster.
+Please refer to [Alluxio auto mount for AWS S3 buckets](#alluxio-auto-mount-for-aws-s3-buckets)
 
 1. Explicitly specify the Alluxio path
 
@@ -323,7 +325,9 @@ To solve this problem, we add a new feature of Alluxio auto mount, which can mou
 automatically when finding them from the input path in the Spark driver.
 This feature requires the node running Spark driver has Alluxio installed,
 which means the node is also the master of Alluxio cluster. It will use `alluxio fs mount` command to
-mount the buckets in Alluxio.
+mount the buckets in Alluxio. And the uid used to run the Spark application can run alluxio command.
+For example, the uid of Spark application is as same as the uid of Alluxio service
+or the uid of Spark application can use `su alluxio_uid` to run alluxio command.
 
 To enable the Alluxio auto mount feature, the simplest way is only to enable it by below config
 without setting `spark.rapids.alluxio.pathsToReplace`, which takes precedence over auto mount feature.
