@@ -30,6 +30,7 @@ fi
 
 mvn_verify() {
     echo "Run mvn verify..."
+    export LC_ALL="en_US.UTF-8"
     # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
