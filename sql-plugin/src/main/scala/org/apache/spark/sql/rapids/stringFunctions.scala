@@ -1280,7 +1280,7 @@ case class GpuRegExpExtractAll(
             withResource(allExtracted.countElements) { listSizes =>
               withResource(listSizes.max) { maxSize =>
                 val maxSizeInt = maxSize.getInt
-                val stringCols: Seq[ColumnVector] = Range(intIdx - 1, maxSizeInt, numGroups).map { 
+                val stringCols = Range(intIdx - 1, maxSizeInt, numGroups).safeMap { 
                   i =>
                     withResource(Scalar.fromInt(i)) { scalarIndex =>
                       withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
@@ -1303,13 +1303,13 @@ case class GpuRegExpExtractAll(
             }
           }
         // If input is null, output should also be null
-        withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
-          nullStringList =>
-            withResource(str.getBase.isNull) { isInputNull =>
-              withResource(extractedStrings) {
-                isInputNull.ifElse(nullStringList, _)
-              }
-            }              
+        withResource(extractedStrings) { s =>
+          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
+            nullStringList =>
+              withResource(str.getBase.isNull) { isInputNull =>
+                isInputNull.ifElse(nullStringList, s)
+              }              
+          }
         }
     }
   }
