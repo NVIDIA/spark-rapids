@@ -450,8 +450,7 @@ class RegexParser(pattern: String) {
         case "Upper" => 
           ListBuffer(RegexCharacterRange(RegexChar('A'), RegexChar('Z')))
         case "ASCII" =>
-          // should be \u0000-\u007f, see: https://github.com/NVIDIA/spark-rapids/issues/5909
-          ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u007f')))
+          ListBuffer(RegexCharacterRange(RegexHexDigit("00"), RegexChar('\u007f')))
         case "Alpha" => 
           ListBuffer(getCharacters("Lower"), getCharacters("Upper")).flatten
         case "Digit" =>
@@ -470,8 +469,7 @@ class RegexParser(pattern: String) {
         case "Blank" =>
           ListBuffer(RegexChar(' '), RegexEscaped('t'))
         case "Cntrl" =>
-          // should be \u0000-\u001f, see: https://github.com/NVIDIA/spark-rapids/issues/5909
-          ListBuffer(RegexCharacterRange(RegexChar('\u0001'), RegexChar('\u001f')), 
+          ListBuffer(RegexCharacterRange(RegexHexDigit("00"), RegexChar('\u001f')), 
             RegexChar('\u007f'))
         case "XDigit" =>
           ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')),
