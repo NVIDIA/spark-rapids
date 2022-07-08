@@ -264,7 +264,6 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
 
 object CudfRowTransitions {
   def isSupportedType(dataType: DataType): Boolean = dataType match {
-    // Only fixed width for now...
     case ByteType | ShortType | IntegerType | LongType |
          FloatType | DoubleType | BooleanType | DateType | TimestampType | StringType => true
     case dt: DecimalType if dt.precision <= Decimal.MAX_LONG_DIGITS => true
@@ -279,7 +278,7 @@ object CudfRowTransitions {
       .zipWithIndex
       .sortWith {
         (x, y) =>
-          JCudfUtil.getDataTypeOrder(x._1.dataType) > JCudfUtil.getDataTypeOrder(y._1.dataType)
+          JCudfUtil.compareDataTypePrecedence(x._1.dataType, y._1.dataType)
       }.map(_._2).toArray
     packedColumns
   }
