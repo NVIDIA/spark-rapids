@@ -734,8 +734,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case _ => false
     }
   }
-
-  private def getUnsupportedRepetitionBase(e: RegexAST): Option[RegexAST] = {
+  
+  private def getUnsupportedRepetitionBaseOption(e: RegexAST): Option[RegexAST] = {
     e match {
       case RegexEscaped(ch) => ch match {
         case 'd' | 'w' | 's' | 'S' | 'h' | 'H' | 'v' | 'V' => None
@@ -750,7 +750,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         Some(e)
 
       case RegexSequence(parts) =>
-        parts.foreach { part => getUnsupportedRepetitionBase(part) match {
+        parts.foreach { part => getUnsupportedRepetitionBaseOption(part) match {
             case r @ Some(_) => return r
             case None =>
           } 
@@ -758,14 +758,22 @@ class CudfRegexTranspiler(mode: RegexMode) {
         None
 
       case RegexGroup(_, term) =>
-        getUnsupportedRepetitionBase(term)
+        getUnsupportedRepetitionBaseOption(term)
 
       case _ => None
     }
   }
 
+  private def getUnsupportedRepetitionBase(e: RegexAST): RegexAST = {
+    getUnsupportedRepetitionBaseOption(e) match {
+      case None => throw new NoSuchElementException(
+        s"Expected repetition base ${e.toRegexString} to be unsupported but was actully supported")
+      case Some(unsupportedTerm) => unsupportedTerm
+    }
+  }
+
   private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
-    getUnsupportedRepetitionBase(e) match {
+    getUnsupportedRepetitionBaseOption(e) match {
       case None => true
       case _ => false
     }
@@ -1314,7 +1322,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
-              val unsupportedTerm = getUnsupportedRepetitionBase(term).get
+              val unsupportedTerm = getUnsupportedRepetitionBase(term)
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
@@ -1332,7 +1340,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
-              val unsupportedTerm = getUnsupportedRepetitionBase(term).get
+              val unsupportedTerm = getUnsupportedRepetitionBase(term)
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
@@ -1350,7 +1358,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
-              val unsupportedTerm = getUnsupportedRepetitionBase(term).get
+              val unsupportedTerm = getUnsupportedRepetitionBase(term)
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
