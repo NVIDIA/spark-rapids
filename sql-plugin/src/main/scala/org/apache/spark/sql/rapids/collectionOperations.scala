@@ -806,41 +806,7 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    // Spark's arrays_overlap() function will return null when both arrays are non-empty,
-    // they have no-non null overlapping elements and either array contains at least one null
-    // value, so we have to handle that here.
-    val bothNonEmpty = withResource(lhs.getBase.countElements) { leftCount => 
-      withResource(rhs.getBase.countElements) { rightCount => 
-        withResource(Scalar.fromInt(0)) { zero =>
-          withResource(leftCount.greaterThan(zero)) { leftNonEmpty =>
-            withResource(rightCount.greaterThan(zero)) { rightNonEmpty => 
-              leftNonEmpty.and(rightNonEmpty)
-            }
-          }
-        }
-      }
-    }
-    val eitherHasNulls = withResource(lhs.getBase.listContainsNulls) { leftHasNulls =>
-      withResource(rhs.getBase.listContainsNulls) { rightHasNulls => 
-        leftHasNulls.or(rightHasNulls)
-      }
-    }
-    withResource(bothNonEmpty) { _ =>
-      withResource(eitherHasNulls) { _ => 
-        withResource(ColumnView.listOverlap(lhs.getBase, rhs.getBase)) { overlaps => 
-          withResource(overlaps.not) { notOverlap =>
-            withResource(bothNonEmpty.and(eitherHasNulls)) { nonEmptyAndHasNull =>
-              withResource(nonEmptyAndHasNull.and(notOverlap)) { returnNull =>
-                returnNull.ifElse(
-                  GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, BooleanType),
-                  overlaps
-                )
-              }
-            }
-          }
-        }
-      }
-    }
+    ColumnView.listOverlap(lhs.getBase, rhs.getBase)
   }
 }
 
