@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{ShutdownHookManager, Utils}
 
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
@@ -152,4 +152,9 @@ object TrampolineUtil {
 
   /** Remove the task context for the current thread */
   def unsetTaskContext(): Unit = TaskContext.unset()
+
+  /** Add shutdown hook with priority */
+  def addShutdownHook(priority: Int, runnable: Runnable): AnyRef = {
+    ShutdownHookManager.addShutdownHook(priority)(() => runnable.run())
+  }
 }
