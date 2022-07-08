@@ -778,7 +778,7 @@ object GpuRegExpUtils {
   /**
    * Convert symbols of back-references if input string contains any.
    * In spark's regex rule, there are two patterns of back-references:
-   * \group_index and \$group_index
+   * \group_index and \$group_index 
    * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
    * preceded by escape character.
    *
