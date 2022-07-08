@@ -1291,7 +1291,7 @@ case class GpuRegExpExtractAll(
             }
           }
         // Filter out null values in the lists
-        val extracted = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+        val extractedStrings = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
             withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
               withResource(stringCol.isNotNull) { isNotNull =>
                 withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask => 
@@ -1302,10 +1302,10 @@ case class GpuRegExpExtractAll(
           }
         // If input is null, output should also be null
         withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
-          nullString =>
+          nullStringList =>
             withResource(str.getBase.isNull) { isInputNull =>
-              withResource(extracted) {
-                isInputNull.ifElse(nullString, _)
+              withResource(extractedStrings) {
+                isInputNull.ifElse(nullStringList, _)
               }
             }              
         }
