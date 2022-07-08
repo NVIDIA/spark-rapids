@@ -249,6 +249,39 @@ object GpuParquetScan {
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
   }
+
+  private def numNodesEstimate(dt: DataType): Long = dt match {
+    case StructType(fields) =>
+      1 + fields.map(f => numNodesEstimate(f.dataType)).sum
+    case ArrayType(elementType, _) =>
+      // In parquet the there are two groups needed to make a List/Array
+      2 + numNodesEstimate(elementType)
+    case MapType(keyType, valueType, _) =>
+      // In parquet there is a repeating group followed by a key/value group
+      2 + numNodesEstimate(keyType) + numNodesEstimate(valueType)
+    case _ => 1
+  }
+
+  /**
+   * Adjust the footer reader type based off of a heuristic.
+   */
+  def footerReaderHeuristic(
+      inputValue: ParquetFooterReaderType.Value,
+      data: StructType,
+      read: StructType): ParquetFooterReaderType.Value = {
+    inputValue match {
+      case ParquetFooterReaderType.AUTO =>
+        val dnc = numNodesEstimate(data)
+        val rnc = numNodesEstimate(read)
+        if (rnc.toDouble/dnc <= 0.5 && dnc - rnc > 10) {
+          ParquetFooterReaderType.NATIVE
+        } else {
+          ParquetFooterReaderType.JAVA
+        }
+      case other => other
+    }
+  }
+
 }
 
 /**
@@ -945,7 +978,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-  private val footerReadType = rapidsConf.parquetReaderFooterType
+  private val footerReadType = GpuParquetScan.footerReaderHeuristic(
+    rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
@@ -1047,7 +1081,8 @@ case class GpuParquetPartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
-  private val footerReadType = rapidsConf.parquetReaderFooterType
+  private val footerReadType = GpuParquetScan.footerReaderHeuristic(
+    rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema)
 
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
