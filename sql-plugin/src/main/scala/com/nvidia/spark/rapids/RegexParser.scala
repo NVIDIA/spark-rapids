@@ -818,7 +818,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case r @ RegexOctalChar(_) => r.codePoint.toChar
           case r @ RegexHexDigit(_) => r.codePoint.toChar
           case other => throw new RegexUnsupportedException(
-            s"Unexpected expression at start of character range: ${other.toString}", other.position)
+            s"Unexpected expression at start of character range: ${other.toRegexString}", 
+            other.position)
         }
         if (start <= '\n' && end >= '\r') {
           Seq('\n', '\r')
