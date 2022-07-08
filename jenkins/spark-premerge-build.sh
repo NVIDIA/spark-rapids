@@ -30,6 +30,7 @@ fi
 
 mvn_verify() {
     echo "Run mvn verify..."
+    # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     export LC_ALL="en_US.UTF-8"
     # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
