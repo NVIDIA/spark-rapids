@@ -179,10 +179,18 @@ class RegexParser(pattern: String) {
       peek() match {
         case Some('x') => 
           consumeExpected('x')
-          RegexChar(Integer.parseInt(parseHexDigit.a, 16).toChar)
+          val hexChar = parseHexDigit
+          hexChar.codePoint match {
+            case 0 => hexChar
+            case codePoint => RegexChar(codePoint.toChar)
+          }
         case Some('0') => 
           consumeExpected('0')
-          RegexChar(Integer.parseInt(parseOctalDigit.a, 8).toChar)
+          val octalChar = parseOctalDigit
+          octalChar.codePoint match {
+            case 0 => RegexHexDigit("00")
+            case codePoint => RegexChar(codePoint.toChar)
+          }
         case Some(ch) =>
           consumeExpected(ch) match {
             // List of character literals with an escape from here, under "Characters"
@@ -229,10 +237,6 @@ class RegexParser(pattern: String) {
           // Negates the character class, causing it to match a single character not listed in
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
-        case '\u0000' =>
-          // see https://github.com/NVIDIA/spark-rapids/issues/5909
-          throw new RegexUnsupportedException(
-            "cuDF does not support null characters in character classes", Some(pos-1))
         case ch => 
           val nextChar: RegexCharacterClassComponent = ch match {
             case '\\' =>
@@ -241,10 +245,6 @@ class RegexParser(pattern: String) {
                   // A hex or octal representation of a meta character gets treated as an escaped 
                   // char. Example: [\x5ea] is treated as [\^a], not just [^a]
                   RegexEscaped(ch)
-                case RegexChar('\u0000') =>
-                  // see https://github.com/NVIDIA/spark-rapids/issues/5909
-                  throw new RegexUnsupportedException(
-                    "cuDF does not support null characters in character classes", Some(pos))
                 case other => other
               }
             case '&' => 
@@ -255,6 +255,8 @@ class RegexParser(pattern: String) {
                 case _ => // ignore
               }
               RegexChar('&')
+            case '\u0000' =>
+              RegexHexDigit("00")
             case ch =>
               RegexChar(ch)
           }
@@ -812,7 +814,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
       case RegexEscaped(ch) if ch == 'n' => Seq('\n')
       case RegexEscaped(ch) if ch == 'r' => Seq('\r')
-      case RegexCharacterRange(RegexChar(start), RegexChar(end)) =>
+      case RegexCharacterRange(startRegex, RegexChar(end)) =>
+        val start = startRegex match {
+          case RegexChar(ch) => ch
+          case r @ RegexOctalChar(_) => r.codePoint.toChar
+          case r @ RegexHexDigit(_) => r.codePoint.toChar
+          case other => throw new RegexUnsupportedException(
+            s"Unexpected expression at start of character range: ${other.toString}", other.position)
+        }
         if (start <= '\n' && end >= '\r') {
           Seq('\n', '\r')
         } else if (start <= '\n' && end >= '\n') {
@@ -1004,26 +1013,24 @@ class CudfRegexTranspiler(mode: RegexMode) {
           regex
       }
 
-      case RegexOctalChar(digits) =>
+      case r @ RegexOctalChar(digits) =>
         val octal = if (digits.charAt(0) == '0' && digits.length == 4) {
           digits.substring(1)
         } else  {
           digits
         }
-        val codePoint = Integer.parseInt(octal, 8)
-        if (codePoint >= 128) {
-          RegexChar(codePoint.toChar)
+        if (r.codePoint >= 128) {
+          RegexChar(r.codePoint.toChar)
         } else {
           RegexOctalChar(octal)
         }
 
-      case RegexHexDigit(digits) =>
-        val codePoint = Integer.parseInt(digits, 16)
-        if (codePoint >= 128) {
+      case r @ RegexHexDigit(digits) =>
+        if (r.codePoint >= 128) {
           // cuDF only supports 0x00 to 0x7f hexidecimal chars
-          RegexChar(codePoint.toChar)
+          RegexChar(r.codePoint.toChar)
         } else {
-          RegexHexDigit(String.format("%02x", Int.box(codePoint)))
+          RegexHexDigit(String.format("%02x", Int.box(r.codePoint)))
         }
 
       case RegexEscaped(ch) => ch match {
@@ -1594,6 +1601,7 @@ sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent 
     this(a)
     this.position = Some(position)
   }
+  val codePoint = Integer.parseInt(a, 16)
 
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = {
@@ -1610,6 +1618,8 @@ sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent
     this(a)
     this.position = Some(position)
   }
+  val codePoint = Integer.parseInt(a, 8)
+
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\$a"
 }
