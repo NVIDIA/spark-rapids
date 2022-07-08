@@ -53,12 +53,6 @@ class JCudfUtilSuite extends FunSuite with Logging {
     ("col-bool-23", IntegerType))
 
   private val schema = new StructType(fieldsArray.map(f => StructField(f._1, f._2, true)).toArray)
-  private val typeOrderMap = mutable.LinkedHashMap[DataType, Int](
-    StringType -> 39,
-    DoubleType -> 80,
-    LongType -> 80,
-    BooleanType -> 10,
-    IntegerType -> 40)
 
   private val dataTypeAlignmentMap = mutable.LinkedHashMap[DataType, Int](
     StringType -> 1,
@@ -67,21 +61,15 @@ class JCudfUtilSuite extends FunSuite with Logging {
     BooleanType -> 1,
     IntegerType -> 4)
 
-  private val expectedPackedOffsets : Array[Int] =
-    Array(0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 100, 104, 112, 120, 128, 136, 144,
-      152, 160, 168, 169)
-
   private val expectedPackedMap : Array[Int] =
-    Array(4, 5, 6, 7, 8, 9, 10, 17, 18, 19, 20, 21, 2, 23, 0, 3, 11, 12, 13, 14, 15, 16, 1, 22)
+    Array(4, 5, 6, 7, 8, 9, 10, 17, 18, 19, 20, 21, 0, 2, 3, 11, 12, 13, 14, 15, 16, 23, 1, 22)
+
+  private val expectedPackedOffsets : Array[Int] =
+    Array(0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 108, 116, 124, 132, 140, 148, 156,
+      164, 168, 169)
 
   private val expectedUnPackedMap : Array[Int] =
-    Array(14, 22, 12, 15, 0, 1, 2, 3, 4, 5, 6, 16, 17, 18, 19, 20, 21, 7, 8, 9, 10, 11, 23, 13)
-
-  test("test dataType Order used for sorting columns in JCudf") {
-    schema.foreach { colF =>
-      assert(JCudfUtil.getDataTypeOrder(colF.dataType) == typeOrderMap(colF.dataType))
-    }
-  }
+    Array(12, 22, 13, 14, 0, 1, 2, 3, 4, 5, 6, 15, 16, 17, 18, 19, 20, 7, 8, 9, 10, 11, 23, 21)
 
   test("test dataType Alignment used for the JCudf") {
     schema.foreach { colF =>
@@ -128,9 +116,9 @@ class JCudfUtilSuite extends FunSuite with Logging {
       val colLength = cudfRowVisitor.getColLength
       colLength match {
         case -15 =>
-          assert(packedAttributes(colIndex).dataType.isInstanceOf[StringType])
           // assume length is 20;
           varDataOffsetRef += 20
+          assert(packedAttributes(colIndex).dataType.isInstanceOf[StringType])
         case _ => assert(!stringColumns.contains(colIndex))
       }
     }

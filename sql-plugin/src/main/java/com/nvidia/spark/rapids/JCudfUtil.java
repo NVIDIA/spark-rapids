@@ -115,35 +115,37 @@ public final class JCudfUtil {
   }
 
   /**
-   * A method that represents the order of datatypes.
-   * It is used to order the datatypes in order to generate a packed schema.
-   * We should be careful on how we want to sort the references to variable-width columns.
-   * Currently, we sort columns by the descending order of their data length.
-   * For variable width data types, reference to variable-width data are 4-bytes aligned.
-   * However, var-width data should be placed in ascending order of their alignment to reduce
-   * packing following the validity bytes.
+   * A method used to order the columns in order to pack the schema based on the JCudf
+   * specifications.
+   * It sorts fixed-width columns by their length.
+   * For variable-length columns, they are treated as integer since the alignment is 4. However, if
+   * both datatypes are variable-length, then we want the type with larger alignment to come last.
    *
-   * For example, Strings are 1-byte aligned while Structs are 8-byte aligned. Therefore, Struct
-   * columns are aligned first in the JCUDF.
-   * TypeOrder(Integer) = 40
-   * TypeOrder(String)  = 40 - 1 = 39
-   * TypeOrder(Struct)  = 40 - 8 = 32
-   *
-   * @param dt the type of the data column.
-   * @return the size of the datatype in bytes multiplied by 10 if dt is a fixed size type.
-   *         Otherwise, it subtracts the alignment from 40.
+   * @param dt1 first datatype to compare.
+   * @param dt2 second datatype to compare.
+   * @return true when dt1 has more precedence than dt2.
    */
-  public static int getDataTypeOrder(DataType dt) {
-    if (isFixedLength(dt)) {
-      // for fixed sized data, order is equivalent to the type size
-      return getSizeForFixedLengthDataType(dt) * 10;
+  public static boolean compareDataTypePrecedence(DataType dt1, DataType dt2) {
+    int refSize1;
+    int refSize2;
+    int dataAlignSize1 = 0;
+    int dataAlignSize2 = 0;
+    if (isFixedLength(dt1)){
+      refSize1 = getSizeForFixedLengthDataType(dt1);
+    } else {
+      refSize1 = JCUDF_VAR_LENGTH_FIELD_ALIGNMENT;
+      dataAlignSize1 = getDataAlignmentForDataType(GpuColumnVector.getNonNestedRapidsType(dt1));
     }
-    // For variable data types, return negative number to indicate alignment.
-    // The bigger the alignment the higher the order of the data type.
-    DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dt);
-    int orderVal = JCUDF_VAR_LENGTH_FIELD_ALIGNMENT * 10;
-    return orderVal - getDataAlignmentForDataType(rapidsType);
-        //getDataAlignmentForDataType(rapidsType) - JCUDF_MAX_TYPE_ORDER;
+    if (isFixedLength(dt2)){
+      refSize2 = getSizeForFixedLengthDataType(dt2);
+    } else {
+      refSize2 = JCUDF_VAR_LENGTH_FIELD_ALIGNMENT;
+      dataAlignSize2 = getDataAlignmentForDataType(GpuColumnVector.getNonNestedRapidsType(dt2));
+    }
+    if (dataAlignSize2 > 0 && dataAlignSize1 > 0) { // both types are variable length
+      return dataAlignSize1 < dataAlignSize2;
+    }
+    return refSize1 > refSize2;
   }
 
   /**
