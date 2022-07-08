@@ -35,12 +35,6 @@ object SparkShimImpl extends Spark330PlusShims {
         TypeSig.all),
       (globalLimit, conf, p, r) =>
         new SparkPlanMeta[GlobalLimitExec](globalLimit, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (globalLimit.offset != 0) {
-              willNotWorkOnGpu("non-zero offset is not supported")
-            }
-          }
-
           override def convertToGpu(): GpuExec =
             GpuGlobalLimitExec(
               globalLimit.limit, childPlans.head.convertIfNeeded(), globalLimit.offset)
@@ -51,12 +45,6 @@ object SparkShimImpl extends Spark330PlusShims {
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (collectLimit, conf, p, r) => new GpuCollectLimitMeta(collectLimit, conf, p, r) {
-        override def tagPlanForGpu(): Unit = {
-          if (collectLimit.offset != 0) {
-            willNotWorkOnGpu("non-zero offset is not supported")
-          }
-        }
-
         override def convertToGpu(): GpuExec =
           GpuGlobalLimitExec(collectLimit.limit,
             GpuShuffleExchangeExec(
