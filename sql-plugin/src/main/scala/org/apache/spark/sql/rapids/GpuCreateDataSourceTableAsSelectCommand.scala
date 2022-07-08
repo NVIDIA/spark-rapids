@@ -131,6 +131,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
   private val isBucketed = table.bucketSpec.nonEmpty
 
+  private val needSort = isPartitioned || isBucketed
+
   // use same logic as GpuInsertIntoHadoopFsRelationCommand
-  override def requireSingleBatch: Boolean = useStableSort && (isPartitioned || isBucketed)
+  override def requireSingleBatch: Boolean = needSort && useStableSort
 }

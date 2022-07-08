@@ -258,6 +258,9 @@ case class GpuInsertIntoHadoopFsRelationCommand(
 
   private val isBucketed = bucketSpec.nonEmpty
 
-  // We need a single batch if we have to sort the data
-  override def requireSingleBatch: Boolean = useStableSort && (isPartitioned || isBucketed)
+  private val needSort = isPartitioned || isBucketed
+
+  // If need sort and use stable sort, require single batch.
+  // If need sort and not use stable sort, use out-of-core sort which not requires single batch.
+  override def requireSingleBatch: Boolean = needSort && useStableSort
 }

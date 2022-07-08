@@ -465,14 +465,3 @@ def test_write_daytime_interval(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf=writer_confs)
-
-# TODO need to test large DF
-@pytest.mark.parametrize('is_stable_sort', ["true", "false"])
-def test_write_partitioned_out_of_memory(spark_tmp_path, is_stable_sort):
-    gen_list = [('c1', IntegerGen()),
-                ('c2', StringGen())]
-    path = spark_tmp_path + '/PARQUET_DATA'
-    with_gpu_session(lambda spark: gen_df(spark, gen_list).repartition('c1')
-                     .write.partitionBy('c1').parquet(path),
-                     {"spark.rapids.sql.stableSort.enabled": "true"})
-
