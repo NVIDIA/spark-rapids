@@ -167,14 +167,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     })
   }
 
-  test("cuDF does not support null in character classes") {
-    val patterns = Seq(raw"[\00]", "[a\u0000 b]", raw"[\x00]", raw"[\x{0000}]")
-    patterns.foreach(pattern => {
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support null characters in character classes")
-    })
-  }
-
   test("cuDF does not support class intersection &&") {
     val patterns = Seq("[a&&b]", "[&&1]")
     patterns.foreach(pattern =>
