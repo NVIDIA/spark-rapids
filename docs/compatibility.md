@@ -573,15 +573,14 @@ The following Apache Spark regular expression functions and expressions are supp
 - `string_split`
 - `str_to_map`
 
-Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
-regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
-still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
-set `spark.rapids.sql.regexp.enabled=false`.
+Regular expression evaluation on the GPU is enabled by default when the UTF-8 character set is used
+by the current locale. Execution will fall back to the CPU for regular expressions that are not yet
+supported on the GPU, and in environments where the locale does not use UTF-8. However, there are
+some edge cases that will still execute on the GPU and produce different results to the CPU. To
+disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
- to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
@@ -595,13 +594,18 @@ The following regular expression patterns are not yet supported on the GPU and w
   or more results
 - Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Word and non-word boundaries, `\b` and `\B`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - `regexp_replace` does not support back-references
+
+The following regular expression patterns are known to potentially produce different results on the GPU
+vs the CPU.
+
+- Word and non-word boundaries, `\b` and `\B`
+
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
