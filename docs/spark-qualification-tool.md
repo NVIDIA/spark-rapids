@@ -564,7 +564,8 @@ It contains the following main components:
        the estimated wall-clock time difference between the CPU and GPU executions. The original CPU duration of the app
        divided by the estimated GPU duration and displayed as "_App Speed-up_".
 3. **Application Details**: this table lists all the fields described previously in
-   the [Detailed App report](#detailed-app-report) section. Note that this table has too many columns. Therefore, the UI
+   the [Detailed App report](#detailed-app-report) section. Note that this table has more columns than can fit in a
+   normal browser window. Therefore, the UI
    application dynamically optimizes the layout of the table to fit the browser screen. By clicking on the control
    column, the row expands to show the remaining hidden columns.
    ![Qualification-HTML-App-Details-View-Header](img/Tools/qualification-tool-app-view-01.png)
@@ -580,7 +581,7 @@ It contains the following main components:
        predefined speed-up ranges: `1.0 (No Speed-up)`; `]1.0, 1.3[`; `[1.3, 2.5[`; `[2.5, 5[`; and `[5, _]`. The
        search-pane does not show a range bucket if its count is 0.
     3. "_Tasks GPU Support_": this filter can be used to find stages having all their execs supported by the GPU.
-6. **Execs Details Table**: lists all the app stages with set of columns listed in [Execs report](#execs-report)
+5. **Execs Details Table**: lists all the app stages with set of columns listed in [Execs report](#execs-report)
    section. The HTML5 export button saves the table to CSV file into the browser's default
    download folder.
    ![Qualification-HTML-App-Details-View-Execs](img/Tools/qualification-tool-app-view-03.png)
@@ -606,7 +607,8 @@ The search box will match on multiple columns including: "_App ID_", "_App Name_
 "_User Name_", "_Unsupported Write Data Format_", "_Complex Types_", "_Nested Complex Types_", and "_Read Schema_".
 The detailed table can also be exported as `Qualification Tool Dashboard – Raw Data.csv`.
 
-Note that this table has too many columns. Therefore, the UI application dynamically optimizes the layout of the table
+Note that this table has more columns than can fit in a normal browser window. Therefore, the UI application dynamically
+optimizes the layout of the table
 to fit the browser screen. By clicking on the control column, the row expands to show the remaining hidden columns.
 
 ### Text and CSV files
