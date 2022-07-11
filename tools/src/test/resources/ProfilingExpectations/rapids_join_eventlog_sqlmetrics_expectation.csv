@@ -39,18 +39,18 @@ appIndex,sqlID,nodeID,nodeName,accumulatorId,name,max_value,metricType,stageIds
 1,0,7,GpuShuffleCoalesce,76,total time,261389422,nsTiming,2
 1,0,7,GpuShuffleCoalesce,77,collect batch time,167775821,nsTiming,2
 1,0,7,GpuShuffleCoalesce,78,concat batch time,83550919,nsTiming,2
-1,0,8,GpuColumnarExchange,79,partition data size,42872100,sum,2;1
-1,0,8,GpuColumnarExchange,80,partitions,200,sum,2;1
-1,0,8,GpuColumnarExchange,81,output rows,10000000,sum,2;1
-1,0,8,GpuColumnarExchange,82,output columnar batches,1200,sum,2;1
-1,0,8,GpuColumnarExchange,83,data size,40076192,size,2;1
-1,0,8,GpuColumnarExchange,85,local blocks read,1200,sum,2;1
-1,0,8,GpuColumnarExchange,88,local bytes read,40132258,size,2;1
-1,0,8,GpuColumnarExchange,89,fetch wait time,0,timing,2;1
-1,0,8,GpuColumnarExchange,90,records read,1200,sum,2;1
-1,0,8,GpuColumnarExchange,91,shuffle bytes written,40132258,size,2;1
-1,0,8,GpuColumnarExchange,92,shuffle records written,1200,sum,2;1
-1,0,8,GpuColumnarExchange,93,shuffle write time,508750471,nsTiming,2;1
+1,0,8,GpuColumnarExchange,79,partition data size,42872100,sum,1;2
+1,0,8,GpuColumnarExchange,80,partitions,200,sum,1;2
+1,0,8,GpuColumnarExchange,81,output rows,10000000,sum,1;2
+1,0,8,GpuColumnarExchange,82,output columnar batches,1200,sum,1;2
+1,0,8,GpuColumnarExchange,83,data size,40076192,size,1;2
+1,0,8,GpuColumnarExchange,85,local blocks read,1200,sum,1;2
+1,0,8,GpuColumnarExchange,88,local bytes read,40132258,size,1;2
+1,0,8,GpuColumnarExchange,89,fetch wait time,0,timing,1;2
+1,0,8,GpuColumnarExchange,90,records read,1200,sum,1;2
+1,0,8,GpuColumnarExchange,91,shuffle bytes written,40132258,size,1;2
+1,0,8,GpuColumnarExchange,92,shuffle records written,1200,sum,1;2
+1,0,8,GpuColumnarExchange,93,shuffle write time,508750471,nsTiming,1;2
 1,0,9,GpuProject,94,total time,6667140,nsTiming,1
 1,0,10,GpuRowToColumnar,95,total time,61112304,nsTiming,1
 1,0,11,WholeStageCodegen (1),96,duration,5463,timing,1
@@ -66,18 +66,18 @@ appIndex,sqlID,nodeID,nodeName,accumulatorId,name,max_value,metricType,stageIds
 1,0,15,GpuShuffleCoalesce,109,total time,3266208420,nsTiming,2
 1,0,15,GpuShuffleCoalesce,110,collect batch time,359397047,nsTiming,2
 1,0,15,GpuShuffleCoalesce,111,concat batch time,104974316,nsTiming,2
-1,0,16,GpuColumnarExchange,112,partition data size,42872100,sum,2;0
-1,0,16,GpuColumnarExchange,113,partitions,200,sum,2;0
-1,0,16,GpuColumnarExchange,114,output rows,10000000,sum,2;0
-1,0,16,GpuColumnarExchange,115,output columnar batches,1200,sum,2;0
-1,0,16,GpuColumnarExchange,116,data size,40076192,size,2;0
-1,0,16,GpuColumnarExchange,118,local blocks read,1200,sum,2;0
-1,0,16,GpuColumnarExchange,121,local bytes read,40132250,size,2;0
-1,0,16,GpuColumnarExchange,122,fetch wait time,0,timing,2;0
-1,0,16,GpuColumnarExchange,123,records read,1200,sum,2;0
-1,0,16,GpuColumnarExchange,124,shuffle bytes written,40132250,size,2;0
-1,0,16,GpuColumnarExchange,125,shuffle records written,1200,sum,2;0
-1,0,16,GpuColumnarExchange,126,shuffle write time,400284505,nsTiming,2;0
+1,0,16,GpuColumnarExchange,112,partition data size,42872100,sum,0;2
+1,0,16,GpuColumnarExchange,113,partitions,200,sum,0;2
+1,0,16,GpuColumnarExchange,114,output rows,10000000,sum,0;2
+1,0,16,GpuColumnarExchange,115,output columnar batches,1200,sum,0;2
+1,0,16,GpuColumnarExchange,116,data size,40076192,size,0;2
+1,0,16,GpuColumnarExchange,118,local blocks read,1200,sum,0;2
+1,0,16,GpuColumnarExchange,121,local bytes read,40132250,size,0;2
+1,0,16,GpuColumnarExchange,122,fetch wait time,0,timing,0;2
+1,0,16,GpuColumnarExchange,123,records read,1200,sum,0;2
+1,0,16,GpuColumnarExchange,124,shuffle bytes written,40132250,size,0;2
+1,0,16,GpuColumnarExchange,125,shuffle records written,1200,sum,0;2
+1,0,16,GpuColumnarExchange,126,shuffle write time,400284505,nsTiming,0;2
 1,0,17,GpuProject,127,total time,207820,nsTiming,0
 1,0,18,GpuRowToColumnar,128,total time,58640462,nsTiming,0
 1,0,19,WholeStageCodegen (2),129,duration,5920,timing,0
