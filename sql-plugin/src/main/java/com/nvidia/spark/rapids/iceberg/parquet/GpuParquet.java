@@ -20,6 +20,7 @@ import java.util.Collection;
 import java.util.Map;
 
 import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.PartitionedFileUtils;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Schema;
@@ -156,8 +157,8 @@ public class GpuParquet {
 
       ParquetReadOptions options = optionsBuilder.build();
 
-      PartitionedFile partFile = new PartitionedFile(InternalRow.empty(), file.location(),
-          start, length, null);
+      PartitionedFile partFile = PartitionedFileUtils.newPartitionedFile(
+          InternalRow.empty(), file.location(), start, length);
       return new GpuParquetReader(file, projectSchema, options, nameMapping, filter, caseSensitive,
           idToConstant, deleteFilter, partFile, conf, maxBatchSizeRows, maxBatchSizeBytes,
           debugDumpPrefix, metrics);

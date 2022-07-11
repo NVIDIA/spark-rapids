@@ -64,7 +64,6 @@ import org.apache.spark.sql.types.DecimalType$;
 import org.apache.spark.sql.types.DoubleType$;
 import org.apache.spark.sql.types.FloatType$;
 import org.apache.spark.sql.types.IntegerType$;
-import org.apache.spark.sql.types.LongType;
 import org.apache.spark.sql.types.LongType$;
 import org.apache.spark.sql.types.MapType;
 import org.apache.spark.sql.types.Metadata;
