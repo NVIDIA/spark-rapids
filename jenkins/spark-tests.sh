@@ -168,7 +168,7 @@ mkdir -p $TARGET_DIR
 
 run_delta_lake_tests() {
   echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
-  SPARK_321_PATTERN="(32[1-9])"
+  SPARK_321_PATTERN="(3\.2\.[1-9])"
   DELTA_LAKE_VER = "1.2.1"
   if [[ $SPARK_VER =~ $SPARK_321_PATTERN ]]; then
     SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
