@@ -655,7 +655,10 @@ def test_re_replace_null():
                 'REGEXP_REPLACE(a, "\x00", "NULL")',
                 'REGEXP_REPLACE(a, "\0", "NULL")',
                 'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
-                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'),
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")',
+                'REGEXP_REPLACE(a, "[\x00TEST]", "PROD")',
+                'REGEXP_REPLACE(a, "[TE\00ST]", "PROD")',
+                'REGEXP_REPLACE(a, "[\u0000-z]", "PROD")'),
         conf=_regexp_conf)
 
 def test_length():

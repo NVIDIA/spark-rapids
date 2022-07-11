@@ -586,9 +586,6 @@ These are the known edge cases where running on the GPU will produce different r
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
-- The character class `\p{ASCII}` matches only `[\x01-\x7F]` as opposed to Java's definition which matches `[\x00-\x7F]`,
- since null characters are not currently supported. Similarily, `\p{Cntrl}` matches only `[\x01-\x1F\x7F]` as 
- opposed to Java's `[\x00-\x1F\x7F]`
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
@@ -605,7 +602,6 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
-- Regular expressions containing null characters (unless the pattern is a simple literal string)
 - `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.

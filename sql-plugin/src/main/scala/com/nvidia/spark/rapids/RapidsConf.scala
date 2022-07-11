@@ -1440,6 +1440,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = false)
 
+  val DETECT_DELTA_LOG_QUERIES = conf("spark.rapids.sql.detectDeltaLogQueries")
+    .doc("Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When " +
+      "this option is enabled, the plugin will attempt to detect these queries and fall back " +
+      "to the CPU.")
+    .booleanConf
+    .createWithDefault(value = true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1926,6 +1933,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
