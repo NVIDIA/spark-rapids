@@ -54,7 +54,7 @@ The RAPIDS Accelerator does not support Apache Iceberg tables using the ORC data
 
 #### Avro
 
-The RAPIDS Accelerator does not support Apache Iceberg tables using the ORC data format.
+The RAPIDS Accelerator does not support Apache Iceberg tables using the Avro data format.
 
 ## Writing Tables
 
