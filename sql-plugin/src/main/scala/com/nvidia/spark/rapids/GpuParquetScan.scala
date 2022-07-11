@@ -496,57 +496,32 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
   }
 
-  private def addNamesAndCount(names: ArrayBuffer[String], children: ArrayBuffer[Int],
-      name: String, numChildren: Int): Unit = {
-    names += name
-    children += numChildren
-  }
-
   /**
-   * Flatten a Spark schema according to the parquet standard. This does not work for older
-   * parquet files that did not fully follow the standard, or were before some of these
-   * things were standardized. This will be fixed as a part of
-   * https://github.com/NVIDIA/spark-rapids-jni/issues/210
+   * Convert the spark data type to something that the native processor can understand.
    */
-  private def depthFirstNamesHelper(schema: DataType, elementName: String, makeLowerCase: Boolean,
-      names: ArrayBuffer[String], children: ArrayBuffer[Int]): Unit = {
-    val name = if (makeLowerCase) {
-      elementName.toLowerCase(Locale.ROOT)
-    } else {
-      elementName
-    }
+  private def convertToParquetNative(schema: DataType): ParquetFooter.SchemaElement = {
     schema match {
       case cst: StructType =>
-        addNamesAndCount(names, children, name, cst.length)
+        val schemaBuilder = ParquetFooter.StructElement.builder()
         cst.fields.foreach { field =>
-          depthFirstNamesHelper(field.dataType, field.name, makeLowerCase, names, children)
+          schemaBuilder.addChild(field.name, convertToParquetNative(field.dataType))
         }
+        schemaBuilder.build()
       case _: NumericType | BinaryType | BooleanType | DateType | TimestampType | StringType =>
-        addNamesAndCount(names, children, name, 0)
+        new ParquetFooter.ValueElement()
       case at: ArrayType =>
-        addNamesAndCount(names, children, name, 1)
-        addNamesAndCount(names, children, "list", 1)
-        depthFirstNamesHelper(at.elementType, "element", makeLowerCase, names, children)
+        new ParquetFooter.ListElement(convertToParquetNative(at.elementType))
       case mt: MapType =>
-        addNamesAndCount(names, children, name, 1)
-        addNamesAndCount(names, children, "key_value", 2)
-        depthFirstNamesHelper(mt.keyType, "key", makeLowerCase, names, children)
-        depthFirstNamesHelper(mt.valueType, "value", makeLowerCase, names, children)
+        new ParquetFooter.MapElement(
+          convertToParquetNative(mt.keyType),
+          convertToParquetNative(mt.valueType))
       case other =>
         throw new UnsupportedOperationException(s"Need some help here $other...")
     }
   }
 
-  def depthFirstNames(schema: StructType, makeLowerCase: Boolean): (Array[String], Array[Int]) = {
-    withResource(new NvtxRange("prepare schema", NvtxColor.WHITE)) { _ =>
-      // Initialize them with a quick length for non-nested values
-      val names = new ArrayBuffer[String](schema.length)
-      val children = new ArrayBuffer[Int](schema.length)
-      schema.fields.foreach { field =>
-        depthFirstNamesHelper(field.dataType, field.name, makeLowerCase, names, children)
-      }
-      (names.toArray, children.toArray)
-    }
+  def convertToFooterSchema(schema: StructType): ParquetFooter.StructElement = {
+    convertToParquetNative(schema).asInstanceOf[ParquetFooter.StructElement]
   }
 
   def readAndFilterFooter(
@@ -554,7 +529,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       conf : Configuration,
       readDataSchema: StructType,
       filePath: Path): ParquetFooter = {
-    val (names, children) = depthFirstNames(readDataSchema, !isCaseSensitive)
+    val footerSchema = convertToFooterSchema(readDataSchema)
     val fs = filePath.getFileSystem(conf)
     val stat = fs.getFileStatus(filePath)
     // Much of this code came from the parquet_mr projects ParquetFileReader, and was modified
@@ -612,7 +587,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
           file.length
         }
         ParquetFooter.readAndFilter(footerBuffer, file.start, len,
-          names, children, readDataSchema.length, !isCaseSensitive)
+          footerSchema, !isCaseSensitive)
       }
     }
   }
