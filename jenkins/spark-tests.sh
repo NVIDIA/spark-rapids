@@ -220,7 +220,7 @@ run_test_not_parallel() {
           ./run_pyspark_from_build.sh -k cache_test
         ;;
 
-      deltalake)
+      delta_lake)
         run_delta_lake_tests
         ;;
 
