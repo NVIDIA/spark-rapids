@@ -24,7 +24,9 @@ from pyspark.sql.types import *
 from spark_session import is_before_spark_320
 
 if locale.nl_langinfo(locale.CODESET) != 'UTF-8':
-    pytestmark = pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))
+    pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
+else:
+    pytestmark = pytest.mark.regexp
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 

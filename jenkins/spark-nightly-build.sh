@@ -21,8 +21,6 @@ set -ex
 
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
-## export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
-export LC_ALL="en_US.UTF-8"
 
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
 MVN="mvn ${MVN_OPT}"
@@ -97,6 +95,12 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}"
+    # enable UTF-8 and run regular expression tests
+    env LC_ALL="en_US.UTF-8" $MVN verify -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+        -Dpytest.TEST_TAGS='regexp' \
+        -Dcuda.version=$CUDA_CLASSIFIER \
+        -Dbuildver="${buildver}" \
+        -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
         $MVN -B deploy -pl '!tools,!dist' $MVN_URM_MIRROR \
@@ -112,6 +116,13 @@ $MVN -B clean install -pl '!tools' \
     $MVN_URM_MIRROR \
     -Dmaven.repo.local=$M2DIR \
     -Dcuda.version=$CUDA_CLASSIFIER
+
+# enable UTF-8 and run regular expression tests
+env LC_ALL="en_US.UTF-8" $MVN verify -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+    -Dpytest.TEST_TAGS='regexp' \
+    -Dcuda.version=$CUDA_CLASSIFIER \
+    -Dbuildver=$SPARK_BASE_SHIM_VERSION \
+    -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
 
 distWithReducedPom "install"
 

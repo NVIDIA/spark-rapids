@@ -48,9 +48,7 @@ mvn_verify() {
     # don't skip tests
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools'
     # enable UTF-8 for regular expression tests
-    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite
-    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.RegularExpressionSuite
-    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
+    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=321 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=322 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
@@ -128,8 +126,9 @@ ci_2() {
     TEST='not conditionals_test and not window_function_test and not struct_test and not time_window_test' \
       ./integration_tests/run_pyspark_from_build.sh
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
-    # export 'LC_ALL' to set locale without UTF-8 so regular expressions are disabled to test fallback
+    # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+    # export 'LC_ALL' to set locale without UTF-8 so regular expressions are disabled to test fallback
     LC_ALL="en_US.iso88591" TEST="regexp_no_unicode_test.py" ./integration_tests/run_pyspark_from_build.sh
 }
 
