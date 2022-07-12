@@ -1052,6 +1052,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val REGEXP_MAX_STATE_MEMORY = conf("spark.rapids.sql.regexp.maxStateMemory")
+    .doc("Specifies the maximum memory on GPU to be used for regular expressions." +
+      "Note that the memory usage is only an estimate based on a worst case using the" +
+      "regular expression pattern and the number of rows in the column.")
+    .integerConf
+    .createWithDefault(1 << 32)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -1927,6 +1934,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
+
+  lazy val maxRegExpStateMemory: Integer = get(REGEXP_MAX_STATE_MEMORY)
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
