@@ -754,8 +754,7 @@ object RapidsConf {
           "This provides the ability to use a different path to parse and filter the footer. " +
           "AUTO is the default and decides which path to take using a heuristic. JAVA " +
           "follows closely with what Apache Spark does. NATIVE will parse and " +
-          "filter the footer using C++. In the worst case this can be slower than JAVA. " +
-          "This is why a heruistic is used to select the appropriate parser.")
+          "filter the footer using C++.")
       .stringConf
       .transform(_.toUpperCase(java.util.Locale.ROOT))
       .checkValues(ParquetFooterReaderType.values.map(_.toString))
