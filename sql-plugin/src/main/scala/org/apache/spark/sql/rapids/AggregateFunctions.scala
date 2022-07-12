@@ -337,13 +337,7 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate with Arm {
 
 class CudfMax(override val dataType: DataType) extends CudfAggregate with Arm {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.getType() match {
-      case DType.FLOAT32 if withResource(col.isNan()) (_.any().getBoolean()) => 
-        cudf.Scalar.fromFloat(Float.NaN)
-      case DType.FLOAT64 if withResource(col.isNan()) (_.any().getBoolean()) => 
-        cudf.Scalar.fromDouble(Double.NaN)
-      case _ => col.max()
-    }
+    (col: cudf.ColumnVector) => col.max
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.max()
   override val name: String = "CudfMax"
@@ -355,6 +349,14 @@ class CudfMin(override val dataType: DataType) extends CudfAggregate {
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.min()
   override val name: String = "CudfMin"
+}
+
+class CudfAny extends CudfAggregate {
+  override def dataType: DataType = BooleanType
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.any()
+  override lazy val groupByAggregate = GroupByAggregation.max()
+  override val name: String = "CudfAny"
 }
 
 class CudfCollectList(override val dataType: DataType) extends CudfAggregate {
@@ -528,13 +530,51 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, child.dataType))
-  override lazy val inputProjection: Seq[Expression] = Seq(child)
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfMax(dataType))
-  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMax(dataType))
+  override lazy val inputProjection: Seq[Expression] = child.dataType match {
+    case FloatType | DoubleType => Seq(child, GpuIsNan(child))
+    case _ => Seq(child)
+  }
+
+  protected lazy val updateIsNan = new CudfAny()
+  protected lazy val updateMaxVal = new CudfMax(dataType)
+  override lazy val updateAggregates: Seq[CudfAggregate] = child.dataType match {
+    case FloatType | DoubleType => Seq(updateMaxVal, updateIsNan)
+    case _ => Seq(updateMaxVal)
+  }
+
+  override lazy val postUpdate: Seq[Expression] = child.dataType match {
+    case FloatType => Seq(GpuIf(updateIsNan.attr, GpuLiteral(Float.NaN, FloatType), updateMaxVal.attr))
+    case DoubleType => Seq(GpuIf(updateIsNan.attr, GpuLiteral(Double.NaN, DoubleType), updateMaxVal.attr))
+    case _ => postUpdateAttr
+  }
+    
+  override lazy val preMerge: Seq[Expression] = child.dataType match {
+    case FloatType | DoubleType => Seq(cudfMax, GpuIsNan(cudfMax))
+    case _ => aggBufferAttributes
+  } 
+  protected lazy val mergeIsNan = new CudfAny()
+  protected lazy val mergeMaxVal = new CudfMax(dataType)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = child.dataType match {
+    case FloatType | DoubleType => Seq(mergeMaxVal,  mergeIsNan)
+    case _ => Seq(mergeMaxVal)
+  }
+
+  override lazy val postMerge: Seq[Expression] = child.dataType match {
+    case FloatType => Seq(GpuIf(mergeIsNan.attr, GpuLiteral(Float.NaN, FloatType), mergeMaxVal.attr))
+    case DoubleType => Seq(GpuIf(mergeIsNan.attr, GpuLiteral(Double.NaN, DoubleType), mergeMaxVal.attr))
+    case _ => postMergeAttr
+  }
 
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
-  override lazy val evaluateExpression: Expression = cudfMax
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfMax :: Nil
+  private lazy val cudfIf = AttributeReference("if", BooleanType)()
+  override lazy val evaluateExpression: Expression = child.dataType match {
+    case FloatType | DoubleType => cudfIf
+    case _ => cudfMax
+  }
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = child.dataType match {
+    case FloatType | DoubleType => cudfIf :: Nil
+    case _ => cudfMax :: Nil
+  }
 
   // Copied from Max
   override def nullable: Boolean = true
@@ -548,6 +588,17 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.max().onColumn(inputs.head._2)
+  /*
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = child.dataType match {
+    case DoubleType => 
+      {
+        lazy val isNan = GpuWindowExpression(GpuIsNan(child), spec)
+        val max = GpuWindowExpression(GpuMax(child), spec)
+        GpuIf(GpuMax(isNan), GpuLiteral(Double.NaN), max)
+      }
+    case _ => GpuWindowExpression(GpuMax(child), spec)
+  }
+  */
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
