@@ -135,7 +135,6 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
   override def doExecuteColumnar(): RDD[ColumnarBatch]  = {
     val opTime = gpuLongMetric(OP_TIME)
     val childRdd = child.executeColumnar()
-
     childRdd.mapPartitions {
       iter => new Iterator[ColumnarBatch] {
         println(iter.hashCode())
@@ -146,10 +145,12 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
 
         override def next(): ColumnarBatch = {
           val batch = iter.next()
+
+          // If remainingOffset >= numRows, then we should skip this batch, and return an empty one
           if (remainingOffset >= batch.numRows()) {
             remainingOffset -= batch.numRows()
             batch.safeClose()
-            return iter.next()
+            return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](batch.numCols()).toArray, 0)
           }
           // remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
           withResource(new NvtxWithMetrics("limit and offset", NvtxColor.ORANGE, opTime)) { _ =>
@@ -175,7 +176,7 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
           var table: Table = null
 
           val numCols = batch.numCols()
-          val resultCVs = new ArrayBuffer[GpuColumnVector](numCols)
+          val result = new ArrayBuffer[GpuColumnVector](numCols)
 
           val end = Math.min(offset + limit, batch.numRows())
           try {
@@ -184,10 +185,10 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
               (0 until numCols).zip(output).foreach{ case (i, attr) =>
                 val subVector = table.getColumn(i).subVector(offset, end)
                 assert(subVector != null)
-                resultCVs.append(GpuColumnVector.from(subVector, attr.dataType))
+                result.append(GpuColumnVector.from(subVector, attr.dataType))
               }
             }
-            new ColumnarBatch(resultCVs.toArray, end - offset)
+            new ColumnarBatch(result.toArray, end - offset)
           } catch {
             case e: Throwable => exception = e
               throw e
@@ -196,7 +197,7 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
               table.safeClose(exception)
             }
             if (exception != null) {
-              resultCVs.foreach(gpuVector => gpuVector.safeClose(exception))
+              result.foreach(gpuVector => gpuVector.safeClose(exception))
             }
             batch.safeClose(exception)
           }
