@@ -189,7 +189,7 @@ object GpuOrcScan extends Arm {
   /**
    * Cast the column to the target type for ORC schema evolution.
    * It is designed to support all the cases that `canCast` returns true.
-   * And the column type and target type should be primitive.
+   * Both of the column type and target type should be primitive.
    *
    * The returned column may be either the input or a new one, users should check and
    * close it when needed.
@@ -1893,7 +1893,6 @@ class MultiFileOrcPartitionReader(
    * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
    * @param footerOffset   Where begin to write the footer
    * @param stripes        The data block meta info
-   * @param clippedSchema  The clipped schema info
    * @param batchContext   The batch building context
    * @return the buffer and the buffer size
    */
