@@ -174,6 +174,10 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
             conf=all_confs)
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320():
+    orc_compress_options.append('zstd')
+
 # The following need extra jars 'lzo'
 # https://github.com/NVIDIA/spark-rapids/issues/143
 
