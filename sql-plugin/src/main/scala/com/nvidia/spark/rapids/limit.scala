@@ -137,7 +137,6 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
     val childRdd = child.executeColumnar()
     childRdd.mapPartitions {
       iter => new Iterator[ColumnarBatch] {
-        println(iter.hashCode())
         private var remainingLimit = limit - offset
         private var remainingOffset = offset
 
