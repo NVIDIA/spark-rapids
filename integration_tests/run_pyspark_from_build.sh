@@ -57,7 +57,10 @@ else
     else
         AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
         PARQUET_HADOOP_TESTS=$(echo "$SCRIPTPATH"/target/dependency/parquet-hadoop*.jar)
-        export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
+        REGEX="parquet-hadoop-1\.([0-9]{2})"
+        [[ $PARQUET_HADOOP_TESTS =~ $REGEX  ]]
+        # Make sure we have Parquet version >= 1.12 in the dependency
+        export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([ "${BASH_REMATCH[1]}" -ge "12" ] && echo true || echo false)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
