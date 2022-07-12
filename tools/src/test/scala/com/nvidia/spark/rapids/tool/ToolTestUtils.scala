@@ -103,8 +103,8 @@ object ToolTestUtils extends Logging {
     val diffCount = df.except(expectedDf).union(expectedDf.except(df)).count
     if (diffCount != 0) {
       logWarning("Diff expected vs actual:")
-      expectedDf.show(false)
-      df.show(false)
+      expectedDf.show(1000, false)
+      df.show(1000, false)
     }
     assert(diffCount == 0)
   }

@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -54,5 +54,14 @@ object RapidsErrorUtils {
       hint: String = "",
       errorContext: String = ""): ArithmeticException = {
     QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
+  }
+
+  def cannotChangeDecimalPrecisionError(      
+      value: Decimal,
+      toType: DecimalType,
+      context: String = ""): ArithmeticException = {
+    QueryExecutionErrors.cannotChangeDecimalPrecisionError(
+      value, toType.precision, toType.scale, context
+    )
   }
 }
