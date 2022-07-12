@@ -44,18 +44,17 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   logInfo(s"Threadpool size is $nThreads")
   private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
     .asInstanceOf[ThreadPoolExecutor]
+
   private var progressBar: Option[ConsoleProgressBar] = None
+
   private class QualifyThread(path: EventLogInfo) extends Runnable {
     def run: Unit = qualifyApp(path, hadoopConf)
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
-    progressBar =
-      if (enablePB && allPaths.length > 0) { // total count to start the PB cannot be 0
-        Some(new ConsoleProgressBar("Qual Tool", allPaths.length))
-      } else {
-        None
-      }
+    if (enablePB && allPaths.nonEmpty) { // total count to start the PB cannot be 0
+      progressBar = Some(new ConsoleProgressBar("Qual Tool", allPaths.length))
+    }
     allPaths.foreach { path =>
       try {
         threadPool.submit(new QualifyThread(path))

@@ -62,7 +62,7 @@ class ConsoleProgressBar(
 
   private def show(now: Long): Unit = {
     val percent = currentCount * 100 / totalCount
-    val header = s"$prefix Progress ${percent}% ["
+    val header = s"$prefix Progress $percent% ["
     val tailer = s"] (${successCounter.intValue()} succeeded + " +
       s"${failureCounter.intValue()} failed) / $totalCount"
     val w = TerminalWidth - header.length - tailer.length
@@ -93,7 +93,7 @@ class ConsoleProgressBar(
     currentCount = successCounter.intValue() + failureCounter.intValue()
     // only refresh if it's changed OR after updateTimeOut seconds
     if (lastUpdatedCount == currentCount && now - lastUpdateTime < updateTimeOut) {
-      return;
+      return
     }
     show(now)
   }
@@ -110,7 +110,7 @@ class ConsoleProgressBar(
    * Clear the progress bar if showed.
    */
   private def clear(): Unit = {
-    if (!lastProgressBar.isEmpty && inlinePBEnabled) {
+    if (inlinePBEnabled && lastProgressBar.nonEmpty) {
       System.out.printf(CR + " " * TerminalWidth + CR)
     }
     lastProgressBar = ""
