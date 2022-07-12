@@ -66,15 +66,15 @@ object SchemaUtils extends Arm {
 
   /**
    * Execute the schema evolution, which includes
-   *  1) Casting decimal columns with precision that can be stored in an int to cuDF DECIMAL32,
+   *  1) Casting decimal columns with precision that can be stored in an int to cuDF DECIMAL32.
    *     The reason to do this is the plugin requires decimals being stored as DECIMAL32 if the
    *     precision is small enough to fit in an int. And getting this wrong may lead to a number
    *     of problems later on. For example, the cuDF ORC reader always read decimals as DECIMAL64.
-   *  2) Add columns filled with nulls for names are in the "readSchema"
+   *  2) Adding columns filled with nulls for names are in the "readSchema"
    *     but not in the "tableSchema",
    *  3) Re-ordering columns according to the `readSchema`,
    *  4) Removing columns not being required by the `readSchema`,
-   *  5) Running type casting when the target type is not equal to the column type.
+   *  5) Running type casting when the required type is not equal to the column type.
    *     "castFunc" is required in this case, otherwise it will blow up.
    *
    * (This is designed for the GPU Parquet/ORC readers to support the schema evolution. Will
@@ -84,7 +84,7 @@ object SchemaUtils extends Arm {
    * @param tableSchema The schema of the table
    * @param readSchema  The read schema from Spark
    * @param isCaseSensitive Whether the name check should be case sensitive or not
-   * @param castFunc optional, function to cast the input column to the target type
+   * @param castFunc optional, function to cast the input column to the required type
    * @return a new table mapping to the "readSchema". Users should close it if no longer needed.
    */
   private[rapids] def evolveSchemaIfNeededAndClose(
