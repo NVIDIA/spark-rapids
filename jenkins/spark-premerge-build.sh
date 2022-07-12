@@ -30,8 +30,6 @@ fi
 
 mvn_verify() {
     echo "Run mvn verify..."
-    # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
-    export LC_ALL="en_US.UTF-8"
     # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
@@ -49,6 +47,10 @@ mvn_verify() {
 
     # don't skip tests
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools'
+    # enable UTF-8 for regular expression tests
+    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite
+    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.RegularExpressionSuite
+    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=321 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=322 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
@@ -116,8 +118,6 @@ rapids_shuffle_smoke_test() {
 
 ci_2() {
     echo "Run premerge ci 2 testings..."
-    # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
-    export LC_ALL="en_US.UTF-8"
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
@@ -129,6 +129,7 @@ ci_2() {
       ./integration_tests/run_pyspark_from_build.sh
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale without UTF-8 so regular expressions are disabled to test fallback
+    LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
     LC_ALL="en_US.iso88591" TEST="regexp_no_unicode_test.py" ./integration_tests/run_pyspark_from_build.sh
 }
 

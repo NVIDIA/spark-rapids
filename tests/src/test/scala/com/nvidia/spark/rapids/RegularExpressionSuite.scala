@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
+
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.SparkConf
@@ -61,31 +63,37 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("String regexp_replace regex 1",
     nullableStringsFromCsv, conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_replace(strings,'.*','D')")
   }
 
   testSparkResultsAreEqual("String regexp_replace regex 2",
     nullableStringsFromCsv, conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_replace(strings,'[a-z]+','D')")
   }
 
   testSparkResultsAreEqual("String regexp_replace regex 3",
     nullableStringsFromCsv,  conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_replace(strings,'foo$','D')")
   }
 
   testSparkResultsAreEqual("String regexp_replace regex 4",
     nullableStringsFromCsv, conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_replace(strings,'^foo','D')")
   }
 
   testSparkResultsAreEqual("String regexp_replace regex 5",
     nullableStringsFromCsv, conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_replace(strings,'(foo)','D')")
   }
 
   testSparkResultsAreEqual("String regexp_replace regex 6",
     nullableStringsFromCsv, conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
   }
 
@@ -107,6 +115,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
   // the regexp_extract call on CPU
   testSparkResultsAreEqual("String regexp_extract literal input",
     extractStrings, conf = conf) {
+    assume(isUnicodeEnabled())
     frame => frame.selectExpr("regexp_extract('abc123def', '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
   }
 
@@ -119,6 +128,10 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
       ("abc\r\n12\r3\ndef"),
       ("123abc456")
     ).toDF("strings")
+  }
+
+  private def isUnicodeEnabled(): Boolean = {
+    Charset.defaultCharset().name() == "UTF-8"
   }
 
 }
