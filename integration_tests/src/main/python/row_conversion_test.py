@@ -88,3 +88,49 @@ def test_host_columnar_transition(spark_tmp_path, data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter("a IS NOT NULL"),
         conf={ 'spark.rapids.sql.exec.FileSourceScanExec' : 'false'})
+
+# This is one of the most basic tests where we verify that we can
+# move data onto and off of the GPU when the schema is variable width (no nulls).
+def test_row_conversions_var_width_basic():
+    def do_it(spark):
+        schema = StructType([StructField("col_00_int", IntegerType(), nullable=False),
+                             StructField("col_01_str", StringType(), nullable=False),
+                             StructField("col_02_int", IntegerType(), nullable=False),
+                             StructField("col_03_str", StringType(), nullable=False)])
+        df = spark.createDataFrame([(1, "string_val_00", 2, "string_val_01"),
+                                    (3, "string_val_10", 4, "string_val_11")],
+                                   schema=schema).selectExpr("*", "col_00_int as 1st_column")
+        debug_df(df)
+        return df
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : do_it(spark))
+
+# This is one of the tests where we verify that we can move data onto and off of the GPU when the
+# schema is variable width. Note that the supported variable width types (i.e., string)
+# are scattered so that the test covers packing.
+def test_row_conversions_var_width():
+    gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
+            ["e", float_gen], ["f", double_gen], ["g", boolean_gen], ["h", string_gen],
+            ["i", timestamp_gen], ["j", date_gen], ["k", string_gen], ["l", decimal_gen_64bit],
+            ["m", decimal_gen_32bit], ["n", string_gen]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
+
+def test_row_conversions_var_width_wide():
+    gens = [["a{}".format(i), ByteGen(nullable=True)] for i in range(10)] + \
+           [["b{}".format(i), ShortGen(nullable=True)] for i in range(10)] + \
+           [["c{}".format(i), IntegerGen(nullable=True)] for i in range(10)] + \
+           [["d{}".format(i), LongGen(nullable=True)] for i in range(10)] + \
+           [["e{}".format(i), FloatGen(nullable=True)] for i in range(10)] + \
+           [["f{}".format(i), DoubleGen(nullable=True)] for i in range(10)] + \
+           [["g{}".format(i), StringGen(nullable=True)] for i in range(5)] + \
+           [["h{}".format(i), BooleanGen(nullable=True)] for i in range(10)] + \
+           [["i{}".format(i), StringGen(nullable=True)] for i in range(5)] + \
+           [["j{}".format(i), TimestampGen(nullable=True)] for i in range(10)] + \
+           [["k{}".format(i), DateGen(nullable=True)] for i in range(10)] + \
+           [["l{}".format(i), DecimalGen(precision=12, scale=2, nullable=True)] for i in range(10)] + \
+           [["m{}".format(i), DecimalGen(precision=7, scale=3, nullable=True)] for i in range(10)]
+    def do_it(spark):
+        df=gen_df(spark, gens, length=1).selectExpr("*", "a0 as a_again")
+        debug_df(df)
+        return df
+    assert_gpu_and_cpu_are_equal_collect(do_it)

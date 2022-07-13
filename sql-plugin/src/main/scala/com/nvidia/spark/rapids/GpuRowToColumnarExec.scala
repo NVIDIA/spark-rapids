@@ -725,14 +725,14 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
     // Create helper to calculate the offsets and use it to generate the code.
     val jcudfRowVisitor = JCudfUtil.getJCudfRowVisitor(schema)
 
-    val cudfDataOffsetInit = s"$cudfDataOffsetTmp = ${jcudfRowVisitor.getVariableDataOffset};"
+    val cudfDataOffsetInit = s"$cudfDataOffsetTmp = ${jcudfRowVisitor.getVariableDataOffset};\n"
 
     val copyData = (0 until schema.length).map { colIndex =>
       // advance the cursor to the next column
       jcudfRowVisitor.getNextCol
       val cudfColOff = jcudfRowVisitor.getColOffset()
       val colLength = jcudfRowVisitor.getColLength()
-      val ret = jcudfRowVisitor.getColLength() match {
+      val ret = colLength match {
         // strings return -15
         case -15 => s"$cudfDataOffsetTmp += copyUTF8StringInto($colIndex, $rowBaseObj,  $rowBaseOffset, $sparkValidityOffset, startAddress, $cudfColOff, $cudfDataOffsetTmp);"
         case 1 => s"Platform.putByte(null, startAddress + $cudfColOff, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
@@ -838,25 +838,25 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |      int ordinal, Object src, long baseOffset, int sparkValidityOffset,
          |      long startAddress, int cudfColOffset, int dataDstOffset) {
          |    final long unsafeCudfColOffset = startAddress + cudfColOffset;
-         |    // check that the field is not null
-         |    if (!org.apache.spark.unsafe.bitset.BitSetMethods.isSet(src, baseOffset, ordinal)) {
+         |    // check that the field is null
+         |    if (org.apache.spark.unsafe.bitset.BitSetMethods.isSet(src, baseOffset, ordinal)) {
          |      // The string is null. This assumes that we keep the offset position.
          |      // The size should be 0, the address is 0 since no data is stored.
          |      Platform.putInt(null, unsafeCudfColOffset, 0);
          |      Platform.putInt(null, unsafeCudfColOffset + 4, 0);
          |      return 0;
          |    }
-         |    // calculate the spark offset
-         |    baseOffset = baseOffset + sparkValidityOffset + (ordinal * 8);
+         |    // calculate the spark field offset
+         |    long sparkFieldOffset = baseOffset + sparkValidityOffset + (ordinal * 8);
          |    // get the offset and the size from Spark UnsafeFormat
-         |    final long strOffsetAndSize = Platform.getLong(src, baseOffset);
+         |    final long strOffsetAndSize = Platform.getLong(src, sparkFieldOffset);
          |    final int strOffset = (int) (strOffsetAndSize >> 32);
          |    final int strSize = (int) strOffsetAndSize;
          |    // set the offset and length in the fixed width section.
          |    Platform.putInt(null, unsafeCudfColOffset, dataDstOffset);
          |    Platform.putInt(null, unsafeCudfColOffset + 4, strSize);
          |    // copy the data
-         |    Platform.copyMemory(src, strOffset, null, startAddress + dataDstOffset, strSize);
+         |    Platform.copyMemory(src, baseOffset + strOffset, null, startAddress + dataDstOffset, strSize);
          |    return strSize;
          |  }
          |
