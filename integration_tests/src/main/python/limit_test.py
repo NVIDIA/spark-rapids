@@ -30,7 +30,7 @@ def test_simple_limit(data_gen):
 
 @allow_non_gpu('CollectLimitExec', 'GlobalLimitExec', 'ShuffleExchangeExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
-def test_non_zero_offset_on_gpu():
+def test_non_zero_offset():
     conf = {
         'spark.rapids.sql.exec.CollectLimitExec': 'true',
         'spark.rapids.sql.exec.GlobalLimitExec': 'true'
