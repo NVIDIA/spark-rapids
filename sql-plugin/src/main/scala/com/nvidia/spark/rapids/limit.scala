@@ -129,29 +129,38 @@ case class GpuLocalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitE
  * Take the first `limit` elements of the child's single output partition.
  */
 case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends GpuBaseLimitExec {
+  // This assertion is from CPU code of spark.
   assert(limit >= 0 || (limit == -1 && offset > 0))
+
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
 
   override def doExecuteColumnar(): RDD[ColumnarBatch]  = {
     val opTime = gpuLongMetric(OP_TIME)
     val childRdd = child.executeColumnar()
-    childRdd.mapPartitions {
-      iter => new Iterator[ColumnarBatch] {
+    childRdd.mapPartitions { iter =>
+      new Iterator[ColumnarBatch] {
         private var remainingLimit = limit - offset
         private var remainingOffset = offset
 
         override def hasNext: Boolean = remainingLimit > 0 && iter.hasNext
 
         override def next(): ColumnarBatch = {
-          val batch = iter.next()
+          var batch = iter.next()
+          val numCols = batch.numCols()
 
-          // If remainingOffset >= numRows, then we should skip this batch, and return an empty one
-          if (remainingOffset >= batch.numRows()) {
+          // In each partition, we need to skip `offset` rows
+          while (batch != null && remainingOffset >= batch.numRows()) {
             remainingOffset -= batch.numRows()
             batch.safeClose()
-            return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](batch.numCols()).toArray, 0)
+            batch = if (hasNext) { iter.next() } else { null }
           }
-          // remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
+          // If the last batch is null, then we have offset >= numRows in this partition.
+          // In such case, we should return an empty batch
+          if (batch == null) {
+            return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](numCols).toArray, 0)
+          }
+
+          // Here remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
           withResource(new NvtxWithMetrics("limit and offset", NvtxColor.ORANGE, opTime)) { _ =>
             if (remainingOffset > 0) {
               val result = sliceBatchWithOffset(batch, remainingOffset, remainingLimit)
@@ -205,6 +214,7 @@ case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends
     }
   }
 }
+
 
 class GpuCollectLimitMeta(
                       collectLimit: CollectLimitExec,
