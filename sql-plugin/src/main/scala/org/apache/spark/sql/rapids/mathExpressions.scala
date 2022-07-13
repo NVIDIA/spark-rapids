@@ -47,13 +47,13 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
 case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGREES") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val tmp = withResource(Scalar.fromDouble(180d)) { multiplier =>
+    // Spark's implementation of toDegrees is directly using toDegrees(angrad) in Java,
+    // In jdk8, toDegrees implemention is angrad * 180.0 / PI, while since jdk9, 
+    // toDegrees is angrad * DEGREES_TO_RADIANS, where DEGREES_TO_RADIANS is 180.0/PI.
+    // So when jdk8 or earlier is used, toDegrees will produce different result on GPU,
+    // where it will not overflow when input is very large.
+    withResource(Scalar.fromDouble(180d / Math.PI)) { multiplier =>
       input.getBase.mul(multiplier)
-    }
-    withResource(tmp) { _ =>
-      withResource(Scalar.fromDouble(Math.PI)) { pi =>
-        tmp.div(pi)
-      }
     }
   }
 }

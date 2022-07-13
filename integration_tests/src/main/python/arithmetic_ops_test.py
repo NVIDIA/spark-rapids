@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from logging import exception
+from math import fabs
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
@@ -23,6 +24,7 @@ from pyspark.sql.types import IntegralType
 from spark_session import *
 import pyspark.sql.functions as f
 from datetime import timedelta
+from subprocess import check_output, STDOUT
 
 # No overflow gens here because we just focus on verifying the fallback to CPU when
 # enabling ANSI mode. But overflows will fail the tests because CPU runs raise
@@ -611,7 +613,17 @@ def test_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
+def is_before_jdk_9():
+    jdk_version = check_output(['java', '-version'], stderr=STDOUT)
+    jdk_version = jdk_version.split(b'\n')[0].split(b' ')[2].decode('utf-8')
+    if jdk_version.startswith("\""):
+        jdk_version = jdk_version[1:-1]
+    if jdk_version.startswith('1.'):
+        return True
+    return False
+
 @approximate_float
+@pytest.mark.skipif(is_before_jdk_9(), reason="requires jdk 9 or higher")
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_degrees(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
