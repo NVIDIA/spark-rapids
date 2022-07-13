@@ -27,7 +27,7 @@ object GlobalLimitShims {
    */
   def visit(plan: SparkPlanMeta[GlobalLimitExec]): Option[BigInt] = {
     // offset is introduce in spark-3.4.0
-    val offset = plan.wrapped.limit
+    val offset = plan.wrapped.offset
     val limit = plan.wrapped.limit
     val sliced = if (limit > 0) {
       Some(limit - offset)
