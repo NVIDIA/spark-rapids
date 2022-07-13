@@ -47,8 +47,13 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
 case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGREES") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(Scalar.fromDouble(180d / Math.PI)) { multiplier =>
+    val tmp = withResource(Scalar.fromDouble(180d)) { multiplier =>
       input.getBase.mul(multiplier)
+    }
+    withResource(tmp) { _ =>
+      withResource(Scalar.fromDouble(Math.PI)) { pi =>
+        tmp.div(pi)
+      }
     }
   }
 }
