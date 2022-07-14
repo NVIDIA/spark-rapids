@@ -29,15 +29,15 @@ object GlobalLimitShims {
     // offset is introduce in spark-3.4.0
     val offset = plan.wrapped.offset
     val limit = plan.wrapped.limit
-    val sliced = if (limit > 0) {
-      Some(limit - offset)
+    val sliced = if (limit >= 0) {
+      Some(BigInt(limit - offset).max(0))
     } else {
       // limit can be -1, meaning no limit
       None
     }
     RowCountPlanVisitor.visit(plan.childPlans.head)
       .map { rowNum =>
-        val remaining = Math.max(rowNum - offset, 0)
+        val remaining = (rowNum - offset).max(0)
         sliced.map(_.min(remaining)).getOrElse(remaining)
       }
       .orElse(sliced)
