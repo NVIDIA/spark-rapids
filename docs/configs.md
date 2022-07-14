@@ -286,6 +286,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|`random`, `rand`|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
 <a name="sql.expression.Rank"></a>spark.rapids.sql.expression.Rank|`rank`|Window function that returns the rank value within the aggregation window|true|None|
 <a name="sql.expression.RegExpExtract"></a>spark.rapids.sql.expression.RegExpExtract|`regexp_extract`|Extract a specific group identified by a regular expression|true|None|
+<a name="sql.expression.RegExpExtractAll"></a>spark.rapids.sql.expression.RegExpExtractAll|`regexp_extract_all`|Extract all strings matching a regular expression corresponding to the regex group index|true|None|
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|`regexp_replace`|String replace using a regular expression pattern|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|`%`, `mod`|Remainder or modulo|true|None|
 <a name="sql.expression.ReplicateRows"></a>spark.rapids.sql.expression.ReplicateRows| |Given an input row replicates the row N times|true|None|
