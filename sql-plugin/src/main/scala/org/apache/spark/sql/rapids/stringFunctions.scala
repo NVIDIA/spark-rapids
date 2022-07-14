@@ -840,6 +840,13 @@ object GpuRegExpUtils {
     }
   }
 
+  def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
+    if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
+      meta.willNotWorkOnGpu(s"Estimated memory needed for regular expression exceeds the maximum." +
+        s"Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY} to change it.")
+    }
+  }
+
   /**
    * Recursively check if pattern contains only zero-match repetitions 
    * ?, *, {0,}, or {0,n} or any combination of them. 
@@ -881,7 +888,10 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString, None)._1)
+            val transpiledAST = 
+                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)._1 
+            GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+            pattern = Some(transpiledAST.toRegexString)
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -1075,8 +1085,10 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
-            .transpile(javaRegexpPattern, None)._1)
+          val transpiledAST = 
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)._1 
+          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+          pattern = Some(transpiledAST.toRegexString)
           numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
         } catch {
           case e: RegexUnsupportedException =>

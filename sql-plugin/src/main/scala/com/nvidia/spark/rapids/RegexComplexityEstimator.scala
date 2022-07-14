@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.types.DataTypes
+
 object RegexComplexityEstimator {
   private def countStates(regex: RegexAST): Int = {
     regex match {
@@ -53,11 +55,20 @@ object RegexComplexityEstimator {
     }
   }
 
-  private def validate(regex: RegexAST, numRows: Int, meta: ExprMeta[_]) = {
-    val numStates  = countStates(regex)
-    if (numStates * numRows > meta.conf.maxRegExpStateMemory) {
-      meta.willNotWorkOnGpu(s"Estimated memory needed for pattern exceeds the maximum." +
-        s"Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY} to change it.")
+  private def estimateGpuMemory(numStates: Int, desiredBatchSizeBytes: Long): Int = {
+    val numRows = GpuBatchUtils.estimateRowCount(
+      desiredBatchSizeBytes, DataTypes.StringType.defaultSize, 1)
+    val patternMemory = numStates * numRows * 2
+    val inputMemory = GpuBatchUtils.estimateGpuMemory(DataTypes.StringType, true, numRows)
+
+    (patternMemory + inputMemory).min(Integer.MAX_VALUE).toInt
+  }
+
+  def isValid(conf: RapidsConf, regex: RegexAST): Boolean = {
+    val numStates = countStates(regex) 
+    if (estimateGpuMemory(numStates, conf.gpuTargetBatchSizeBytes) > conf.maxRegExpStateMemory) {
+      false
     }
+    true
   }
 }

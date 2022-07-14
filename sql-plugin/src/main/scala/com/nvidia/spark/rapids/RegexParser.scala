@@ -173,7 +173,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
-    val supportedMetaCharacters = "\\^-]+"
+    val supportedMetaCharacters = "\\^-[]+"
 
     def getEscapedComponent(): RegexCharacterClassComponent = {
       peek() match {
@@ -208,7 +208,7 @@ class RegexParser(pattern: String) {
                 RegexEscaped(ch) 
               } else {
                 throw new RegexUnsupportedException(
-                  s"Unsupported escaped character in character class", Some(pos-1))
+                  s"Unsupported escaped character '$ch' in character class", Some(pos-1))
               }
           }
         case None =>
@@ -683,6 +683,22 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * @return Regular expression and optional replacement in cuDF format
    */
   def transpile(pattern: String, repl: Option[String]): (String, Option[String]) = {
+    val (cudfRegex, replacement) = getTranspiledAST(pattern, repl)
+
+    // write out to regex string, performing minor transformations
+    // such as adding additional escaping
+    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
+  }
+  
+  /**
+   * Parse Java regular expression and translate into cuDF regular expression in AST form.
+   *
+   * @param pattern Regular expression that is valid in Java's engine
+   * @param repl Optional replacement pattern
+   * @return Regular expression AST and optional replacement in cuDF format
+   */
+  def getTranspiledAST(
+    pattern: String, repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // if we have a replacement, parse the replacement string using the regex parser to account
@@ -691,11 +707,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     // validate that the regex is supported by cuDF
     val cudfRegex = transpile(regex, replacement, None)
-    // write out to regex string, performing minor transformations
-    // such as adding additional escaping
-    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
-  }
 
+    (cudfRegex, replacement)
+  }
+  
   def transpileToSplittableString(e: RegexAST): Option[String] = {
     e match {
       case RegexEscaped(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
