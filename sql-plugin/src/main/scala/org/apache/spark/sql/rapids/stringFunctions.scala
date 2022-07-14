@@ -1592,7 +1592,9 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
             pattern = simplified
           case None =>
             try {
-              pattern = transpiler.transpile(utf8Str.toString, None)._1
+              val transpiledAST = transpiler.getTranspiledAST(utf8Str.toString, None)._1
+              GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+              pattern = transpiledAST.toRegexString
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>
