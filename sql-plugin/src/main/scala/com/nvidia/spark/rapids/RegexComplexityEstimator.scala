@@ -55,13 +55,13 @@ object RegexComplexityEstimator {
     }
   }
 
-  private def estimateGpuMemory(numStates: Int, desiredBatchSizeBytes: Long): Int = {
+  private def estimateGpuMemory(numStates: Int, desiredBatchSizeBytes: Long): Long = {
     val numRows = GpuBatchUtils.estimateRowCount(
       desiredBatchSizeBytes, DataTypes.StringType.defaultSize, 1)
     val patternMemory = numStates * numRows * 2
     val inputMemory = GpuBatchUtils.estimateGpuMemory(DataTypes.StringType, true, numRows)
 
-    (patternMemory + inputMemory).min(Integer.MAX_VALUE).toInt
+    patternMemory + inputMemory
   }
 
   def isValid(conf: RapidsConf, regex: RegexAST): Boolean = {
