@@ -568,6 +568,7 @@ The following Apache Spark regular expression functions and expressions are supp
 - `RLIKE`
 - `regexp`
 - `regexp_extract`
+- `regexp_extract_all`
 - `regexp_like`
 - `regexp_replace`
 - `string_split`
