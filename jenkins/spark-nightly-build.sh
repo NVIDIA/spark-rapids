@@ -44,6 +44,8 @@ if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]]; then
     DIST_PROFILE_OPT="$DIST_PROFILE_OPT,312db,321db"
 fi
 
+REGEXP_TEST_SUITES="com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite"
+
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
 # discrepancies between the build machines regardless of how the local repo was populated.
@@ -100,7 +102,7 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
         -Dpytest.TEST_TAGS='regexp' \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}" \
-        -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
+        -DwildcardSuites=$REGEXP_TEST_SUITES
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
         $MVN -B deploy -pl '!tools,!dist' $MVN_URM_MIRROR \
@@ -122,7 +124,7 @@ env LC_ALL="en_US.UTF-8" $MVN verify -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.l
     -Dpytest.TEST_TAGS='regexp' \
     -Dcuda.version=$CUDA_CLASSIFIER \
     -Dbuildver=$SPARK_BASE_SHIM_VERSION \
-    -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
+    -DwildcardSuites=$REGEXP_TEST_SUITES
 
 distWithReducedPom "install"
 

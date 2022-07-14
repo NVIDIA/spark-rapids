@@ -128,8 +128,6 @@ ci_2() {
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
-    # export 'LC_ALL' to set locale without UTF-8 so regular expressions are disabled to test fallback
-    LC_ALL="en_US.iso88591" TEST="regexp_no_unicode_test.py" ./integration_tests/run_pyspark_from_build.sh
 }
 
 
