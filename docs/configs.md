@@ -269,6 +269,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
 <a name="sql.expression.NamedLambdaVariable"></a>spark.rapids.sql.expression.NamedLambdaVariable| |A parameter to a higher order SQL function|true|None|
 <a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|`!`, `not`|Boolean not operator|true|None|
+<a name="sql.expression.NthValue"></a>spark.rapids.sql.expression.NthValue|`nth_value`|nth aggregate operator|true|None|
 <a name="sql.expression.OctetLength"></a>spark.rapids.sql.expression.OctetLength|`octet_length`|The byte length of string data|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
 <a name="sql.expression.PercentRank"></a>spark.rapids.sql.expression.PercentRank|`percent_rank`|Window function that returns the percent rank value within the aggregation window|true|None|

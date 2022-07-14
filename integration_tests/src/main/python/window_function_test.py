@@ -275,7 +275,7 @@ def test_window_aggs_for_ranges_numeric_long_overflow(data_gen):
         '      range between 9223372036854775807 preceding and 9223372036854775807 following) as sum_c_asc, '
         'from window_agg_table')
 
-# In a distributed setup the order of the partitions returend might be different, so we must ignore the order
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
@@ -1066,3 +1066,24 @@ def test_unbounded_to_unbounded_window():
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.range(1024).selectExpr(
         'SUM(id) OVER ()',
         'COUNT(1) OVER ()'))
+
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+@pytest.mark.parametrize('data_gen', all_basic_gens_no_null + decimal_gens + _nested_gens, ids=idfn)
+def test_window_first_last(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        # Coalesce is to make sure that first and last, which are non-deterministic become deterministic
+        lambda spark: three_col_df(spark, data_gen, string_gen, int_gen, num_slices=1).coalesce(1),
+        "window_agg_table",
+        'SELECT '
+            'a, b, c, '
+            'first(a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+            'first(a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+            'first(a) OVER (PARTITION BY b ORDER BY c ROWS  BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+            'first(a) OVER (PARTITION BY b ORDER BY c ROWS  BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+            'last (a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+            'last (a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+            'last (a) OVER (PARTITION BY b ORDER BY c ROWS  BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+            'last (a) OVER (PARTITION BY b ORDER BY c ROWS  BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+            'first(a, true) OVER (PARTITION BY b ORDER BY c), '
+            'last (a, true) OVER (PARTITION BY b ORDER BY c) '
+        ' FROM window_agg_table')

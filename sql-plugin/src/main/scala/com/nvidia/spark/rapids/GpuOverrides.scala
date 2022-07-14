@@ -2344,18 +2344,36 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuSum(childExprs.head, a.dataType)
       }),
-    expr[First](
-      "first aggregate operator", {
-        ExprChecks.aggNotWindow(
+    expr[NthValue](
+      "nth aggregate operator",
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-          TypeSig.all,
-          Seq(ParamCheck("input",
-            (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-            TypeSig.all))
-        )
-      },
+          TypeSig.all),
+          ParamCheck("offset", TypeSig.INT, TypeSig.INT))
+      ),
+      (a, conf, p, r) => new AggExprMeta[NthValue](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuNthValue(childExprs.head, a.offset, a.ignoreNulls)
+
+        // nth does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
+    expr[First](
+      "first aggregate operator",
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+          TypeSig.all))
+      ),
       (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuFirst(childExprs.head, a.ignoreNulls)
@@ -2364,17 +2382,16 @@ object GpuOverrides extends Logging {
         override val needsAnsiCheck: Boolean = false
       }),
     expr[Last](
-      "last aggregate operator", {
-        ExprChecks.aggNotWindow(
+    "last aggregate operator",
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-          TypeSig.all,
-          Seq(ParamCheck("input",
-            (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-            TypeSig.all))
-        )
-      },
+          TypeSig.all))
+      ),
       (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuLast(childExprs.head, a.ignoreNulls)
