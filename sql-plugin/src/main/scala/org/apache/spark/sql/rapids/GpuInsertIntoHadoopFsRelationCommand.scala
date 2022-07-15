@@ -164,7 +164,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           partitionColumns = partitionColumns,
           bucketSpec = bucketSpec,
           statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
-          options = options)
+          options = options,
+          useStableSort = useStableSort)
 
 
       // update metastore partition metadata
