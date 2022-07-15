@@ -949,6 +949,8 @@ array_gens_sample = single_level_array_gens + nested_array_gens_sample
 # all of the basic types in a single struct
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
 
+array_struct_gen =  StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens)])
+
 all_basic_plus_array_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens + single_level_array_gens)])
 
 # Some struct gens, but not all because of nesting

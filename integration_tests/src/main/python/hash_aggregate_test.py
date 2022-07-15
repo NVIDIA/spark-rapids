@@ -570,13 +570,22 @@ _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_list_op]
 
 _repeat_agg_column_for_collect_set_op = [
-    RepeatSeqGen(all_basic_plus_array_struct_gen, length=15),
+    RepeatSeqGen(all_basic_struct_gen, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', all_basic_plus_array_struct_gen], ['c1', int_gen]]), length=15)]
+        ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15)]
+
+_repeat_agg_column_for_collect_set_op_nested = [
+    RepeatSeqGen(array_struct_gen, length=15),
+    RepeatSeqGen(StructGen([
+        ['c0', array_struct_gen], ['c1', int_gen]]), length=15)]
 
 _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op]
+
+_gen_data_for_collect_set_op_nested = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested]
 
 # very simple test for just a count on decimals 128 values until we can support more with them
 @ignore_order(local=True)
@@ -641,6 +650,26 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_set('b'))))
+
+
+# Note, using size() here instead of sort_array(), because sort_array() does not yet 
+# support sorting arbitrary types
+# See https://github.com/NVIDIA/spark-rapids/issues/3715
+# and https://github.com/rapidsai/cudf/issues/11222
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
+def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
+    conf = { 
+        "spark.rapids.sql.castFloatToString.enabled": "true",
+        "spark.rapids.sql.castDecimalToString.enabled": "true" 
+    }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.size(f.collect_set('b'))), conf=conf)
 
 @approximate_float
 @ignore_order(local=True)
