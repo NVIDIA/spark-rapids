@@ -62,7 +62,7 @@ object GpuPartitioningUtils {
 
       val basePathOption = parameters.get(BASE_PATH_PARAM).map(file => {
         // need to replace the base path
-        replaceFunc(new Path(file))
+        replaceFunc(sparkSession, new Path(file))
       })
 
       val basePaths = getBasePaths(sparkSession.sessionState.newHadoopConfWithOptions(parameters),
