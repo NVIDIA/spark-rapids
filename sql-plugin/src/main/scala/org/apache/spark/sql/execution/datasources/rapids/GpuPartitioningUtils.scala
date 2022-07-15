@@ -46,7 +46,7 @@ object GpuPartitioningUtils {
       leafFiles: Seq[Path],
       parameters: Map[String, String],
       userSpecifiedSchema: Option[StructType],
-      replaceFunc: Path => Path): PartitionSpec = {
+      replaceFunc: (SparkSession, Path) => Path): PartitionSpec = {
 
     val recursiveFileLookup = parameters.getOrElse("recursiveFileLookup", "false").toBoolean
 

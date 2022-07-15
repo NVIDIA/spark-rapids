@@ -16,13 +16,34 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.FileNotFoundException
+
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{FileIndex, HadoopFsRelation, InMemoryFileIndex}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.SparkSession
 
-object AlluxioUtils {
+object AlluxioUtils extends Logging {
+  val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
+  def checkAlluxioMounted(sparkSession: SparkSession, alluxio_path: String): Unit = {
+    this.synchronized {
+      if (!checkedAlluxioPath.contains(alluxio_path)) {
+        val path = new Path(alluxio_path)
+        val fs = path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+        if (!fs.exists(path)) {
+          throw new FileNotFoundException(
+            s"Alluxio path $alluxio_path does not exist, maybe forgot to mount it")
+        }
+        checkedAlluxioPath.add(alluxio_path)
+      } else {
+        logInfo(s"Alluxio path $alluxio_path already checked")
+      }
+    }
+  }
+
   def replacePathIfNeeded(
       conf: RapidsConf,
       relation: HadoopFsRelation,
@@ -59,7 +80,7 @@ object AlluxioUtils {
 
         // replacement func to check if the file path is prefixed with the string user configured
         // if yes, replace it
-        val replaceFunc = (f: Path) => {
+        val replaceFunc = (sparkSession: SparkSession, f: Path) => {
           val pathStr = f.toString
           val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
           if (matchedSet.size > 1) {
@@ -68,19 +89,23 @@ object AlluxioUtils {
                 s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
                 s"for each file path")
           } else if (matchedSet.size == 1) {
+            // check if the alluxio path exists, if not, throw out an exception to stop the job
+            checkAlluxioMounted(sparkSession, replaceMap(matchedSet.head))
             new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
           } else {
             f
           }
         }
 
+        val sparkSession = relation.sparkSession
+
         // replace all of input files
         val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
-          partitionDir.files.map(f => replaceFunc(f.getPath))
+          partitionDir.files.map(f => replaceFunc(sparkSession, f.getPath))
         })
 
         // replace all of rootPaths which are already unique
-        val rootPaths = relation.location.rootPaths.map(replaceFunc)
+        val rootPaths = relation.location.rootPaths.map(replaceFunc(sparkSession, _))
 
         val parameters: Map[String, String] = relation.options
 
