@@ -98,7 +98,7 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}"
     # enable UTF-8 and run regular expression tests
-    env LC_ALL="en_US.UTF-8" $MVN verify -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+    env LC_ALL="en_US.UTF-8" $MVN test -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dpytest.TEST_TAGS='regexp' \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dbuildver="${buildver}" \
@@ -120,7 +120,7 @@ $MVN -B clean install -pl '!tools' \
     -Dcuda.version=$CUDA_CLASSIFIER
 
 # enable UTF-8 and run regular expression tests
-env LC_ALL="en_US.UTF-8" $MVN verify -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+env LC_ALL="en_US.UTF-8" $MVN test -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
     -Dpytest.TEST_TAGS='regexp' \
     -Dcuda.version=$CUDA_CLASSIFIER \
     -Dbuildver=$SPARK_BASE_SHIM_VERSION \

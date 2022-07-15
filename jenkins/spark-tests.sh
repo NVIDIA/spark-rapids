@@ -161,6 +161,16 @@ export CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
 --conf spark.pyspark.python=/opt/conda/bin/python \
 --py-files ${RAPIDS_PLUGIN_JAR}"
 
+export REGEXP_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
+--master spark://$HOSTNAME:7077 \
+--conf spark.sql.shuffle.partitions=12 \
+--conf spark.task.maxFailures=$SPARK_TASK_MAXFAILURES \
+--conf spark.dynamicAllocation.enabled=false \
+--conf spark.driver.extraJavaOptions=\"-Duser.timezone=UTC -Dfile.encoding=UTF-8\" \
+--conf spark.executor.extraJavaOptions=\"-Duser.timezone=UTC -Dfile.encoding=UTF-8\" \
+--conf spark.sql.session.timeZone=UTC \
+--conf spark.executorEnv.LC_ALL=en_US.UTF-8"
+
 export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
@@ -202,6 +212,11 @@ run_test_not_parallel() {
         SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
         --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer" \
           ./run_pyspark_from_build.sh -k cache_test
+        ;;
+
+      regexp)
+        LC_ALL="en_US.UTF-8" SPARK_SUBMIT_FLAGS="$REGEXP_SPARK_SUBMIT_ARGS $SEQ_CONF" \
+          ./run_pyspark_from_build.sh -m regexp
         ;;
 
       iceberg)
@@ -298,6 +313,11 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
   else
     run_test_not_parallel cache_serializer
   fi
+fi
+
+# regexp
+if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "REGEXP_ONLY" ]]; then
+  run_test_not_parallel regexp
 fi
 
 # cudf_udf_test
