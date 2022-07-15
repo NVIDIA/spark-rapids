@@ -54,7 +54,8 @@ object GpuAnsi extends Arm {
   def assertMinValueOverflow(minVal: Scalar, cv: GpuColumnVector, op: String): Unit = {
     withResource(cv.getBase.equalToNullAware(minVal)) { isMinVal =>
       if (BoolUtils.isAnyValidTrue(isMinVal)) {
-        throw new ArithmeticException(s"One or more rows overflow for $op operation.")
+        throw RapidsErrorUtils.arithmeticOverflowError(
+          s"One or more rows overflow for $op operation")
       }
     }
   }
@@ -200,7 +201,9 @@ object GpuAdd extends Arm {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw new ArithmeticException("One or more rows overflow for Add operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(
+            "One or more rows overflow for Add operation."
+          )
         }
       }
     }
@@ -318,7 +321,9 @@ case class GpuSubtract(
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw new ArithmeticException("One or more rows overflow for Subtract operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(
+            "One or more rows overflow for Subtract operation."
+          )
         }
       }
     }

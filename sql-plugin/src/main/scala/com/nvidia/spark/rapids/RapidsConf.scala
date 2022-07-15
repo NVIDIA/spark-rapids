@@ -526,7 +526,7 @@ object RapidsConf {
   val IMPROVED_TIMESTAMP_OPS =
     conf("spark.rapids.sql.improvedTimeOps.enabled")
       .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          " directly to seconds without first converting to microseconds")
+          "directly to seconds without first converting to microseconds")
       .booleanConf
       .createWithDefault(false)
 
@@ -720,6 +720,17 @@ object RapidsConf {
       .createWithDefault(false)
 
   // FILE FORMATS
+  val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads on each executor to use for reading small " +
+        "files in parallel. This can not be changed at runtime after the executor has " +
+        "started. Used with COALESCING and MULTITHREADED readers, see " +
+        "spark.rapids.sql.format.parquet.reader.type, " +
+        "spark.rapids.sql.format.orc.reader.type, or " +
+        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types.")
+      .integerConf
+      .checkValue(v => v > 0, "The thread count must be greater than zero.")
+      .createWithDefault(20)
+
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
     .booleanConf
@@ -763,7 +774,7 @@ object RapidsConf {
     .createWithDefault(false)
 
   val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
-    .doc("Sets the parquet reader type. We support different types that are optimized for " +
+    .doc("Sets the Parquet reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
       "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
@@ -771,14 +782,13 @@ object RapidsConf {
       "the executors are on the same nodes or close to the nodes the data is being read on. " +
       "This reader coalesces all the files assigned to a task into a single host buffer before " +
       "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
-      "separate threads in parallel, see " +
-      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
+      s"separate threads in parallel, see $MULTITHREAD_READ_NUM_THREADS. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
       "This reader uses multiple threads to read each file in parallel and each file is sent " +
       "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
-      "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
+      s"See $MULTITHREAD_READ_NUM_THREADS and " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
@@ -807,18 +817,18 @@ object RapidsConf {
   val PARQUET_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on the executor, to use for reading small " +
-        "parquet files in parallel. This can not be changed at runtime after the executor has " +
+        "Parquet files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with COALESCING and MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.parquet.reader.type.")
+        s"$PARQUET_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
       .integerConf
-      .createWithDefault(20)
+      .createOptional
 
   val PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
       .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
         "side before the file is sent to the GPU. This affects the amount of host memory used " +
         "when reading the files in parallel. Used with MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.parquet.reader.type")
+        s"$PARQUET_READER_TYPE.")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
@@ -849,7 +859,7 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
-    .doc("Sets the orc reader type. We support different types that are optimized for " +
+    .doc("Sets the ORC reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
       "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
@@ -857,14 +867,13 @@ object RapidsConf {
       "the executors are on the same nodes or close to the nodes the data is being read on. " +
       "This reader coalesces all the files assigned to a task into a single host buffer before " +
       "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
-      "separate threads in parallel, see " +
-      "spark.rapids.sql.format.orc.multiThreadedRead.numThreads. " +
+      s"separate threads in parallel, see $MULTITHREAD_READ_NUM_THREADS. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
       "This reader uses multiple threads to read each file in parallel and each file is sent " +
       "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
-      "See spark.rapids.sql.format.orc.multiThreadedRead.numThreads and " +
+      s"See $MULTITHREAD_READ_NUM_THREADS and " +
       "spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
@@ -878,18 +887,18 @@ object RapidsConf {
   val ORC_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.orc.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on the executor, to use for reading small " +
-        "orc files in parallel. This can not be changed at runtime after the executor has " +
+        "ORC files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.orc.reader.type.")
+        s"$ORC_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
       .integerConf
-      .createWithDefault(20)
+      .createOptional
 
   val ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
     conf("spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel")
       .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
         "side before the file is sent to the GPU. This affects the amount of host memory used " +
         "when reading the files in parallel. Used with MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.orc.reader.type")
+        s"$ORC_READER_TYPE.")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
@@ -913,7 +922,7 @@ object RapidsConf {
   val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
     .doc("CSV reading is not 100% compatible when reading doubles.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimal.enabled")
     .doc("CSV reading is not 100% compatible when reading decimals.")
@@ -939,7 +948,7 @@ object RapidsConf {
   val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
     .doc("JSON reading is not 100% compatible when reading doubles.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
     .doc("JSON reading is not 100% compatible when reading decimals.")
@@ -958,7 +967,7 @@ object RapidsConf {
     .createWithDefault(false)
 
   val AVRO_READER_TYPE = conf("spark.rapids.sql.format.avro.reader.type")
-    .doc("Sets the avro reader type. We support different types that are optimized for " +
+    .doc("Sets the Avro reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
       "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
@@ -966,14 +975,13 @@ object RapidsConf {
       "the executors are on the same nodes or close to the nodes the data is being read on. " +
       "This reader coalesces all the files assigned to a task into a single host buffer before " +
       "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
-      "separate threads in parallel, see " +
-      "spark.rapids.sql.format.avro.multiThreadedRead.numThreads. " +
+      s"separate threads in parallel, see $MULTITHREAD_READ_NUM_THREADS. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
       "This reader uses multiple threads to read each file in parallel and each file is sent " +
       "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
-      "See spark.rapids.sql.format.avro.multiThreadedRead.numThreads and " +
+      s"See $MULTITHREAD_READ_NUM_THREADS and " +
       "spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
@@ -987,18 +995,18 @@ object RapidsConf {
   val AVRO_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.avro.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on one executor, to use for reading small " +
-        "avro files in parallel. This can not be changed at runtime after the executor has " +
+        "Avro files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.avro.reader.type.")
+        s"$AVRO_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
       .integerConf
-      .createWithDefault(20)
+      .createOptional
 
   val AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
     conf("spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel")
       .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
         "side before the file is sent to the GPU. This affects the amount of host memory used " +
         "when reading the files in parallel. Used with MULTITHREADED reader, see " +
-        "spark.rapids.sql.format.avro.reader.type")
+        s"$AVRO_READER_TYPE.")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
@@ -1278,7 +1286,7 @@ object RapidsConf {
       "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of " +
       "a query that did not go on the GPU")
     .stringConf
-    .createWithDefault("NONE")
+    .createWithDefault("NOT_ON_GPU")
 
   val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
     .internal()
@@ -1431,6 +1439,13 @@ object RapidsConf {
       "because of GPU sample algorithm is inconsistent with CPU.")
     .booleanConf
     .createWithDefault(value = false)
+
+  val DETECT_DELTA_LOG_QUERIES = conf("spark.rapids.sql.detectDeltaLogQueries")
+    .doc("Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When " +
+      "this option is enabled, the plugin will attempt to detect these queries and fall back " +
+      "to the CPU.")
+    .booleanConf
+    .createWithDefault(value = true)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -1706,6 +1721,23 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
+  lazy val multiThreadReadNumThreads: Int = {
+    // Use the largest value set among all the options.
+    val deprecatedConfs = Seq(
+      PARQUET_MULTITHREAD_READ_NUM_THREADS,
+      ORC_MULTITHREAD_READ_NUM_THREADS,
+      AVRO_MULTITHREAD_READ_NUM_THREADS)
+    val values = get(MULTITHREAD_READ_NUM_THREADS) +: deprecatedConfs.flatMap { deprecatedConf =>
+      val confValue = get(deprecatedConf)
+      confValue.foreach { _ =>
+        logWarning(s"$deprecatedConf is deprecated, use $MULTITHREAD_READ_NUM_THREADS. " +
+          "Conflicting multithreaded read thread count settings will use the largest value.")
+      }
+      confValue
+    }
+    values.max
+  }
+
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
@@ -1732,8 +1764,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
     RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
-  lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
-
   lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
@@ -1757,8 +1787,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
-
-  lazy val orcMultiThreadReadNumThreads: Int = get(ORC_MULTITHREAD_READ_NUM_THREADS)
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
@@ -1797,8 +1825,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isAvroMultiThreadReadEnabled: Boolean = isAvroAutoReaderEnabled ||
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
-
-  lazy val avroMultiThreadReadNumThreads: Int = get(AVRO_MULTITHREAD_READ_NUM_THREADS)
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
@@ -1908,6 +1934,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
+  lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
     // to each row that is produced, but this needs to be a really small number because
@@ -1963,5 +1991,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   private def getOptionalCost(key: String) = {
     // user-provided value takes precedence, then look in defaults map
     conf.get(key).orElse(optimizerDefaults.get(key)).map(toDouble(_, key))
+  }
+
+  /**
+   * To judge whether "key" is explicitly set by the users.
+   */
+  def isConfExplicitlySet(key: String): Boolean = {
+    conf.contains(key)
   }
 }

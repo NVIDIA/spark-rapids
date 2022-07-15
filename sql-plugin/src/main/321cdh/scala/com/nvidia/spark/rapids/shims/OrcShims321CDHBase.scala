@@ -55,15 +55,14 @@ trait OrcShims321CDHBase {
       conf: Configuration,
       orcReader: Reader,
       dataReader: DataReader,
-      gen: (StripeInformation, OrcProto.StripeFooter, Array[Int], Array[Int]) => OrcOutputStripe,
+      gen: (StripeInformation, OrcProto.StripeFooter, Array[Int]) => OrcOutputStripe,
       evolution: SchemaEvolution,
       sargApp: SargApplier,
       sargColumns: Array[Boolean],
       ignoreNonUtf8BloomFilter: Boolean,
       writerVersion: OrcFile.WriterVersion,
       fileIncluded: Array[Boolean],
-      columnMapping: Array[Int],
-      idMapping: Array[Int]): ArrayBuffer[OrcOutputStripe] = {
+      columnMapping: Array[Int]): ArrayBuffer[OrcOutputStripe] = {
     val result = new ArrayBuffer[OrcOutputStripe](stripes.length)
     stripes.foreach { stripe =>
       val stripeFooter = dataReader.readStripeFooter(stripe)
@@ -82,7 +81,7 @@ trait OrcShims321CDHBase {
       }
 
       if (needStripe) {
-        result.append(gen(stripe, stripeFooter, columnMapping, idMapping))
+        result.append(gen(stripe, stripeFooter, columnMapping))
       }
     }
     result

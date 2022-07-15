@@ -5181,17 +5181,17 @@ are limited.
 </tr>
 <tr>
 <td>index/key</td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Supported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.;<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
-<td><em>PS<br/>Unsupported as array index. Only Literals supported as map keys.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td>S</td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.;<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
+<td><em>PS<br/>Unsupported as array index.</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -6120,17 +6120,17 @@ are limited.
 </tr>
 <tr>
 <td>key</td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP;<br/>Literal value only</em></td>
-<td><em>PS<br/>Literal value only</em></td>
-<td><em>PS<br/>max DECIMAL precision of 18;<br/>Literal value only</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8628,7 +8628,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 </tr>
@@ -8649,7 +8649,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 </tr>
@@ -10606,6 +10606,95 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="4">RegExpExtractAll</td>
+<td rowSpan="4">`regexp_extract_all`</td>
+<td rowSpan="4">Extract all strings matching a regular expression corresponding to the regex group index</td>
+<td rowSpan="4">None</td>
+<td rowSpan="4">project</td>
+<td>str</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>regexp</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>Literal value only</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>idx</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>Literal value only</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14819,7 +14908,7 @@ are limited.
 <td rowSpan="8">ApproximatePercentile</td>
 <td rowSpan="8">`percentile_approx`, `approx_percentile`</td>
 <td rowSpan="8">Approximate percentile</td>
-<td rowSpan="8">This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark. To enable it, set spark.rapids.sql.incompatibleOps.enabled</td>
+<td rowSpan="8">This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark</td>
 <td rowSpan="4">aggregation</td>
 <td>input</td>
 <td> </td>

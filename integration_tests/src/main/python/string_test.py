@@ -47,27 +47,23 @@ def test_split_negative_limit():
             'split(a, "_", -999)'),
             conf=_regexp_conf)
 
-# https://github.com/NVIDIA/spark-rapids/issues/4720
-@allow_non_gpu('ProjectExec', 'StringSplit')
-def test_split_zero_limit_fallback():
+def test_split_zero_limit():
     data_gen = mk_str_gen('([ABC]{0,3}_?){0,7}')
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, "AB", 0)'),
-        conf=_regexp_conf,
-        exist_classes= "ProjectExec",
-        non_exist_classes= "GpuProjectExec")
+            'split(a, "AB", 0)',
+            'split(a, "C", 0)',
+            'split(a, "_", 0)'),
+        conf=_regexp_conf)
 
-# https://github.com/NVIDIA/spark-rapids/issues/4720
-@allow_non_gpu('ProjectExec', 'StringSplit')
-def test_split_one_limit_fallback():
-    data_gen = mk_str_gen('([ABC]{0,3}_?){0,7}')
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
+def test_split_one_limit():
+    data_gen = mk_str_gen('([ABC]{0,3}_?){1,7}')
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, "AB", 1)'),
-        conf=_regexp_conf,
-        exist_classes= "ProjectExec",
-        non_exist_classes= "GpuProjectExec")
+            'split(a, "AB", 1)',
+            'split(a, "C", 1)',
+            'split(a, "_", 1)'),
+        conf=_regexp_conf)
 
 def test_split_positive_limit():
     data_gen = mk_str_gen('([ABC]{0,3}_?){0,7}')
@@ -89,33 +85,35 @@ def test_split_re_negative_limit():
             'split(a, "[o]{1,2}", -1)',
             'split(a, "[bf]", -1)',
             'split(a, "[o]", -2)'),
-            conf=_regexp_conf)
+        conf=_regexp_conf)
 
-# https://github.com/NVIDIA/spark-rapids/issues/4720
-@allow_non_gpu('ProjectExec', 'StringSplit')
-def test_split_re_zero_limit_fallback():
+def test_split_re_zero_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
         .with_special_case('boo:and:foo')
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'split(a, "[:]", 0)',
             'split(a, "[o:]", 0)',
+            'split(a, "[^:]", 0)',
+            'split(a, "[^o]", 0)',
+            'split(a, "[o]{1,2}", 0)',
+            'split(a, "[bf]", 0)',
             'split(a, "[o]", 0)'),
-            exist_classes= "ProjectExec",
-            non_exist_classes= "GpuProjectExec")
+        conf=_regexp_conf)
 
-# https://github.com/NVIDIA/spark-rapids/issues/4720
-@allow_non_gpu('ProjectExec', 'StringSplit')
-def test_split_re_one_limit_fallback():
+def test_split_re_one_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
         .with_special_case('boo:and:foo')
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'split(a, "[:]", 1)',
             'split(a, "[o:]", 1)',
+            'split(a, "[^:]", 1)',
+            'split(a, "[^o]", 1)',
+            'split(a, "[o]{1,2}", 1)',
+            'split(a, "[bf]", 1)',
             'split(a, "[o]", 1)'),
-        exist_classes= "ProjectExec",
-        non_exist_classes= "GpuProjectExec")
+        conf=_regexp_conf)
 
 def test_split_re_positive_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
@@ -657,7 +655,10 @@ def test_re_replace_null():
                 'REGEXP_REPLACE(a, "\x00", "NULL")',
                 'REGEXP_REPLACE(a, "\0", "NULL")',
                 'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
-                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'),
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")',
+                'REGEXP_REPLACE(a, "[\x00TEST]", "PROD")',
+                'REGEXP_REPLACE(a, "[TE\00ST]", "PROD")',
+                'REGEXP_REPLACE(a, "[\u0000-z]", "PROD")'),
         conf=_regexp_conf)
 
 def test_length():
@@ -1045,6 +1046,19 @@ def test_predefined_character_classes():
             'regexp_replace(a, "\\\\p{Cntrl}", "x")',
             'regexp_replace(a, "\\\\p{XDigit}", "x")',
             'regexp_replace(a, "\\\\p{Space}", "x")',
+            'regexp_replace(a, "\\\\P{Lower}", "x")',
+            'regexp_replace(a, "\\\\P{Upper}", "x")',
+            'regexp_replace(a, "\\\\P{ASCII}", "x")',
+            'regexp_replace(a, "\\\\P{Alpha}", "x")',
+            'regexp_replace(a, "\\\\P{Digit}", "x")',
+            'regexp_replace(a, "\\\\P{Alnum}", "x")',
+            'regexp_replace(a, "\\\\P{Punct}", "x")',
+            'regexp_replace(a, "\\\\P{Graph}", "x")',
+            'regexp_replace(a, "\\\\P{Print}", "x")',
+            'regexp_replace(a, "\\\\P{Blank}", "x")',
+            'regexp_replace(a, "\\\\P{Cntrl}", "x")',
+            'regexp_replace(a, "\\\\P{XDigit}", "x")',
+            'regexp_replace(a, "\\\\P{Space}", "x")',
         ),
         conf=_regexp_conf)
 
@@ -1075,15 +1089,6 @@ def test_rlike_null_pattern():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike NULL'))
-
-@allow_non_gpu('ProjectExec', 'RLike')
-def test_rlike_fallback_null_pattern():
-    gen = mk_str_gen('[abcd]{1,3}')
-    assert_gpu_fallback_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'a rlike "a\u0000"'),
-            'RLike',
-        conf=_regexp_conf)
 
 @allow_non_gpu('ProjectExec', 'RLike')
 def test_rlike_fallback_empty_group():
@@ -1127,4 +1132,46 @@ def test_rlike_fallback_possessive_quantifier():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a*+"'),
                 'RLike',
+        conf=_regexp_conf)
+
+def test_regexp_extract_all_idx_zero():
+    gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 0)',
+                'regexp_extract_all(a, "(a)(b)", 0)',
+                'regexp_extract_all(a, "([a-z0-9]([abcd]))", 0)',
+                'regexp_extract_all(a, "(\\\\d+)-(\\\\d+)", 0)',
+            ),
+        conf=_regexp_conf)
+
+def test_regexp_extract_all_idx_positive():
+    gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 1)',
+                'regexp_extract_all(a, "(a)(b)", 2)',
+                'regexp_extract_all(a, "([a-z0-9]((([abcd](\\\\d?)))))", 3)',
+                'regexp_extract_all(a, "(\\\\d+)-(\\\\d+)", 2)',
+            ),
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
+def test_regexp_extract_all_idx_negative():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "(a)", -1)'
+            ).collect(),
+        error_message="The specified group index cannot be less than zero",
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
+def test_regexp_extract_all_idx_out_of_bounds():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 3)'
+            ).collect(),
+        error_message="Regex group count is 2, but the specified group index is 3",
         conf=_regexp_conf)

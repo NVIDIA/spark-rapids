@@ -21,8 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
-import java.util.Locale
-import java.util.concurrent.{Callable, ThreadPoolExecutor}
+import java.util.concurrent.Callable
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -36,7 +35,7 @@ import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
-import com.nvidia.spark.rapids.shims.{OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -50,12 +49,12 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.caseSensitiveResolution
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.execution.datasources.rapids.OrcFiltersWrapper
 import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -122,7 +121,7 @@ case class GpuOrcScan(
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuOrcScan {
+object GpuOrcScan extends Arm {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -151,6 +150,96 @@ object GpuOrcScan {
     if (sparkSession.conf
       .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
+    }
+  }
+
+  private lazy val numericLevels = Seq(
+    DType.DTypeEnum.BOOL8,
+    DType.DTypeEnum.INT8,
+    DType.DTypeEnum.INT16,
+    DType.DTypeEnum.INT32,
+    DType.DTypeEnum.INT64,
+    DType.DTypeEnum.FLOAT32,
+    DType.DTypeEnum.FLOAT64,
+    DType.DTypeEnum.DECIMAL32,
+    DType.DTypeEnum.DECIMAL64,
+    DType.DTypeEnum.DECIMAL128
+  ).zipWithIndex.toMap
+
+  /**
+   * Cast the input column to the target type, and replace overflow rows with nulls.
+   * Only for conversion between integral types.
+   */
+  private def downCastAnyInteger(col: ColumnView, toType: DType): ColumnVector = {
+    // Overflow happens in b when
+    //    val b = (toDt)a
+    //    val c = (fromDt)b
+    //    c != a
+    withResource(col.castTo(toType)) { casted =>
+      val overflowFlags = withResource(casted.castTo(col.getType)) { backed =>
+        col.equalTo(backed)
+      }
+      // Replace values that cause overflow with nulls, same with CPU ORC.
+      withResource(overflowFlags) { _ =>
+        casted.copyWithBooleanColumnAsValidity(overflowFlags)
+      }
+    }
+  }
+
+  /**
+   * Cast the column to the target type for ORC schema evolution.
+   * It is designed to support all the cases that `canCast` returns true.
+   * Both of the column type and target type should be primitive.
+   *
+   * The returned column may be either the input or a new one, users should check and
+   * close it when needed.
+   */
+  def castColumnTo(col: ColumnView, targetType: DataType): ColumnView = {
+    val fromDt = col.getType
+    val toDt = GpuColumnVector.getNonNestedRapidsType(targetType)
+    if (fromDt == toDt) {
+      return col
+    }
+    (fromDt, toDt) match {
+      // integral to integral
+      case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64,
+          DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64) =>
+        if (numericLevels(fromDt.getTypeId) <= numericLevels(toDt.getTypeId) ||
+            toDt == DType.BOOL8) {
+          // no downcast
+          col.castTo(toDt)
+        } else {
+          downCastAnyInteger(col, toDt)
+        }
+      // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
+      case (f, t) =>
+        throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
+    }
+  }
+
+  /**
+   * Whether the type casting is supported by GPU ORC reading.
+   *
+   * No need to support the whole list that CPU does in "ConvertTreeReaderFactory.canConvert",
+   * but the ones between GPU supported types.
+   * Each supported casting is implemented in "castColumnTo".
+   */
+  def canCast(from: TypeDescription, to: TypeDescription): Boolean = {
+    import org.apache.orc.TypeDescription.Category._
+    if (!to.getCategory.isPrimitive || !from.getCategory.isPrimitive) {
+      // Don't convert from any to complex, or from complex to any.
+      // Align with what CPU does.
+      return false
+    }
+    from.getCategory match {
+      case BOOLEAN | BYTE | SHORT | INT | LONG =>
+        to.getCategory match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG => true
+          case _ => false
+        }
+      // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
+      case _ =>
+        false
     }
   }
 }
@@ -183,8 +272,8 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
-  private val numThreads = rapidsConf.orcMultiThreadReadNumThreads
+  private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
+  private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
@@ -266,7 +355,7 @@ case class GpuOrcPartitionReaderFactory(
   extends ShimFilePartitionReaderFactory(params) with Arm {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, pushedFilters)
@@ -278,14 +367,13 @@ case class GpuOrcPartitionReaderFactory(
   }
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    val conf = broadcastedConf.value.value
-    OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
-
     val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
       partitionSchema)
     if (ctx == null) {
       new EmptyPartitionReader[ColumnarBatch]
     } else {
+      val conf = broadcastedConf.value.value
+      OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
       val reader = new PartitionReaderWithBytesRead(new GpuOrcPartitionReader(conf, partFile, ctx,
         readDataSchema, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
         filterHandler.isCaseSensitive))
@@ -338,8 +426,13 @@ case class OrcPartitionReaderContext(
     requestedMapping: Option[Array[Int]])
 
 /** Collections of some common functions for ORC */
-trait OrcCommonFunctions extends OrcCodecWritingHelper {
-  def execMetrics: Map[String, GpuMetric]
+trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionReaderBase =>
+  private val orcFormat = Some("orc")
+
+  def debugDumpPrefix: Option[String]
+
+  // The Spark schema describing what will be read
+  def readDataSchema: StructType
 
   /** Copy the stripe to the channel */
   protected def copyStripeData(
@@ -360,28 +453,28 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
         current = current.next
       }
       val end = System.nanoTime()
-      execMetrics.get(READ_FS_TIME).foreach(_.add(mid - start))
-      execMetrics.get(WRITE_BUFFER_TIME).foreach(_.add(end - mid))
+      metrics.get(READ_FS_TIME).foreach(_.add(mid - start))
+      metrics.get(WRITE_BUFFER_TIME).foreach(_.add(end - mid))
     }
   }
 
   /** Get the ORC schema corresponding to the file being constructed for the GPU */
-  protected def buildReaderSchema(ctx: OrcPartitionReaderContext): TypeDescription = {
-    if (ctx.requestedMapping.isDefined) {
+  protected def buildReaderSchema(ctx: OrcPartitionReaderContext): TypeDescription =
+    buildReaderSchema(ctx.updatedReadSchema, ctx.requestedMapping)
+
+  protected def buildReaderSchema(
+      updatedSchema: TypeDescription,
+      requestedMapping: Option[Array[Int]]): TypeDescription = {
+    requestedMapping.map { colIds =>
       // filter top-level schema based on requested mapping
-      val orcSchema = ctx.updatedReadSchema
-      val orcSchemaNames = orcSchema.getFieldNames
-      val orcSchemaChildren = orcSchema.getChildren
-      val readerSchema = TypeDescription.createStruct()
-      ctx.requestedMapping.get.foreach { orcColIdx =>
-        val fieldName = orcSchemaNames.get(orcColIdx)
-        val fieldType = orcSchemaChildren.get(orcColIdx)
-        readerSchema.addField(fieldName, fieldType.clone())
+      val filedNames = updatedSchema.getFieldNames
+      val fieldTypes = updatedSchema.getChildren
+      val resultSchema = TypeDescription.createStruct()
+      colIds.filter(_ >= 0).foreach { colIdx =>
+        resultSchema.addField(filedNames.get(colIdx), fieldTypes.get(colIdx).clone())
       }
-      readerSchema
-    } else {
-      ctx.evolution.getReaderSchema
-    }
+      resultSchema
+    }.getOrElse(updatedSchema)
   }
 
   /** write the ORC file Footer and PostScript  */
@@ -422,26 +515,13 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     rawOut.write(postScriptLength.toInt)
   }
 
-  protected def resolveTableSchema(schema: TypeDescription,
-      requestedIds: Option[Array[Int]]): TypeDescription = {
-    requestedIds.map { ids =>
-      val retSchema = TypeDescription.createStruct()
-      ids.foreach(id =>
-        if (id >= 0) {
-          retSchema.addField(schema.getFieldNames.get(id), schema.getChildren.get(id))
-        }
-      )
-      retSchema
-    }.getOrElse(schema)
-  }
-
   /**
    * Extracts all fields(columns) of DECIMAL128, including child columns of nested types,
    * and returns the names of all fields.
    * The names of nested children are prefixed with their parents' information, which is the
    * acceptable format of cuDF reader options.
    */
-  protected def filterDecimal128Fields(readColumns: Array[String],
+  private def filterDecimal128Fields(readColumns: Array[String],
       readSchema: StructType): Array[String] = {
     val buffer = mutable.ArrayBuffer.empty[String]
 
@@ -467,15 +547,79 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     buffer.toArray
   }
 
+  /**
+   * Read the host data to GPU for ORC decoding, and return it as a cuDF Table.
+   * The input host buffer should contain valid data, otherwise the behavior is
+   * undefined.
+   * 'splits' is used only for debugging.
+   */
+  protected def decodeToTable(
+      hostBuf: HostMemoryBuffer,
+      bufSize: Long,
+      memFileSchema: TypeDescription,
+      requestedMapping: Option[Array[Int]],
+      isCaseSensitive: Boolean,
+      splits: Array[PartitionedFile]): Table = {
+    // Dump ORC data into a file
+    dumpDataToFile(hostBuf, bufSize, splits, debugDumpPrefix, orcFormat)
+
+    val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
+    val includedColumns = tableSchema.getFieldNames.asScala
+    val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
+    val parseOpts = ORCOptions.builder()
+      .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+      .withNumPyTypes(false)
+      .includeColumn(includedColumns: _*)
+      .decimal128Column(decimal128Fields: _*)
+      .build()
+
+    // about to start using the GPU
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+
+    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+        metrics(GPU_DECODE_TIME))) { _ =>
+      Table.readORC(parseOpts, hostBuf, 0, bufSize)
+    }
+    // Execute the schema evolution
+    SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
+      isCaseSensitive, Some(GpuOrcScan.castColumnTo))
+  }
 }
 
 /**
  * A base ORC partition reader which compose of some common methods
  */
-trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging with Arm with ScanWithMetrics {
+trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
+  with Arm with ScanWithMetrics { self: FilePartitionReaderBase =>
 
-  // The Spark schema describing what will be read
-  def readDataSchema: StructType
+  /**
+   * Send a host buffer to GPU for ORC decoding, and return it as a ColumnarBatch.
+   * The input hostBuf will be closed after returning, please do not use it anymore.
+   * 'splits' is used only for debugging.
+   */
+  protected final def decodeToBatch(
+      hostBuf: HostMemoryBuffer,
+      bufSize: Long,
+      memFileSchema: TypeDescription,
+      requestedMapping: Option[Array[Int]],
+      isCaseSensitive: Boolean,
+      splits: Array[PartitionedFile]): Option[ColumnarBatch] = {
+    withResource(hostBuf) { _ =>
+      if (bufSize == 0) {
+        None
+      } else {
+        withResource(decodeToTable(hostBuf, bufSize, memFileSchema, requestedMapping,
+            isCaseSensitive, splits)) { t =>
+          val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
+          logDebug(s"GPU batch size: $batchSizeBytes bytes")
+          maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
+          metrics(NUM_OUTPUT_BATCHES) += 1
+          // convert to batch
+          Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
+        }
+      } // end of else
+    }
+  }
 
   def populateCurrentBlockChunk(
       blockIterator: BufferedIterator[OrcOutputStripe],
@@ -635,10 +779,10 @@ class GpuOrcPartitionReader(
     partFile: PartitionedFile,
     ctx: OrcPartitionReaderContext,
     override val readDataSchema: StructType,
-    debugDumpPrefix: String,
+    override val debugDumpPrefix: Option[String],
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    override val execMetrics : Map[String, GpuMetric],
+    execMetrics : Map[String, GpuMetric],
     isCaseSensitive: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
 
@@ -681,59 +825,14 @@ class GpuOrcPartitionReader(
           Some(new ColumnarBatch(nullColumns.toArray, numRows))
         }
       } else {
-        val table = readToTable(currentStripes)
-        try {
-          table.map(GpuColumnVector.from(_, readDataSchema.toArray.map(_.dataType)))
-        } finally {
-          table.foreach(_.close())
-        }
+        val (dataBuffer, dataSize) = readPartFile(ctx, currentStripes)
+        decodeToBatch(dataBuffer, dataSize, ctx.updatedReadSchema, ctx.requestedMapping,
+          isCaseSensitive, Array(partFile))
       }
-    }
-  }
+    } // end of withResource(new NvtxRange)
+  } // end of readBatch
 
-  private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
-    val (dataBuffer, dataSize) = readPartFile(ctx, stripes)
-    try {
-      if (dataSize == 0) {
-        None
-      } else {
-        dumpDataToFile(dataBuffer, dataSize, Array(partFile), Option(debugDumpPrefix), Some("orc"))
-        val tableSchema = resolveTableSchema(ctx.updatedReadSchema, ctx.requestedMapping)
-        val includedColumns = tableSchema.getFieldNames.asScala
-        val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
-        val parseOpts = ORCOptions.builder()
-          .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-          .withNumPyTypes(false)
-          .includeColumn(includedColumns:_*)
-          .decimal128Column(decimal128Fields:_*)
-          .build()
-
-        // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-
-        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-            metrics(GPU_DECODE_TIME))) { _ =>
-          Table.readORC(parseOpts, dataBuffer, 0, dataSize)
-        }
-        val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
-        logDebug(s"GPU batch size: $batchSizeBytes bytes")
-        maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
-        metrics(NUM_OUTPUT_BATCHES) += 1
-
-        Some(SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
-          isCaseSensitive))
-      }
-    } finally {
-      if (dataBuffer != null) {
-        dataBuffer.close()
-      }
-    }
-  }
 }
-
-// Singleton threadpool that is used across all the tasks.
-// Please note that the TaskContext is not set in these threads and should not be used.
-object OrcMultiFileThreadPool extends MultiFileReaderThreadPool
 
 private object OrcTools extends Arm {
 
@@ -779,6 +878,7 @@ private object OrcTools extends Arm {
   }
 
 }
+
 /**
  * A tool to filter stripes
  *
@@ -808,7 +908,7 @@ private case class GpuOrcFileFilterHandler(
 
     // After getting the necessary information from ORC reader, we must close the ORC reader
     OrcShims.withReader(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
-    val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
+    val resultedColPruneInfo = OrcReadingShims.requestedColumnIds(isCaseSensitive, dataSchema,
         readDataSchema, orcReader, conf)
       if (resultedColPruneInfo.isEmpty) {
         // Be careful when the OrcPartitionReaderContext is null, we should change
@@ -816,7 +916,8 @@ private case class GpuOrcFileFilterHandler(
         null
       } else {
         val (requestedColIds, canPruneCols) = resultedColPruneInfo.get
-        orcResultSchemaString(canPruneCols, dataSchema, readDataSchema, partitionSchema, conf)
+        OrcUtils.orcResultSchemaString(canPruneCols, dataSchema, readDataSchema,
+          partitionSchema, conf)
         assert(requestedColIds.length == readDataSchema.length,
           "[BUG] requested column IDs do not match required schema")
 
@@ -861,105 +962,6 @@ private case class GpuOrcFileFilterHandler(
     readerOpts
   }
 
-
-  /**
-   * @return Returns the combination of requested column ids from the given ORC file and
-   *         boolean flag to find if the pruneCols is allowed or not. Requested Column id can be
-   *         -1, which means the requested column doesn't exist in the ORC file. Returns None
-   *         if the given ORC file is empty.
-   */
-  def requestedColumnIds(
-      isCaseSensitive: Boolean,
-      dataSchema: StructType,
-      requiredSchema: StructType,
-      reader: Reader,
-      conf: Configuration): Option[(Array[Int], Boolean)] = {
-    val orcFieldNames = reader.getSchema.getFieldNames.asScala
-    if (orcFieldNames.isEmpty) {
-      // SPARK-8501: Some old empty ORC files always have an empty schema stored in their footer.
-      None
-    } else {
-      if (OrcShims.forcePositionalEvolution(conf) || orcFieldNames.forall(_.startsWith("_col"))) {
-        // This is either an ORC file written by an old version of Hive and there are no field
-        // names in the physical schema, or `orc.force.positional.evolution=true` is forced because
-        // the file was written by a newer version of Hive where
-        // `orc.force.positional.evolution=true` was set (possibly because columns were renamed so
-        // the physical schema doesn't match the data schema).
-        // In these cases we map the physical schema to the data schema by index.
-        assert(orcFieldNames.length <= dataSchema.length, "The given data schema " +
-          s"${dataSchema.catalogString} has less fields than the actual ORC physical schema, " +
-          "no idea which columns were dropped, fail to read.")
-        // for ORC file written by Hive, no field names
-        // in the physical schema, there is a need to send the
-        // entire dataSchema instead of required schema.
-        // So pruneCols is not done in this case
-        Some((requiredSchema.fieldNames.map { name =>
-          val index = dataSchema.fieldIndex(name)
-          if (index < orcFieldNames.length) {
-            index
-          } else {
-            -1
-          }
-        }, false))
-      } else {
-        if (isCaseSensitive) {
-          Some((requiredSchema.fieldNames.zipWithIndex.map { case (name, idx) =>
-            if (orcFieldNames.indexWhere(caseSensitiveResolution(_, name)) != -1) {
-              idx
-            } else {
-              -1
-            }
-          }, true))
-        } else {
-          // Do case-insensitive resolution only if in case-insensitive mode
-          val caseInsensitiveOrcFieldMap = orcFieldNames.groupBy(_.toLowerCase(Locale.ROOT))
-          Some((requiredSchema.fieldNames.zipWithIndex.map { case (requiredFieldName, idx) =>
-            caseInsensitiveOrcFieldMap
-              .get(requiredFieldName.toLowerCase(Locale.ROOT))
-              .map { matchedOrcFields =>
-                if (matchedOrcFields.size > 1) {
-                  // Need to fail if there is ambiguity, i.e. more than one field is matched.
-                  val matchedOrcFieldsString = matchedOrcFields.mkString("[", ", ", "]")
-                  OrcShims.closeReader(reader)
-                  throw new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """
-                    + s"$matchedOrcFieldsString in case-insensitive mode")
-                } else {
-                  idx
-                }
-              }.getOrElse(-1)
-          }, true))
-        }
-      }
-    }
-  }
-
-  /**
-   * Returns the result schema to read from ORC file. In addition, It sets
-   * the schema string to 'orc.mapred.input.schema' so ORC reader can use later.
-   *
-   * @param canPruneCols Flag to decide whether pruned cols schema is send to resultSchema
-   *                     or to send the entire dataSchema to resultSchema.
-   * @param dataSchema   Schema of the orc files.
-   * @param readDataSchema Result data schema created after pruning cols.
-   * @param partitionSchema Schema of partitions.
-   * @param conf Hadoop Configuration.
-   * @return Returns the result schema as string.
-   */
-  def orcResultSchemaString(
-      canPruneCols: Boolean,
-      dataSchema: StructType,
-      readDataSchema: StructType,
-      partitionSchema: StructType,
-      conf: Configuration): String = {
-    val resultSchemaString = if (canPruneCols) {
-      OrcShims.getOrcSchemaString(readDataSchema)
-    } else {
-      OrcShims.getOrcSchemaString(StructType(dataSchema.fields ++ partitionSchema.fields))
-    }
-    OrcConf.MAPRED_INPUT_SCHEMA.setString(conf, resultSchemaString)
-    resultSchemaString
-  }
-
   /**
    * An utility to get OrcPartitionReaderContext which contains some necessary information
    */
@@ -981,30 +983,55 @@ private case class GpuOrcFileFilterHandler(
     def getOrcPartitionReaderContext: OrcPartitionReaderContext = {
       val isCaseSensitive = readerOpts.getIsSchemaEvolutionCaseAware
 
-      // align include status with the read schema during the potential field prune
-      val readerOptInclude = readerOpts.getInclude match {
-        case null => Array.fill(readerOpts.getSchema.getMaximumId + 1)(true)
-        case a => a
-      }
-      val (updatedReadSchema, updatedInclude) = checkSchemaCompatibility(
-        orcReader.getSchema, readerOpts.getSchema, isCaseSensitive, readerOptInclude)
-      if (readerOpts.getInclude != null) {
-        readerOpts.include(updatedInclude)
-      }
-
+      val (updatedReadSchema, fileIncluded) = checkSchemaCompatibility(orcReader.getSchema,
+        readerOpts.getSchema, isCaseSensitive)
+      // GPU has its own read schema, so unset the reader include to read all the columns
+      // specified by its read schema.
+      readerOpts.include(null)
       val evolution = new SchemaEvolution(orcReader.getSchema, updatedReadSchema, readerOpts)
       val (sargApp, sargColumns) = getSearchApplier(evolution,
         orcFileReaderOpts.getUseUTCTimestamp,
         orcReader.writerUsedProlepticGregorian(), orcFileReaderOpts.getConvertToProlepticGregorian)
 
-      val splitStripes = orcReader.getStripes.asScala.filter(s =>
+      val splitStripes = orcReader.getStripes.asScala.filter( s =>
         s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
       val stripes = buildOutputStripes(splitStripes, evolution,
         sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
-        orcReader.getWriterVersion, updatedReadSchema, isCaseSensitive)
+        orcReader.getWriterVersion, updatedReadSchema,
+        resolveMemFileIncluded(fileIncluded, requestedMapping))
       OrcPartitionReaderContext(filePath, conf, orcReader.getSchema, updatedReadSchema, evolution,
         orcReader.getFileTail, orcReader.getCompressionSize, orcReader.getCompressionKind,
         readerOpts, stripes.iterator.buffered, requestedMapping)
+    }
+
+    /**
+     * Compute an array of booleans, one for each column in the ORC file, indicating whether the
+     * corresponding ORC column ID should be included in the file to be loaded by the GPU.
+     *
+     * @return per-column inclusion flags
+     */
+    protected def resolveMemFileIncluded(
+        fileIncluded: Array[Boolean],
+        requestedMapping: Option[Array[Int]]): Array[Boolean] = {
+      requestedMapping.map { mappings =>
+        // filter top-level schema based on requested mapping
+        val orcFileSchema = orcReader.getSchema
+        val orcSchemaChildren = orcFileSchema.getChildren
+        val resultIncluded = new Array[Boolean](orcFileSchema.getMaximumId + 1)
+        // first column is the top-level schema struct, always add it
+        resultIncluded(0) = true
+        mappings.foreach { orcColIdx =>
+          if (orcColIdx >= 0) {
+            // find each top-level column requested by top-level index and add it and
+            // all child columns
+            val fieldType = orcSchemaChildren.get(orcColIdx)
+            (fieldType.getId to fieldType.getMaximumId).foreach { i =>
+              resultIncluded(i) = true
+            }
+          }
+        }
+        resultIncluded
+      }.getOrElse(fileIncluded)
     }
 
     /**
@@ -1013,116 +1040,20 @@ private case class GpuOrcFileFilterHandler(
      * the memory file will have a mapping of -1.
      *
      * @param fileIncluded indicator per column in the ORC file whether it should be included
-     * @param fileSchema   ORC file schema
-     * @param readerSchema ORC schema for what will be read
-     * @return new column id mapping array and new column id -> old column id mapping array
+     * @return column mapping array
      */
-    private def columnRemap(
-        fileIncluded: Array[Boolean],
-        fileSchema: TypeDescription,
-        readerSchema: TypeDescription,
-        isCaseSensitive: Boolean): (Array[Int], Array[Int]) = {
-
-      // A column mapping for the new column id in the new re-constructing orc
-      val columnMapping = Array.fill[Int](fileIncluded.length)(-1)
-      // The first column is the top-level schema struct, always set it to 0
-      columnMapping(0) = 0
-      // The mapping for the new column id to the old column id which is used to get the encodings
-      val idMapping = Array.fill[Int](fileIncluded.length)(-1)
-      // The first column is the top-level schema struct, always set it to 0
-      idMapping(0) = 0
-
-      // the new column sequential id for the in-coming re-constructing orc
-      var nextOutputColumnId = 1
-
-      def setMapping(id: Int) = {
-        if (fileIncluded(id)) {
-          idMapping(nextOutputColumnId) = id
-          // change the column id for the new orc file
-          columnMapping(id) = nextOutputColumnId
+    private def columnRemap(fileIncluded: Array[Boolean]): Array[Int] = {
+      var nextOutputColumnId = 0
+      val result = new Array[Int](fileIncluded.length)
+      fileIncluded.indices.foreach { i =>
+        if (fileIncluded(i)) {
+          result(i) = nextOutputColumnId
           nextOutputColumnId += 1
-        }
-      }
-
-      // Recursively update columnMapping and idMapping according to the TypeDescription id.
-      def updateMapping(rSchema: TypeDescription, fSchema: TypeDescription,
-                        isRoot: Boolean = false): Unit = {
-        assert(rSchema.getCategory == fSchema.getCategory)
-        // 'findSubtype' in v1.5.x always follows the case sensitive rule to comparing the
-        // column names, so cannot be used here.
-        // The first level must be STRUCT type, and this also supports nested STRUCT type.
-        if (rSchema.getCategory == TypeDescription.Category.STRUCT) {
-          val mapSensitive = fSchema.getFieldNames.asScala.zip(fSchema.getChildren.asScala).toMap
-          val name2ChildMap = if (isCaseSensitive) {
-            mapSensitive
-          } else {
-            CaseInsensitiveMap[TypeDescription](mapSensitive)
-          }
-          // Config to match the top level columns using position rather than column names
-          if (OrcShims.forcePositionalEvolution(conf)) {
-            val rChildren = rSchema.getChildren
-            val fChildren = fSchema.getChildren
-            if (rChildren != null) {
-              rChildren.asScala.zipWithIndex.foreach { case (rChild, id) =>
-                val fChild = fChildren.get(id)
-                setMapping(fChild.getId)
-                updateMapping(rChild, fChild)
-              }
-            }
-          } else {
-            rSchema.getFieldNames.asScala.zip(rSchema.getChildren.asScala)
-                .foreach { case (rName, rChild) =>
-                  val fChild = name2ChildMap(rName)
-                  setMapping(fChild.getId)
-                  updateMapping(rChild, fChild)
-                }
-          }
         } else {
-          val rChildren = rSchema.getChildren
-          val fChildren = fSchema.getChildren
-          if (rChildren != null) {
-            // Go into children for List, Map, Union.
-            rChildren.asScala.zipWithIndex.foreach { case (rChild, id) =>
-              val fChild = fChildren.get(id)
-              setMapping(fChild.getId)
-              updateMapping(rChild, fChild)
-            }
-          }
+          result(i) = -1
         }
       }
-
-      updateMapping(readerSchema, fileSchema, isRoot=true)
-      (columnMapping, idMapping)
-    }
-
-    /**
-     * Compute an array of booleans, one for each column in the ORC file, indicating whether the
-     * corresponding ORC column ID should be included in the file to be loaded by the GPU.
-     *
-     * @param evolution ORC schema evolution instance
-     * @return per-column inclusion flags
-     */
-    private def calcOrcFileIncluded(evolution: SchemaEvolution): Array[Boolean] = {
-      if (requestedMapping.isDefined) {
-        // ORC schema has no column names, so need to filter based on index
-        val orcSchema = orcReader.getSchema
-        val topFields = orcSchema.getChildren
-        val numFlattenedCols = orcSchema.getMaximumId
-        val included = new Array[Boolean](numFlattenedCols + 1)
-        util.Arrays.fill(included, false)
-        // first column is the top-level schema struct, always add it
-        included(0) = true
-        // find each top-level column requested by top-level index and add it and all child columns
-        requestedMapping.get.foreach { colIdx =>
-          val field = topFields.get(colIdx)
-          (field.getId to field.getMaximumId).foreach { i =>
-            included(i) = true
-          }
-        }
-        included
-      } else {
-        evolution.getFileIncluded
-      }
+      result
     }
 
     /**
@@ -1145,14 +1076,12 @@ private case class GpuOrcFileFilterHandler(
         ignoreNonUtf8BloomFilter: Boolean,
         writerVersion: OrcFile.WriterVersion,
         updatedReadSchema: TypeDescription,
-        isCaseSensitive: Boolean): Seq[OrcOutputStripe] = {
-      val fileIncluded = calcOrcFileIncluded(evolution)
-      val (columnMapping, idMapping) = columnRemap(fileIncluded, evolution.getFileSchema,
-        updatedReadSchema, isCaseSensitive)
+        fileIncluded: Array[Boolean]): Seq[OrcOutputStripe] = {
+      val columnMapping = columnRemap(fileIncluded)
       OrcShims.filterStripes(stripes, conf, orcReader, dataReader,
         buildOutputStripe, evolution,
         sargApp, sargColumns, ignoreNonUtf8BloomFilter,
-        writerVersion, fileIncluded, columnMapping, idMapping)
+        writerVersion, fileIncluded, columnMapping)
     }
 
     /**
@@ -1162,15 +1091,12 @@ private case class GpuOrcFileFilterHandler(
      * @param inputStripe input stripe descriptor
      * @param inputFooter input stripe footer
      * @param columnMapping mapping of input column IDs to output column IDs
-     * @param idMapping mapping for the new column id of the new file and
-     *                  the old column id of original file
      * @return output stripe descriptor
      */
     private def buildOutputStripe(
         inputStripe: StripeInformation,
         inputFooter: OrcProto.StripeFooter,
-        columnMapping: Array[Int],
-        idMapping: Array[Int]): OrcOutputStripe = {
+        columnMapping: Array[Int]): OrcOutputStripe = {
       val rangeCreator = new DiskRangeList.CreateHelper
       val footerBuilder = OrcProto.StripeFooter.newBuilder()
       var inputFileOffset = inputStripe.getOffset
@@ -1196,9 +1122,9 @@ private case class GpuOrcFileFilterHandler(
       }
 
       // add the column encodings that are relevant
-      idMapping.foreach { id =>
-        if (id >= 0) {
-          footerBuilder.addColumns(inputFooter.getColumns(id))
+      for (i <- 0 until inputFooter.getColumnsCount) {
+        if (columnMapping(i) >= 0) {
+          footerBuilder.addColumns(inputFooter.getColumns(i))
         }
       }
 
@@ -1221,103 +1147,104 @@ private case class GpuOrcFileFilterHandler(
 
     /**
      * Check if the read schema is compatible with the file schema. Meanwhile, recursively
-     * prune all incompatible required fields in terms of both ORC schema and include status.
+     * prune all incompatible required fields in terms of both ORC schema and file include
+     * status.
      *
-     * Only do the check for columns that can be found in the file schema, and
-     * the missing ones are ignored, since a null column will be added in the final
-     * output for each of them.
+     * Only do the check for columns that can be found in the file schema, either by index
+     * or column name. And the missing ones are ignored, since a null column will be added
+     * in the final output for each of them.
      *
      * It takes care of both the top and nested columns.
      *
      * @param fileSchema  input file's ORC schema
      * @param readSchema  ORC schema for what will be read
      * @param isCaseAware true if field names are case-sensitive
-     * @param include     Array[Boolean] represents whether a field of specific ID is included
-     * @return A tuple contains the pruned read schema and the pruned include status. For both
-     *         return items, they only carry columns who also exist in the file schema.
+     * @return A tuple contains the pruned read schema and the updated file include status.
      */
     private def checkSchemaCompatibility(
         fileSchema: TypeDescription,
         readSchema: TypeDescription,
-        isCaseAware: Boolean,
-        include: Array[Boolean]): (TypeDescription, Array[Boolean]) = {
-      assert(fileSchema.getCategory == readSchema.getCategory)
-      readSchema.getCategory match {
-        case TypeDescription.Category.STRUCT =>
-          // Check for the top or nested struct types.
-          val fileFieldNames = fileSchema.getFieldNames.asScala
-          val fileChildren = fileSchema.getChildren.asScala
-          val caseSensitiveFileTypes = fileFieldNames.zip(fileChildren).toMap
-          val fileTypesMap = if (isCaseAware) {
-            caseSensitiveFileTypes
-          } else {
-            CaseInsensitiveMap[TypeDescription](caseSensitiveFileTypes)
-          }
-          val readerFieldNames = readSchema.getFieldNames.asScala
-          val readerChildren = readSchema.getChildren.asScala
-          val fileTypesWithIndex = for (
-            (ftMap, index) <- fileTypesMap.zipWithIndex) yield (index, ftMap)
+        isCaseAware: Boolean): (TypeDescription, Array[Boolean]) = {
+      // all default to false
+      val fileIncluded = new Array[Boolean](fileSchema.getMaximumId + 1)
+      val isForcePos = OrcShims.forcePositionalEvolution(conf)
+      (checkTypeCompatibility(fileSchema, readSchema, isCaseAware, fileIncluded, isForcePos),
+        fileIncluded)
+    }
 
-          val prunedReadSchema = TypeDescription.createStruct()
-          val prunedInclude = mutable.ArrayBuffer(include(readSchema.getId))
-          val readerMap = readerFieldNames.zip(readerChildren).toList
-          readerMap.zipWithIndex.foreach { case ((readField, readType), idx) =>
-            // Config to match the top level columns using position rather than column names
-            if (OrcShims.forcePositionalEvolution(conf)) {
-              fileTypesWithIndex(idx) match {
-                case (_, fileReadType) => if (fileReadType == readType) {
-                  val (newChild, childInclude) =
-                    checkSchemaCompatibility(fileReadType, readType, isCaseAware, include)
-                  prunedReadSchema.addField(readField, newChild)
-                  prunedInclude ++= childInclude
-                }
+    /**
+     * Check if the file type is compatible with the read type.
+     * Return the file type (Will be pruned for struct type) if the check result is positive,
+     * otherwise blows up.
+     */
+    private def checkTypeCompatibility(
+        fileType: TypeDescription,
+        readType: TypeDescription,
+        isCaseAware: Boolean,
+        fileIncluded: Array[Boolean],
+        isForcePos: Boolean): TypeDescription = {
+      (fileType.getCategory, readType.getCategory) match {
+        case (TypeDescription.Category.STRUCT, TypeDescription.Category.STRUCT) =>
+          // Check for the top or nested struct types.
+          val readFieldNames = readType.getFieldNames.asScala
+          val readField2Type = readFieldNames.zip(readType.getChildren.asScala)
+          val getReadFieldType: (String, Int) => Option[(String, TypeDescription)] =
+            if (isForcePos) {
+              // Match the top level columns using position rather than column names.
+              (_, fileFieldIdx) => readField2Type.lift(fileFieldIdx)
+            } else {
+              // match by column names
+              val caseSensitiveReadTypes = readFieldNames.zip(readField2Type).toMap
+              val readTypesMap = if (isCaseAware) {
+                caseSensitiveReadTypes
+              } else {
+                CaseInsensitiveMap[(String, TypeDescription)](caseSensitiveReadTypes)
               }
-            } else if (fileTypesMap.contains(readField)) {
-              // Skip check for the missing names because a column with nulls will be added
-              // for each of them.
-              val (newChild, childInclude) = checkSchemaCompatibility(
-                fileTypesMap(readField), readType, isCaseAware, include)
-              prunedReadSchema.addField(readField, newChild)
-              prunedInclude ++= childInclude
+              (fileFieldName, _) => readTypesMap.get(fileFieldName)
+            }
+          // buffer to cache the result schema
+          val prunedReadSchema = TypeDescription.createStruct()
+
+          fileType.getFieldNames.asScala
+            .zip(fileType.getChildren.asScala)
+            .zipWithIndex.foreach { case ((fileFieldName, fType), idx) =>
+            getReadFieldType(fileFieldName, idx).foreach { case (rField, rType) =>
+              val newChild = checkTypeCompatibility(fType, rType,
+                isCaseAware, fileIncluded, isForcePos)
+              prunedReadSchema.addField(rField, newChild)
             }
           }
-          prunedReadSchema -> prunedInclude.toArray
-        // Go into children for LIST, MAP, UNION to filter out the missing names
+          fileIncluded(fileType.getId) = true
+          prunedReadSchema
+        // Go into children for LIST, MAP to filter out the missing names
         // for struct children.
-        case TypeDescription.Category.LIST =>
-          val prunedInclude = mutable.ArrayBuffer(include(readSchema.getId))
-          val (newChild, childInclude) = checkSchemaCompatibility(fileSchema.getChildren.get(0),
-            readSchema.getChildren.get(0), isCaseAware, include)
-          prunedInclude ++= childInclude
-          TypeDescription.createList(newChild) -> prunedInclude.toArray
-        case TypeDescription.Category.MAP =>
-          val prunedInclude = mutable.ArrayBuffer(include(readSchema.getId))
-          val (newKey, keyInclude) = checkSchemaCompatibility(fileSchema.getChildren.get(0),
-            readSchema.getChildren.get(0), isCaseAware, include)
-          val (newValue, valueInclude) = checkSchemaCompatibility(fileSchema.getChildren.get(1),
-            readSchema.getChildren.get(1), isCaseAware, include)
-          prunedInclude ++= keyInclude
-          prunedInclude ++= valueInclude
-          TypeDescription.createMap(newKey, newValue) -> prunedInclude.toArray
-        case TypeDescription.Category.UNION =>
-          val newUnion = TypeDescription.createUnion()
-          val prunedInclude = mutable.ArrayBuffer(include(readSchema.getId))
-          readSchema.getChildren.asScala.zip(fileSchema.getChildren.asScala)
-            .foreach { case (r, f) =>
-              val (newChild, childInclude) = checkSchemaCompatibility(f, r, isCaseAware, include)
-              newUnion.addUnionChild(newChild)
-              prunedInclude ++= childInclude
-            }
-          newUnion -> prunedInclude.toArray
-        // Primitive types should be equal to each other.
-        case _ =>
-          if (!OrcShims.typeDescriptionEqual(fileSchema, readSchema)) {
-            throw new QueryExecutionException("Incompatible schemas for ORC file" +
-              s" at ${partFile.filePath}\n" +
-              s" file schema: $fileSchema\n" +
-              s" read schema: $readSchema")
+        case (TypeDescription.Category.LIST, TypeDescription.Category.LIST) =>
+          val newChild = checkTypeCompatibility(fileType.getChildren.get(0),
+            readType.getChildren.get(0), isCaseAware, fileIncluded, isForcePos)
+          fileIncluded(fileType.getId) = true
+          TypeDescription.createList(newChild)
+        case (TypeDescription.Category.MAP, TypeDescription.Category.MAP) =>
+          val newKey = checkTypeCompatibility(fileType.getChildren.get(0),
+            readType.getChildren.get(0), isCaseAware, fileIncluded, isForcePos)
+          val newValue = checkTypeCompatibility(fileType.getChildren.get(1),
+            readType.getChildren.get(1), isCaseAware, fileIncluded, isForcePos)
+          fileIncluded(fileType.getId) = true
+          TypeDescription.createMap(newKey, newValue)
+        case (ft, rt) if ft.isPrimitive && rt.isPrimitive =>
+          if (OrcShims.typeDescriptionEqual(fileType, readType) ||
+            GpuOrcScan.canCast(fileType, readType)) {
+            // Since type casting is supported, here should return the file type.
+            fileIncluded(fileType.getId) = true
+            fileType.clone()
+          } else {
+            throw new QueryExecutionException("GPU ORC does not support type conversion" +
+              s" from file type $fileType (${fileType.getId}) to" +
+              s" reader type $readType (${readType.getId})")
           }
-          readSchema.clone() -> Array(include(readSchema.getId))
+        case (f, r) =>
+          // e.g. Union type is not supported yet
+          throw new QueryExecutionException("Unsupported type pair of " +
+            s"(file type, read type)=($f, $r)")
       }
     }
 
@@ -1392,10 +1319,10 @@ class MultiFileCloudOrcPartitionReader(
     maxReadBatchSizeBytes: Long,
     numThreads: Int,
     maxNumFileProcessed: Int,
-    debugDumpPrefix: String,
+    override val debugDumpPrefix: Option[String],
     filters: Array[Filter],
     filterHandler: GpuOrcFileFilterHandler,
-    override val execMetrics: Map[String, GpuMetric],
+    execMetrics: Map[String, GpuMetric],
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
@@ -1516,20 +1443,6 @@ class MultiFileCloudOrcPartitionReader(
   }
 
   /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The requirements:
-   * 1. Same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. Different file formats have different ThreadPoolExecutors
-   *
-   * @param numThreads max number of threads to create
-   * @return ThreadPoolExecutor
-   */
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    OrcMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-  }
-
-  /**
    * File format short name used for logging and other things to uniquely identity
    * which file format is being used.
    *
@@ -1563,8 +1476,10 @@ class MultiFileCloudOrcPartitionReader(
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val (hostBuffer, size) = memBuffersAndSize.head
-        val nextBatch = readBufferToTable(hostBuffer, size, buffer.partitionedFile.partitionValues,
-          buffer.partitionedFile.filePath, buffer.updatedReadSchema, buffer.requestedMapping)
+        val nextBatch = addPartitionValues(
+          decodeToBatch(hostBuffer, size, buffer.updatedReadSchema, buffer.requestedMapping,
+            filterHandler.isCaseSensitive, files),
+          buffer.partitionedFile.partitionValues, partitionSchema)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
@@ -1577,57 +1492,6 @@ class MultiFileCloudOrcPartitionReader(
     }
   }
 
-  // Send the buffer to GPU to decode
-  private def readBufferToTable(
-      hostBuffer: HostMemoryBuffer,
-      dataSize: Long,
-      partValues: InternalRow,
-      fileName: String,
-      updatedReadSchema: TypeDescription,
-      requestedMapping: Option[Array[Int]] = None): Option[ColumnarBatch] = {
-    val table = withResource(hostBuffer) { _ =>
-      // Dump ORC data into a file
-      dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("orc"))
-
-      val tableSchema = resolveTableSchema(updatedReadSchema, requestedMapping)
-      val includedColumns = tableSchema.getFieldNames.asScala
-      val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
-      val parseOpts = ORCOptions.builder()
-        .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-        .withNumPyTypes(false)
-        .includeColumn(includedColumns:_*)
-        .decimal128Column(decimal128Fields:_*)
-        .build()
-
-      // about to start using the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-
-      val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-          metrics(GPU_DECODE_TIME))) { _ =>
-        Table.readORC(parseOpts, hostBuffer, 0, dataSize)
-      }
-      closeOnExcept(table) { _ =>
-        val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
-        logDebug(s"GPU batch size: $batchSizeBytes bytes")
-        maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
-      }
-
-      metrics(NUM_OUTPUT_BATCHES) += 1
-      Some(SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
-        filterHandler.isCaseSensitive))
-    }
-
-    withResource(table) { _ =>
-      val colTypes = readDataSchema.fields.map(f => f.dataType)
-      val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes))
-      maybeBatch.foreach { batch =>
-        logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
-      }
-      // we have to add partition values here for this batch, we already verified that
-      // its not different for all the blocks in this batch
-      addPartitionValues(maybeBatch, partValues, partitionSchema)
-    }
-  }
 }
 
 trait OrcCodecWritingHelper extends Arm {
@@ -1745,11 +1609,11 @@ class MultiFileOrcPartitionReader(
     conf: Configuration,
     files: Array[PartitionedFile],
     clippedStripes: Seq[OrcSingleStripeMeta],
-    readDataSchema: StructType,
-    debugDumpPrefix: String,
+    override val readDataSchema: StructType,
+    override val debugDumpPrefix: Option[String],
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    override val execMetrics: Map[String, GpuMetric],
+    execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     isCaseSensitive: Boolean)
@@ -1950,19 +1814,6 @@ class MultiFileOrcPartitionReader(
   }
 
   /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The rules:
-   * 1. same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. different file formats have different ThreadPoolExecutors
-   *
-   * @return ThreadPoolExecutor
-   */
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    OrcMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-  }
-
-  /**
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
@@ -2008,32 +1859,9 @@ class MultiFileOrcPartitionReader(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long,
       clippedSchema: SchemaBase,
-      extraInfo: ExtraInfo): Table = {
-
-    // Dump ORC data into a file
-    dumpDataToFile(dataBuffer, dataSize, files, Option(debugDumpPrefix), Some("orc"))
-
-    val tableSchema = resolveTableSchema(clippedSchema, extraInfo.requestedMapping)
-    val includedColumns = tableSchema.getFieldNames.asScala
-    val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
-    val parseOpts = ORCOptions.builder()
-      .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-      .withNumPyTypes(false)
-      .includeColumn(includedColumns: _*)
-      .decimal128Column(decimal128Fields:_*)
-      .build()
-
-    // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-
-    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-      metrics(GPU_DECODE_TIME))) { _ =>
-      Table.readORC(parseOpts, dataBuffer, 0, dataSize)
-    }
-
-    metrics(NUM_OUTPUT_BATCHES) += 1
-    SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema, isCaseSensitive)
-  }
+      extraInfo: ExtraInfo): Table =
+    decodeToTable(dataBuffer, dataSize, clippedSchema, extraInfo.requestedMapping,
+      isCaseSensitive, files)
 
   /**
    * Write a header for a specific file format. If there is no header for the file format,
@@ -2065,7 +1893,6 @@ class MultiFileOrcPartitionReader(
    * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
    * @param footerOffset   Where begin to write the footer
    * @param stripes        The data block meta info
-   * @param clippedSchema  The clipped schema info
    * @param batchContext   The batch building context
    * @return the buffer and the buffer size
    */

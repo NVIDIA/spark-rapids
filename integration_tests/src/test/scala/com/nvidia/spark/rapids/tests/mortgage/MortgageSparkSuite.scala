@@ -27,11 +27,6 @@ class MortgageSparkSuite extends FunSuite {
   /**
    * This is intentionally a def rather than a val so that scalatest uses the correct value (from
    * this class or the derived class) when registering tests.
-   *
-   * @note You are likely to see device/host leaks from this test when using the
-   *       RAPIDS Shuffle Manager. The reason for that is a race between cuDF's MemoryCleaner
-   *       and the SparkContext shutdown. Because of this, shuffle buffers cached may not get
-   *       cleaned (on shuffle unregister) when the MemoryCleaner exits.
    */
   def adaptiveQueryEnabled = false
 
@@ -43,7 +38,7 @@ class MortgageSparkSuite extends FunSuite {
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.rapids.sql.explain", true)
+      .config("spark.rapids.sql.explain", "ALL")
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.hasNans", false)

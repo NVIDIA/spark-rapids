@@ -445,4 +445,12 @@ object ShimLoader extends Logging {
   def newExplainPlan(): ExplainPlanBase = {
     newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
+
+  def newHiveProvider(): HiveProvider= {
+    newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
+  }
+
+  def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
+    "org.apache.spark.sql.rapids.AvroProviderImpl")
+
 }

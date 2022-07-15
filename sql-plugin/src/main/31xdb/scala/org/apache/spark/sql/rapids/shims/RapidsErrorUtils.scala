@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -44,5 +44,20 @@ object RapidsErrorUtils {
 
   def divOverflowError(origin: Origin): ArithmeticException = {
     new ArithmeticException("Overflow in integral divide.")
+  }
+
+  def arithmeticOverflowError(
+      message: String,
+      hint: String = "",
+      errorContext: String = ""): ArithmeticException = {
+    new ArithmeticException(message)
+  }
+
+  def cannotChangeDecimalPrecisionError(      
+      value: Decimal,
+      toType: DecimalType,
+      context: String = ""): ArithmeticException = {
+    new ArithmeticException(s"${value.toDebugString} cannot be represented as " +
+      s"Decimal(${toType.precision}, ${toType.scale}).")
   }
 }

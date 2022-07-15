@@ -48,10 +48,13 @@ else
     if [ -d "$LOCAL_JAR_PATH" ]; then
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
-        # TODO - need to update jenkins scripts to upload this jar
-        # https://github.com/NVIDIA/spark-rapids/issues/5771
-        export INCLUDE_PARQUET_HADOOP_TEST_JAR=false
-        PARQUET_HADOOP_TESTS=
+        if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
+            export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
+            PARQUET_HADOOP_TESTS=$(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar)
+        else
+            export INCLUDE_PARQUET_HADOOP_TEST_JAR=false
+            PARQUET_HADOOP_TESTS=
+        fi
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     else

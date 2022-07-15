@@ -52,7 +52,7 @@ case class WholeStageExecParser(
     // for now
     val allStagesIncludingChildren = childNodes.flatMap(_.stages).toSet ++ stagesInNode.toSet
     val execInfo = new ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
-      node.id, anySupported, Some(childNodes), allStagesIncludingChildren.toSeq)
+      node.id, anySupported, Some(childNodes), allStagesIncludingChildren)
     Seq(execInfo)
   }
 }
