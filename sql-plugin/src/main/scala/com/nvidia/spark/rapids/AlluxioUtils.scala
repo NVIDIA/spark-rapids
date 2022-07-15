@@ -112,7 +112,7 @@ object AlluxioUtils extends Logging {
           val pathStr = rootPath.toString
           val matchedSet = replaceMap.values.filter(reg => pathStr.startsWith(reg))
           if (matchedSet.size == 1) {
-            checkAlluxioMounted(relation.sparkSession, replaceMap(matchedSet.head))
+            checkAlluxioMounted(relation.sparkSession, matchedSet.head)
           }
         })
 
