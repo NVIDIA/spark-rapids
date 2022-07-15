@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,6 +75,10 @@ object GpuPythonHelper extends Logging {
       val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
       (initAllocTotal / cpuTaskSlots, maxAllocTotal / cpuTaskSlots)
     }
+  }
+
+  def isArrowZeroCopyEnabled(sqlConf: SQLConf): Boolean = {
+    new RapidsConf(sqlConf).get(PYTHON_ARROW_ZERO_COPY_ENABLED)
   }
 
   def isPythonOnGpuEnabled(sqlConf: SQLConf, name: String = "spark"): Boolean = {

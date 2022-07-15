@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.api.python.{ChainedPythonFunctions}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, PythonUDF}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -91,15 +91,14 @@ case class GpuMapInPandasExec(
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
     val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
 
+    lazy val isArrowZeroCopyEnabled = GpuPythonHelper.isArrowZeroCopyEnabled(conf)
+
     // Start process
     child.executeColumnar().mapPartitionsInternal { inputIter =>
       val context = TaskContext.get()
 
       // Single function with one struct.
       val argOffsets = Array(Array(0))
-      val pyInputSchema = StructType(StructField("in_struct", pyInputTypes) :: Nil)
-      val pythonOutputSchema = StructType(StructField("out_struct",
-        StructType.fromAttributes(output)) :: Nil)
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
@@ -115,9 +114,16 @@ case class GpuMapInPandasExec(
         override def next(): ColumnarBatch = inputIter.next()
       }
 
-      val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
-          batchSize, mNumInputRows, mNumInputBatches, spillCallback)
-        .map { batch =>
+      val rebatchingIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
+        batchSize, mNumInputRows, mNumInputBatches, spillCallback)
+
+      val pythonOutputSchema = StructType(
+        StructField("out_struct", StructType.fromAttributes(output)) :: Nil)
+
+      val (pyInputIterator, pyInputSchema) = if (isArrowZeroCopyEnabled) {
+        (rebatchingIterator, pyInputTypes)
+      } else {
+        val iter = rebatchingIterator.map { batch =>
           // Here we wrap it via another column so that Python sides understand it
           // as a DataFrame.
           withResource(batch) { b =>
@@ -127,12 +133,14 @@ case class GpuMapInPandasExec(
               new ColumnarBatch(Array(gpuColumn), b.numRows())
             }
           }
+        }
+        (iter, StructType(StructField("in_struct", pyInputTypes) :: Nil))
       }
 
       if (pyInputIterator.hasNext) {
-        val pyRunner = new GpuArrowPythonRunner(
+        val pyRunner = GpuArrowPythonRunnerChooser(
+          isArrowZeroCopyEnabled,
           chainedFunc,
-          PythonEvalType.SQL_MAP_PANDAS_ITER_UDF,
           argOffsets,
           pyInputSchema,
           sessionLocalTimeZone,
@@ -146,14 +154,15 @@ case class GpuMapInPandasExec(
           // and columns.
           // Then try to read as many as possible by specifying `minReadTargetBatchSize` as
           // `Int.MaxValue` here.
-          Int.MaxValue)
-
+          Int.MaxValue,
+        )
         executePython(pyInputIterator, output, pyRunner, mNumOutputRows, mNumOutputBatches)
+
       } else {
-        // Empty partition, return it directly
         inputIter
       }
     } // end of mapPartitionsInternal
   } // end of doExecuteColumnar
 
 }
+

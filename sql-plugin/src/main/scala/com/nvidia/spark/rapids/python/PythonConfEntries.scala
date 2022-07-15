@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,15 @@ import com.nvidia.spark.rapids.RapidsConf.{POOLED_MEM, UVM_ENABLED}
 import com.nvidia.spark.rapids.RapidsConf.conf
 
 object PythonConfEntries {
+
+  val PYTHON_ARROW_ZERO_COPY_ENABLED = conf("spark.rapids.sql.python.arrow.zerocopy.enabled")
+    .doc("This is an experimental feature and is likely to change in the future. " +
+      "Enable (true) or disable (false) support for data zero copy from java process to " +
+      "python process by CUDA IPC mechanism. When enabled, The RAPIDs accelerator just copy " +
+      "the meta of the data to python process in the row of pandas DataFrame, and when disabled, " +
+      "The RAPIDS accelerator will copy the whole data to the python process")
+    .booleanConf
+    .createWithDefault(false)
 
   val PYTHON_GPU_ENABLED = conf("spark.rapids.sql.python.gpu.enabled")
     .doc("This is an experimental feature and is likely to change in the future." +
