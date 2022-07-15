@@ -21,6 +21,7 @@ import scala.collection.mutable
 import org.scalatest.FunSuite
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{BooleanType, DataType, DoubleType, IntegerType, LongType, StringType, StructField, StructType}
 
@@ -52,7 +53,8 @@ class JCudfUtilSuite extends FunSuite with Logging {
     ("col-bool-22", BooleanType),
     ("col-bool-23", IntegerType))
 
-  private val schema = new StructType(fieldsArray.map(f => StructField(f._1, f._2, true)).toArray)
+  private val schema =
+    new StructType(fieldsArray.map(f => StructField(f._1, f._2, nullable = true)).toArray)
 
   private val dataTypeAlignmentMap = mutable.LinkedHashMap[DataType, Int](
     StringType -> 1,
@@ -88,46 +90,18 @@ class JCudfUtilSuite extends FunSuite with Logging {
     assert(unpackedMap.deep == expectedUnPackedMap.deep)
     // test offset calculator
     val startOffsets: Array[Int] = new Array[Int](attributes.length)
-    val jCudfBuilder = JCudfUtil.getJCudfRowEstimator(packedMaps.map(attributes(_)))
-    val validityBytesOffset = jCudfBuilder.setColumnOffsets(startOffsets)
+    val jCudfBuilder =
+      JCudfUtil.getRowOffsetsCalculator(packedMaps.map(attributes(_)), startOffsets)
+    val validityBytesOffset = jCudfBuilder.getValidityBytesOffset
 
     assert(jCudfBuilder.hasVarSizeData)
     assert(170 == validityBytesOffset)
     assert(startOffsets.deep == expectedPackedOffsets.deep)
   }
 
-  test("test JCudf Row Visitor used in CodeGen with packed Schema") {
-    val attributes = TrampolineUtil.toAttributes(schema)
-    val packedMaps = CudfRowTransitions.reorderSchemaToPackedColumns(attributes)
-    val packedAttributes = packedMaps.map(attributes(_))
-    val cudfRowVisitor = JCudfUtil.getJCudfRowVisitor(packedAttributes)
-    val stringColumns = packedMaps.filter(packedAttributes(_).dataType.isInstanceOf[StringType])
-
-    assert(cudfRowVisitor.getValidityBytesOffset == 170)
-    assert(cudfRowVisitor.getValiditySizeInBytes == (attributes.length + 7) / 8)
-    var varDataOffsetRef = 173
-    val cudfDataOffset = cudfRowVisitor.getVariableDataOffset
-    assert(cudfDataOffset == 170 + cudfRowVisitor.getValiditySizeInBytes)
-    assert(cudfDataOffset == 173)
-    (0 until schema.length).map { colIndex =>
-      cudfRowVisitor.getNextCol
-      val cudfColOff = cudfRowVisitor.getColOffset
-      assert(cudfColOff == expectedPackedOffsets(colIndex))
-      val colLength = cudfRowVisitor.getColLength
-      colLength match {
-        case -15 =>
-          // assume length is 20;
-          varDataOffsetRef += 20
-          assert(packedAttributes(colIndex).dataType.isInstanceOf[StringType])
-        case _ => assert(!stringColumns.contains(colIndex))
-      }
-    }
-    assert(varDataOffsetRef == cudfDataOffset + 20 * stringColumns.length)
-  }
-
   test("test JCudf Row Size Estimator for unpacked schema") {
     val attributes = TrampolineUtil.toAttributes(schema)
-    val cudfRowEstimator = JCudfUtil.getJCudfRowEstimator(attributes.toArray)
+    val cudfRowEstimator = JCudfUtil.getRowOffsetsCalculator(attributes.toArray)
     val sizePerRowEstimate = cudfRowEstimator.getEstimateSize
     val stringColumns = attributes.count(_.dataType.isInstanceOf[StringType])
     // validity offset is 176
@@ -137,5 +111,59 @@ class JCudfUtilSuite extends FunSuite with Logging {
       176 + 3 + stringColumns * JCudfUtil.JCUDF_TYPE_STRING_LENGTH_ESTIMATE,
       JCudfUtil.JCUDF_ROW_ALIGNMENT)
     assert(sizePerRowEstimate == estimatedSize)
+  }
+
+  test("test JCudf Copy Row used in CodeGen with packed Schema") {
+    // scalastyle:off line.size.limit
+    val attributes = TrampolineUtil.toAttributes(schema)
+    val packedMaps = CudfRowTransitions.reorderSchemaToPackedColumns(attributes)
+    val packedAttributes = packedMaps.map(attributes(_))
+    val cudfRowVisitor = JCudfUtil.getRowBuilder(packedAttributes)
+
+    // assume spark row object starts at 64; row offset = 72
+    val rowBaseObj = 64
+    val rowBaseOffset = 72
+    val sparkValidityOffset = UnsafeRow.calculateBitSetWidthInBytes(schema.length)
+    val cudfAddress = "startAddress"
+    val cudfDataOffset = "cudfDataOffsetVar"
+
+    val expectedCopyStrings : Array[String] =
+      Array(
+        "Platform.putLong(null, startAddress + 0, Platform.getLong(64, 72 + 8 + (0 * 8)));",
+        "Platform.putLong(null, startAddress + 8, Platform.getLong(64, 72 + 8 + (1 * 8)));",
+        "Platform.putLong(null, startAddress + 16, Platform.getLong(64, 72 + 8 + (2 * 8)));",
+        "Platform.putLong(null, startAddress + 24, Platform.getLong(64, 72 + 8 + (3 * 8)));",
+        "Platform.putLong(null, startAddress + 32, Platform.getLong(64, 72 + 8 + (4 * 8)));",
+        "Platform.putLong(null, startAddress + 40, Platform.getLong(64, 72 + 8 + (5 * 8)));",
+        "Platform.putLong(null, startAddress + 48, Platform.getLong(64, 72 + 8 + (6 * 8)));",
+        "Platform.putLong(null, startAddress + 56, Platform.getLong(64, 72 + 8 + (7 * 8)));",
+        "Platform.putLong(null, startAddress + 64, Platform.getLong(64, 72 + 8 + (8 * 8)));",
+        "Platform.putLong(null, startAddress + 72, Platform.getLong(64, 72 + 8 + (9 * 8)));",
+        "Platform.putLong(null, startAddress + 80, Platform.getLong(64, 72 + 8 + (10 * 8)));",
+        "Platform.putLong(null, startAddress + 88, Platform.getLong(64, 72 + 8 + (11 * 8)));",
+        "cudfDataOffsetVar += copyUTF8StringInto(12, 64, 72, 8, startAddress, 96, cudfDataOffsetVar);",
+        "Platform.putInt(null, startAddress + 104, Platform.getInt(64, 72 + 8 + (13 * 8)));",
+        "cudfDataOffsetVar += copyUTF8StringInto(14, 64, 72, 8, startAddress, 108, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(15, 64, 72, 8, startAddress, 116, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(16, 64, 72, 8, startAddress, 124, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(17, 64, 72, 8, startAddress, 132, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(18, 64, 72, 8, startAddress, 140, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(19, 64, 72, 8, startAddress, 148, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(20, 64, 72, 8, startAddress, 156, cudfDataOffsetVar);",
+        "Platform.putInt(null, startAddress + 164, Platform.getInt(64, 72 + 8 + (21 * 8)));",
+        "Platform.putByte(null, startAddress + 168, Platform.getByte(64, 72 + 8 + (22 * 8)));",
+        "Platform.putByte(null, startAddress + 169, Platform.getByte(64, 72 + 8 + (23 * 8)));")
+
+    schema.indices.map { colIndex =>
+      assert(cudfRowVisitor.getByteCursor == expectedPackedOffsets(colIndex))
+      assert(cudfRowVisitor.generateCopyCodeColumn(
+        colIndex, s"$rowBaseObj", s"$rowBaseOffset", s"$sparkValidityOffset",
+        cudfAddress, cudfDataOffset) == expectedCopyStrings(colIndex))
+    }
+    assert(cudfRowVisitor.getValidityBytesOffset == 170)
+    assert(cudfRowVisitor.getValiditySizeInBytes == (attributes.length + 7) / 8)
+    val actualCudfDataOffset = cudfRowVisitor.getVariableDataOffset
+    assert(actualCudfDataOffset == 170 + cudfRowVisitor.getValiditySizeInBytes)
+    assert(actualCudfDataOffset == 173)
   }
 }

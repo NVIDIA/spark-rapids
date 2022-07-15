@@ -56,19 +56,15 @@ public final class CudfUnsafeRow extends InternalRow {
   private long address;
 
   /**
-   * For each column the starting location to read from. The index to the is the position in
-   * the row bytes, not the user faceing ordinal.
+   * For each column the starting location to read from. The index is the position in
+   * the row bytes, not the user facing ordinal.
    */
   private int[] startOffsets;
-
-  public int getFixedWidthSizeInBytes() {
-    return fixedWidthSizeInBytes;
-  }
 
   /**
    * At what point validity data starts.
    */
-  private int fixedWidthSizeInBytes;
+  private int validityOffsetInBytes;
 
   /**
    * The size of this row's backing data, in bytes.
@@ -79,18 +75,6 @@ public final class CudfUnsafeRow extends InternalRow {
    * A mapping from the user facing ordinal to the index in the underlying row.
    */
   private int[] remapping;
-
-  public boolean isVariableWidthSchema() {
-    return variableWidthSchema;
-  }
-
-  /**
-   * Calculates the offset of the variable width section.
-   * @return Total bytes used by the fixed width and the validity bytes.
-   */
-  public int getVariableSizeDataOffset() {
-    return getFixedWidthSizeInBytes() +  JCudfUtil.calculateBitSetWidthInBytes(numFields());
-  }
 
   private boolean variableWidthSchema;
 
@@ -131,9 +115,9 @@ public final class CudfUnsafeRow extends InternalRow {
    */
   public CudfUnsafeRow(Attribute[] attributes, int[] remapping) {
     startOffsets = new int[attributes.length];
-    JCudfUtil.JCudfRowOffsetsEstimator jCudfBuilder =
-        JCudfUtil.getJCudfRowEstimator(attributes);
-    this.fixedWidthSizeInBytes = jCudfBuilder.setColumnOffsets(startOffsets);
+    JCudfUtil.RowOffsetsCalculator jCudfBuilder =
+        JCudfUtil.getRowOffsetsCalculator(attributes, startOffsets);
+    this.validityOffsetInBytes = jCudfBuilder.getValidityBytesOffset();
     this.variableWidthSchema = jCudfBuilder.hasVarSizeData();
     this.remapping = remapping;
     assert startOffsets.length == remapping.length;
@@ -176,7 +160,7 @@ public final class CudfUnsafeRow extends InternalRow {
     assertIndexIsValid(i);
     int validByteIndex = i / 8;
     int validBitIndex = i % 8;
-    byte b = Platform.getByte(null, address + fixedWidthSizeInBytes + validByteIndex);
+    byte b = Platform.getByte(null, address + validityOffsetInBytes + validByteIndex);
     return ((1 << validBitIndex) & b) == 0;
   }
 
@@ -186,9 +170,9 @@ public final class CudfUnsafeRow extends InternalRow {
     assertIndexIsValid(i);
     int validByteIndex = i / 8;
     int validBitIndex = i % 8;
-    byte b = Platform.getByte(null, address + fixedWidthSizeInBytes + validByteIndex);
+    byte b = Platform.getByte(null, address + validityOffsetInBytes + validByteIndex);
     b = (byte)((b & ~(1 << validBitIndex)) & 0xFF);
-    Platform.putByte(null, address + fixedWidthSizeInBytes + validByteIndex, b);
+    Platform.putByte(null, address + validityOffsetInBytes + validByteIndex, b);
   }
 
   @Override
@@ -250,8 +234,9 @@ public final class CudfUnsafeRow extends InternalRow {
       return null;
     }
     final long columnOffset = getFieldAddressFromOrdinal(ordinal);
+    // data format for the fixed-width portion of variable-width data is 4 bytes of offset followed
+    // by 4 bytes of length.
     final int offset = Platform.getInt(null, columnOffset);
-    // increment 4 bytes to read the number of elements
     final int size = Platform.getInt(null, columnOffset + 4);
     return UTF8String.fromAddress(null, address + offset, size);
   }
@@ -391,5 +376,22 @@ public final class CudfUnsafeRow extends InternalRow {
   public boolean anyNull() {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET");
 //    return BitSetMethods.anySet(baseObject, address, bitSetWidthInBytes / 8);
+  }
+
+  public boolean isVariableWidthSchema() {
+    return variableWidthSchema;
+  }
+
+  public int getValidityOffsetInBytes() {
+    return validityOffsetInBytes;
+  }
+
+  /**
+   * Calculates the offset of the variable width section.
+   * This can be used to get the offset of the variable-width data. Note that the data-offset is 1-byte aligned.
+   * @return Total bytes used by the fixed width offsets and the validity bytes without row-alignment.
+   */
+  public int getFixedWidthInBytes() {
+    return getValidityOffsetInBytes() + JCudfUtil.calculateBitSetWidthInBytes(numFields());
   }
 }

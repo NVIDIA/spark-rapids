@@ -100,7 +100,6 @@ def test_row_conversions_var_width_basic():
         df = spark.createDataFrame([(1, "string_val_00", 2, "string_val_01"),
                                     (3, "string_val_10", 4, "string_val_11")],
                                    schema=schema).selectExpr("*", "col_00_int as 1st_column")
-        debug_df(df)
         return df
     assert_gpu_and_cpu_are_equal_collect(lambda spark : do_it(spark))
 
@@ -131,6 +130,5 @@ def test_row_conversions_var_width_wide():
            [["m{}".format(i), DecimalGen(precision=7, scale=3, nullable=True)] for i in range(10)]
     def do_it(spark):
         df=gen_df(spark, gens, length=1).selectExpr("*", "a0 as a_again")
-        debug_df(df)
         return df
     assert_gpu_and_cpu_are_equal_collect(do_it)

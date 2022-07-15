@@ -71,7 +71,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
       GpuMetric numOutputRows,
       GpuMetric numOutputBatches) {
     this.input = input;
-    JCudfUtil.JCudfRowOffsetsEstimator cudfRowEstimator = JCudfUtil.getJCudfRowEstimator(schema);
+    JCudfUtil.RowOffsetsCalculator cudfRowEstimator = JCudfUtil.getRowOffsetsCalculator(schema);
     int sizePerRowEstimate = cudfRowEstimator.getEstimateSize();
     // caches if the row fits the CUDF kernel optimization
     fitsOptimizedConversion = JCudfUtil.fitsOptimizedConversion(cudfRowEstimator);

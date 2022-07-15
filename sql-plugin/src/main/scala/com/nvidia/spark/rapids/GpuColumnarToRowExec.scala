@@ -98,13 +98,8 @@ class AcceleratedColumnarToRowIterator(
     if (cb.numRows() > 0) {
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
         withResource(rearrangeRows(cb)) { table =>
-          // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means at
-          // most 184 double/long values. Spark by default limits codegen to 100 fields
-          // "spark.sql.codegen.maxFields". So, we are going to be cautious and start with that
-          // until we have tested it more. We branching over the size of the output to know which
-          // kernel to call.
-          // If the cudfUnsafeRow fits the criteria, we call the fixed-width
-          // optimized version, otherwise the generic one.
+          // If the cudfUnsafeRow fits the criteria, we call the fixed-width optimized version.
+          // Otherwise, we call the generic one.
           withResource(if (JCudfUtil.fitsOptimizedConversion(outputRow)) {
             table.convertToRowsFixedWidthOptimized()
           } else {

@@ -61,14 +61,10 @@ public final class JCudfUtil {
 
   /**
    * Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
-   * The maximum is {@code 1536 - 8} with 64-bit alignment.
+   * The maximum is {@code 1536 - 7} with 64-bit alignment.
    */
   public static final int JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED =
-      JCUDF_OPTIMIZED_CUDF_KERNEL_MAX_BYTES - JCUDF_ROW_ALIGNMENT;
-
-  // Used to negate the alignment of variable-sized
-  public static final int JCUDF_MAX_TYPE_ORDER = 16;
-
+      JCUDF_OPTIMIZED_CUDF_KERNEL_MAX_BYTES - (JCUDF_ROW_ALIGNMENT - 1);
 
   public static final Set<DataType> fixedLengthDataTypes;
 
@@ -115,11 +111,11 @@ public final class JCudfUtil {
   }
 
   /**
-   * A method used to order the columns in order to pack the schema based on the JCudf
-   * specifications.
+   * A method used to order the columns to pack the schema based on the JCudf specifications.
    * It sorts fixed-width columns by their length.
-   * For variable-length columns, they are treated as integer since the alignment is 4. However, if
-   * both datatypes are variable-length, then we want the type with larger alignment to come last.
+   * Variable-length columns store 8 bytes, but are 4 byte aligned since they are two 4-byte values.
+   * However, if both datatypes are variable-length, then we want the type with larger alignment to
+   * come last for better packing of the data.
    *
    * @param dt1 first datatype to compare.
    * @param dt2 second datatype to compare.
@@ -200,47 +196,90 @@ public final class JCudfUtil {
    * For fixed-size rows, we know the exact number of bytes used by the columns and the validity
    * bytes. We can use that value to branch over the size of the output to know which kernel to
    * call.
+   * Note that Spark by default limits codegen to 100 fields {@code spark.sql.codegen.maxFields}".
    *
    * @param cudfUnsafeRow the unsafeRow object that represents the Spark SQL Schema.
-   * @return true if {@link CudfUnsafeRow#getFixedWidthSizeInBytes()} is less than
-   *         {@link #JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED} which is 1528 Bytes.
+   * @return true if {@link CudfUnsafeRow#getFixedWidthInBytes()} is less than
+   *         {@link #JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED} which is 1529 Bytes to account for the
+   *         alignment.
    */
   public static boolean fitsOptimizedConversion(
       CudfUnsafeRow cudfUnsafeRow) {
     return !cudfUnsafeRow.isVariableWidthSchema() &&
-        cudfUnsafeRow.getVariableSizeDataOffset() < JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED;
+        cudfUnsafeRow.getFixedWidthInBytes() < JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED;
   }
 
   /**
    * @see #fitsOptimizedConversion(CudfUnsafeRow)
-   * In some situations, we can calculate an estimate size for a schema withoput constructing
-   * the object yet. In that case, we can use {@link JCudfRowVisitor} which already processed the
-   * schema.
+   * In some situations, we can calculate an estimate size for a schema without constructing
+   * the object yet. In that case, we can use {@link RowBuilder} which iterates through the
+   * columns to get an estimate of the bytes occupied by the entire row.
    */
   public static boolean fitsOptimizedConversion(
-      JCudfRowOffsetsEstimator cudfRowOffsetMock) {
+      RowOffsetsCalculator cudfRowOffsetMock) {
     return !cudfRowOffsetMock.hasVarSizeData() &&
-        cudfRowOffsetMock.getCurrentByteOffset() < JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED;
+        cudfRowOffsetMock.getEstimateSize() < JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED;
   }
 
   /**
-   * A helper class to calculate the columns, validity, and variable width offsets.
-   * This helper is used to get an estimate size for the row including variable-sized rows.
-   * The implementation does not make any assumptions whether the schema is packed or not.
-   * Unlike {@link JCudfRowVisitor}, this implementation does not cache any calculations.
+   * A helper class to calculate the columns offsets and validity size/offset.
+   * It is also used to get a rough estimate of the memory size used by {@link CudfUnsafeRow}.
+   * The implementation saves the offset calculations only if {@link #offsets} is not null. This
+   * implementation avoids allocating an array when caching the offsets is not needed.
    */
-  public static class JCudfRowOffsetsEstimator {
-    Attribute[] attributes;
-    int byteCursor = 0;
-    int varSizeColIndex;
-    int validityBytesOffset = 0;
+  public static class RowOffsetsCalculator {
+    private final Attribute[] attributes;
+    private int[] offsets;
+    // moving cursor pointing to the current offset.
+    private int byteCursor;
+    // the first column that has var-width size.
+    private int varSizeColIndex;
+    // At what point validity data starts.
+    private int validityBytesOffset;
+    // Caches the estimate size (8-bytes aligned). Calculating and reading this field is synchronized.
+    private int estimateRowSize;
 
-    private JCudfRowOffsetsEstimator(Attribute[] attrArr) {
+    private RowOffsetsCalculator(Attribute[] attrArr, int[] offsetArr) {
+      // offsetArr can be null.
+      // This is in the context of constructing an object to get an estimate of the memory needed by the row.
       this.attributes = attrArr;
       resetMeta();
+      initFixedWidthSection(offsetArr);
     }
 
-    private int calcColOffset(int ind) {
+    /**
+     * Handles iterating on all the columns to advance the {@link #byteCursor}.
+     * Then, it calculates the start offset of the validity and its size in bytes.
+     * This method updates the following: {@link #byteCursor}, {@link #offsets}, {@link #varSizeColIndex}, and
+     * all the fields related to the validity
+     *
+     * @param offsetArr if not NULL, it will be used to save the column offsets.
+     */
+    private void initFixedWidthSection(int[] offsetArr) {
+      if (offsetArr == null) {
+        for (int i = 0; i < attributes.length; i++) {
+          advanceColCursorAndGet(i);
+        }
+      } else {
+        this.offsets = offsetArr;
+        for (int i = 0; i < attributes.length; i++) {
+          offsets[i] = advanceColCursorAndGet(i);
+        }
+      }
+      // set the validity size, and mark where it starts
+      setValidityBits(attributes.length);
+    }
+
+    /**
+     * Given the column-index, it increments the {@link #byteCursor} by the length of the datatype of that column.
+     * It takes into considerations the alignment of the column.
+     * Note that this method expects sequential increments to the column. Accessing columns in random order would
+     * result in incorrect calculations.
+     *
+     * @param ind the index of the column in the schema.
+     * @return At what point the column starts.
+     */
+    private int advanceColCursorAndGet(int ind) {
       int res;
       Attribute attr = attributes[ind];
       DataType dataType = attr.dataType();
@@ -260,36 +299,28 @@ public final class JCudfUtil {
       return res;
     }
 
-    /**
-     * Sets the column offsets
-     * @param offsets array containing the offset for all columns
-     * @return the current byte offset of the row.
-     */
-    public int setColumnOffsets(int[] offsets) {
-      resetMeta();
-      for (int i = 0; i < attributes.length; i++) {
-        offsets[i] = calcColOffset(i);
-      }
-      return byteCursor;
-    }
-
     private void resetMeta() {
       varSizeColIndex = attributes.length;
       byteCursor = 0;
+      estimateRowSize = -1;
+      validityBytesOffset = 0;
     }
 
-    private void setValidityBits(int fieldsCount){
+    private void setValidityBits(int fieldsCount) {
       validityBytesOffset = byteCursor;
       byteCursor += calculateBitSetWidthInBytes(fieldsCount);
     }
 
-    public int getEstimateSize() {
-      resetMeta();
-      for (int i = 0; i < attributes.length; i++) {
-        calcColOffset(i);
-      }
-      // set the validity size
-      setValidityBits(attributes.length);
+    /**
+     * This is used internally to estimate the memory needed by the row.
+     * The value calculated is 8-bytes aligned.
+     * It loops on variable-width columns using a moving-cursor that represents the offset of the data.
+     * Note that the calculation requires that {@link #initFixedWidthSection(int[])} has been called at some
+     * point before. Otherwise, the {@link #byteCursor} will be 0.
+     */
+    private void calculateEstimateSize() {
+      // at this point the cursor points to the beginning of the variableWidth section
+      estimateRowSize = byteCursor;
       if (hasVarSizeData()) {
         for (int ind = varSizeColIndex; ind < attributes.length; ind++) {
           DataType dataType = attributes[ind].dataType();
@@ -297,54 +328,117 @@ public final class JCudfUtil {
             continue;
           }
           DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType);
-          addVarSizeData(rapidsType);
+          estimateRowSize = advanceDataCursorAndGet(estimateRowSize, rapidsType);
         }
       }
-      byteCursor = alignOffset(byteCursor, JCUDF_ROW_ALIGNMENT);
-      return byteCursor;
-    }
-    private int addVarSizeData(DType rapidsType) {
-      int length = getEstimateSizeForVarLengthTypes(rapidsType);
-      // For variable-length, alignment and length are not equivalent.
-      int alignment = getDataAlignmentForDataType(rapidsType);
-      int res = alignOffset(byteCursor, alignment);
-      byteCursor = res + length;
-      return res;
+      // for row estimate, we need just to align to row alignment
+      estimateRowSize = alignOffset(estimateRowSize, JCUDF_ROW_ALIGNMENT);
     }
 
+    /**
+     * Increments the data cursor by the length of the column type.
+     * It takes into considerations the datatype alignment. See {@link #getDataAlignmentForDataType(DType)}.
+     *
+     * @param dataOffsetCursor current offset of the data values.
+     * @param rapidsType the type of the current column.
+     * @return data cursor (1-byte aligned) after advancing by the length of the data.
+     */
+    private int advanceDataCursorAndGet(int dataOffsetCursor, DType rapidsType) {
+      // For variable-length, alignment and length are not equivalent.
+      int length = getEstimateSizeForVarLengthTypes(rapidsType);
+      int alignment = getDataAlignmentForDataType(rapidsType);
+      dataOffsetCursor = alignOffset(dataOffsetCursor, alignment);
+      return dataOffsetCursor + length;
+    }
+
+    /**
+     * Used to check whether a row is variable-width or not.
+     * This assumes that an empty schema is "fixed-width".
+     *
+     * @return true if the schema is non-empty and at least one column is variable-width size.
+     */
     public boolean hasVarSizeData() {
       return attributes.length > 0 && varSizeColIndex != attributes.length;
     }
 
-    protected int getCurrentByteOffset() {
-      return byteCursor;
+    public int getValidityBytesOffset() {
+      return validityBytesOffset;
+    }
+
+    /**
+     * Reads the estimate memory that may be used by the row.
+     * This method is thread-safe, but it is not expected that multiple-threads are accessing the same row object
+     * concurrently.
+     *
+     * @return the estimate memory occupied by the row in bytes (8-bytes aligned).
+     */
+    public synchronized int getEstimateSize() {
+      if (estimateRowSize < 0) {
+        // not initialized yet
+        calculateEstimateSize();
+      }
+      return estimateRowSize;
     }
   }
 
   /**
-   * A helper class to calculate the columns, validity, and the variable width offsets.
-   * The variable size data offset will fast-forward to calculate all offsets and cache the results
-   * for optimization purpose (trade-off is more memory usage).
-   * The size of the type is cached in {@link #typesLength}. The array will have negative values for
-   * variable-size data types.
-   * The implementation does not make any assumptions whether the schema is packed or not.
+   * A helper class to calculate columns and validity offsets along with Code-generation that is used to copy row from
+   * {@link org.apache.spark.sql.catalyst.expressions.UnsafeRow} to {@link CudfUnsafeRow}.
+   * The implementation assumes that columns are: accessed sequentially; and they are not necessarily packed.
+   * This class does not need to cache the offsets/types since all the calculations are consumed inside a loop.
+   * It is important to note that failing to iterate on all the columns will break the offsets of the validity bytes
+   * and the variable-width data.
+   * Note: Although building the code using {@code String.format()} looks more clean and readable, it is not preferred
+   * in terms of performance.
    */
-  public static class JCudfRowVisitor {
-    Attribute[] attributes;
-    // caches the offsets of the columns.
-    int[] offsets;
-    // caches the size of the column
-    int[] typesLength;
-    int validitySizeInBytes;
+  public static class RowBuilder {
+    private static final String COPY_STRING_DATA_METHOD_NAME = "copyUTF8StringInto";
+    public static final String GET_CUDF_ROW_SIZE_METHOD_NAME = "getCudfRowLength";
+
+    public static final String COPY_STRING_DATA_CODE = String.join("\n"
+        , "private int " + COPY_STRING_DATA_METHOD_NAME + "("
+        , "    int ordinal, Object src, long baseOffset, int sparkValidityOffset,"
+        , "    long startAddress, int cudfColOffset, int dataDstOffset) {"
+        , "  final long unsafeCudfColOffset = startAddress + cudfColOffset;"
+        , "  // check that the field is null"
+        , "  if (org.apache.spark.unsafe.bitset.BitSetMethods.isSet(src, baseOffset, ordinal)) {"
+        , "    // The string is null. This assumes that we keep the offset position."
+        , "    // The size should be 0, the address is 0 since no data is stored."
+        , "    Platform.putInt(null, unsafeCudfColOffset, 0);"
+        , "    Platform.putInt(null, unsafeCudfColOffset + 4, 0);"
+        , "    return 0;"
+        , "  }"
+        , "  // calculate the spark field offset"
+        , "  long sparkFieldOffset = baseOffset + sparkValidityOffset + (ordinal * 8);"
+        , "  // get the offset and the size from Spark UnsafeFormat"
+        , "  final long strOffsetAndSize = Platform.getLong(src, sparkFieldOffset);"
+        , "  final int strOffset = (int) (strOffsetAndSize >> 32);"
+        , "  final int strSize = (int) strOffsetAndSize;"
+        , "  // set the offset and length in the fixed width section."
+        , "  Platform.putInt(null, unsafeCudfColOffset, dataDstOffset);"
+        , "  Platform.putInt(null, unsafeCudfColOffset + 4, strSize);"
+        , "  // copy the data"
+        , "  Platform.copyMemory("
+        , "      src, baseOffset + strOffset, null, startAddress + dataDstOffset, strSize);"
+        , "  return strSize;"
+        , "}");
+
+    public static final String GET_CUDF_ROW_SIZE_CODE = String.join("\n"
+        , "private int "+ GET_CUDF_ROW_SIZE_METHOD_NAME + "(int bytesOffset) {"
+        , "  return (bytesOffset +" + (JCUDF_ROW_ALIGNMENT - 1) + ") & -" + JCUDF_ROW_ALIGNMENT + ";"
+        , "}");
+
+    private final Attribute[] attributes;
+    // size of the validity bytes.
+    private int validitySizeInBytes;
     // number of bytes used by the fixed size section (fixed fields + validity bytes)
-    int fixedWidthSizeInBytes;
-    // counter used to advance the offset as fields get added
-    int byteCursor = 0;
-    // index used to iterate through the columns.
-    int currColInd = -1;
+    private int fixedWidthSizeInBytes;
+    // moving cursor pointing to the last byte in the row as columns are visited.
+    private int byteCursor = 0;
     // where the validity starts
-    int validityBytesOffset = 0;
-    private JCudfRowVisitor(Attribute[] attrArr) {
+    private int validityBytesOffset = 0;
+
+    private RowBuilder(Attribute[] attrArr) {
       this.attributes = attrArr;
     }
 
@@ -352,68 +446,85 @@ public final class JCudfUtil {
       validityBytesOffset = byteCursor;
       validitySizeInBytes = calculateBitSetWidthInBytes(fieldsCount);
       byteCursor += validitySizeInBytes;
-    }
-
-    /**
-     * Calculate the offset of the given ind.
-     * The #typesLength caches the size of the column.
-     * If the data type is variable-size data, #typesLength will have a negative value that can be
-     * used to look-up the type. String has a length of -15.
-     *
-     * @param ind index of the column
-     * @return the offset of the colum.
-     */
-    private int calcColOffset(int ind) {
-      int res;
-      Attribute attr = attributes[ind];
-      DataType dataType = attr.dataType();
-      DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType);
-      if (isFixedLength(dataType)) {
-        typesLength[ind] = rapidsType.getSizeInBytes();
-        res = alignOffset(byteCursor, typesLength[ind]);
-        byteCursor = res + typesLength[ind];
-        return res;
-      }
-      // For variable size data, return negative value to distinguish fixed Vs Non-fixed types.
-      typesLength[ind] = getDataAlignmentForDataType(rapidsType) - JCUDF_MAX_TYPE_ORDER;
-      res = alignOffset(byteCursor, JCUDF_VAR_LENGTH_FIELD_ALIGNMENT);
-      byteCursor = res + JCUDF_VAR_LENGTH_FIELD_SIZE;
-      return res;
-    }
-
-    private void initCudfRowData() {
-      offsets = new int[attributes.length];
-      typesLength = new int[attributes.length];
-      fixedWidthSizeInBytes = 0;
-
-      for (int i = 0 ; i < attributes.length; i++) {
-        offsets[i] = calcColOffset(i);
-      }
-      setValidityBits(attributes.length);
-      // add this point we know where exactly the width size section starts
       fixedWidthSizeInBytes = byteCursor;
     }
 
     /**
-     * Advances the index to point to the next column.
+     * Given a column-index, it calculates the offset of the column (including relevant alignments)
+     * and returns code string used to copy the column from
+     * {@link org.apache.spark.sql.catalyst.expressions.UnsafeRow} to {@link CudfUnsafeRow}.
+     * The columns have to be accessed sequentially to update the moving-cursor {@link #byteCursor}.
+     *
+     * @param colIndex the sequential index of the column in the schema
+     * @param rowBase the Spark row object address.
+     * @param rowBaseOffset relative offset from the beginning of the row object address.
+     * @param sparkValidityOffset the size of the Spark validity bytes. It is 8-bytes aligned.
+     * @param cudfAddress the start address of the cudf row.
+     * @param cudfDataCursor the variable used by the generated-code to point to the address of the next variable-width
+     *                       data.
+     * @return generated-code to copy the column from the source unsafeRow to the Cudf destination row.
      */
-    public void getNextCol() {
-      if (currColInd >= attributes.length - 1) {
-        throw new RuntimeException("Accessing Out of bound column");
+    public String generateCopyCodeColumn(
+        int colIndex, String rowBase, String rowBaseOffset, String sparkValidityOffset,
+        String cudfAddress, String cudfDataCursor) {
+      Attribute attr = attributes[colIndex];
+      DataType dataType = attr.dataType();
+      DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType);
+      String colIndAsStr = String.valueOf(colIndex);
+      String result;
+      int columnSize = rapidsType.getSizeInBytes();
+      if (columnSize == 0) { // this can be STRING, LIST, or STRUCT
+        columnSize = JCUDF_VAR_LENGTH_FIELD_SIZE;
+        byteCursor = alignOffset(byteCursor, JCUDF_VAR_LENGTH_FIELD_ALIGNMENT);
+        if (rapidsType.equals(DType.STRING)) {
+          result =
+              cudfDataCursor
+                  + " += "
+                  + COPY_STRING_DATA_METHOD_NAME
+                  + "(" + String.join(", ", colIndAsStr, rowBase, rowBaseOffset, sparkValidityOffset,
+                            cudfAddress, String.valueOf(byteCursor), cudfDataCursor)
+                  + ");";
+        } else {
+          // we support String only for now.
+          throw new IllegalStateException(
+              "column index " + colIndAsStr + ", DType:" + rapidsType + " NOT SUPPORTED YET" );
+        }
+      } else { // other types including fixed-width size
+        byteCursor = alignOffset(byteCursor, columnSize);
+        String cudfDstOffset = cudfAddress + " + " + byteCursor;
+        String sparkSrcOffset =
+            rowBase + ", " + rowBaseOffset + " + " + sparkValidityOffset + " + (" + colIndAsStr + " * 8)";
+        switch (columnSize) {
+          case 1:
+            result = "Platform.putByte(null, " + cudfDstOffset + ", Platform.getByte(" + sparkSrcOffset + "));";
+            break;
+          case 2:
+            result = "Platform.putShort(null, " + cudfDstOffset + ", Platform.getShort(" + sparkSrcOffset + "));";
+            break;
+          case 4:
+            result = "Platform.putInt(null, " + cudfDstOffset + ", Platform.getInt(" + sparkSrcOffset + "));";
+            break;
+          case 8:
+            result = "Platform.putLong(null, " + cudfDstOffset + ", Platform.getLong(" + sparkSrcOffset + "));";
+            break;
+          default:
+            throw new IllegalStateException(
+                "column index " + colIndAsStr + ", DType:" + rapidsType + " NOT SUPPORTED YET" );
+        }
       }
-      currColInd++;
+      // update cursor
+      byteCursor += columnSize;
+      if (colIndex == attributes.length - 1) {
+        // this is the last column.
+        // we can mark the validityBytes offsets
+        setValidityBits(attributes.length);
+      }
+      return result;
     }
+
 
     public int getVariableDataOffset() {
       return fixedWidthSizeInBytes;
-    }
-
-    public int getColLength() {
-      return typesLength[currColInd];
-    }
-
-    public int getColOffset() {
-      return offsets[currColInd];
     }
 
     public int getValiditySizeInBytes() {
@@ -423,15 +534,22 @@ public final class JCudfUtil {
     public int getValidityBytesOffset() {
       return validityBytesOffset;
     }
+
+    // used for testing
+    public int getByteCursor() {
+      return byteCursor;
+    }
   }
 
-  public static JCudfRowVisitor getJCudfRowVisitor(Attribute[] attributes) {
-    JCudfRowVisitor cudfRowVisitor = new JCudfRowVisitor(attributes);
-    cudfRowVisitor.initCudfRowData();
-    return cudfRowVisitor;
+  public static RowBuilder getRowBuilder(Attribute[] attributes) {
+    return new RowBuilder(attributes);
   }
 
-  public static JCudfRowOffsetsEstimator getJCudfRowEstimator(Attribute[] attributes) {
-    return new JCudfRowOffsetsEstimator(attributes);
+  public static RowOffsetsCalculator getRowOffsetsCalculator(Attribute[] attributes) {
+    return getRowOffsetsCalculator(attributes, null);
+  }
+
+  public static RowOffsetsCalculator getRowOffsetsCalculator(Attribute[] attributes, int[] offsets) {
+    return new RowOffsetsCalculator(attributes, offsets);
   }
 }
