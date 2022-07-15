@@ -46,7 +46,7 @@ object GpuPartitioningUtils {
       leafFiles: Seq[Path],
       parameters: Map[String, String],
       userSpecifiedSchema: Option[StructType],
-      replaceFunc: (SparkSession, Path) => Path): PartitionSpec = {
+      replaceFunc: Path => Path): PartitionSpec = {
 
     val recursiveFileLookup = parameters.getOrElse("recursiveFileLookup", "false").toBoolean
 
@@ -62,7 +62,7 @@ object GpuPartitioningUtils {
 
       val basePathOption = parameters.get(BASE_PATH_PARAM).map(file => {
         // need to replace the base path
-        replaceFunc(sparkSession, new Path(file))
+        replaceFunc(new Path(file))
       })
 
       val basePaths = getBasePaths(sparkSession.sessionState.newHadoopConfWithOptions(parameters),

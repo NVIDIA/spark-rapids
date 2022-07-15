@@ -81,7 +81,7 @@ object AlluxioUtils extends Logging {
 
         // replacement func to check if the file path is prefixed with the string user configured
         // if yes, replace it
-        val replaceFunc = (sparkSession: SparkSession, f: Path) => {
+        val replaceFunc = (f: Path) => {
           val pathStr = f.toString
           val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
           if (matchedSet.size > 1) {
@@ -90,8 +90,6 @@ object AlluxioUtils extends Logging {
                 s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
                 s"for each file path")
           } else if (matchedSet.size == 1) {
-            // check if the alluxio path exists, if not, throw out an exception to stop the job
-            checkAlluxioMounted(sparkSession, replaceMap(matchedSet.head))
             new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
           } else {
             f
@@ -102,11 +100,21 @@ object AlluxioUtils extends Logging {
 
         // replace all of input files
         val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
-          partitionDir.files.map(f => replaceFunc(sparkSession, f.getPath))
+          partitionDir.files.map(f => replaceFunc(f.getPath))
         })
 
         // replace all of rootPaths which are already unique
-        val rootPaths = relation.location.rootPaths.map(replaceFunc(sparkSession, _))
+        val rootPaths = relation.location.rootPaths.map(replaceFunc)
+        logInfo("RootPath in Alluxio: " + rootPaths.mkString(","))
+
+        // check if the alluxio path exists, if not, throw out an exception to stop the job
+        rootPaths.foreach(rootPath => {
+          val pathStr = rootPath.toString
+          val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
+          if (matchedSet.size == 1) {
+            checkAlluxioMounted(relation.sparkSession, replaceMap(matchedSet.head))
+          }
+        })
 
         val parameters: Map[String, String] = relation.options
 
