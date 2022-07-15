@@ -493,6 +493,53 @@ details on limitations on UDFs and unsupported operators.
 11. _Exec Children Node Ids_
 12. _Exec Should Remove_: whether the Op is removed from the migrated plan.
 
+**Parsing Expressions within each Exec**
+
+The Qualification tool look at the expressions in the _Exec_ to extract any duration information.
+Note that some of the Execs will not take any expressions.
+The following table lists the status of expression parsing for each _Exec_.
+
+| Exec                                 | Takes-Expression | Fully-Parsed | Future-Work |
+|--------------------------------------|:----------------:|:------------:|:-----------:|
+| FilterExec                           |        x         |       x      |      -      |
+| ProjectExec                          |        x         |       x      |      -      |
+| CoalesceExec                         |        x         |       -      |      x      |
+| TakeOrderedAndProjectExec            |        x         |       -      |      x      |
+| ExpandExec                           |        x         |       -      |      x      |
+| HashAggregateExec                    |        x         |       -      |      x      |
+| ObjectHashAggregateExec              |        x         |       -      |      x      |
+| SortAggregateExec                    |        x         |       -      |      x      |
+| SortExec                             |        x         |       -      |      x      |
+| WindowExec                           |        x         |       -      |      x      |
+| WindowInPandasExec                   |        x         |       -      |      x      |
+| BroadcastNestedLoopJoinExec          |        -         |       -      |      -      |
+| BroadcastHashJoinExec                |        -         |       -      |      -      |
+| ShuffledHashJoinExec                 |        -         |       -      |      -      |
+| AggregateInPandasExec                |        -         |       -      |      -      |
+| ArrowEvalPythonExec                  |        -         |       -      |      -      |
+| FlatMapGroupsInPandasExec            |        -         |       -      |      -      |
+| MapInPandasExec                      |        -         |       -      |      -      |
+| RangeExec                            |        -         |       -      |      -      |
+| UnionExec                            |        -         |       -      |      -      |
+| CollectLimitExec                     |        -         |       -      |      -      |
+| GlobalLimitExec                      |        -         |       -      |      -      |
+| LocalLimitExec                       |        -         |       -      |      -      |
+| SampleExec                           |        -         |       -      |      -      |
+| CartesianProductExec                 |        -         |       -      |      -      |
+| GenerateExec                         |        -         |       -      |      -      |
+| SortMergeJoinExec                    |        -         |       -      |      -      |
+| BroadcastExchangeExec                |        -         |       -      |      -      |
+| SubqueryBroadcastExec                |        -         |       -      |      -      |
+| CreateDataSourceTableAsSelectCommand |        -         |       -      |      -      |
+| DataWritingCommandExec               |        -         |       -      |      -      |
+| InsertIntoHadoopFsRelationCommand    |        -         |       -      |      -      |
+| CustomShuffleReaderExec              |        -         |       -      |      -      |
+| AQEShuffleReadExec                   |        -         |       -      |      -      |
+| InMemoryTableScanExec                |        -         |       -      |      -      |
+| BatchScanExec                        |        -         |       -      |      -      |
+| FileSourceScanExec                   |        -         |       -      |      -      |
+| ShuffleExchangeExec                  |        -         |       -      |      -      |
+
 ## Output Formats
 
 The Qualification tool generates the output as CSV/log files. Starting from "_22.06_", the default
@@ -597,7 +644,6 @@ It contains the following main components:
     4. "_Stage ID_": filters rows by the stage ID. It also allows text-searching by typing into the filter-title as a text
        input.
     5. "_Is Exec Removed_": filters rows that were removed from the migrated plan.
-   
 
 #### Raw Data
 
