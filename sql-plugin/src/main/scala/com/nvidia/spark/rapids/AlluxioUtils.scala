@@ -110,7 +110,7 @@ object AlluxioUtils extends Logging {
         // check if the alluxio path exists, if not, throw out an exception to stop the job
         rootPaths.foreach(rootPath => {
           val pathStr = rootPath.toString
-          val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
+          val matchedSet = replaceMap.values.filter(reg => pathStr.startsWith(reg))
           if (matchedSet.size == 1) {
             checkAlluxioMounted(relation.sparkSession, replaceMap(matchedSet.head))
           }
