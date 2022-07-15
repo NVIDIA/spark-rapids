@@ -160,7 +160,7 @@ class RebatchingRoundoffIterator(
 
     val rc: Long = combined.numRows()
 
-    if (rc % targetRoundoff == 0 || rc < targetRoundoff) {
+    if (rc <= targetRoundoff) {
       return combined
     }
 
