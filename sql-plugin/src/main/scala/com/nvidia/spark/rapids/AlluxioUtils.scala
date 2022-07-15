@@ -37,6 +37,7 @@ object AlluxioUtils extends Logging {
           throw new FileNotFoundException(
             s"Alluxio path $alluxio_path does not exist, maybe forgot to mount it")
         }
+        logInfo(s"Alluxio path $alluxio_path is mounted")
         checkedAlluxioPath.add(alluxio_path)
       } else {
         logInfo(s"Alluxio path $alluxio_path already checked")
