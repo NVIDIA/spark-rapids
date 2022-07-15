@@ -21,10 +21,11 @@ import java.io.FileNotFoundException
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{FileIndex, HadoopFsRelation, InMemoryFileIndex}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
-import org.apache.spark.sql.SparkSession
+
 
 object AlluxioUtils extends Logging {
   val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
@@ -105,9 +106,9 @@ object AlluxioUtils extends Logging {
 
         // replace all of rootPaths which are already unique
         val rootPaths = relation.location.rootPaths.map(replaceFunc)
-        logInfo("RootPath in Alluxio: " + rootPaths.mkString(","))
 
-        // check if the alluxio path exists, if not, throw out an exception to stop the job
+        // check the alluxio paths in root paths exist or not
+        // throw out an exception to stop the job when any of them is not mounted
         rootPaths.foreach(rootPath => {
           val pathStr = rootPath.toString
           val matchedSet = replaceMap.values.filter(reg => pathStr.startsWith(reg))
