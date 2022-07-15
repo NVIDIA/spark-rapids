@@ -1133,3 +1133,45 @@ def test_rlike_fallback_possessive_quantifier():
                 'a rlike "a*+"'),
                 'RLike',
         conf=_regexp_conf)
+
+def test_regexp_extract_all_idx_zero():
+    gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 0)',
+                'regexp_extract_all(a, "(a)(b)", 0)',
+                'regexp_extract_all(a, "([a-z0-9]([abcd]))", 0)',
+                'regexp_extract_all(a, "(\\\\d+)-(\\\\d+)", 0)',
+            ),
+        conf=_regexp_conf)
+
+def test_regexp_extract_all_idx_positive():
+    gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 1)',
+                'regexp_extract_all(a, "(a)(b)", 2)',
+                'regexp_extract_all(a, "([a-z0-9]((([abcd](\\\\d?)))))", 3)',
+                'regexp_extract_all(a, "(\\\\d+)-(\\\\d+)", 2)',
+            ),
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
+def test_regexp_extract_all_idx_negative():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "(a)", -1)'
+            ).collect(),
+        error_message="The specified group index cannot be less than zero",
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
+def test_regexp_extract_all_idx_out_of_bounds():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract_all(a, "([a-d]+).*([0-9])", 3)'
+            ).collect(),
+        error_message="Regex group count is 2, but the specified group index is 3",
+        conf=_regexp_conf)
