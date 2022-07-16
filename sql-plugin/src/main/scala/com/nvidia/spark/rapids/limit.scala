@@ -58,61 +58,75 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    sliceRDD(child.executeColumnar(), limit, 0)
+  }
+
+  def sliceRDD(rdd: RDD[ColumnarBatch], limit: Int, offset: Int): RDD[ColumnarBatch] = {
     val opTime = gpuLongMetric(OP_TIME)
-
-    val crdd = child.executeColumnar()
-    crdd.mapPartitions { cbIter =>
+    rdd.mapPartitions { iter =>
       new Iterator[ColumnarBatch] {
-        private var remainingLimit = limit
+        private var remainingLimit = limit - offset
+        private var remainingOffset = offset
 
-        override def hasNext: Boolean = remainingLimit > 0 && cbIter.hasNext
+        override def hasNext: Boolean = iter.hasNext
 
         override def next(): ColumnarBatch = {
-          val batch = cbIter.next()
-          withResource(new NvtxWithMetrics("limit", NvtxColor.ORANGE, opTime)) { _ =>
-            val result = if (batch.numRows() > remainingLimit) {
-              sliceBatch(batch)
+          var batch = iter.next()
+          val numCols = batch.numCols()
+
+          // In each partition, we need to skip `offset` rows
+          while (batch != null && remainingOffset >= batch.numRows()) {
+            remainingOffset -= batch.numRows()
+            batch.safeClose()
+            batch = if (hasNext) { iter.next() } else { null }
+          }
+
+          // If the last batch is null, then we have offset >= numRows in this partition.
+          // In such case, we should return an empty batch
+          if (batch == null) {
+            return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](numCols).toArray, 0)
+          }
+
+          // Here remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
+          withResource(new NvtxWithMetrics("limit and offset", NvtxColor.ORANGE, opTime)) { _ =>
+            var result: ColumnarBatch = null
+            // If limit != -1, then remainingLimit >= 0 is valid, otherwise remainingLimit < 0,
+            // we should take batch[remainingOffset:numRows].
+            if (remainingLimit >= 0) {
+              if (remainingOffset > 0) {
+                result = sliceBatchWithOffset(batch, remainingOffset, remainingLimit)
+                remainingOffset = 0
+              } else {
+                result = if (batch.numRows() > remainingLimit) {
+                  sliceBatchWithOffset(batch, 0, remainingLimit)
+                } else {
+                  batch
+                }
+              }
+              remainingLimit -= result.numRows()
             } else {
-              batch
+              result = sliceBatchWithOffset(batch, remainingOffset, batch.numRows())
+              remainingOffset = 0
             }
-            numOutputBatches += 1
-            numOutputRows += result.numRows()
-            remainingLimit -= result.numRows()
             result
           }
         }
 
-        def sliceBatch(batch: ColumnarBatch): ColumnarBatch = {
-          val numColumns = batch.numCols()
-          val resultCVs = new ArrayBuffer[GpuColumnVector](numColumns)
-          var exception: Throwable = null
-          var table: Table = null
-          try {
-            if (numColumns > 0) {
-              table = GpuColumnVector.from(batch)
-              (0 until numColumns).zip(output).foreach{ case (i, attr) =>
-                val subVector = table.getColumn(i).subVector(0, remainingLimit)
-                assert(subVector != null)
-                resultCVs.append(GpuColumnVector.from(subVector, attr.dataType))
-                assert(subVector.getRowCount == remainingLimit,
-                  s"result rowcount ${subVector.getRowCount} is not equal to the " +
-                    s"remainingLimit $remainingLimit")
+        def sliceBatchWithOffset(batch: ColumnarBatch, offset: Int, limit: Int): ColumnarBatch = {
+          val numCols = batch.numCols()
+          val end = Math.min(offset + limit, batch.numRows())
+          val result = new ArrayBuffer[GpuColumnVector](numCols)
+          withResource(batch) { batch =>
+            withResource(GpuColumnVector.from(batch)) { table =>
+              if (numCols > 0) {
+                (0 until numCols).zip(output).foreach{ case (i, attr) =>
+                  val subVector = table.getColumn(i).subVector(offset, end)
+                  assert(subVector != null)
+                  result.append(GpuColumnVector.from(subVector, attr.dataType))
+                }
               }
+              new ColumnarBatch(result.toArray, end - offset)
             }
-            new ColumnarBatch(resultCVs.toArray, remainingLimit)
-          } catch {
-            case e: Throwable => exception = e
-              throw e
-          } finally {
-            if (exception != null) {
-              resultCVs.foreach(gpuVector => gpuVector.safeClose(exception))
-            }
-            if (table != null) {
-              table.safeClose(exception)
-            }
-            batch.safeClose(exception)
           }
         }
       }
@@ -128,93 +142,16 @@ case class GpuLocalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitE
 /**
  * Take the first `limit` elements of the child's single output partition.
  */
-case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends GpuBaseLimitExec {
-  // This assertion is from CPU code of spark.
-  assert(limit >= 0 || (limit == -1 && offset > 0))
+case class GpuGlobalLimitExec(limit: Int = -1, child: SparkPlan, offset: Int = 0) extends
+  GpuBaseLimitExec {
+  // In CPU code of spark, there is an assertion 'limit >= 0 || (limit == -1 && offset > 0)'.
 
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
 
   override def doExecuteColumnar(): RDD[ColumnarBatch]  = {
-    val opTime = gpuLongMetric(OP_TIME)
-    val childRdd = child.executeColumnar()
-    childRdd.mapPartitions { iter =>
-      new Iterator[ColumnarBatch] {
-        private var remainingLimit = limit - offset
-        private var remainingOffset = offset
-
-        override def hasNext: Boolean = remainingLimit > 0 && iter.hasNext
-
-        override def next(): ColumnarBatch = {
-          var batch = iter.next()
-          val numCols = batch.numCols()
-
-          // In each partition, we need to skip `offset` rows
-          while (batch != null && remainingOffset >= batch.numRows()) {
-            remainingOffset -= batch.numRows()
-            batch.safeClose()
-            batch = if (hasNext) { iter.next() } else { null }
-          }
-          // If the last batch is null, then we have offset >= numRows in this partition.
-          // In such case, we should return an empty batch
-          if (batch == null) {
-            return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](numCols).toArray, 0)
-          }
-
-          // Here remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
-          withResource(new NvtxWithMetrics("limit and offset", NvtxColor.ORANGE, opTime)) { _ =>
-            if (remainingOffset > 0) {
-              val result = sliceBatchWithOffset(batch, remainingOffset, remainingLimit)
-              remainingOffset = 0
-              remainingLimit -= result.numRows()
-              result
-            } else {
-              val result = if (batch.numRows() > remainingLimit) {
-                sliceBatchWithOffset(batch, 0, remainingLimit)
-              } else {
-                batch
-              }
-              remainingLimit -= result.numRows()
-              result
-            }
-          }
-        }
-
-        def sliceBatchWithOffset(batch: ColumnarBatch, offset: Int, limit: Int): ColumnarBatch = {
-          var exception: Throwable = null
-          var table: Table = null
-
-          val numCols = batch.numCols()
-          val result = new ArrayBuffer[GpuColumnVector](numCols)
-
-          val end = Math.min(offset + limit, batch.numRows())
-          try {
-            if (numCols > 0) {
-              table = GpuColumnVector.from(batch)
-              (0 until numCols).zip(output).foreach{ case (i, attr) =>
-                val subVector = table.getColumn(i).subVector(offset, end)
-                assert(subVector != null)
-                result.append(GpuColumnVector.from(subVector, attr.dataType))
-              }
-            }
-            new ColumnarBatch(result.toArray, end - offset)
-          } catch {
-            case e: Throwable => exception = e
-              throw e
-          } finally {
-            if (table != null) {
-              table.safeClose(exception)
-            }
-            if (exception != null) {
-              result.foreach(gpuVector => gpuVector.safeClose(exception))
-            }
-            batch.safeClose(exception)
-          }
-        }
-      }
-    }
+    super.sliceRDD(child.executeColumnar(), limit, offset)
   }
 }
-
 
 class GpuCollectLimitMeta(
                       collectLimit: CollectLimitExec,

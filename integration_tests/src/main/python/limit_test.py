@@ -14,9 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from marks import allow_non_gpu
 from spark_session import is_before_spark_340
 
 
@@ -28,62 +27,41 @@ def test_simple_limit(data_gen):
             conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
 
-@allow_non_gpu('CollectLimitExec', 'GlobalLimitExec', 'ShuffleExchangeExec')
+# This conf allows CollectLimitExec and GlobalLimitExec to run on GPU
+offset_test_conf = {
+    'spark.rapids.sql.exec.CollectLimitExec': 'true',
+    'spark.rapids.sql.exec.GlobalLimitExec': 'true'
+}
+
+
+@pytest.mark.parametrize('offset', [0, 10, 2048, 4096])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
-def test_non_zero_offset():
-    conf = {
-        'spark.rapids.sql.exec.CollectLimitExec': 'true',
-        'spark.rapids.sql.exec.GlobalLimitExec': 'true'
-    }
+def test_non_zero_offset(offset):
+    # offset is used in the test cases having no limit
+    # 0: corner case
+    # 1024: offset < df.numRows
+    # 2048: offset = df.numRows
+    # 4096: offset > df.numRows
 
-    # num_slices is the number of partitions of data frame
-    # The number of rows in the dataframe is 2048
-    def test_runner(sql, num_slices):
-        def test_instance(spark):
-            df = unary_op_df(spark, int_gen, num_slices=num_slices)
-            df.createOrReplaceTempView("tmp_table")
-            return spark.sql(sql)
-        return test_instance
-
-    sql = "select * from tmp_table limit {} offset {}"
-
-    # Only one partition
-    # Corner case: both limit and offset are 0
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(0, 0), 1), conf=conf)
-    # offset < limit && limit < numRows
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(1024, 500), 1), conf=conf)
-    # offset < limit && limit = numRows
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(2048, 456), 1), conf=conf)
-    # offset < limit && limit > numRows
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(3000, 111), 1), conf=conf)
-    # offset = limit
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(100, 100), 1), conf=conf)
-    # offset > limit
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(100, 600), 1), conf=conf)
+    offset_sql = "select * from tmp_table offset {}".format(offset)
+    data_gen = StructGen([('c1', int_gen),('c2', int_gen),('c3', int_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(lambda spark: gen_df(spark, data_gen, length=2048), 'tmp_table',
+                                     offset_sql, conf=offset_test_conf)
 
 
+@pytest.mark.parametrize('limit, offset', [(0, 0), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
+@pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
+def test_non_zero_offset_with_limit(limit, offset):
+    # In CPU version of spark, (limit, offset) can not be negative number.
+    # Test case description:
+    # (0, 0): Corner case: both limit and offset are 0
+    # (1024, 500): offset < limit && limit < df.numRows
+    # (2048, 456): offset < limit && limit = df.numRows
+    # (3000, 111): offset < limit && limit > df.numRows
+    # (500, 500): limit = offset
+    # (100, 600): limit > offset
 
-    # More than one partition
-    # limit = offset = 0
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(0, 0), 20), conf=conf)
-    # offset < limit && limit < numRows
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(1111, 500), 23), conf=conf)
-    # offset < limit && limit = numRows
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(2048, 789), 11), conf=conf)
-    # offset < limit && limit > numRows
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(3000, 789), 101), conf=conf)
-    # offset = limit
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(100, 100), 67), conf=conf)
-    # offset > limit
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(100, 600), 18), conf=conf)
-
-
-    # With "sort by"
-    sql = "select * from tmp_table sort by a limit {} offset {}"
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(1123, 50), 2), conf=conf)
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(200, 150), 3), conf=conf)
-
-    sql = "select * from tmp_table sort by a desc limit {} offset {}"
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(200, 50), 5), conf=conf)
-    assert_gpu_and_cpu_are_equal_collect(test_runner(sql.format(1230, 50), 5), conf=conf)
-
+    data_gen = StructGen([('c1', int_gen),('c2', int_gen),('c3', int_gen)], nullable=False)
+    limit_offset_sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
+    assert_gpu_and_cpu_are_equal_sql(lambda spark: gen_df(spark, data_gen, length=2048), 'tmp_table',
+                                     limit_offset_sql, conf=offset_test_conf)
