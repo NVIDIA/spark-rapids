@@ -547,6 +547,9 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
     case DoubleType => Seq(GpuIf(updateIsNan.attr, GpuLiteral(Double.NaN, DoubleType), updateMaxVal.attr))
     case _ => postUpdateAttr
   }
+
+  private lazy val cudfMax = AttributeReference("max", child.dataType)()
+  private lazy val cudfIf = AttributeReference("if", BooleanType)()
     
   override lazy val preMerge: Seq[Expression] = child.dataType match {
     case FloatType | DoubleType => Seq(cudfMax, GpuIsNan(cudfMax))
@@ -565,8 +568,7 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
     case _ => postMergeAttr
   }
 
-  private lazy val cudfMax = AttributeReference("max", child.dataType)()
-  private lazy val cudfIf = AttributeReference("if", BooleanType)()
+  /*
   override lazy val evaluateExpression: Expression = child.dataType match {
     case FloatType | DoubleType => cudfIf
     case _ => cudfMax
@@ -575,7 +577,10 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
     case FloatType | DoubleType => cudfIf :: Nil
     case _ => cudfMax :: Nil
   }
-
+  */
+  override lazy val evaluateExpression: Expression = cudfMax
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfMax::Nil
+  
   // Copied from Max
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
