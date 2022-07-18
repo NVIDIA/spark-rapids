@@ -2346,7 +2346,7 @@ object GpuOverrides extends Logging {
       }),
     expr[NthValue](
       "nth aggregate operator",
-      ExprChecks.fullAgg(
+      ExprChecks.windowOnly(
         (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
         TypeSig.all,
