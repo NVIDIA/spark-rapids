@@ -145,6 +145,9 @@ def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, rea
             conf=all_confs)
 
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320():
+    parquet_compress_options.append('zstd')
 # The following need extra jars 'lzo', 'lz4', 'brotli', 'zstd'
 # https://github.com/NVIDIA/spark-rapids/issues/143
 

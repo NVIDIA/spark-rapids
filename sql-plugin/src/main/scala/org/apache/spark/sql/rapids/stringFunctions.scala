@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -865,6 +865,20 @@ object GpuRegExpUtils {
     isASTEmptyRepetition(parseAST(pattern))
   }
 
+  /**
+   * Returns the number of groups in regexp 
+   * (includes both capturing and non-capturing groups)
+   */
+  def countGroups(pattern: String): Int = {
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+   }
+   countGroups(parseAST(pattern))
+  }
+
 }
 
 class GpuRLikeMeta(
@@ -1063,13 +1077,6 @@ class GpuRegExpExtractMeta(
       case _ =>
     }
 
-    def countGroups(regexp: RegexAST): Int = {
-      regexp match {
-        case RegexGroup(_, term) => 1 + countGroups(term)
-        case other => other.children().map(countGroups).sum
-      }
-    }
-
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
@@ -1077,7 +1084,7 @@ class GpuRegExpExtractMeta(
           // verify that we support this regex and can transpile it to cuDF format
           pattern = Some(new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern, None)._1)
-          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
@@ -1174,7 +1181,138 @@ case class GpuRegExpExtract(
       }
     }
   }
+}
 
+class GpuRegExpExtractAllMeta(
+    expr: RegExpExtractAll,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends TernaryExprMeta[RegExpExtractAll](expr, conf, parent, rule) {
+
+  private var pattern: Option[String] = None
+  private var numGroups = 0
+
+  override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
+
+    expr.regexp match {
+      case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+        try {
+          val javaRegexpPattern = str.toString
+          // verify that we support this regex and can transpile it to cuDF format
+          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
+            .transpile(javaRegexpPattern, None)._1)
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
+        } catch {
+          case e: RegexUnsupportedException =>
+            willNotWorkOnGpu(e.getMessage)
+        }
+      case _ =>
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
+    }
+
+    expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        if (idx < 0) {
+          willNotWorkOnGpu("the specified group index cannot be less than zero")
+        }
+        if (idx > numGroups) {
+          willNotWorkOnGpu(
+            s"regex group count is $numGroups, but the specified group index is $idx")
+        }
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
+    }
+  }
+
+  override def convertToGpu(
+      str: Expression,
+      regexp: Expression,
+      idx: Expression): GpuExpression = {
+    val cudfPattern = pattern.getOrElse(
+      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
+    GpuRegExpExtractAll(str, regexp, idx, numGroups, cudfPattern)
+  }
+}
+
+case class GpuRegExpExtractAll(
+    str: Expression,
+    regexp: Expression,
+    idx: Expression,
+    numGroups: Int,
+    cudfRegexPattern: String)
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = ArrayType(StringType, containsNull = true)
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
+  override def first: Expression = str
+  override def second: Expression = regexp
+  override def third: Expression = idx
+
+  override def prettyName: String = "regexp_extract_all"
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      regexp: GpuScalar,
+      idx: GpuScalar): ColumnVector = {
+
+    idx.getValue.asInstanceOf[Int] match {
+      case 0 => 
+        str.getBase.extractAllRecord(cudfRegexPattern, 0)
+      case intIdx =>
+        // Extract matches corresponding to idx. cuDF's extract_all_record does not support 
+        // group idx, so we must manually extract the relevant matches. Example:
+        // Given the pattern (\d+)-(\d+) and idx=1
+        //
+        // |      Input      |      Java       |               cuDF             |
+        // |-----------------|-----------------|--------------------------------|
+        // | '1-2, 3-4, 5-6' | ['1', '3', '5'] | ['1', '2', '3', '4', '5', '6'] |
+        //
+        // Since idx=1 and the pattern has 2 capture groups, we take the 1st element and every
+        // 2nd element afterwards from the cuDF list
+
+        val rowCount = str.getRowCount
+        
+        val extractedWithNulls = withResource(
+          str.getBase.extractAllRecord(cudfRegexPattern, intIdx)) { allExtracted =>
+            withResource(allExtracted.countElements) { listSizes =>
+              withResource(listSizes.max) { maxSize =>
+                val maxSizeInt = maxSize.getInt
+                val stringCols = Range(intIdx - 1, maxSizeInt, numGroups).safeMap { 
+                  i =>
+                    withResource(Scalar.fromInt(i)) { scalarIndex =>
+                      withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
+                        index => allExtracted.extractListElement(index)
+                      }
+                    }
+                }
+                ColumnVector.makeList(stringCols: _*)
+              }
+            }
+          }
+        // Filter out null values in the lists
+        val extractedStrings = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+            withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
+              withResource(stringCol.isNotNull) { isNotNull =>
+                withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask => 
+                  extractedWithNulls.applyBooleanMask(booleanMask)
+                }
+              }
+            }
+          }
+        // If input is null, output should also be null
+        withResource(extractedStrings) { s =>
+          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
+            nullStringList =>
+              withResource(str.getBase.isNull) { isInputNull =>
+                isInputNull.ifElse(nullStringList, s)
+              }              
+          }
+        }
+    }
+  }
 }
 
 class SubstringIndexMeta(
