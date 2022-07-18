@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from logging import exception
-from math import fabs
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
@@ -613,17 +612,25 @@ def test_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
-def is_before_jdk_9():
+def get_java_version():
     jdk_version = check_output(['java', '-version'], stderr=STDOUT)
     jdk_version = jdk_version.split(b'\n')[0].split(b' ')[2].decode('utf-8')
     if jdk_version.startswith("\""):
         jdk_version = jdk_version[1:-1]
+    # Allow these formats:
+    # 1.8.0_72-ea
+    # 9-ea
+    # 9
+    # 11.0.1
     if jdk_version.startswith('1.'):
-        return True
-    return False
+        jdk_version = jdk_version[2:]
+    dot_pos = jdk_version.find('.')
+    dash_pos = jdk_version.find('-')
+    jdk_version = jdk_version[0:dot_pos if dot_pos != -1 else dash_pos]
+    return int(jdk_version)
 
 @approximate_float
-@pytest.mark.skipif(is_before_jdk_9(), reason="requires jdk 9 or higher")
+@pytest.mark.skipif(get_java_version() <= 8, reason="requires jdk 9 or higher")
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_degrees(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
