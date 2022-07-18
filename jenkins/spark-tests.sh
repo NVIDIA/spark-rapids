@@ -101,9 +101,10 @@ $MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
 
 # Download parquet-hadoop jar for parquet-read encryption tests
 PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
-[[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]] && \
+if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
   $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
       -DgroupId=org.apache.parquet -DartifactId=parquet-hadoop -Dversion=$PARQUET_HADOOP_VER -Dclassifier=tests
+fi
 
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
