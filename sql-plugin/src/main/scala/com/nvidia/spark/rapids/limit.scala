@@ -152,8 +152,8 @@ case class GpuLocalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitE
 /**
  * Take the first `limit` elements of the child's single output partition.
  */
-case class GpuGlobalLimitExec(limit: Int = -1, child: SparkPlan, offset: Int = 0) extends
-  GpuBaseLimitExec {
+case class GpuGlobalLimitExec(limit: Int = -1, child: SparkPlan,
+                              offset: Int = 0) extends GpuBaseLimitExec {
   // In CPU code of spark, there is an assertion 'limit >= 0 || (limit == -1 && offset > 0)'.
 
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
