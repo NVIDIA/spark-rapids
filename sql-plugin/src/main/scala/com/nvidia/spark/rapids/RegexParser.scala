@@ -969,7 +969,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // NOTE: this applies to when using *standard* mode. In multiline mode, all these 
           // conditions will change. Currently Spark does not use multiline mode.
           previous match {
-            case Some(RegexChar('$')) =>
+            case Some(RegexChar('$')) | Some(RegexEscaped('Z')) =>
               // repeating the line anchor in cuDF (for example b$$) causes matches to fail, but in 
               // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
               // an empty RegexAST that outputs to empty string
@@ -1075,7 +1075,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'b' | 'B' if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/5478
           throw new RegexUnsupportedException(
-            "Word boundaries are not supported in split mode", regex.position)
+              "Word boundaries are not supported in split mode", regex.position)
+        case 'b' | 'B' =>
+          previous match {
+            case Some(RegexEscaped(ch)) if "DWSHV".contains(ch) =>
+              throw new RegexUnsupportedException(
+                  "Word boundaries around \\D, \\S,\\W, \\H, or \\V are not supported",
+                  regex.position)
+            case Some(RegexCharacterClass(negated, _)) if negated =>
+              throw new RegexUnsupportedException(
+                  "Word boundaries around negated character classes are not supported",
+                  regex.position)
+            case _ =>
+              RegexEscaped(ch)
+          }
         case 'A' if mode == RegexSplitMode =>
           throw new RegexUnsupportedException(
             "String anchor \\A is not supported in split mode", regex.position)
