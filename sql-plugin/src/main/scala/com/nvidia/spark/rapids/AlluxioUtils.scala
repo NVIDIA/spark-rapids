@@ -41,7 +41,7 @@ object AlluxioUtils extends Logging {
         logInfo(s"Alluxio path $alluxio_path is mounted")
         checkedAlluxioPath.add(alluxio_path)
       } else {
-        logInfo(s"Alluxio path $alluxio_path already checked")
+        logDebug(s"Alluxio path $alluxio_path already checked")
       }
     }
   }
@@ -96,8 +96,6 @@ object AlluxioUtils extends Logging {
             f
           }
         }
-
-        val sparkSession = relation.sparkSession
 
         // replace all of input files
         val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
