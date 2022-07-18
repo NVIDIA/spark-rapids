@@ -185,7 +185,6 @@ class RegexParser(pattern: String) {
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some('0') => 
-          consumeExpected('0')
           val octalChar = parseOctalDigit
           octalChar.codePoint match {
             case 0 => RegexHexDigit("00")
