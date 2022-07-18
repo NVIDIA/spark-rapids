@@ -1018,14 +1018,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else  {
           digits
         }
-        if (r.codePoint >= 128) {
+
+        if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
+          RegexEscaped(r.codePoint.toChar)
+        } else if(r.codePoint >= 128) {
           RegexChar(r.codePoint.toChar)
         } else {
           RegexOctalChar(octal)
         }
 
       case r @ RegexHexDigit(digits) =>
-        if (r.codePoint >= 128) {
+        if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
+          RegexEscaped(r.codePoint.toChar)
+        } else if (r.codePoint >= 128) {
           // cuDF only supports 0x00 to 0x7f hexidecimal chars
           RegexChar(r.codePoint.toChar)
         } else {
@@ -1429,11 +1434,28 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexGroup(capture, term) =>
         term match {
           case RegexSequence(parts) =>
-            parts.foreach { part => isBeginOrEndLineAnchor(part) match {
-              case true => throw new RegexUnsupportedException(
-                "Line and string anchors are not supported in capture groups", part.position)
-              case false =>
-            }}
+            parts.foreach { part => 
+              isBeginOrEndLineAnchor(part) match {
+                case true => throw new RegexUnsupportedException(
+                  "Line and string anchors are not supported in capture groups", part.position)
+                case false =>
+              }
+              part match {
+                case RegexRepetition(base, quantifier) => (base, quantifier) match {
+                  case (_, QuantifierVariableLength(0, Some(0))) =>
+                    throw new RegexUnsupportedException(
+                      "Repetition with {0,0} not supported in capture groups",
+                      quantifier.position)
+
+                  case (_, QuantifierFixedLength(0)) =>
+                    throw new RegexUnsupportedException(
+                      "Reptition with {0} not supported in capture groups",
+                      quantifier.position)
+                  case _ =>
+                }
+                case _ =>
+              }
+            }
             RegexGroup(capture, rewrite(term, replacement, None))
           case _ =>
             RegexGroup(capture, rewrite(term, replacement, None))

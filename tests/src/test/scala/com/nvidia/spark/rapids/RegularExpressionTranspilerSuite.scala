@@ -896,7 +896,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
       // when we reach maximum depth we generate a non-nested type
       nonNestedTerm
     } else {
-      val baseGenerators: Seq[() => RegexAST] = Seq(
+      val generators: Seq[() => RegexAST] = Seq(
         () => lineTerminator,
         () => escapedChar,
         () => char,
@@ -907,13 +907,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
         () => group(depth),
         () => boundaryMatch,
         () => sequence(depth),
-        () => repetition(depth))
-      val generators = if (skipKnownIssues) {
-        baseGenerators
-      } else {
-        baseGenerators ++ Seq(
-          () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
-      }
+        () => repetition(depth),
+        () => choice(depth))
       generators(rr.nextInt(generators.length))()
     }
   }
