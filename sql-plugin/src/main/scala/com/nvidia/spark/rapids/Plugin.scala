@@ -69,6 +69,7 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_SERIALIZER_NAME = classOf[KryoSerializer].getName
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
+  private val EXECUTOR_CORES_KEY = "spark.executor.cores"
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -146,6 +147,11 @@ object RapidsPluginUtils extends Logging {
     }
     // set driver timezone
     conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
+
+    // We let spark.rapids.sql.multiThreadedRead.numThreads be same as spark.executor.cores.
+    // See: https://github.com/NVIDIA/spark-rapids/issues/5524
+    conf.set(RapidsConf.MULTITHREAD_READ_NUM_THREADS.key,
+      Math.max(20, conf.get(EXECUTOR_CORES_KEY).toInt).toString)
   }
 
   def loadProps(resourceName: String): Properties = {
