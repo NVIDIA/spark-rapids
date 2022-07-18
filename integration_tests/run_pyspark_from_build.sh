@@ -60,7 +60,10 @@ else
     else
         AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
         PARQUET_HADOOP_TESTS=$(echo "$SCRIPTPATH"/target/dependency/parquet-hadoop*.jar)
-        export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
+        MIN_PARQUET_JAR="$SCRIPTPATH/target/dependency/parquet-hadoop-1.12.0-tests.jar"
+        # Make sure we have Parquet version >= 1.12 in the dependency
+        LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
+        export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "MIN_PARQUET_JAR" ]] && echo true || echo false)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
