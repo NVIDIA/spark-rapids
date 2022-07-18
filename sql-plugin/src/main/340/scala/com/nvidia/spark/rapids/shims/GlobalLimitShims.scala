@@ -26,7 +26,8 @@ object GlobalLimitShims {
    * Estimate the number of rows for a GlobalLimitExec.
    */
   def visit(plan: SparkPlanMeta[GlobalLimitExec]): Option[BigInt] = {
-    // offset is introduce in spark-3.4.0
+    // offset is introduce in spark-3.4.0, and it ensures that offset >= 0
+    // limit can be -1, such case happens only when we execute sql like 'select * from table offset 10'
     val offset = plan.wrapped.offset
     val limit = plan.wrapped.limit
     val sliced = if (limit >= 0) {

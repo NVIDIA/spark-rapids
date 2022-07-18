@@ -44,24 +44,23 @@ def test_non_zero_offset(offset):
     # 4096: offset > df.numRows
 
     offset_sql = "select * from tmp_table offset {}".format(offset)
-    data_gen = StructGen([('c1', int_gen),('c2', int_gen),('c3', int_gen)], nullable=False)
-    assert_gpu_and_cpu_are_equal_sql(lambda spark: gen_df(spark, data_gen, length=2048), 'tmp_table',
+    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048), 'tmp_table',
                                      offset_sql, conf=offset_test_conf)
 
 
-@pytest.mark.parametrize('limit, offset', [(0, 0), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
+@pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 def test_non_zero_offset_with_limit(limit, offset):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:
     # (0, 0): Corner case: both limit and offset are 0
+    # (0, 10): Corner case: limit = 0, offset > 0
     # (1024, 500): offset < limit && limit < df.numRows
     # (2048, 456): offset < limit && limit = df.numRows
     # (3000, 111): offset < limit && limit > df.numRows
-    # (500, 500): limit = offset
-    # (100, 600): limit > offset
+    # (500, 500): offset = limit
+    # (100, 600): offset > limit
 
-    data_gen = StructGen([('c1', int_gen),('c2', int_gen),('c3', int_gen)], nullable=False)
     limit_offset_sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
-    assert_gpu_and_cpu_are_equal_sql(lambda spark: gen_df(spark, data_gen, length=2048), 'tmp_table',
+    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048), 'tmp_table',
                                      limit_offset_sql, conf=offset_test_conf)
