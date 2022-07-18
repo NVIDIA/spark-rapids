@@ -613,21 +613,28 @@ def test_radians(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
 def get_java_version():
-    jdk_version = check_output(['java', '-version'], stderr=STDOUT)
-    jdk_version = jdk_version.split(b'\n')[0].split(b' ')[2].decode('utf-8')
-    if jdk_version.startswith("\""):
-        jdk_version = jdk_version[1:-1]
+    output = check_output(['java', '-version'], stderr=STDOUT).decode('utf-8')
+    for line in output.splitlines():
+        # E.g. openjdk version "1.8.0_212"
+        line = line.strip()
+        if 'version' in line:
+            ver = line.split('version', 1)[1].strip()
+            if ver.startswith('"') and ver.endswith('"'):
+                ver = ver[1:-1]
     # Allow these formats:
     # 1.8.0_72-ea
     # 9-ea
     # 9
     # 11.0.1
-    if jdk_version.startswith('1.'):
-        jdk_version = jdk_version[2:]
-    dot_pos = jdk_version.find('.')
-    dash_pos = jdk_version.find('-')
-    jdk_version = jdk_version[0:dot_pos if dot_pos != -1 else dash_pos]
-    return int(jdk_version)
+    if ver.startswith('1.'):
+        ver = ver[2:]
+    dot_pos = ver.find('.')
+    dash_pos = ver.find('-')
+    if dot_pos != -1:
+        ver = ver[0:dot_pos]
+    elif dash_pos != -1:
+        ver = ver[0:dash_pos]
+    return int(ver)
 
 @approximate_float
 @pytest.mark.skipif(get_java_version() <= 8, reason="requires jdk 9 or higher")
