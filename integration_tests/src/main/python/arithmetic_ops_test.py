@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from logging import exception
-from math import fabs
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
