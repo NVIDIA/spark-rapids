@@ -120,7 +120,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     sparkContext.parallelize(sideEffectResult, 1)
   }
 
-  // Need single batch in some cases, at least until out of core sort is done
+  // Need single batch in some cases
   override def childrenCoalesceGoal: Seq[CoalesceGoal] =
     if (cmd.requireSingleBatch) {
       Seq(RequireSingleBatch)
