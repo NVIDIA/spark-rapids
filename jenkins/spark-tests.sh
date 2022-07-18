@@ -99,6 +99,12 @@ tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 $MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
 
+# Download parquet-hadoop jar for parquet-read encryption tests
+PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
+[[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]] && \
+  $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
+      -DgroupId=org.apache.parquet -DartifactId=parquet-hadoop -Dversion=$PARQUET_HADOOP_VER -Dclassifier=tests
+
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
@@ -250,11 +256,10 @@ get_tests_by_tags() {
 export -f get_tests_by_tags
 
 # TEST_MODE
-# - IT_ONLY
-# - CUDF_UDF_ONLY
-# - ALL: IT+CUDF_UDF
-TEST_MODE=${TEST_MODE:-'IT_ONLY'}
-if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+# - DEFAULT: all tests except cudf_udf tests
+# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
+if [[ $TEST_MODE == "DEFAULT" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
     # separate run for special cases that require smaller parallelism
@@ -301,12 +306,12 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
 fi
 
 # cudf_udf_test
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   run_test_not_parallel cudf_udf_test
 fi
 
 # Iceberg tests
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_test_not_parallel iceberg
 fi
 
