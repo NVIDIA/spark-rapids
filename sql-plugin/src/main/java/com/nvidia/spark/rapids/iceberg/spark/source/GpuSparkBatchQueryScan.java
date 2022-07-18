@@ -109,7 +109,8 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
     return new GpuSparkBatchQueryScan(SparkSession.active(), table, scan, readConf, expectedSchema, filters, rapidsConf);
   }
 
-  // Try to build an Iceberg TableScan when one was not found in the CPU instance
+  // Try to build an Iceberg TableScan when one was not found in the CPU instance.
+  // This happens on Spark 3.1 where Iceberg's SparkBatchQueryScan does not have a TableScan.
   private static TableScan buildScan(Scan cpuInstance,
                                      Table table,
                                      SparkReadConf readConf,

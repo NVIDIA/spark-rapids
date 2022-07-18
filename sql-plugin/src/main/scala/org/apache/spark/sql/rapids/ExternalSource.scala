@@ -57,8 +57,7 @@ object ExternalSource extends Logging {
         Try(ShimLoader.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
   }
 
-  private lazy val icebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
-    "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
+  private lazy val icebergProvider = IcebergProvider()
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {

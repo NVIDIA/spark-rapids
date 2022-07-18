@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.ScanRule
+import com.nvidia.spark.rapids.{ScanRule, ShimLoader}
 
 import org.apache.spark.sql.connector.read.Scan
 
@@ -28,5 +28,8 @@ trait IcebergProvider {
 }
 
 object IcebergProvider {
+  def apply(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
+    "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
+
   val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
 }

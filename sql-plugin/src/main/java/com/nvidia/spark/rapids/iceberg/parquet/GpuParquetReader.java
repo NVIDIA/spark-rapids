@@ -162,7 +162,11 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       ParquetPartitionReader parquetPartReader = new ParquetPartitionReader(conf, partFile,
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes, metrics,
-          true, true, true, false);
+          true, // isCorrectedInt96RebaseMode
+          true, // isCorrectedRebaseMode
+          true, // hasInt96Timestamps
+          false // useFieldId
+      );
       PartitionReaderWithBytesRead partReader = new PartitionReaderWithBytesRead(parquetPartReader);
 
       Map<Integer, ?> updatedConstants = addNullsForMissingFields(idToConstant, reorder.getMissingFields());
@@ -180,7 +184,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
-  private Map<Integer, ?> addNullsForMissingFields(Map<Integer, ?> idToConstant, Set<Integer> missingFields) {
+  private static Map<Integer, ?> addNullsForMissingFields(Map<Integer, ?> idToConstant,
+                                                          Set<Integer> missingFields) {
     if (missingFields.isEmpty()) {
       return idToConstant;
     }
@@ -203,7 +208,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       List<Type> parquetFields = struct.getFields();
       List<StructField> fields = Lists.newArrayListWithExpectedSize(fieldTypes.size());
 
-      for (int i = 0; i < parquetFields.size(); i += 1) {
+      for (int i = 0; i < parquetFields.size(); i++) {
         Type parquetField = parquetFields.get(i);
 
         Preconditions.checkArgument(

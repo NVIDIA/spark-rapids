@@ -37,7 +37,12 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
-/** GPU version of Apache Iceberg's Parquet class */
+/**
+ * GPU version of Apache Iceberg's Parquet class.
+ * The Iceberg version originally accepted a callback function to create the reader to handle
+ * vectorized batch vs. row readers, but since the GPU only reads vectorized that abstraction
+ * has been removed.
+ */
 public class GpuParquet {
   private static final Collection<String> READ_PROPERTIES_TO_REMOVE = Sets.newHashSet(
       "parquet.read.filter", "parquet.private.read.filter.predicate", "parquet.read.support.class");
@@ -60,7 +65,7 @@ public class GpuParquet {
     private boolean caseSensitive = true;
     private NameMapping nameMapping = null;
     private Configuration conf = null;
-    private int maxBatchSizeRows = 0;
+    private int maxBatchSizeRows = Integer.MAX_VALUE;
     private long maxBatchSizeBytes = Integer.MAX_VALUE;
     private String debugDumpPrefix = null;
     private scala.collection.immutable.Map<String, GpuMetric> metrics = null;

@@ -469,7 +469,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
     override def tagPlanForGpu(): Unit = {
       if (!p.runtimeFilters.isEmpty && !childScans.head.supportsRuntimeFilters) {
-        willNotWorkOnGpu("runtime filtering (DPP) is not supported")
+        willNotWorkOnGpu("runtime filtering (DPP) is not supported for this scan")
       }
     }
 
