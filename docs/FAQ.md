@@ -89,8 +89,8 @@ The RAPIDS Accelerator supports the `DataFrame` API which is implemented in Spar
 If you are using `Dataset[Row]` that is equivalent to the `DataFrame` API. In either case the
 operations that are supported for acceleration on the GPU are limited. For example using custom
 classes or types with `Dataset` are not supported. Neither are using APIs that take `Row` as an input,
-or ones that take Scala or Java functions to operate. This includes operators like `flatmap`, `foreach`,
-or `foreachpartition`. Such queries will still execute correctly when
+or ones that take Scala or Java functions to operate. This includes operators like `flatMap`, `foreach`,
+or `foreachPartition`. Such queries will still execute correctly when
 using the RAPIDS Accelerator, but it is likely most query operations will not be performed on the
 GPU.
 
