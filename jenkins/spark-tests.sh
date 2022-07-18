@@ -256,11 +256,10 @@ get_tests_by_tags() {
 export -f get_tests_by_tags
 
 # TEST_MODE
-# - IT_ONLY
-# - CUDF_UDF_ONLY
-# - ALL: IT+CUDF_UDF
-TEST_MODE=${TEST_MODE:-'IT_ONLY'}
-if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+# - DEFAULT: all tests except cudf_udf tests
+# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
+if [[ $TEST_MODE == "DEFAULT" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
     # separate run for special cases that require smaller parallelism
@@ -307,12 +306,12 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
 fi
 
 # cudf_udf_test
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   run_test_not_parallel cudf_udf_test
 fi
 
 # Iceberg tests
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_test_not_parallel iceberg
 fi
 
