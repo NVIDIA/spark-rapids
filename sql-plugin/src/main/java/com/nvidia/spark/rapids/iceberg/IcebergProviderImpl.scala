@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.iceberg
 
 import scala.reflect.ClassTag
+import scala.util.{Failure, Try}
 
 import com.nvidia.spark.rapids.{FileFormatChecks, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimLoader}
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
@@ -30,6 +31,10 @@ class IcebergProviderImpl extends IcebergProvider {
     val cpuIcebergScanClass = ShimLoader.loadClass(IcebergProvider.cpuScanClassName)
     Seq(new ScanRule[Scan](
       (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
+        private lazy val convertedScan: Try[GpuSparkBatchQueryScan] = Try {
+          GpuSparkBatchQueryScan.fromCpu(a, conf)
+        }
+
         override def supportsRuntimeFilters: Boolean = true
 
         override def tagSelfForGpu(): Unit = {
@@ -48,9 +53,14 @@ class IcebergProviderImpl extends IcebergProvider {
           if (GpuSparkBatchQueryScan.isMetadataScan(a)) {
             willNotWorkOnGpu("scan is a metadata scan")
           }
+
+          convertedScan match {
+            case Failure(e) => willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
+            case _ =>
+          }
         }
 
-        override def convertToGpu(): Scan = GpuSparkBatchQueryScan.fromCpu(a, conf)
+        override def convertToGpu(): Scan = convertedScan.get
       },
       "Iceberg scan",
       ClassTag(cpuIcebergScanClass))
