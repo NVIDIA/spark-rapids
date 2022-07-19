@@ -630,3 +630,15 @@ case class WholeStageCodeGenResults(
       childNodeID.toString)
   }
 }
+
+case class GpuProps(count: Int, memory: Long, name: String)
+case class SystemProps(numCores: Int, cpu_arch: String, memory: Long,
+  disk_space: Long, time_zone: String, gpu_props: GpuProps)
+
+case class RecommendedPropertyResult(property: String, value: String){
+  override def toString: String = "--conf %s=%s".format(property, value)
+}
+
+case class RecommendedCommentResult(comment: String) {
+  override def toString: String = "- %s".format(comment)
+}
