@@ -22,6 +22,7 @@ import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, DType, RoundMod
 import com.nvidia.spark.rapids.{Arm, BoolUtils, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.rapids.GpuDivModLike.makeZeroScalar
 import org.apache.spark.sql.types._
 
 object IntervalUtils extends Arm {
@@ -260,7 +261,7 @@ object IntervalUtils extends Arm {
               withResource(rCv.equalTo(negOneScalar)) { isNegOne =>
                 withResource(isMin.and(isNegOne)) { invalid =>
                   if (BoolUtils.isAnyValidTrue(invalid)) {
-                    throw new ArithmeticException("overflow occurs")
+                    throw RapidsErrorUtils.overflowInIntegralDivideError()
                   }
                 }
               }
@@ -523,6 +524,11 @@ case class GpuDivideDTInterval(
   }
 
   override def doColumnar(interval: GpuColumnVector, num: GpuColumnVector): ColumnVector = {
+    withResource(makeZeroScalar(num.getBase.getType)) { zeroScalar =>
+      if (num.getBase.contains(zeroScalar)) {
+        throw RapidsErrorUtils.divByZeroError(origin)
+      }
+    }
     doColumnar(interval.getBase, num.getBase, num.dataType)
   }
 

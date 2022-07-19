@@ -1093,7 +1093,7 @@ def _get_overflow_df_2cols(spark, data_types, values, expr):
     #(FloatType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
     #(DoubleType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
     #(LongType(), [MIN_DAY_TIME_INTERVAL, -1]),
-    #(IntegerType(), [timedelta(microseconds=LONG_MIN), -1])
+    (IntegerType(), [timedelta(microseconds=LONG_MIN), -1])
 ], ids=idfn)
 def test_day_time_interval_division_overflow(data_type, value_pair):
     assert_gpu_and_cpu_error(
