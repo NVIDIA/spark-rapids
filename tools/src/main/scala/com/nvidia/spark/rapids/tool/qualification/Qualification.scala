@@ -114,19 +114,19 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       val startTime = System.currentTimeMillis()
       val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker)
       if (!app.isDefined) {
+        progressBar.foreach(_.reportUnkownStatusProcess())
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
-        progressBar.foreach(_.incrementFailed())
         None
       } else {
         val qualSumInfo = app.get.aggregateStats()
         if (qualSumInfo.isDefined) {
           allApps.add(qualSumInfo.get)
+          progressBar.foreach(_.reportSuccessfulProcess())
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
-          progressBar.foreach(_.incrementSuccessful())
         } else {
+          progressBar.foreach(_.reportUnkownStatusProcess())
           logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
-          progressBar.foreach(_.incrementFailed())
         }
       }
     } catch {
@@ -138,8 +138,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
         System.exit(1)
       case e: Exception =>
+        progressBar.foreach(_.reportFailedProcess())
         logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
-        progressBar.foreach(_.incrementFailed())
     }
   }
 
