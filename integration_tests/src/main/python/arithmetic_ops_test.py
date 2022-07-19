@@ -611,14 +611,14 @@ def test_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
+# Spark's degrees will overflow on large values in jdk 8 or below
 @approximate_float
+@pytest.mark.skipif(get_java_major_version() <= 8, reason="requires jdk 9 or higher")
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/109')
 def test_degrees(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/109 is fixed this can be removed
 @approximate_float
 @pytest.mark.parametrize('data_gen', [float_gen], ids=idfn)
 def test_degrees_small(data_gen):
