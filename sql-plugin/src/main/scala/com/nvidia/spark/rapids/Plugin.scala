@@ -150,8 +150,10 @@ object RapidsPluginUtils extends Logging {
 
     // We let spark.rapids.sql.multiThreadedRead.numThreads be same as spark.executor.cores.
     // See: https://github.com/NVIDIA/spark-rapids/issues/5524
-    conf.set(RapidsConf.MULTITHREAD_READ_NUM_THREADS.key,
-      Math.max(20, conf.get(EXECUTOR_CORES_KEY).toInt).toString)
+    if (conf.contains(EXECUTOR_CORES_KEY)) {
+      conf.set(RapidsConf.MULTITHREAD_READ_NUM_THREADS.key,
+        Math.max(20, conf.get(EXECUTOR_CORES_KEY).toInt).toString)
+    }
   }
 
   def loadProps(resourceName: String): Properties = {
