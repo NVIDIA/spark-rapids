@@ -16,99 +16,69 @@
 
 package com.nvidia.spark.rapids.shims
 
-import scala.collection.JavaConverters._
-
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.LogicalTypeAnnotation._
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
 
-import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport.containsFieldIds
-import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object ParquetSchemaClipShims {
+  /** Stubs for configs not defined before Spark 330 */
+  def useFieldId(conf: SQLConf): Boolean = false
 
-  def useFieldId(conf: SQLConf): Boolean = conf.parquetFieldIdReadEnabled
+  def ignoreMissingIds(conf: SQLConf): Boolean = false
 
-  def ignoreMissingIds(conf: SQLConf): Boolean = conf.ignoreMissingParquetFieldId
+  def timestampNTZEnabled(conf: SQLConf): Boolean = false
 
   def checkIgnoreMissingIds(ignoreMissingIds: Boolean, parquetFileSchema: MessageType,
-      catalystRequestedSchema: StructType): Unit = {
-    if (!ignoreMissingIds &&
-        !containsFieldIds(parquetFileSchema) &&
-        ParquetUtils.hasFieldIds(catalystRequestedSchema)) {
-      throw new RuntimeException(
-        "Spark read schema expects field Ids, " +
-            "but Parquet file schema doesn't contain any field Ids.\n" +
-            "Please remove the field ids from Spark schema or ignore missing ids by " +
-            s"setting `${SQLConf.IGNORE_MISSING_PARQUET_FIELD_ID.key} = true`\n" +
-            s"""
-               |Spark read schema:
-               |${catalystRequestedSchema.prettyJson}
-               |
-               |Parquet file schema:
-               |${parquetFileSchema.toString}
-               |""".stripMargin)
-    }
-  }
+      catalystRequestedSchema: StructType): Unit = {}
 
-  def hasFieldId(field: StructField): Boolean = ParquetUtils.hasFieldId(field)
+  def hasFieldId(field: StructField): Boolean =
+    throw new IllegalStateException("This shim should not invoke `hasFieldId`")
 
-  def hasFieldIds(schema: StructType): Boolean = ParquetUtils.hasFieldIds(schema)
+  def hasFieldIds(schema: StructType): Boolean =
+    throw new IllegalStateException("This shim should not invoke `hasFieldIds`")
 
-  def getFieldId(field: StructField): Int = ParquetUtils.getFieldId(field)
+  def getFieldId(field: StructField): Int =
+    throw new IllegalStateException("This shim should not invoke `getFieldId`")
 
-  def fieldIdToFieldMap(useFieldId: Boolean, fileType: Type): Map[Int, Type] = {
-    if (useFieldId) {
-      fileType.asGroupType().getFields.asScala.filter(_.getId != null)
-          .map(f => f.getId.intValue() -> f).toMap
-    } else {
-      Map.empty[Int, Type]
-    }
-  }
+  def fieldIdToFieldMap(useFieldId: Boolean, fileType: Type): Map[Int, Type] = Map.empty[Int, Type]
 
-  def fieldIdToNameMap(useFieldId: Boolean, fileType: Type): Map[Int, String] = {
-    if (useFieldId) {
-      fileType.asGroupType().getFields.asScala.filter(_.getId != null)
-          .map(f => f.getId.intValue() -> f.getName).toMap
-    } else {
-      Map.empty[Int, String]
-    }
-  }
-
-  def timestampNTZEnabled(conf: SQLConf): Boolean = conf.parquetTimestampNTZEnabled
+  def fieldIdToNameMap(useFieldId: Boolean,
+      fileType: Type): Map[Int, String] = Map.empty[Int, String]
 
   /**
    * Convert a Parquet primitive type to a Spark type.
    * Based on Spark's ParquetSchemaConverter.convertPrimitiveField
    */
-  def convertPrimitiveField(parquetType: PrimitiveType): DataType = {
-    val typeAnnotation = parquetType.getLogicalTypeAnnotation
-    val typeName = parquetType.getPrimitiveTypeName
+  def convertPrimitiveField(field: PrimitiveType): DataType = {
+    val typeName = field.getPrimitiveTypeName
+    val typeAnnotation = field.getLogicalTypeAnnotation
 
     def typeString =
       if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
 
     def typeNotImplemented() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $parquetType")
+      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $typeString")
 
     def illegalType() =
-      TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $parquetType")
+      TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $typeString")
 
     // When maxPrecision = -1, we skip precision range check, and always respect the precision
     // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored
     // as binaries with variable lengths.
     def makeDecimalType(maxPrecision: Int = -1): DecimalType = {
-      val decimalLogicalTypeAnnotation = typeAnnotation
+      val decimalLogicalTypeAnnotation = field.getLogicalTypeAnnotation
           .asInstanceOf[DecimalLogicalTypeAnnotation]
       val precision = decimalLogicalTypeAnnotation.getPrecision
       val scale = decimalLogicalTypeAnnotation.getScale
 
       if (!(maxPrecision == -1 || 1 <= precision && precision <= maxPrecision)) {
-        TrampolineUtil.throwAnalysisException(s"Invalid decimal precision: $typeName " +
-            s"cannot store $precision digits (max $maxPrecision)")
+        TrampolineUtil.throwAnalysisException(
+          s"Invalid decimal precision: $typeName " +
+              s"cannot store $precision digits (max $maxPrecision)")
       }
 
       DecimalType(precision, scale)
@@ -161,13 +131,10 @@ object ParquetSchemaClipShims {
               case 64 => DecimalType(20, 0)
               case _ => illegalType()
             }
-          case timestamp: TimestampLogicalTypeAnnotation
-            if timestamp.getUnit == TimeUnit.MICROS || timestamp.getUnit == TimeUnit.MILLIS =>
-            if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetTimestampNTZEnabled) {
-              TimestampType
-            } else {
-              TimestampNTZType
-            }
+          case timestamp: TimestampLogicalTypeAnnotation if timestamp.getUnit == TimeUnit.MICROS =>
+            TimestampType
+          case timestamp: TimestampLogicalTypeAnnotation if timestamp.getUnit == TimeUnit.MILLIS =>
+            TimestampType
           case _ => illegalType()
         }
 
@@ -175,7 +142,7 @@ object ParquetSchemaClipShims {
         if (!SQLConf.get.isParquetINT96AsTimestamp) {
           TrampolineUtil.throwAnalysisException(
             "INT96 is not supported unless it's interpreted as timestamp. " +
-                s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
+              s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
         }
         TimestampType
 
@@ -193,7 +160,7 @@ object ParquetSchemaClipShims {
       case FIXED_LEN_BYTE_ARRAY =>
         typeAnnotation match {
           case _: DecimalLogicalTypeAnnotation =>
-            makeDecimalType(Decimal.maxPrecisionForBytes(parquetType.getTypeLength))
+            makeDecimalType(Decimal.maxPrecisionForBytes(field.getTypeLength))
           case _: IntervalLogicalTypeAnnotation => typeNotImplemented()
           case _ => illegalType()
         }

@@ -29,6 +29,7 @@ import org.apache.orc.TypeDescription
 import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.QueryExecutionException
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object SchemaUtils extends Arm {
@@ -85,6 +86,7 @@ object SchemaUtils extends Arm {
    * @param readSchema  The read schema from Spark
    * @param isCaseSensitive Whether the name check should be case sensitive or not
    * @param castFunc optional, function to cast the input column to the required type
+   * @param needCast if true, table columns will always be traversed to look for needed casts
    * @return a new table mapping to the "readSchema". Users should close it if no longer needed.
    */
   private[rapids] def evolveSchemaIfNeededAndClose(
@@ -92,14 +94,16 @@ object SchemaUtils extends Arm {
       tableSchema: StructType,
       readSchema: StructType,
       isCaseSensitive: Boolean,
-      castFunc: Option[(ColumnView, DataType) => ColumnView] = None): Table = {
+      castFunc: Option[(ColumnView, DataType) => ColumnView] = None,
+      needCast: Boolean = false): Table = {
     // Schema evolution is needed when
     //   1) there are columns with precision can be stored in an int, or
     //   2) "readSchema" is not equal to "tableSchema".
     val isSchemaEvolutionNeeded = closeOnExcept(table) { _ =>
       assert(table.getNumberOfColumns == tableSchema.length)
-      val hasDec32Col = getPrecisionsList(tableSchema).exists(p => p <= Decimal.MAX_INT_DIGITS)
-      hasDec32Col || readSchema != tableSchema
+      needCast ||
+          getPrecisionsList(tableSchema).exists(p => p <= Decimal.MAX_INT_DIGITS) ||
+          !TrampolineUtil.sameType(readSchema, tableSchema)
     }
     if (isSchemaEvolutionNeeded) {
       withResource(table) { _ =>
@@ -111,7 +115,7 @@ object SchemaUtils extends Arm {
             val cv = table.getColumn(typeAndId._2)
             withResource(new ArrayBuffer[ColumnView]) { toClose =>
               val newCol = evolveColumnRecursively(cv, typeAndId._1, rf.dataType, isCaseSensitive,
-                toClose, castFunc)
+                toClose, castFunc, needCast)
               if (newCol == cv) {
                 cv.incRefCount()
               } else {
@@ -133,9 +137,11 @@ object SchemaUtils extends Arm {
     }
   }
 
-  private def evolveColumnRecursively(col: ColumnView, colType: DataType, targetType: DataType,
+  private def evolveColumnRecursively(
+      col: ColumnView, colType: DataType, targetType: DataType,
       isCaseSensitive: Boolean, toClose: ArrayBuffer[ColumnView],
-      castFunc: Option[(ColumnView, DataType) => ColumnView]): ColumnView = {
+      castFunc: Option[(ColumnView, DataType) => ColumnView],
+      needCast: Boolean): ColumnView = {
     // An util function to add a view to the buffer "toClose".
     val addToClose = (v: ColumnView) => {
       toClose += v
@@ -145,8 +151,9 @@ object SchemaUtils extends Arm {
     (colType, targetType) match {
       case (colSt: StructType, toSt: StructType) =>
         // This is for the case of nested columns.
-        val needSchemaEvo = colSt != toSt ||
-          getPrecisionsList(colSt).exists(p => p <= Decimal.MAX_INT_DIGITS)
+        val needSchemaEvo = needCast ||
+            !TrampolineUtil.sameType(colSt, toSt) ||
+            getPrecisionsList(colSt).exists(p => p <= Decimal.MAX_INT_DIGITS)
         if (needSchemaEvo) {
           val typeIdMap = buildTypeIdMapFromSchema(colSt, isCaseSensitive)
           val newViews = toSt.safeMap { f =>
@@ -154,7 +161,7 @@ object SchemaUtils extends Arm {
               val typeAndId = typeIdMap(f.name)
               val cv = addToClose(col.getChildColumnView(typeAndId._2))
               val newChild = evolveColumnRecursively(cv, typeAndId._1, f.dataType,
-                isCaseSensitive, toClose, castFunc)
+                isCaseSensitive, toClose, castFunc, needCast)
               if (newChild != cv) {
                 addToClose(newChild)
               }
@@ -174,7 +181,7 @@ object SchemaUtils extends Arm {
       case (colAt: ArrayType, toAt: ArrayType) =>
         val child = addToClose(col.getChildColumnView(0))
         val newChild = evolveColumnRecursively(child, colAt.elementType, toAt.elementType,
-          isCaseSensitive, toClose, castFunc)
+          isCaseSensitive, toClose, castFunc, needCast)
         if (child == newChild) {
           col
         } else {
@@ -190,7 +197,7 @@ object SchemaUtils extends Arm {
         val processView = (id: Int, srcType: DataType, distType: DataType) => {
           val view = addToClose(listChild.getChildColumnView(id))
           val newView = evolveColumnRecursively(view, srcType, distType, isCaseSensitive,
-            toClose, castFunc)
+            toClose, castFunc, needCast)
           if (newView != view) {
             newStructChildren += addToClose(newView)
             newStructIndices += id
@@ -212,7 +219,7 @@ object SchemaUtils extends Arm {
       case (fromDec: DecimalType, toDec: DecimalType) if fromDec == toDec &&
           !GpuColumnVector.getNonNestedRapidsType(fromDec).equals(col.getType) =>
         col.castTo(DecimalUtil.createCudfDecimal(fromDec))
-      case _ if colType != targetType =>
+      case _ if !GpuColumnVector.getNonNestedRapidsType(targetType).equals(col.getType) =>
         castFunc.map(f => f(col, targetType))
           .getOrElse(throw new QueryExecutionException("Casting function is missing for " +
             s"type conversion from $colType to $targetType"))
