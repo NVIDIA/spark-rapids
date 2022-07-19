@@ -1057,8 +1057,8 @@ object RapidsConf {
       "The memory usage is an estimate based on an upper-bound approximation on the " +
       "complexity of the regular expression. Note that the actual memory usage may " +
       "still be higher than this estimate depending on the number of rows in the data" +
-      "column and the input strings. It is recommended to not set this to more than " +
-      s"3 times ${GPU_BATCH_SIZE_BYTES.key}")
+      "column and the input strings themselves. It is recommended to not set this to " +
+      s"more than 3 times ${GPU_BATCH_SIZE_BYTES.key}")
     .longConf
     .createWithDefault(Integer.MAX_VALUE)
 
