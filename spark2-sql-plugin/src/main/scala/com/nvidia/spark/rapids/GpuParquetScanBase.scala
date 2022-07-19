@@ -30,14 +30,6 @@ object GpuReadParquetFileFormat {
     val fsse = meta.wrapped
     val session = fsse.sqlContext.sparkSession
     GpuParquetScan.tagSupport(session, fsse.requiredSchema, meta)
-
-    if (meta.conf.parquetReaderFooterType == RapidsConf.ParquetFooterReaderType.NATIVE) {
-      val options = new ParquetOptions(fsse.relation.options, session.sessionState.conf)
-      if (options.mergeSchema) {
-        meta.willNotWorkOnGpu("Native footer reader for parquet does not work when" +
-          " mergeSchema is enabled")
-      }
-    }
   }
 }
 

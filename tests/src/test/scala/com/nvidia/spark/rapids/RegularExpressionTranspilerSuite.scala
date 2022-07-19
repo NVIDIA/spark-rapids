@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
@@ -300,6 +301,23 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("word boundaries around \\D, \\S, \\W, \\H, or \\V - fall back to CPU") {
+    val patterns = Seq("\\D\\B", "\\W\\B", "\\D\\b", "\\W\\b", "\\S\\b", "\\S\\B", "\\H\\B",
+        "\\H\\b", "\\V\\B", "\\V\\b")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+          "Word boundaries around \\D, \\S,\\W, \\H, or \\V are not supported")
+    )
+  }
+
+  test("word boundaries around negated character class - fall back to CPU") {
+    val patterns = Seq("[^A-Z]\\B", "[^A-Z]\\b")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Word boundaries around negated character classes are not supported")
+    )
+  }
+
   test ("word boundaries will fall back to CPU - split") {
     val patterns = Seq("\\b", "\\B")
     patterns.foreach(pattern =>
@@ -583,6 +601,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       RegexReplaceMode)
   }
 
+  test("AST fuzz test - regexp_find - full unicode input") {
+    assume(isUnicodeEnabled())
+    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+      RegexFindMode)
+  }
+
+  test("AST fuzz test - regexp_replace - full unicode input") {
+    assume(isUnicodeEnabled())
+    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+      RegexReplaceMode)
+  }
+
+  def isUnicodeEnabled(): Boolean = {
+    Charset.defaultCharset().name() == "UTF-8"
+  }
+
   test("AST fuzz test - regexp_find - anchor focused") {
     doAstFuzzTest(validDataChars = Some("\r\nabc"),
       validPatternChars = "^$\\AZz\r\n()[]-", mode = RegexFindMode)
@@ -708,8 +742,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val data = Range(0, 1000)
       .map(_ => dataGen.nextString())
 
+    val skipUnicodeIssues = validDataChars match {
+      case None => true
+      case _ => false
+    }
+
     // generate patterns that are valid on both CPU and GPU
-    val fuzzer = new FuzzRegExp(validPatternChars)
+    val fuzzer = new FuzzRegExp(validPatternChars, skipUnicodeIssues = skipUnicodeIssues)
     val patterns = HashSet[String]()
     while (patterns.size < 5000) {
       val pattern = fuzzer.generate(0).toRegexString
@@ -880,7 +919,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
  * See https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html for
  * Java regular expression syntax.
  */
-class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
+class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
+    skipUnicodeIssues: Boolean = false) {
   private val maxDepth = 5
   private val rr = new Random(0)
 
@@ -984,7 +1024,12 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
 
   /** Any escaped character */
   private def escapedChar: RegexEscaped = {
-    RegexEscaped(char.ch)
+    var ch = '\u0000'
+    do {
+      ch = chars(rr.nextInt(chars.length))
+      // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
+    } while (skipUnicodeIssues && "bB".contains(ch))
+    RegexEscaped(ch)
   }
 
   private def lineTerminator: RegexAST = {
@@ -1000,16 +1045,22 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def boundaryMatch: RegexAST = {
-    val generators = Seq[() => RegexAST](
+    val baseGenerators = Seq[() => RegexAST](
       () => RegexChar('^'),
       () => RegexChar('$'),
-      () => RegexEscaped('b'),
-      () => RegexEscaped('B'),
       () => RegexEscaped('A'),
       () => RegexEscaped('G'),
       () => RegexEscaped('Z'),
       () => RegexEscaped('z')
     )
+    val generators = if (skipUnicodeIssues) {
+      baseGenerators
+    } else {
+      baseGenerators ++ Seq[() => RegexAST](
+        // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
+        () => RegexEscaped('b'),
+        () => RegexEscaped('B'))
+    }
     generators(rr.nextInt(generators.length))()
   }
 

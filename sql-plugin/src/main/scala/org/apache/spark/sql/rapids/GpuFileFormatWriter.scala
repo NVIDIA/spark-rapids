@@ -104,7 +104,8 @@ object GpuFileFormatWriter extends Logging {
       partitionColumns: Seq[Attribute],
       bucketSpec: Option[BucketSpec],
       statsTrackers: Seq[ColumnarWriteJobStatsTracker],
-      options: Map[String, String]): Set[String] = {
+      options: Map[String, String],
+      useStableSort: Boolean): Set[String] = {
 
     val job = Job.getInstance(hadoopConf)
     job.setOutputKeyClass(classOf[Void])
@@ -186,7 +187,7 @@ object GpuFileFormatWriter extends Logging {
 
     SQLExecution.checkSQLExecutionId(sparkSession)
 
-    // propagate the decription UUID into the jobs, so that committers
+    // propagate the description UUID into the jobs, so that committers
     // get an ID guaranteed to be unique.
     job.getConfiguration.set("spark.sql.sources.writeJobUUID", description.uuid)
 
@@ -204,7 +205,7 @@ object GpuFileFormatWriter extends Logging {
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
             .map(attr => SortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
-        val sortType = if (RapidsConf.STABLE_SORT.get(plan.conf)) {
+        val sortType = if (useStableSort) {
           FullSortSingleBatch
         } else {
           OutOfCoreSort
