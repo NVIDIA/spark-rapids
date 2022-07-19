@@ -71,6 +71,8 @@ IS_SPARK_311_OR_LATER=0
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+# - ICEBERG_ONLY: iceberg tests only
+# - DELTA_LAKE_ONLY: delta_lake tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
