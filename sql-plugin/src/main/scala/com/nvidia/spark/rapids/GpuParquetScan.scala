@@ -250,16 +250,25 @@ object GpuParquetScan {
     }
   }
 
+  /**
+   * This estimates the number of nodes in a parquet footer schema based off of the parquet spec
+   * Specifically https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
+   */
   private def numNodesEstimate(dt: DataType): Long = dt match {
     case StructType(fields) =>
+      // A struct has a group node that holds the children
       1 + fields.map(f => numNodesEstimate(f.dataType)).sum
     case ArrayType(elementType, _) =>
-      // In parquet the there are two groups needed to make a List/Array
+      // A List/Array has one group node to tag it as a list and another one
+      // that is marked as repeating.
       2 + numNodesEstimate(elementType)
     case MapType(keyType, valueType, _) =>
-      // In parquet there is a repeating group followed by a key/value group
+      // A Map has one group node to tag it as a map and another one
+      // that is marked as repeating, but holds the key/value
       2 + numNodesEstimate(keyType) + numNodesEstimate(valueType)
-    case _ => 1
+    case _ =>
+      // All the other types are just value types and are represented by a non-group node
+      1
   }
 
   /**
