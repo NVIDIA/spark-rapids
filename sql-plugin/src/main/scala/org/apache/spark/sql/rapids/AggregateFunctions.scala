@@ -528,7 +528,8 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
 case class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
-    with GpuRunningWindowFunction {
+    with GpuRunningWindowFunction 
+    with GpuReplaceWindowFunction {
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, child.dataType))
   override lazy val inputProjection: Seq[Expression] = child.dataType match {
     case FloatType | DoubleType => Seq(child, GpuIsNan(child))
@@ -549,7 +550,6 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   }
 
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
-  private lazy val cudfIf = AttributeReference("if", BooleanType)()
     
   override lazy val preMerge: Seq[Expression] = child.dataType match {
     case FloatType | DoubleType => Seq(cudfMax, GpuIsNan(cudfMax))
@@ -568,16 +568,6 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
     case _ => postMergeAttr
   }
 
-  /*
-  override lazy val evaluateExpression: Expression = child.dataType match {
-    case FloatType | DoubleType => cudfIf
-    case _ => cudfMax
-  }
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = child.dataType match {
-    case FloatType | DoubleType => cudfIf :: Nil
-    case _ => cudfMax :: Nil
-  }
-  */
   override lazy val evaluateExpression: Expression = cudfMax
   override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfMax::Nil
   
@@ -593,17 +583,22 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.max().onColumn(inputs.head._2)
-  /*
+  
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = child.dataType match {
     case DoubleType => 
       {
         lazy val isNan = GpuWindowExpression(GpuIsNan(child), spec)
         val max = GpuWindowExpression(GpuMax(child), spec)
-        GpuIf(GpuMax(isNan), GpuLiteral(Double.NaN), max)
+        GpuIf(GpuSum(isNan, BooleanType), GpuLiteral(Double.NaN), max)
       }
     case _ => GpuWindowExpression(GpuMax(child), spec)
   }
-  */
+
+  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =  child.dataType match {
+    case DoubleType | FloatType => true
+    case _ => false
+  }
+  
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
