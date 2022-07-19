@@ -41,7 +41,7 @@ object AlluxioUtils extends Logging {
         logInfo(s"Alluxio path $alluxio_path is mounted")
         checkedAlluxioPath.add(alluxio_path)
       } else {
-        logDebug(s"Alluxio path $alluxio_path already checked")
+        logDebug(s"Alluxio path $alluxio_path already mounted")
       }
     }
   }
