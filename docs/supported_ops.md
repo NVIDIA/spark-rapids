@@ -9447,7 +9447,7 @@ are limited.
 <tr>
 <td rowSpan="3">NthValue</td>
 <td rowSpan="3">`nth_value`</td>
-<td rowSpan="3">nth aggregate operator</td>
+<td rowSpan="3">nth window operator</td>
 <td rowSpan="3">None</td>
 <td rowSpan="3">window</td>
 <td>input</td>

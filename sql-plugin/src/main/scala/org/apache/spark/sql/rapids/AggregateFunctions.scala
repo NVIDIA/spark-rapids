@@ -1611,7 +1611,7 @@ case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boole
 
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] =
-    Seq(child, GpuLiteral(ignoreNulls, BooleanType))
+    Seq(child)
 
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =

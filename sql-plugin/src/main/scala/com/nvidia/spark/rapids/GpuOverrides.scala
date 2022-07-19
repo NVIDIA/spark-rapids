@@ -2345,7 +2345,7 @@ object GpuOverrides extends Logging {
           GpuSum(childExprs.head, a.dataType)
       }),
     expr[NthValue](
-      "nth aggregate operator",
+      "nth window operator",
       ExprChecks.windowOnly(
         (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
@@ -2354,7 +2354,7 @@ object GpuOverrides extends Logging {
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
           TypeSig.all),
-          ParamCheck("offset", TypeSig.INT, TypeSig.INT))
+          ParamCheck("offset", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT)))
       ),
       (a, conf, p, r) => new AggExprMeta[NthValue](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
