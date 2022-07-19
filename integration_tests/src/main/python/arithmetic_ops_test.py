@@ -1088,18 +1088,27 @@ def _get_overflow_df_2cols(spark, data_types, values, expr):
 # test interval division overflow, such as interval / 0, Long.MinValue / -1 ...
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value_pair', [
-    #(FloatType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
-    #(DoubleType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
-    #(FloatType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
-    #(DoubleType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
-    #(LongType(), [MIN_DAY_TIME_INTERVAL, -1]),
+    (LongType(), [MIN_DAY_TIME_INTERVAL, -1]),
     (IntegerType(), [timedelta(microseconds=LONG_MIN), -1])
 ], ids=idfn)
 def test_day_time_interval_division_overflow(data_type, value_pair):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
-        error_message='ArithmeticException')
+        error_message='SparkArithmeticException: Overflow in integral divide.')
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.parametrize('data_type,value_pair', [
+    (FloatType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
+    (DoubleType(), [MAX_DAY_TIME_INTERVAL, 0.1]),
+    (FloatType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
+    (DoubleType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
+], ids=idfn)
+def test_day_time_interval_division_round_overflow(data_type, value_pair):
+    assert_gpu_and_cpu_error(
+        df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
+        conf={},
+        error_message='java.lang.ArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value_pair', [
