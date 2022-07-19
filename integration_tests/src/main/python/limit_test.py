@@ -27,13 +27,6 @@ def test_simple_limit(data_gen):
             conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
 
-# This conf allows CollectLimitExec and GlobalLimitExec to run on GPU
-offset_test_conf = {
-    'spark.rapids.sql.exec.CollectLimitExec': 'true',
-    'spark.rapids.sql.exec.GlobalLimitExec': 'true'
-}
-
-
 @pytest.mark.parametrize('offset', [0, 10, 2048, 4096])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 def test_non_zero_offset(offset):
@@ -44,8 +37,9 @@ def test_non_zero_offset(offset):
     # 4096: offset > df.numRows
 
     offset_sql = "select * from tmp_table offset {}".format(offset)
-    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048), 'tmp_table',
-                                     offset_sql, conf=offset_test_conf)
+    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048),
+                                     'tmp_table', offset_sql,
+                                     conf={'spark.rapids.sql.exec.CollectLimitExec': 'true'})
 
 
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
@@ -62,5 +56,6 @@ def test_non_zero_offset_with_limit(limit, offset):
     # (100, 600): offset > limit
 
     limit_offset_sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
-    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048), 'tmp_table',
-                                     limit_offset_sql, conf=offset_test_conf)
+    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048),
+                                     'tmp_table', limit_offset_sql,
+                                     conf={'spark.rapids.sql.exec.CollectLimitExec': 'true'})

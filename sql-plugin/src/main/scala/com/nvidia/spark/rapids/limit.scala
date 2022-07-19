@@ -73,7 +73,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
         override def hasNext: Boolean = (limit == -1 || remainingLimit > 0) && iter.hasNext
 
         override def next(): ColumnarBatch = {
-          if (!iter.hasNext) {
+          if (!this.hasNext) {
             throw new NoSuchElementException("Next on empty iterator")
           }
 
@@ -84,7 +84,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
           while (batch != null && remainingOffset >= batch.numRows()) {
             remainingOffset -= batch.numRows()
             batch.safeClose()
-            batch = if (iter.hasNext) { iter.next() } else { null }
+            batch = if (this.hasNext) { iter.next() } else { null }
           }
 
           // If the last batch is null, then we have offset >= numRows in this partition.
@@ -112,10 +112,10 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
               }
               result = sliceBatchWithOffset(batch, remainingOffset, length)
               remainingOffset = 0
-              remainingLimit -= result.numRows()
             }
-            numOutputRows += result.numRows()
             numOutputBatches += 1
+            numOutputRows += result.numRows()
+            remainingLimit -= result.numRows()
             result
           }
         }
