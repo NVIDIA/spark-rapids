@@ -58,6 +58,8 @@ Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.
 Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
 you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
+For the `degrees` functions, Spark's implementation relies on Java's built-in functions, and their results will differ depending on the JDK version in the runtime environment. The order of operations of the plugin will be consistent with `degrees` implementations of JDK 9 or above. Therefore, in JDK 8 and below, the `degrees` of the plugin will not overflow on some very large numbers while the CPU version does.
+
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query

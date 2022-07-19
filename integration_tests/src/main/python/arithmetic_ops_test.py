@@ -23,7 +23,6 @@ from pyspark.sql.types import IntegralType
 from spark_session import *
 import pyspark.sql.functions as f
 from datetime import timedelta
-from subprocess import check_output, STDOUT
 
 # No overflow gens here because we just focus on verifying the fallback to CPU when
 # enabling ANSI mode. But overflows will fail the tests because CPU runs raise
@@ -612,34 +611,17 @@ def test_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
-def get_java_version():
-    output = check_output(['java', '-version'], stderr=STDOUT).decode('utf-8')
-    for line in output.splitlines():
-        # E.g. openjdk version "1.8.0_212"
-        line = line.strip()
-        if 'version' in line:
-            ver = line.split('version', 1)[1].strip()
-            if ver.startswith('"') and ver.endswith('"'):
-                ver = ver[1:-1]
-    # Allow these formats:
-    # 1.8.0_72-ea
-    # 9-ea
-    # 9
-    # 11.0.1
-    if ver.startswith('1.'):
-        ver = ver[2:]
-    dot_pos = ver.find('.')
-    dash_pos = ver.find('-')
-    if dot_pos != -1:
-        ver = ver[0:dot_pos]
-    elif dash_pos != -1:
-        ver = ver[0:dash_pos]
-    return int(ver)
-
+# Spark's degrees will overflow on large values in jdk 8 or below
 @approximate_float
-@pytest.mark.skipif(get_java_version() <= 8, reason="requires jdk 9 or higher")
+@pytest.mark.skipif(get_java_major_version() <= 8, reason="requires jdk 9 or higher")
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_degrees(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', [float_gen], ids=idfn)
+def test_degrees_small(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))
 
