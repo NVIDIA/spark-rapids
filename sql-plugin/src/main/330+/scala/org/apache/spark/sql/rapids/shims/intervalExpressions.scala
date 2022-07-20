@@ -520,6 +520,11 @@ case class GpuDivideDTInterval(
   override def right: Expression = num
 
   override def doColumnar(interval: GpuColumnVector, numScalar: GpuScalar): ColumnVector = {
+    withResource(makeZeroScalar(numScalar.getBase.getType)) { zeroScalar =>
+      if (numScalar.getBase.equals(zeroScalar)) {
+        throw RapidsErrorUtils.divByZeroError(origin)
+      }
+    }
     doColumnar(interval.getBase, numScalar.getBase, num.dataType)
   }
 

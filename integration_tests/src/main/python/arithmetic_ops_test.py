@@ -1076,6 +1076,14 @@ def test_day_time_interval_division_number_no_overflow2(data_gen):
         # avoid dividing by 0
         lambda spark: gen_df(spark, gen_list).selectExpr("_c1 / case when _c2 = 0 then cast(1 as {}) else _c2 end".format(to_cast_string(data_gen.data_type))))
 
+def _get_overflow_df_1col(spark, data_type, value, expr):
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize([value]),
+        StructType([
+            StructField('a', data_type)
+        ])
+    ).selectExpr(expr)
+
 def _get_overflow_df_2cols(spark, data_types, values, expr):
     return spark.createDataFrame(
         SparkContext.getOrCreate().parallelize([values]),
@@ -1129,6 +1137,16 @@ def test_day_time_interval_division_divide_by_zero(data_type, value_pair):
         conf={},
         error_message='SparkArithmeticException: Division by zero.')
 
+@pytest.mark.parametrize('value,zero_literal', [
+    (timedelta(seconds=1), '0'),
+    (timedelta(seconds=1), '0.0f'),
+    (timedelta(seconds=1), '-0.0f'),
+], ids=idfn)
+def test_day_time_interval_division_divide_by_zero_scalar(value, zero_literal):
+    assert_gpu_and_cpu_error(
+        df_fun=lambda spark: _get_overflow_df_1col(spark, DayTimeIntervalType(), [value], 'a / ' + zero_literal).collect(),
+        conf={},
+        error_message='SparkArithmeticException: Division by zero.')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value_pair', [
