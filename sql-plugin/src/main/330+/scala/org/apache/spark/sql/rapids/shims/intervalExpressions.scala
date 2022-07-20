@@ -35,7 +35,7 @@ object IntervalUtils extends Arm {
     withResource(longCv.castTo(DType.INT32)) { intResult =>
       withResource(longCv.notEqualTo(intResult)) { notEquals =>
         if (BoolUtils.isAnyValidTrue(notEquals)) {
-          throw new ArithmeticException("overflow occurs")
+          throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
         } else {
           intResult.incRefCount()
         }
@@ -48,7 +48,7 @@ object IntervalUtils extends Arm {
     withResource(Scalar.fromLong(minValue)) { minScalar =>
       withResource(decimal128Cv.lessThan(minScalar)) { lessThanMin =>
         if (BoolUtils.isAnyValidTrue(lessThanMin)) {
-          throw new ArithmeticException("overflow occurs")
+          throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
         }
       }
     }
@@ -57,7 +57,7 @@ object IntervalUtils extends Arm {
     withResource(Scalar.fromLong(maxValue)) { maxScalar =>
       withResource(decimal128Cv.greaterThan(maxScalar)) { greaterThanMax =>
         if (BoolUtils.isAnyValidTrue(greaterThanMax)) {
-          throw new ArithmeticException("overflow occurs")
+          throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
         }
       }
     }
@@ -269,13 +269,13 @@ object IntervalUtils extends Arm {
           case (lCv: ColumnVector, rS: Scalar) =>
             withResource(lCv.equalTo(minScalar)) { isMin =>
               if (getLong(rS) == -1L && BoolUtils.isAnyValidTrue(isMin)) {
-                throw new ArithmeticException("overflow occurs")
+                throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
               }
             }
           case (lS: Scalar, rCv: ColumnVector) =>
             withResource(rCv.equalTo(negOneScalar)) { isNegOne =>
               if (getLong(lS) == min && BoolUtils.isAnyValidTrue(isNegOne)) {
-                throw new ArithmeticException("overflow occurs")
+                throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
               }
             }
           case (lS: Scalar, rS: Scalar) =>
