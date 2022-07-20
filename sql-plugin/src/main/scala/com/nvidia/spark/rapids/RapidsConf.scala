@@ -726,7 +726,9 @@ object RapidsConf {
         "started. Used with COALESCING and MULTITHREADED readers, see " +
         "spark.rapids.sql.format.parquet.reader.type, " +
         "spark.rapids.sql.format.orc.reader.type, or " +
-        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types.")
+        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types. " +
+        "If it is not set explicitly, it will be tried to assign value of " +
+        "`max(20, spark.executor.cores)`.")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(20)
