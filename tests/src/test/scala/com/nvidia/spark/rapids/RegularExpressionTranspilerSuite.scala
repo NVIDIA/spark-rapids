@@ -29,10 +29,6 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
-  // test("test1") {
-  //   doStringSplitTest(Set("cc$"), Seq("\rcc\r"), -1)
-  // }
-
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
