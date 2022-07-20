@@ -118,7 +118,14 @@ object AlluxioUtils extends Logging {
     logInfo(s"Run command ${params.last}")
     val out : scala.collection.mutable.ArrayBuffer[String] =
       new scala.collection.mutable.ArrayBuffer[String](10)
-    val ret = Process(params).!(ProcessLogger(out += _, _ => Unit))
+    val ret = if (params.length == 1) {
+      // if alluxioCmd is like "alluxio fs mount", run by Process(String)
+      Process(params.last).!(ProcessLogger(out += _, _ => Unit))
+    } else {
+      // if alluxioCmd has multiple strings in the seq like "su ubuntu -c 'alluxio fs mount'",
+      // need to run by Process(Seq[String])
+      Process(params).!(ProcessLogger(out += _, _ => Unit))
+    }
     (ret, out)
   }
 
