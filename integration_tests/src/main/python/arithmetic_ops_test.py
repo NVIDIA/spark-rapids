@@ -1131,20 +1131,34 @@ def test_day_time_interval_division_round_overflow(data_type, value_pair):
     (FloatType(), [timedelta(seconds=0), 0.0]),   # 0 / 0 = NaN
     (DoubleType(), [timedelta(seconds=0), 0.0]),  # 0 / 0 = NaN
 ], ids=idfn)
-def test_day_time_interval_division_divide_by_zero(data_type, value_pair):
+def test_day_time_interval_divided_by_zero(data_type, value_pair):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
         error_message='SparkArithmeticException: Division by zero.')
 
-@pytest.mark.parametrize('value,zero_literal', [
-    (timedelta(seconds=1), '0'),
-    (timedelta(seconds=1), '0.0f'),
-    (timedelta(seconds=1), '-0.0f'),
-], ids=idfn)
-def test_day_time_interval_division_divide_by_zero_scalar(value, zero_literal):
+@pytest.mark.parametrize('zero_literal', ['0', '0.0f', '-0.0f'], ids=idfn)
+def test_day_time_interval_divided_by_zero_scalar(zero_literal):
     assert_gpu_and_cpu_error(
-        df_fun=lambda spark: _get_overflow_df_1col(spark, DayTimeIntervalType(), [value], 'a / ' + zero_literal).collect(),
+        df_fun=lambda spark: _get_overflow_df_1col(spark, DayTimeIntervalType(), [timedelta(seconds=1)], 'a / ' + zero_literal).collect(),
+        conf={},
+        error_message='SparkArithmeticException: Division by zero.')
+
+@pytest.mark.parametrize('data_type,value', [
+    (ByteType(), 0),
+    (ShortType(), 0),
+    (IntegerType(), 0),
+    (LongType(), 0),
+    (FloatType(), 0.0),
+    (FloatType(), -0.0),
+    (DoubleType(), 0.0),
+    (DoubleType(), -0.0),
+    (FloatType(), 0.0),
+    (DoubleType(), 0.0),
+], ids=idfn)
+def test_day_time_interval_scalar_divided_by_zero(data_type, value):
+    assert_gpu_and_cpu_error(
+        df_fun=lambda spark: _get_overflow_df_1col(spark, data_type, [value], 'INTERVAL 1 SECOND / a').collect(),
         conf={},
         error_message='SparkArithmeticException: Division by zero.')
 
