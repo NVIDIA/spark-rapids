@@ -1153,8 +1153,6 @@ def test_day_time_interval_divided_by_zero_scalar(zero_literal):
     (FloatType(), -0.0),
     (DoubleType(), 0.0),
     (DoubleType(), -0.0),
-    (FloatType(), 0.0),
-    (DoubleType(), 0.0),
 ], ids=idfn)
 def test_day_time_interval_scalar_divided_by_zero(data_type, value):
     assert_gpu_and_cpu_error(
