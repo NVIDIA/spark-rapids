@@ -1137,6 +1137,7 @@ def test_day_time_interval_divided_by_zero(data_type, value_pair):
         conf={},
         error_message='SparkArithmeticException: Division by zero.')
 
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('zero_literal', ['0', '0.0f', '-0.0f'], ids=idfn)
 def test_day_time_interval_divided_by_zero_scalar(zero_literal):
     assert_gpu_and_cpu_error(
@@ -1144,6 +1145,7 @@ def test_day_time_interval_divided_by_zero_scalar(zero_literal):
         conf={},
         error_message='SparkArithmeticException: Division by zero.')
 
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value', [
     (ByteType(), 0),
     (ShortType(), 0),
