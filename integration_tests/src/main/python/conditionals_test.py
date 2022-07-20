@@ -16,11 +16,9 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_320, is_jvm_charset_not_utf8
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-
-from spark_session import is_jvm_charset_not_utf8
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
