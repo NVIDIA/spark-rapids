@@ -73,7 +73,7 @@ object GpuShuffleEnv extends Logging {
     // check for nulls in tests
     Option(SparkEnv.get)
       .map(_.shuffleManager)
-      .collect { case sm: VisibleShuffleManager => sm }
+      .collect { case sm: RapidsShuffleManagerLike => sm }
       .foreach(_.stop())
 
     // when we shut down, make sure we clear `env`, as the convention is that
@@ -102,8 +102,8 @@ object GpuShuffleEnv extends Logging {
   //
   def initShuffleManager(): Unit = {
     SparkEnv.get.shuffleManager match {
-      case visibleMgr: VisibleShuffleManager =>
-        visibleMgr.initialize
+      case rapidsShuffleManager: RapidsShuffleManagerLike =>
+        rapidsShuffleManager.initialize
       case _ =>
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
     }
@@ -112,7 +112,7 @@ object GpuShuffleEnv extends Logging {
   def isRapidsShuffleAvailable(conf: RapidsConf): Boolean = {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
-    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[VisibleShuffleManager]
+    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[RapidsShuffleManagerLike]
     if (isRapidsManager) {
       validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
     }
