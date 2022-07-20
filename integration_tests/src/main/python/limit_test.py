@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import is_before_spark_340
 
@@ -22,24 +22,36 @@ from spark_session import is_before_spark_340
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + array_gens_sample + map_gens_sample + struct_gens_sample, ids=idfn)
 def test_simple_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            # We need some processing after the limit to avoid a CollectLimitExec
-            lambda spark : unary_op_df(spark, data_gen, num_slices=1).limit(10).repartition(1),
-            conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
+        # We need some processing after the limit to avoid a CollectLimitExec
+        lambda spark : unary_op_df(spark, data_gen, num_slices=1).limit(10).repartition(1),
+        conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
 
-@pytest.mark.parametrize('offset', [0, 10, 2048, 4096])
+def offset_test_wrapper(sql):
+    conf = {'spark.rapids.sql.exec.CollectLimitExec': 'true'}
+
+    # Create dataframe to test CollectLimit
+    def spark_df(spark):
+        unary_op_df(spark, int_gen, length=2048, num_slices=1).createOrReplaceTempView("tmp_table")
+        return spark.sql(sql)
+    assert_gpu_and_cpu_are_equal_collect(spark_df, conf)
+
+    # Create dataframe to test GlobalLimit
+    def spark_df_repartition(spark):
+        return spark_df(spark).repartition(1)
+    assert_gpu_and_cpu_are_equal_collect(spark_df_repartition, conf)
+
+
+@pytest.mark.parametrize('offset', [1024, 2048, 4096])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 def test_non_zero_offset(offset):
-    # offset is used in the test cases having no limit
-    # 0: corner case
+    # offset is used in the test cases having no limit, that is limit = -1
     # 1024: offset < df.numRows
     # 2048: offset = df.numRows
     # 4096: offset > df.numRows
 
-    offset_sql = "select * from tmp_table offset {}".format(offset)
-    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048),
-                                     'tmp_table', offset_sql,
-                                     conf={'spark.rapids.sql.exec.CollectLimitExec': 'true'})
+    sql = "select * from tmp_table offset {}".format(offset)
+    offset_test_wrapper(sql)
 
 
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
@@ -55,7 +67,5 @@ def test_non_zero_offset_with_limit(limit, offset):
     # (500, 500): offset = limit
     # (100, 600): offset > limit
 
-    limit_offset_sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
-    assert_gpu_and_cpu_are_equal_sql(lambda spark: unary_op_df(spark, int_gen, length=2048),
-                                     'tmp_table', limit_offset_sql,
-                                     conf={'spark.rapids.sql.exec.CollectLimitExec': 'true'})
+    sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
+    offset_test_wrapper(sql)
