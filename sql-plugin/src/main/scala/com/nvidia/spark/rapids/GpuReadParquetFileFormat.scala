@@ -23,7 +23,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ParquetOptions}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -63,13 +63,5 @@ object GpuReadParquetFileFormat {
     val fsse = meta.wrapped
     val session = SparkShimImpl.sessionFromPlan(fsse)
     GpuParquetScan.tagSupport(session, fsse.requiredSchema, meta)
-
-    if (meta.conf.parquetReaderFooterType == RapidsConf.ParquetFooterReaderType.NATIVE) {
-      val options = new ParquetOptions(fsse.relation.options, session.sessionState.conf)
-      if (options.mergeSchema) {
-        meta.willNotWorkOnGpu("Native footer reader for parquet does not work when" +
-          " mergeSchema is enabled")
-      }
-    }
   }
 }

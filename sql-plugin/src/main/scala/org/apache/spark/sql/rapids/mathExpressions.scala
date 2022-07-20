@@ -23,6 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -46,6 +47,11 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
 case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGREES") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    // Spark's implementation of toDegrees is directly using toDegrees(angrad) in Java,
+    // In jdk8, toDegrees implemention is angrad * 180.0 / PI, while since jdk9, 
+    // toDegrees is angrad * DEGREES_TO_RADIANS, where DEGREES_TO_RADIANS is 180.0/PI.
+    // So when jdk8 or earlier is used, toDegrees will produce different result on GPU,
+    // where it will not overflow when input is very large.
     withResource(Scalar.fromDouble(180d / Math.PI)) { multiplier =>
       input.getBase.mul(multiplier)
     }
@@ -198,7 +204,9 @@ case class GpuCeil(child: Expression, outputType: DataType)
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+                throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
+                  input, outOfBounds, dt, outputType
+                )
               }
             }
           }
@@ -272,7 +280,9 @@ case class GpuFloor(child: Expression, outputType: DataType)
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+                throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
+                  input, outOfBounds, dt, outputType
+                )
               }
             }
           }
@@ -780,4 +790,33 @@ case class GpuPow(left: Expression, right: Expression)
 case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
   override def unaryOp: UnaryOp = UnaryOp.RINT
   override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+private object RoundingErrorUtil extends Arm {
+  /**
+   * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
+   *
+   * @param values A decimal column which contains values that try to cast.
+   * @param outOfBounds A boolean column that indicates which value cannot be casted. 
+   * Users must make sure that there is at least one `true` in this column.
+   * @param fromType The current decimal type.
+   * @param toType The type to cast.
+   * @param context The error context, default value is "".
+   */
+  def cannotChangeDecimalPrecisionError(      
+      values: GpuColumnVector,
+      outOfBounds: ColumnVector,
+      fromType: DecimalType,
+      toType: DecimalType,
+      context: String = ""): ArithmeticException = {
+    val row_id = withResource(outOfBounds.copyToHost()) {hcv =>
+      (0.toLong until outOfBounds.getRowCount())
+        .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
+        .get
+    }
+    val value = withResource(values.copyToHost()){hcv =>  
+      hcv.getDecimal(row_id.toInt, fromType.precision, fromType.scale)
+    }
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(value, toType)
+  }
 }

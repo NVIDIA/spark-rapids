@@ -359,7 +359,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.mode,
       cmd.catalogTable,
       cmd.fileIndex,
-      cmd.outputColumnNames)
+      cmd.outputColumnNames,
+      conf.stableSort)
   }
 }
 
@@ -408,7 +409,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       cmd.query,
       cmd.outputColumnNames,
       origProvider,
-      newProvider)
+      newProvider,
+      conf.stableSort)
   }
 }
 
@@ -3262,6 +3264,14 @@ object GpuOverrides extends Logging {
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
             TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r)),
+    expr[RegExpExtractAll](
+      "Extract all strings matching a regular expression corresponding to the regex group index",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRING),
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+      (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -4343,8 +4353,30 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
+  /** Determine whether query is running against Delta Lake _delta_log JSON files */
+  def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
+    val deltaLogScans = PlanUtils.findOperators(plan, {
+      case f: FileSourceScanExec =>
+        // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
+        f.relation.inputFiles.exists(name =>
+          name.contains("/_delta_log/") && name.endsWith(".json"))
+      case rdd: RDDScanExec =>
+        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
+        rdd.inputRDD != null &&
+          rdd.inputRDD.name != null &&
+          rdd.inputRDD.name.startsWith("Delta Table State") &&
+          rdd.inputRDD.name.endsWith("/_delta_log")
+      case _ =>
+        false
+    })
+    deltaLogScans.nonEmpty
+  }
+
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
+    if (conf.isDetectDeltaLogQueries && isDeltaLakeMetadataQuery(plan)) {
+      wrap.entirePlanWillNotWork("Delta Lake metadata queries are not efficient on GPU")
+    }
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
       if (conf.shouldExplain) {

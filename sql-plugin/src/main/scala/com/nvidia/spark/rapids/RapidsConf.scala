@@ -743,7 +743,7 @@ object RapidsConf {
     .createWithDefault(true)
 
   object ParquetFooterReaderType extends Enumeration {
-    val JAVA, NATIVE = Value
+    val JAVA, NATIVE, AUTO = Value
   }
 
   val PARQUET_READER_FOOTER_TYPE =
@@ -752,16 +752,13 @@ object RapidsConf {
           "happens when there are a large number of columns and relatively few " +
           "of them are being read on a large number of files. " +
           "This provides the ability to use a different path to parse and filter the footer. " +
-          "JAVA is the default and should match closely with Apache Spark. NATIVE will parse and " +
-          "filter the footer using C++. In the worst case this can be slower than JAVA, but " +
-          "not by much if anything. This is still a very experimental feature and there are " +
-          "known bugs and limitations. It should work for most cases when reading data that " +
-          "complies with the latest Parquet standard, but can run into issues for older data " +
-          "that does not fully comply with it.")
+          "AUTO is the default and decides which path to take using a heuristic. JAVA " +
+          "follows closely with what Apache Spark does. NATIVE will parse and " +
+          "filter the footer using C++.")
       .stringConf
       .transform(_.toUpperCase(java.util.Locale.ROOT))
       .checkValues(ParquetFooterReaderType.values.map(_.toString))
-      .createWithDefault(ParquetFooterReaderType.JAVA.toString)
+      .createWithDefault(ParquetFooterReaderType.AUTO.toString)
 
   // This is an experimental feature now. And eventually, should be enabled or disabled depending
   // on something that we don't know yet but would try to figure out.
@@ -922,7 +919,7 @@ object RapidsConf {
   val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
     .doc("CSV reading is not 100% compatible when reading doubles.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_CSV_DECIMALS = conf("spark.rapids.sql.csv.read.decimal.enabled")
     .doc("CSV reading is not 100% compatible when reading decimals.")
@@ -948,7 +945,7 @@ object RapidsConf {
   val ENABLE_READ_JSON_DOUBLES = conf("spark.rapids.sql.json.read.double.enabled")
     .doc("JSON reading is not 100% compatible when reading doubles.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
     .doc("JSON reading is not 100% compatible when reading decimals.")
@@ -1440,6 +1437,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = false)
 
+  val DETECT_DELTA_LOG_QUERIES = conf("spark.rapids.sql.detectDeltaLogQueries")
+    .doc("Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When " +
+      "this option is enabled, the plugin will attempt to detect these queries and fall back " +
+      "to the CPU.")
+    .booleanConf
+    .createWithDefault(value = true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1737,6 +1741,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val parquetReaderFooterType: ParquetFooterReaderType.Value = {
     get(PARQUET_READER_FOOTER_TYPE) match {
+      case "AUTO" => ParquetFooterReaderType.AUTO
       case "NATIVE" => ParquetFooterReaderType.NATIVE
       case "JAVA" => ParquetFooterReaderType.JAVA
       case other =>
@@ -1926,6 +1931,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

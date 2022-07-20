@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
@@ -83,10 +84,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support choice with nothing to repeat") {
+  test("cuDF does not support choice with repetition") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support repetition on one side of a choice")
     )
   }
 
@@ -126,14 +128,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support possessive quantifier") {
     val patterns = Seq("a*+", "a|(a?|a*+)")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "Possessive quantifier *+ not supported")
     )
   }
 
   test("cuDF does not support empty sequence") {
     val patterns = Seq("", "a|", "()")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "empty sequence not supported")
+      assertUnsupported(pattern, RegexFindMode, "Empty sequence not supported")
     )
   }
 
@@ -141,29 +144,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // note that we could choose to transpile and escape the '{' and '}' characters
     val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "Token preceding '{' is not quantifiable near index 0")
     )
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
-    val patterns = Seq("(3?)+", "(3?)*", "(3*)+", "((3?))+")
+    var patterns = Seq("(3?)+", "(3?)*", "((3?))+")
     patterns.foreach(pattern => 
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat"))
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support repetition of group containing: 3?"))
+    Seq("(3*)+").foreach(pattern => 
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support repetition of group containing: 3*"))
   }
 
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
     patterns.foreach(pattern => {
       assertUnsupported(pattern, RegexFindMode,
-        "sequences that only contain '^' or '$' are not supported")
-    })
-  }
-
-  test("cuDF does not support null in character classes") {
-    val patterns = Seq(raw"[\00]", "[a\u0000 b]", raw"[\x00]", raw"[\x{0000}]")
-    patterns.foreach(pattern => {
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support null characters in character classes")
+        "Sequences that only contain '^' or '$' are not supported")
     })
   }
 
@@ -222,7 +222,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("string anchor \\A will fall back to CPU in some repetitions") {
     val patterns = Seq(raw"(\A)*a", raw"(\A){0,}a", raw"(\A){0}a")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support repetition of group containing: \\A")
     )
   }
 
@@ -230,20 +231,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq(raw"(\Z)", raw"(\Z)+")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
-          "sequences that only contain '^' or '$' are not supported")
+        "Sequences that only contain '^' or '$' are not supported")
     )
   }
 
   test("string anchor \\Z fall back to CPU in some repetitions") {
     val patterns = Seq(raw"a(\Z)*", raw"a(\Z){2,}")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, "nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode, 
+        "cuDF does not support repetition of group containing: \\Z")
     )
   }
 
   test("string anchor \\Z fall back to CPU - split") {
     for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("\\Z", mode, "sequences that only contain '^' or '$' are not supported")
+      assertUnsupported("\\Z", mode, 
+        "Sequences that only contain '^' or '$' are not supported")
     }
   }
 
@@ -261,7 +264,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("line anchor $ fall back to CPU - split") {
     for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("a$b", mode, "line anchor $ is not supported in split")
+      assertUnsupported("a$b", mode, "Line anchor $ is not supported in split")
     }
   }
 
@@ -298,10 +301,27 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("word boundaries around \\D, \\S, \\W, \\H, or \\V - fall back to CPU") {
+    val patterns = Seq("\\D\\B", "\\W\\B", "\\D\\b", "\\W\\b", "\\S\\b", "\\S\\B", "\\H\\B",
+        "\\H\\b", "\\V\\B", "\\V\\b")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+          "Word boundaries around \\D, \\S,\\W, \\H, or \\V are not supported")
+    )
+  }
+
+  test("word boundaries around negated character class - fall back to CPU") {
+    val patterns = Seq("[^A-Z]\\B", "[^A-Z]\\b")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Word boundaries around negated character classes are not supported")
+    )
+  }
+
   test ("word boundaries will fall back to CPU - split") {
     val patterns = Seq("\\b", "\\B")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode, "word boundaries are not supported in split mode")
+      assertUnsupported(pattern, RegexSplitMode, "Word boundaries are not supported in split mode")
     )
   }
 
@@ -499,7 +519,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     Seq("^", "$", "^*", "$*", "^+", "$+", "^|$", "^^|$$").foreach(
         pattern =>
       assertUnsupported(pattern, RegexReplaceMode,
-        "sequences that only contain '^' or '$' are not supported")
+        "Sequences that only contain '^' or '$' are not supported")
     )
     Seq("^$", "(^)($)", "(((^^^)))$").foreach(
       pattern =>
@@ -579,6 +599,22 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("AST fuzz test - regexp_replace") {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), REGEXP_LIMITED_CHARS_REPLACE,
       RegexReplaceMode)
+  }
+
+  test("AST fuzz test - regexp_find - full unicode input") {
+    assume(isUnicodeEnabled())
+    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+      RegexFindMode)
+  }
+
+  test("AST fuzz test - regexp_replace - full unicode input") {
+    assume(isUnicodeEnabled())
+    doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
+      RegexReplaceMode)
+  }
+
+  def isUnicodeEnabled(): Boolean = {
+    Charset.defaultCharset().name() == "UTF-8"
   }
 
   test("AST fuzz test - regexp_find - anchor focused") {
@@ -706,8 +742,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val data = Range(0, 1000)
       .map(_ => dataGen.nextString())
 
+    val skipUnicodeIssues = validDataChars match {
+      case None => true
+      case _ => false
+    }
+
     // generate patterns that are valid on both CPU and GPU
-    val fuzzer = new FuzzRegExp(validPatternChars)
+    val fuzzer = new FuzzRegExp(validPatternChars, skipUnicodeIssues = skipUnicodeIssues)
     val patterns = HashSet[String]()
     while (patterns.size < 5000) {
       val pattern = fuzzer.generate(0).toRegexString
@@ -857,8 +898,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val e = intercept[RegexUnsupportedException] {
       transpile(pattern, mode)
     }
-    if (!e.getMessage.startsWith(message)) {
+    val msg = e.getMessage
+    if (!msg.startsWith(message)) {
       fail(s"Pattern '$pattern': Error was [${e.getMessage}] but expected [$message]'")
+    }
+    if(!msg.contains("near index")) {
+      fail(s"Pattern '$pattern': Error was [${e.getMessage}] but does not specify index")
     }
   }
 
@@ -874,7 +919,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
  * See https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html for
  * Java regular expression syntax.
  */
-class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
+class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
+    skipUnicodeIssues: Boolean = false) {
   private val maxDepth = 5
   private val rr = new Random(0)
 
@@ -978,7 +1024,12 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
 
   /** Any escaped character */
   private def escapedChar: RegexEscaped = {
-    RegexEscaped(char.ch)
+    var ch = '\u0000'
+    do {
+      ch = chars(rr.nextInt(chars.length))
+      // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
+    } while (skipUnicodeIssues && "bB".contains(ch))
+    RegexEscaped(ch)
   }
 
   private def lineTerminator: RegexAST = {
@@ -994,16 +1045,22 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true) {
   }
 
   private def boundaryMatch: RegexAST = {
-    val generators = Seq[() => RegexAST](
+    val baseGenerators = Seq[() => RegexAST](
       () => RegexChar('^'),
       () => RegexChar('$'),
-      () => RegexEscaped('b'),
-      () => RegexEscaped('B'),
       () => RegexEscaped('A'),
       () => RegexEscaped('G'),
       () => RegexEscaped('Z'),
       () => RegexEscaped('z')
     )
+    val generators = if (skipUnicodeIssues) {
+      baseGenerators
+    } else {
+      baseGenerators ++ Seq[() => RegexAST](
+        // see https://github.com/NVIDIA/spark-rapids/issues/5882 for \B and \b issue
+        () => RegexEscaped('b'),
+        () => RegexEscaped('B'))
+    }
     generators(rr.nextInt(generators.length))()
   }
 

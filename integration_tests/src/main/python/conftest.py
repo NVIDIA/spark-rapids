@@ -183,6 +183,8 @@ def pytest_runtest_setup(item):
     if item.get_closest_marker('iceberg'):
         if not item.config.getoption('iceberg'):
             pytest.skip('Iceberg tests not configured to run')
+        elif is_databricks_runtime():
+            pytest.skip('Iceberg tests skipped on Databricks')
 
 def pytest_configure(config):
     global _runtime_env
