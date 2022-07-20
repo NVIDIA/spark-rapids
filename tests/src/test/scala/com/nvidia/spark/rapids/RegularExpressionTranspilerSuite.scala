@@ -29,6 +29,10 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
+  // test("test1") {
+  //   doStringSplitTest(Set("cc$"), Seq("\rcc\r"), -1)
+  // }
+
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
@@ -260,12 +264,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\Atest", "test\\z", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
-  }
-
-  test("line anchor $ fall back to CPU - split") {
-    for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("a$b", mode, "Line anchor $ is not supported in split")
-    }
   }
 
   test("line anchor sequence $\\n fall back to CPU") {
@@ -666,6 +664,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
   }
 
+  test("string split fuzz - anchor focused") {
+    val (data, patterns) = generateDataAndPatterns(validDataChars = Some("\r\nabc"),
+      validPatternChars = "^$\\AZz\r\n()", RegexSplitMode)
+    doStringSplitTest(patterns, data, -1)
+  }
+
   def assertTranspileToSplittableString(patterns: Set[String]) {
     for (pattern <- patterns) {
       val transpiler = new CudfRegexTranspiler(RegexSplitMode)
@@ -711,7 +715,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         val cpuArray = cpu(i)
         val gpuArray = gpu(i)
         if (!cpuArray.sameElements(gpuArray)) {
-          fail(s"string_split pattern=${toReadableString(pattern)} " +
+          fail(s"string_split java pattern=${toReadableString(pattern)} " +
+            s"cudfPattern=${toReadableString(cudfPattern)} " +
             s"isRegex=$isRegex " +
             s"data=${toReadableString(data(i))} limit=$limit " +
             s"\nCPU [${cpuArray.length}]: ${toReadableString(cpuArray.mkString(", "))} " +
