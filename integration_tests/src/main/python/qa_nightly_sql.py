@@ -194,7 +194,7 @@ SELECT_SQL = [
 ("SELECT * FROM test_table WHERE strF LIKE 'Y%'", "* WHERE strF LIKE 'Y%'"),
 ("SELECT * FROM test_table WHERE strF LIKE '%an' ", "* WHERE strF LIKE '%an'"),
 ("SELECT REPLACE(strF, 'Yuan', 'Eric') FROM test_table", "REPLACE(strF, 'Yuan', 'Eric')"),
-("SELECT REGEXP_REPLACE(strF, 'Yu', 'Eric') FROM test_table", "REGEXP_REPLACE(strF, 'Yu', 'Eric')"),
+# ("SELECT REGEXP_REPLACE(strF, 'Yu', 'Eric') FROM test_table", "REGEXP_REPLACE(strF, 'Yu', 'Eric')"),
 #("SELECT REGEXP_REPLACE(strF, 'Y*', 'Eric') FROM test_table", "REGEXP_REPLACE(strF, 'Y*', 'Eric')"),
 ("SELECT CONCAT(strF, strF) FROM test_table", "CONCAT(strF, strF)"),
 # (" DATETIME", "DATETIME"),
