@@ -148,8 +148,13 @@ object RapidsPluginUtils extends Logging {
     // set driver timezone
     conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
 
-    // We let spark.rapids.sql.multiThreadedRead.numThreads be same as spark.executor.cores.
-    // See: https://github.com/NVIDIA/spark-rapids/issues/5524
+    // If spark.executor.cores is set by the users, and spark.executor.cores >= 20, then we let
+    // spark.rapids.sql.multiThreadedRead.numThreads be same as spark.executor.cores.
+    // If spark.executor.cores is not set, then spark.rapids.sql.multiThreadedRead.numThreads has
+    // default value 20.
+    // In standalone mode, users set spark.executor.cores via `--conf spark.executor.cores=10`.
+    // In yarn mode, users set spark.executor.cores via a config file 'spark-default.conf',
+    // for more details, see yarn-gpu.md
     if (conf.contains(EXECUTOR_CORES_KEY)) {
       conf.set(RapidsConf.MULTITHREAD_READ_NUM_THREADS.key,
         Math.max(20, conf.get(EXECUTOR_CORES_KEY).toInt).toString)
