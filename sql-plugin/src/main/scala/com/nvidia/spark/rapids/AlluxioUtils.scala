@@ -29,6 +29,7 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
+
   def checkAlluxioMounted(sparkSession: SparkSession, alluxio_path: String): Unit = {
     this.synchronized {
       if (!checkedAlluxioPath.contains(alluxio_path)) {
