@@ -151,14 +151,7 @@ case $DIST_PROFILE in
 
   snapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
-      311
-      321cdh
-      312
-      313
       314
-      320
-      321
-      322
       331
     )
     ;;
@@ -171,6 +164,7 @@ case $DIST_PROFILE in
       313
       320
       321
+      322
       330
     )
     ;;
