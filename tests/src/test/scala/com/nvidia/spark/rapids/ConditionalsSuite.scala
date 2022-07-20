@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.expr
@@ -26,6 +28,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
     .set(RapidsConf.ENABLE_REGEXP.key, "true")
 
   testSparkResultsAreEqual("CASE WHEN test all branches", testData, conf) { df =>
+    assume(isUnicodeEnabled())
     df.withColumn("test", expr(
       "CASE " +
         "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) " +
@@ -34,6 +37,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("CASE WHEN first branch always true", testData2, conf) { df =>
+    assume(isUnicodeEnabled())
     df.withColumn("test", expr(
       "CASE " +
         "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) " +
@@ -42,6 +46,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("CASE WHEN second branch always true", testData2, conf) { df =>
+    assume(isUnicodeEnabled())
     df.withColumn("test", expr(
       "CASE " +
         "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) " +
@@ -50,6 +55,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("CASE WHEN else condition always true", testData2, conf) { df =>
+    assume(isUnicodeEnabled())
     df.withColumn("test", expr(
       "CASE " +
         "WHEN a RLIKE '^[0-9]{4,6}\\z' THEN CAST(a AS INT) " +
@@ -58,6 +64,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("CASE WHEN first or second branch is true", testData3, conf) { df =>
+    assume(isUnicodeEnabled())
     df.withColumn("test", expr(
       "CASE " +
         "WHEN a RLIKE '^[0-9]{1,3}\\z' THEN CAST(a AS INT) " +
@@ -77,6 +84,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("CASE WHEN with null predicate values after first branch",
       testData3, conf) { df =>
+    assume(isUnicodeEnabled())
     df.withColumn("test", expr(
       "CASE " +
         "WHEN char_length(a) IS NULL THEN -999 " +
@@ -114,4 +122,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
     ).toDF("a").repartition(2)
   }
 
+  private def isUnicodeEnabled(): Boolean = {
+    Charset.defaultCharset().name() == "UTF-8"
+  }
 }

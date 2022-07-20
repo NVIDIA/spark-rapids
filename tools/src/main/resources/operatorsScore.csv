@@ -177,6 +177,7 @@ RaiseError,4
 Rand,4
 Rank,4
 RegExpExtract,4
+RegExpExtractAll,4
 RegExpReplace,4
 Remainder,4
 ReplicateRows,4
