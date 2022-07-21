@@ -225,7 +225,7 @@ def test_select_float_order_local(sql_query_line, pytestconfig):
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_REGEXP_SQL, ids=idfn)
 @pytest.mark.skipif(is_jvm_charset_not_utf8(), reason="Regular expressions require UTF-8")
-def test_select_float_order_local(sql_query_line, pytestconfig):
+def test_select_regexp(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
