@@ -46,7 +46,7 @@ object RegexComplexityEstimator {
           case Some(maxLength) =>
             maxLength * countStates(term)
           case None =>
-            minLength * countStates(term)
+            minLength.max(1) * countStates(term)
         }
       case RegexChar(_) | RegexEscaped(_) | RegexHexDigit(_) | RegexOctalChar(_) =>
         1

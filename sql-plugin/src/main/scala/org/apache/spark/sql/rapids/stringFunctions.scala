@@ -912,8 +912,8 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            val transpiledAST = 
-                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)._1 
+            val (transpiledAST, _) = 
+                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)
             GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
           } catch {
@@ -1102,8 +1102,8 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val transpiledAST = 
-            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)._1 
+          val (transpiledAST, _) = 
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None) 
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
@@ -1223,8 +1223,8 @@ class GpuRegExpExtractAllMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val transpiledAST = 
-            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)._1
+          val (transpiledAST, _) = 
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
@@ -1602,7 +1602,7 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
             pattern = simplified
           case None =>
             try {
-              val transpiledAST = transpiler.getTranspiledAST(utf8Str.toString, None)._1
+              val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None)
               GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
               pattern = transpiledAST.toRegexString
               isRegExp = true
