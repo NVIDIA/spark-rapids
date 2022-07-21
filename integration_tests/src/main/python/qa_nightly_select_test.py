@@ -22,7 +22,7 @@ from decimal import Decimal
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from qa_nightly_sql import *
 import pytest
-from spark_session import with_cpu_session, is_jvm_charset_not_utf8
+from spark_session import with_cpu_session, is_jvm_charset_utf8
 from marks import approximate_float, ignore_order, incompat, qarun
 from data_gen import copy_and_update
 
@@ -224,7 +224,7 @@ def test_select_float_order_local(sql_query_line, pytestconfig):
 @ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_REGEXP_SQL, ids=idfn)
-@pytest.mark.skipif(is_jvm_charset_not_utf8(), reason="Regular expressions require UTF-8")
+@pytest.mark.skipif(not is_jvm_charset_utf8(), reason="Regular expressions require UTF-8")
 def test_select_regexp(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:

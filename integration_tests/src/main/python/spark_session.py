@@ -196,6 +196,3 @@ def get_jvm_charset():
 
 def is_jvm_charset_utf8():
     return get_jvm_charset() == 'UTF-8'
-
-def is_jvm_charset_not_utf8():
-    return get_jvm_charset() != 'UTF-8'

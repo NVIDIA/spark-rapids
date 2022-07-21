@@ -21,9 +21,9 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_jvm_charset_not_utf8
+from spark_session import is_before_spark_320, is_jvm_charset_utf8
 
-if is_jvm_charset_not_utf8():
+if not is_jvm_charset_utf8():
     pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
 else:
     pytestmark = pytest.mark.regexp
