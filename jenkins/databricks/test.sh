@@ -69,10 +69,11 @@ IS_SPARK_311_OR_LATER=0
 
 
 # TEST_MODE
-# - IT_ONLY
-# - CUDF_UDF_ONLY
-# - ALL: IT+CUDF_UDF
-TEST_MODE=${TEST_MODE:-'IT_ONLY'}
+# - DEFAULT: all tests except cudf_udf tests
+# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+# - ICEBERG_ONLY: iceberg tests only
+# - DELTA_LAKE_ONLY: delta_lake tests only
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
@@ -93,7 +94,7 @@ mkdir -p /tmp/spark-events
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=4
 if [ -d "$LOCAL_JAR_PATH" ]; then
-    if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+    if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE
 
@@ -104,20 +105,20 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
         fi
     fi
 
-    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+    if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
         ## Run cudf-udf tests
         CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
             bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
 
-    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
         ## Run Iceberg tests
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
             bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m iceberg --iceberg --test_type=$TEST_TYPE
     fi
 else
-    if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+    if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars building from the spark-rapids source code
         bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
 
@@ -128,20 +129,20 @@ else
         fi
     fi
 
-    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+    if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
         ## Run cudf-udf tests
         CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
 
-    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
         ## Run Iceberg tests
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m iceberg --iceberg --test_type=$TEST_TYPE
     fi
 
-    if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
+    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
