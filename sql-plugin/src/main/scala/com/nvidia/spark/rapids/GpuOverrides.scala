@@ -359,7 +359,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.mode,
       cmd.catalogTable,
       cmd.fileIndex,
-      cmd.outputColumnNames)
+      cmd.outputColumnNames,
+      conf.stableSort)
   }
 }
 
@@ -408,7 +409,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       cmd.query,
       cmd.outputColumnNames,
       origProvider,
-      newProvider)
+      newProvider,
+      conf.stableSort)
   }
 }
 
@@ -4069,7 +4071,7 @@ object GpuOverrides extends Logging {
       // is impacted by forcing operators onto CPU due to other rules that we have
       wrap.runAfterTagRules()
       val optimizer = try {
-        ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
+        ShimLoader.newOptimizerClass(conf.optimizerClassName)
       } catch {
         case e: Exception =>
           throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)

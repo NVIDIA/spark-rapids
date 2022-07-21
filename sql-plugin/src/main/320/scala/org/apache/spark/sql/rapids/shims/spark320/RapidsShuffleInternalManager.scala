@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark320
 
-import org.apache.spark.{SparkConf, TaskContext}
+import org.apache.spark.SparkConf
 import org.apache.spark.shuffle._
 import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 
@@ -26,35 +26,8 @@ import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, Rapid
  *       `ShuffleManager` and `SortShuffleManager` classes.
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends RapidsShuffleInternalManagerBase(conf, isDriver) {
-
-  def getReader[K, C](
-      handle: ShuffleHandle,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int,
-      context: TaskContext,
-      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    getReaderInternal(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
-      metrics)
-  }
-}
-
+    extends RapidsShuffleInternalManagerBase(conf, isDriver)
 
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-  extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
-
-  def getReader[K, C](
-    handle: ShuffleHandle,
-    startMapIndex: Int,
-    endMapIndex: Int,
-    startPartition: Int,
-    endPartition: Int,
-    context: TaskContext,
-    metrics: ShuffleReadMetricsReporter
-  ): ShuffleReader[K, C] = {
-    self.getReader(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
-      metrics)
-  }
-}
+  extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
+    with ShuffleManager

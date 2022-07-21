@@ -36,7 +36,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     query: LogicalPlan,
     outputColumnNames: Seq[String],
     origProvider: Class[_],
-    gpuFileFormat: ColumnarFileFormat)
+    gpuFileFormat: ColumnarFileFormat,
+    useStableSort: Boolean)
   extends GpuDataWritingCommand {
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
@@ -118,7 +119,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       origProvider = origProvider,
       gpuFileFormat = gpuFileFormat)
     try {
-      dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan)
+      dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan, useStableSort)
     } catch {
       case ex: AnalysisException =>
         logError(s"Failed to write to table ${table.identifier.unquotedString}", ex)
@@ -130,6 +131,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
   private val isBucketed = table.bucketSpec.nonEmpty
 
+  private val needSort = isPartitioned || isBucketed
+
   // use same logic as GpuInsertIntoHadoopFsRelationCommand
-  override def requireSingleBatch: Boolean = isPartitioned || isBucketed
+  override def requireSingleBatch: Boolean = needSort && useStableSort
 }
