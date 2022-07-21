@@ -705,6 +705,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val decompressMemoryTarget = maxDecompressBatchMemory
 
     val batches = child.executeColumnar()
+    val localCodecConfigs = codecConfigs
     if (outputSchema.isEmpty) {
       batches.mapPartitions { iter =>
         val numRows = iter.map(_.numRows).sum
@@ -720,7 +721,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
               iter, dataTypes, sizeGoal, decompressMemoryTarget,
               numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
               concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches",
-              codecConfigs)
+              localCodecConfigs)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)

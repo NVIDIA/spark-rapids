@@ -148,7 +148,7 @@ case $DIST_PROFILE in
       321
       322
       330
-      340
+      331
     )
     ;;
 
@@ -160,6 +160,8 @@ case $DIST_PROFILE in
       313
       320
       321
+      322
+      330
     )
     ;;
 
@@ -168,6 +170,7 @@ case $DIST_PROFILE in
       321cdh
       312
       320
+      330
     )
     ;;
 

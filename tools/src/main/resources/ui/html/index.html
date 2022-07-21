@@ -101,8 +101,8 @@
             </svg></i>
             About </a>
           <div class="dash-nav-dropdown-menu">
-            <a href="https://github.com/NVIDIA/spark-rapids" target="_blank" class="dash-nav-dropdown-item">GitHub</a>
-            <a href="https://nvidia.github.io/spark-rapids/" target="_blank" class="dash-nav-dropdown-item">
+            <a href="https://github.com/NVIDIA/spark-rapids" class="dash-nav-dropdown-item">GitHub</a>
+            <a href="https://nvidia.github.io/spark-rapids/" class="dash-nav-dropdown-item">
               <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M13.5 13.5V14H14V13.5H13.5ZM13.5 2.5H14V2H13.5V2.5ZM4 5H11.5V4H4V5ZM4 7H11.5V6H4V7ZM4 9H8V8H4V9ZM13.5 11H3.5V12H13.5V11ZM3.5 14H13.5V13H3.5V14ZM2 12.5C2 13.3284 2.67157 14 3.5 14V13C3.22386 13 3 12.7761 3 12.5H2ZM3.5 11C2.67157 11 2 11.6716 2 12.5H3C3 12.2239 3.22386 12 3.5 12V11ZM13.5 2H3.5V3H13.5V2ZM2 3.5V12.5H3V3.5H2ZM14 13.5V11.5H13V13.5H14ZM14 11.5V2.5H13V11.5H14ZM3.5 2C2.67157 2 2 2.67157 2 3.5H3C3 3.22386 3.22386 3 3.5 3V2Z" fill="white"/>
               </svg></i> Docs </a>
@@ -117,7 +117,7 @@
             <path d="M6 3.5H14M6 11.5H14M6 7.5H14M2.5 2.5H4.5V4.5H2.5V2.5ZM2.5 10.5H4.5V12.5H2.5V10.5ZM2.5 6.5H4.5V8.5H2.5V6.5Z" stroke="black"/>
           </svg></i></a>
         <div class="tools">
-          <a href="https://github.com/NVIDIA/spark-rapids" target="_blank" class="tools-item">GitHub</a>
+          <a href="https://github.com/NVIDIA/spark-rapids" class="tools-item">GitHub</a>
         </div>
       </header>
       <main class="dash-content">
@@ -131,7 +131,8 @@
                   <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
                 </svg>
                 <strong>Disclaimer!</strong><ul>
-                <li>Estimates are given assuming supported data formats and expressions are used in the application.</li></ul>
+                <li>Estimates provided by the Qualification tool are based on the currently supported "<em>SparkPlan</em>" or "<em>Executor Nodes</em>" used in the application. It currently does not look at the expressions or datatypes used.</li>
+                <li>Please refer to the <a href="https://nvidia.github.io/spark-rapids/docs/supported_ops.html">Supported Operators</a> guide to check the types and expressions you are using are supported.</li></ul>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                   <span aria-hidden="true">&times;</span>
                 </button>
@@ -168,28 +169,7 @@
                 </div>
                 <div class="card-body">
                   <div id="gpu-recommendation-card">
-                    <table id="gpu-recommendation-table" class="table display" style="width:100%">
-                      <thead>
-                      <tr>
-                        <th></th>
-                        <th>
-                          App Name
-                        </th>
-                        <th>
-                          App ID
-                        </th>
-                        <th>
-                          App Duration
-                        </th>
-                        <th>
-                          Estimated Speed-up
-                        </th>
-                        <th>
-                          Recommendation
-                        </th>
-                      </tr>
-                      </thead>
-                    </table>
+                    <div id="app-recommendations-data-container"></div>
                   </div>
                 </div>
               </div>
@@ -199,80 +179,6 @@
       </main>
     </div>
   </div>
-
-  <script id="qual-report-summary-template" type="text/template">
-    <div class="row dash-row">
-      <div class="col-xl-4">
-        <div class="stats stats-primary">
-          <h3 class="stats-title"> {{totalApps.header}} </h3>
-          <div class="stats-content">
-            <div class="stats-icon">
-              <svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6.5 13.5V10.5H3.5V13.5H6.5ZM6.5 13.5H9.5M6.5 13.5V6.5H9.5V13.5M9.5 13.5H12.5V2.5H9.5V13.5Z" stroke="white"/>
-              </svg>
-            </div>
-            <div class="stats-data">
-              <div class="stats-number"> {{totalApps.numeric}}</div>
-              <div class="stats-change">
-                <span class="stats-percentage"> {{totalApps.totalAppsDurations}} </span>
-                <span class="stats-timeframe"> {{totalApps.totalAppsDurationLabel}} </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-xl-4">
-        <div class="stats stats-success ">
-          <h3 class="stats-title"> {{candidates.header}} </h3>
-          <div class="stats-content">
-            <div class="stats-icon">
-              <svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1.5 6.5H2V9.5H1.5M6.5 1.5V2H9.5V1.5M14.5 6.5H14V9.5H14.5M6.5 14.5V14H9.5V14.5M14.5 14.5H1.5V1.5H14.5V14.5ZM4.5 4.5H5.5V5.5H4.5V4.5ZM4.5 7.5H5.5V8.5H4.5V7.5ZM4.5 10.5H5.5V11.5H4.5V10.5ZM7.5 4.5H8.5V5.5H7.5V4.5ZM7.5 7.5H8.5V8.5H7.5V7.5ZM7.5 10.5H8.5V11.5H7.5V10.5ZM10.5 4.5H11.5V5.5H10.5V4.5ZM10.5 7.5H11.5V8.5H10.5V7.5ZM10.5 10.5H11.5V11.5H10.5V10.5Z" stroke="white"/>
-              </svg>
-            </div>
-            <div class="stats-data">
-              <div class="stats-number"> {{candidates.numeric}} </div>
-              <div class="stats-change">
-                <span class="stats-percentage"> {{candidates.statsPercentage}} </span>
-                <span class="stats-timeframe"> {{candidates.statsTimeFrame}} </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-xl-4">
-        <div class="stats stats-info">
-          <h3 class="stats-title"> {{speedups.header}} </h3>
-          <div class="stats-content">
-            <div class="stats-icon">
-              <svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <g clip-path="url(#clip0_2_1921)">
-                  <path d="M8.5 7.99V8L2.5 11.5V4.5L8.5 7.99Z" stroke="white"/>
-                  <path d="M14.5 8L8.5 11.5V4.5L14.5 8Z" stroke="white"/>
-                </g>
-                <defs>
-                  <clipPath id="clip0_2_1921">
-                    <rect width="1.05em" height="1.05em" fill="white"/>
-                  </clipPath>
-                </defs>
-              </svg>
-            </div>
-            <div class="stats-data">
-              <div class="stats-number"> {{speedups.numeric}} </div>
-              <div class="stats-change">
-                <span class="stats-percentage"> {{speedups.totalSqlDataframeTaskDuration}} </span>
-                <span class="stats-timeframe"> {{speedups.totalSqlDFDurationsLabel}} </span>
-              </div>
-              <div class="stats-change">
-                <span class="stats-percentage"> {{speedups.statsPercentage}} </span>
-                <span class="stats-timeframe"> {{speedups.statsTimeFrame}} </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </script>
 
   <script src="../js/data-output.js"></script>
   <script src="../js/ui-config.js"></script>

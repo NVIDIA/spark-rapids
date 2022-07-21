@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,28 +19,36 @@ package org.apache.spark.sql.rapids
 import java.lang.invoke.SerializedLambda
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.ScalaUDF
+import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF, SpecializedGetters}
 import org.apache.spark.sql.execution.TrampolineUtil
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, MapType, StructType}
 
-abstract class ScalaUDFMetaBase(
-    expr: ScalaUDF,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _]],
-    rule: DataFromReplacementRule) extends ExprMeta(expr, conf, parent, rule) {
+object GpuScalaUDFMeta {
+  def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
+    "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
+        "to get better performance.",
+    ExprChecks.projectOnly(
+      GpuUserDefinedFunction.udfTypeSig,
+      TypeSig.all,
+      repeatingParamCheck =
+        Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
+    (expr, conf, p, r) => new ExprMeta(expr, conf, p, r) {
+      lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance(expr.function)
 
-  lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance(expr.function)
-
-  override def tagExprForGpu(): Unit = {
-    if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
-      val udfName = expr.udfName.getOrElse("UDF")
-      val udfClass = expr.function.getClass
-      willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
-        s"a GPU implementation, nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` " +
-        s"is enabled")
-    }
-  }
+      override def tagExprForGpu(): Unit = {
+        if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
+          val udfName = expr.udfName.getOrElse("UDF")
+          val udfClass = expr.function.getClass
+          willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
+              s"a GPU implementation, nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` " +
+              s"is enabled")
+        }
+      }
+    })
 }
 
 object GpuScalaUDF {

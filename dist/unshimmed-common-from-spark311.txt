@@ -28,7 +28,7 @@ com/nvidia/spark/rapids/SparkShimVersion*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/udf/Plugin*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
-org/apache/spark/sql/rapids/VisibleShuffleManager*
 org/apache/spark/sql/rapids/execution/Unshimmed*
+org/apache/spark/sql/rapids/RapidsShuffleManagerLike*
 rapids/*.py
 rapids4spark-version-info.properties

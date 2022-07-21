@@ -142,7 +142,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
     }
   }
@@ -167,7 +167,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
     }
   }
@@ -190,8 +190,11 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
     assert(sqlMetrics.size == 83)
+    val sqlMetricsWithDelim = sqlMetrics.map { metrics =>
+      metrics.copy(stageIds = ProfileUtils.replaceDelimiter(metrics.stageIds, ","))
+    }
     import sparkSession.implicits._
-    val df = sqlMetrics.toDF
+    val df = sqlMetricsWithDelim.toDF
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
     ToolTestUtils.compareDataFrames(df, dfExpect)
   }
@@ -406,12 +409,73 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(firstRow.jobID === 0)
     assert(firstRow.stageIds.size === 1)
     assert(firstRow.sqlID === None)
+    assert(firstRow.startTime === 1622846402778L)
+    assert(firstRow.endTime === Some(1622846410240L))
 
     val secondRow = jobInfo(1)
     assert(secondRow.jobID === 1)
     assert(secondRow.stageIds.size === 4)
     assert(secondRow.sqlID.isDefined && secondRow.sqlID.get === 0)
+    assert(secondRow.startTime === 1622846431114L)
+    assert(secondRow.endTime === Some(1622846441591L))
   }
+
+  test("test sqlToStages") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    val collect = new CollectInformation(apps)
+    val sqlToStageInfo = collect.getSQLToStage
+
+    assert(sqlToStageInfo.size == 4)
+    val firstRow = sqlToStageInfo.head
+    assert(firstRow.stageId === 1)
+    assert(firstRow.sqlID === 0)
+    assert(firstRow.jobID === 1)
+    assert(firstRow.duration === Some(8174))
+    assert(firstRow.nodeNames.mkString(",") === "Exchange(9),WholeStageCodegen (1)(10),Scan(13)")
+  }
+
+  test("test wholeStage mapping") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    val collect = new CollectInformation(apps)
+    val wholeStageMapping = collect.getWholeStageCodeGenMapping
+
+    assert(wholeStageMapping.size == 10)
+    val firstRow = wholeStageMapping.head
+    assert(firstRow.nodeID === 0)
+    assert(firstRow.sqlID === 0)
+    assert(firstRow.parent === "WholeStageCodegen (6)")
+    assert(firstRow.child === "HashAggregate")
+    assert(firstRow.childNodeID === 1)
+    val lastRow = wholeStageMapping(9)
+    assert(lastRow.nodeID === 17)
+    assert(lastRow.sqlID === 0)
+    assert(lastRow.parent === "WholeStageCodegen (3)")
+    assert(lastRow.child === "SerializeFromObject")
+    assert(lastRow.childNodeID === 19)
+  }
+
 
   test("test multiple resource profile in single app") {
     var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -647,7 +711,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/application_1603128018386_7846")
 
@@ -655,7 +719,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 13)
+      assert(dotDirs.length === 15)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -674,7 +738,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/local-1651188809790")
 
@@ -682,7 +746,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 9)
+      assert(dotDirs.length === 11)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -704,7 +768,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         tempDir.getAbsolutePath,
         eventLog1,
         eventLog2))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/compare")
 
@@ -712,7 +776,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 13)
+      assert(dotDirs.length === 15)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -734,7 +798,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         tempDir.getAbsolutePath,
         eventLog1,
         eventLog2))
-      val exit = ProfileMain.mainInternal(appArgs)
+      val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
       val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/combined")
 
@@ -742,7 +806,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 11)
+      assert(dotDirs.length === 13)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly

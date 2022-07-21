@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
+import com.nvidia.spark.GpuCachedBatchSerializer
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -329,9 +330,13 @@ object ShimLoader extends Logging {
     loader.loadClass(className)
   }
 
-  def newInstanceOf[T](className: String): T = {
+  private def newInstanceOf[T](className: String): T = {
     instantiateClass(loadClass(className)).asInstanceOf[T]
   }
+
+  def newOptimizerClass(className: String): Optimizer = {
+    newInstanceOf[Optimizer](className)
+  } 
 
   // avoid cached constructors
   private def instantiateClass[T](cls: Class[T]): T = {
@@ -382,6 +387,10 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
 
+  def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
+    newInstanceOf("com.nvidia.spark.rapids.ParquetCachedBatchSerializer")
+  }
+
   def loadColumnarRDD(): Class[_] = {
     loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
@@ -389,4 +398,12 @@ object ShimLoader extends Logging {
   def newExplainPlan(): ExplainPlanBase = {
     newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
+
+  def newHiveProvider(): HiveProvider= {
+    newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
+  }
+
+  def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
+    "org.apache.spark.sql.rapids.AvroProviderImpl")
+
 }

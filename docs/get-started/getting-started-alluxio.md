@@ -45,7 +45,7 @@ NM_hostname_2
 
    - Download Alluxio binary file
 
-      Download the latest Alluxio binary file (2.4.1-1) **alluxio-${LATEST}-bin.tar.gz** from
+      Download the latest Alluxio binary file **alluxio-${LATEST}-bin.tar.gz** from
       [this site](https://www.alluxio.io/download/).
 
    - Copy `alluxio-${LATEST}-bin.tar.gz` to NodeManagers and ResourceManager
@@ -198,28 +198,7 @@ NM_hostname_2
       more about this topic, please refer to the
       [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
 
-3. Mount an existing data storage to Alluxio
-
-   - Mount S3 bucket
-
-      ``` bash
-      ${ALLUXIO_HOME}/bin/alluxio fs mount \
-         --option aws.accessKeyId=<AWS_ACCESS_KEY_ID> \
-         --option aws.secretKey=<AWS_SECRET_KEY_ID> \
-         alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
-      ```
-
-   - Mount Azure directory
-
-      ``` bash
-      ${ALLUXIO_HOME}/bin/alluxio fs mount \
-      --option fs.azure.account.key.<AZURE_ACCOUNT>.blob.core.windows.net=<AZURE_ACCESS_KEY> \
-      alluxio://master:port/azure wasb://<AZURE_CONTAINER>@<AZURE_ACCOUNT>.blob.core.windows.net/<AZURE_DIRECTORY>/
-      ```
-
-   For other filesystems, please refer to [this site](https://www.alluxio.io/).
-
-4. Start Alluxio cluster
+3. Start Alluxio cluster
 
    - Format Alluxio
 
@@ -242,8 +221,29 @@ NM_hostname_2
 
    - Verify Alluxio
 
-      To verify that Alluxio is running, visit [http://RM_hostname:19999](http://RM_hostname:19999)
+      To verify that Alluxio is running, visit `http://RM_hostname:19999`
       to see the status page of the Alluxio master.
+
+4. Mount an existing data storage to Alluxio
+
+    - Mount S3 bucket
+
+       ``` bash
+       ${ALLUXIO_HOME}/bin/alluxio fs mount \
+          --option aws.accessKeyId=<AWS_ACCESS_KEY_ID> \
+          --option aws.secretKey=<AWS_SECRET_KEY_ID> \
+          alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
+       ```
+
+    - Mount Azure directory
+
+       ``` bash
+       ${ALLUXIO_HOME}/bin/alluxio fs mount \
+       --option fs.azure.account.key.<AZURE_ACCOUNT>.blob.core.windows.net=<AZURE_ACCESS_KEY> \
+       alluxio://master:port/azure wasb://<AZURE_CONTAINER>@<AZURE_ACCOUNT>.blob.core.windows.net/<AZURE_DIRECTORY>/
+       ```
+
+   For other filesystems, please refer to [this site](https://www.alluxio.io/).
 
 ## RAPIDS Configuration
 

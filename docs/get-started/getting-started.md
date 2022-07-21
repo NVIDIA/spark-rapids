@@ -39,6 +39,11 @@ will vary depending on your cluster manager. Here are some example configs:
   - `--conf spark.task.resource.gpu.amount=1`
 - Specify a GPU discovery script (required on YARN and K8S):
   - `--conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh`
+- Explain why some operations of a query were not placed on a GPU or not:
+  - `--conf spark.rapids.sql.explain=ALL` will display whether each operation is placed on GPU.
+  - `--conf spark.rapids.sql.explain=NOT_ON_GPU` will display only parts that did not go on the GPU,
+  and it's the default setting.
+  - `--conf spark.rapids.sql.explain=NONE` will disable the log of `rapids.sql.explain`.
 
 See the deployment specific sections for more details and restrictions. Note that
 `spark.task.resource.gpu.amount` can be a decimal amount, so if you want multiple tasks to be run
@@ -58,5 +63,12 @@ You can also refer to the official Apache Spark documentation.
 ## Spark workload qualification
 
 If you plan to convert existing Spark workload from CPU to GPU, please refer to this
-[Spark workload qualification](./getting-started-workload-qualification.md) to check if your Spark Applications are good
-fit for the RAPIDS Accelerator for Apache Spark.
+[Spark workload qualification](./getting-started-workload-qualification.md) to check if your Spark 
+Applications are good fit for the RAPIDS Accelerator for Apache Spark.
+
+## Spark benchmark
+
+Please visit [spark-rapids-benchmarks](https://github.com/NVIDIA/spark-rapids-benchmarks) repo for
+benchmark tests using the RAPIDS Accelerator For Apache Spark, if you plan to compare the CPU and
+GPU Spark jobs' performance.
+

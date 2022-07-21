@@ -86,8 +86,8 @@ There is a build script `build/buildall` that automates the local build process.
 `./buid/buildall --help` for up-to-date use information.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
-- `snapshots`
-- `minimumFeatureVersionMix` that currently includes 321cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
+- `snapshots` that includes all released (noSnapshots) and snapshots Spark versions except for Databricks
+- `minimumFeatureVersionMix` that currently includes 321cdh, 312, 320, 330 is recommended for catching incompatibilities already in the local development cycle
 
 For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=311` for Spark 3.1.1.
 

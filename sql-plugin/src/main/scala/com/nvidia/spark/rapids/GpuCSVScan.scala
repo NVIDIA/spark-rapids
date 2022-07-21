@@ -167,9 +167,7 @@ object GpuCSVScan {
     }
 
     if (types.contains(TimestampType)) {
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
-        meta.willNotWorkOnGpu("Only UTC zone id is supported")
-      }
+      meta.checkTimeZoneId(parsedOptions.zoneId)
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }

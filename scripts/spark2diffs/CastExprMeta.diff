@@ -10,7 +10,7 @@
 <   // 2.x doesn't have the SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING config, so set it to true
 <   val legacyCastToString: Boolean = true
 ---
->   val legacyCastToString: Boolean = SparkShimImpl.getLegacyComplexTypeToString()
+>   val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 46c45
 <         if (dt.precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
 ---

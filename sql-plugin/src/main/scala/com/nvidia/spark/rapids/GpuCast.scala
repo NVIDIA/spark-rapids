@@ -1089,7 +1089,8 @@ object GpuCast extends Arm {
   def castStringToFloats(
       input: ColumnVector,
       ansiEnabled: Boolean,
-      dType: DType): ColumnVector = {
+      dType: DType,
+      alreadySanitized: Boolean = false): ColumnVector = {
     // 1. identify the nans
     // 2. identify the floats. "null" and letters are not considered floats
     // 3. if ansi is enabled we want to throw an exception if the string is neither float nor nan
@@ -1101,7 +1102,13 @@ object GpuCast extends Arm {
 
     val NAN_REGEX = "^[nN][aA][nN]$"
 
-    withResource(GpuCast.sanitizeStringToFloat(input, ansiEnabled)) { sanitized =>
+    val sanitized = if (alreadySanitized) {
+      input.incRefCount()
+    } else {
+      GpuCast.sanitizeStringToFloat(input, ansiEnabled)
+    }
+
+    withResource(sanitized) { _ =>
       //Now identify the different variations of nans
       withResource(sanitized.matchesRe(NAN_REGEX)) { isNan =>
         // now check if the values are floats
@@ -1464,12 +1471,20 @@ object GpuCast extends Arm {
       val targetType = DecimalUtil.createCudfDecimal(dt)
       // If target scale reaches DECIMAL128_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      val casted = if (targetType.getDecimalMaxPrecision == dt.scale) {
+      val casted = if (DType.DECIMAL128_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DecimalUtils.createDecimalType(dt.precision, dt.scale + 1)
+        // Increase precision by one along with scale in case of overflow, which may lead to
+        // the upcast of cuDF decimal type. If precision already hits the max precision, it is safe
+        // to increase the scale solely because we have checked and replaced out of range values.
+        val containerType = DecimalUtils.createDecimalType(
+          dt.precision + 1 min DType.DECIMAL128_MAX_PRECISION, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
-          container.round(dt.scale, cudf.RoundMode.HALF_UP)
+          withResource(container.round(dt.scale, cudf.RoundMode.HALF_UP)) { rd =>
+            // The cast here is for cases that cuDF decimal type got promoted as precision + 1.
+            // Need to convert back to original cuDF type, to keep align with the precision.
+            rd.castTo(targetType)
+          }
         }
       }
       // Cast NaN values to nulls
@@ -1669,7 +1684,7 @@ case class GpuCast(
   override lazy val resolved: Boolean =
     childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
 
-  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
+  def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
 
   override def sql: String = dataType match {
     // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,

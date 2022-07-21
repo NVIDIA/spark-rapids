@@ -16,29 +16,35 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims._
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.{FileSourceScanExec, TrampolineUtil}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 object GpuReadParquetFileFormat {
+  
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
-    GpuParquetScanBase.tagSupport(
-      fsse.sqlContext.sparkSession,
-      fsse.requiredSchema,
-      meta
-    )
+    val session = fsse.sqlContext.sparkSession
+    GpuParquetScan.tagSupport(session, fsse.requiredSchema, meta)
   }
 }
 
-object GpuParquetScanBase {
+object GpuParquetScan {
+
+  // Spark 2.x doesn't have datasource v2 so ignore ScanMeta
+  // Spark 2.x doesn't have the rebase mode so ignore throwIfNeeded
 
   def tagSupport(
       sparkSession: SparkSession,
       readSchema: StructType,
       meta: RapidsMeta[_, _]): Unit = {
     val sqlConf = sparkSession.conf
+
+    ParquetFieldIdShims.tagGpuSupportReadForFieldId(meta, sparkSession.sessionState.conf)
 
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +

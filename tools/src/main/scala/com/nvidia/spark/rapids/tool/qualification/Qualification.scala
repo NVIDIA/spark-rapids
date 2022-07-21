@@ -26,12 +26,13 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification._
-import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
+import org.apache.spark.sql.rapids.tool.ui.{ConsoleProgressBar, QualificationReportGenerator}
 
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
     pluginTypeChecker: PluginTypeChecker,
-    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean) extends Logging {
+    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean,
+    enablePB: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
 
@@ -44,11 +45,16 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
     .asInstanceOf[ThreadPoolExecutor]
 
+  private var progressBar: Option[ConsoleProgressBar] = None
+
   private class QualifyThread(path: EventLogInfo) extends Runnable {
     def run: Unit = qualifyApp(path, hadoopConf)
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
+    if (enablePB && allPaths.nonEmpty) { // total count to start the PB cannot be 0
+      progressBar = Some(new ConsoleProgressBar("Qual Tool", allPaths.length))
+    }
     allPaths.foreach { path =>
       try {
         threadPool.submit(new QualifyThread(path))
@@ -64,42 +70,40 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         " stopping processing any more event logs")
       threadPool.shutdownNow()
     }
-
+    progressBar.foreach(_.finishAll())
     val allAppsSum = allApps.asScala.toSeq
     val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
-    val estimatedSorted = sortForExecutiveSummary(allAppsSum.map(_.estimatedInfo), order)
-    qWriter.writeReport(allAppsSum, estimatedSorted, numRows)
-    val sortedDetailed = sortForCSVDetailedReport(allAppsSum)
-    qWriter.writeDetailedReport(sortedDetailed)
+    val sortedDescDetailed = sortDescForDetailedReport(allAppsSum)
+    qWriter.writeReport(allAppsSum, sortForExecutiveSummary(sortedDescDetailed, order), numRows)
+    qWriter.writeDetailedReport(sortedDescDetailed)
     qWriter.writeExecReport(allAppsSum, order)
     qWriter.writeStageReport(allAppsSum, order)
     if (uiEnabled) {
-      QualificationReportGenerator.generateDashBoard(outputDir, allAppsSum)
+      QualificationReportGenerator.generateDashBoard(getReportOutputPath, allAppsSum)
     }
-    sortedDetailed
+    sortedDescDetailed
   }
 
-  private def sortForCSVDetailedReport(
+  private def sortDescForDetailedReport(
       allAppsSum: Seq[QualificationSummaryInfo]): Seq[QualificationSummaryInfo] = {
-    // Default sorting for of the csv files.
+    // Default sorting for of the csv files. Use the endTime to break the tie.
     allAppsSum.sortBy(sum => {
-      (sum.estimatedInfo.estimatedGpuSpeedup)
+      (sum.estimatedInfo.recommendation, sum.estimatedInfo.estimatedGpuSpeedup,
+        sum.estimatedInfo.estimatedGpuTimeSaved, sum.startTime + sum.estimatedInfo.appDur)
     }).reverse
   }
 
-  // Sorting for the pretty printed executive summary
-  private def sortForExecutiveSummary(sumsToWrite: Seq[EstimatedSummaryInfo],
+  // Sorting for the pretty printed executive summary.
+  // The sums elements is ordered in descending order. so, only we need to reverse it if the order
+  // is ascending
+  private def sortForExecutiveSummary(appsSumDesc: Seq[QualificationSummaryInfo],
       order: String): Seq[EstimatedSummaryInfo] = {
     if (QualificationArgs.isOrderAsc(order)) {
-      sumsToWrite.sortBy(sum => {
-        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
-      })
+      appsSumDesc.reverse.map(_.estimatedInfo)
     } else {
-      sumsToWrite.sortBy(sum => {
-        (sum.estimatedGpuSpeedup, sum.estimatedGpuTimeSaved)
-      }).reverse
+      appsSumDesc.map(_.estimatedInfo)
     }
   }
 
@@ -110,15 +114,18 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       val startTime = System.currentTimeMillis()
       val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker)
       if (!app.isDefined) {
+        progressBar.foreach(_.reportUnkownStatusProcess())
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
         None
       } else {
         val qualSumInfo = app.get.aggregateStats()
         if (qualSumInfo.isDefined) {
           allApps.add(qualSumInfo.get)
+          progressBar.foreach(_.reportSuccessfulProcess())
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         } else {
+          progressBar.foreach(_.reportUnkownStatusProcess())
           logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
         }
       }
@@ -131,6 +138,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
         System.exit(1)
       case e: Exception =>
+        progressBar.foreach(_.reportFailedProcess())
         logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
   }

@@ -969,7 +969,10 @@ decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for g
 # Some map gens, but not all because of nesting
 map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+        MapGen(IntegerGen(False), ArrayGen(int_gen, max_length=3), max_length=3),
+        MapGen(ShortGen(False), StructGen([['child0', byte_gen], ['child1', double_gen]]), max_length=3),
+        MapGen(ByteGen(False), MapGen(FloatGen(False), date_gen, max_length=3), max_length=3)]
 
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
@@ -1031,3 +1034,7 @@ def append_unique_int_col_to_df(spark, dataframe):
     new_rows = append_unique_to_rows(collected)
     new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
     return spark.createDataFrame(new_rows, new_schema)
+
+disable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "false"}  # default is true
+enable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "true"}
+enable_parquet_field_id_read = {"spark.sql.parquet.fieldId.read.enabled": "true"}  # default is false

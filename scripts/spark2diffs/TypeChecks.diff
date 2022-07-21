@@ -6,87 +6,91 @@
 > import ai.rapids.cudf.DType
 24d24
 < import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
-168c168
+171c171
 <     private val maxAllowedDecimalPrecision: Int = GpuOverrides.DECIMAL64_MAX_PRECISION,
 ---
 >     private val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
-270c270
+295c295
 <       meta: RapidsMeta[_, _],
 ---
 >       meta: RapidsMeta[_, _, _],
-586c586
+611c611
 <   val DECIMAL_64: TypeSig = decimal(GpuOverrides.DECIMAL64_MAX_PRECISION)
 ---
 >   val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
-593c593
+618c618
 <   val DECIMAL_128: TypeSig = decimal(GpuOverrides.DECIMAL128_MAX_PRECISION)
 ---
 >   val DECIMAL_128: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
-733c733
+763c763
 <   def tag(meta: RapidsMeta[_, _]): Unit
 ---
 >   def tag(meta: RapidsMeta[_, _, _]): Unit
-746c746
+776c776
 <     meta: RapidsMeta[_, _],
 ---
 >     meta: RapidsMeta[_, _, _],
-803c803
+833c833
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-807c807
+837c837
 <   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-865c865
+895c895
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-876c876
+906c906
 <   override def tag(meta: RapidsMeta[_, _]): Unit =
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit =
-902c902
+932c932
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-923c923
+953c953
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-998c998
+1028c1028
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1050c1050
+1080c1080
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1093c1093
+1123c1123
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1143c1143
+1173c1173
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1189c1189
+1219c1219
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1225c1225
+1255c1255
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1376c1376
+1306c1306
+<   val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING +
+---
+>   val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY +
+1409c1409
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1386c1386
+1419c1419
 <   private[this] def tagBase(meta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-1721,1729d1720
+1754,1762d1753
 <   def getSparkVersion: String = {
 <     // hack for databricks, try to find something more reliable?
 <     if (SPARK_BUILD_USER.equals("Databricks")) {
@@ -96,19 +100,29 @@
 <     }
 <   }
 < 
-1744c1735
+1777c1768
 <     println(s"against version ${getSparkVersion} of Spark. Most of this should still")
 ---
 >     println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
-1852c1843
+1885c1876
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-1935c1926
+1968c1959
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2039c2030
+2072c2063
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
+2268d2258
+<   /*
+2344d2333
+<   */
+2348,2349c2337,2338
+<       // case a if a.equals("execs") => outputSupportedExecs()
+<       // case expr if expr.equals("exprs") => outputSupportedExpressions()
+---
+>       case a if a.equals("execs") => outputSupportedExecs()
+>       case expr if expr.equals("exprs") => outputSupportedExpressions()

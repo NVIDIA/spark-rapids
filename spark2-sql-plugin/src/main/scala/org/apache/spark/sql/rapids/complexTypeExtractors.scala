@@ -16,25 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuOverrides, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, UnaryExprMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{GetArrayItem, GetArrayStructFields, GetMapValue}
-
-class GpuGetArrayItemMeta(
-    expr: GetArrayItem,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _]],
-    rule: DataFromReplacementRule)
-    extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
-}
-
-class GpuGetMapValueMeta(
-  expr: GetMapValue,
-  conf: RapidsConf,
-  parent: Option[RapidsMeta[_, _]],
-  rule: DataFromReplacementRule)
-  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
-}
+import org.apache.spark.sql.catalyst.expressions.GetArrayStructFields
 
 class GpuGetArrayStructFieldsMeta(
      expr: GetArrayStructFields,

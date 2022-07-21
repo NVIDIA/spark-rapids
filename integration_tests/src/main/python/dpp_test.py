@@ -17,8 +17,8 @@ import pytest
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import spark_tmp_table_factory, is_databricks_runtime
 from data_gen import *
-from marks import ignore_order
-from spark_session import is_before_spark_320, with_cpu_session
+from marks import ignore_order, allow_non_gpu
+from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312
 
 
 def create_dim_table(table_name, table_format, length=500):
@@ -52,6 +52,7 @@ def create_fact_table(table_name, table_format, length=2000):
             .mode("overwrite") \
             .partitionBy('key', 'skey') \
             .saveAsTable(table_name)
+
     with_cpu_session(fn)
 
 
@@ -122,7 +123,18 @@ _statements = [
 ]
 
 
-def __dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
+# When BroadcastExchangeExec is available on filtering side, and it can be reused:
+# DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
+def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format, length=10000)
     filter_val = create_dim_table(dim_table, store_format, length=2000)
@@ -132,26 +144,6 @@ def __dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_factor
         # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
         exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
-
-
-# When BroadcastExchangeExec is available on filtering side, and it can be reused:
-# DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-def test_dpp_reuse_broadcast_exchange_aqe_off(store_format, s_index, spark_tmp_table_factory):
-    __dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_factory, 'false')
-
-
-# Only in Spark 3.2.0+ AQE and DPP can be both enabled
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_reuse_broadcast_exchange_aqe_on(store_format, s_index, spark_tmp_table_factory):
-    __dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_factory, 'true')
 
 
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
@@ -174,7 +166,16 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
 
 # When BroadcastExchange is not available and non-broadcast DPPs are forbidden, Spark will bypass it:
 # DynamicPruningExpression(Literal.TrueLiteral)
-def __dpp_bypass(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
+def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
     filter_val = create_dim_table(dim_table, store_format)
@@ -187,27 +188,19 @@ def __dpp_bypass(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
         conf=dict(_bypass_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-def test_dpp_bypass_aqe_off(store_format, s_index, spark_tmp_table_factory):
-    __dpp_bypass(store_format, s_index, spark_tmp_table_factory, 'false')
-
-
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_bypass_aqe_on(store_format, s_index, spark_tmp_table_factory):
-    __dpp_bypass(store_format, s_index, spark_tmp_table_factory, 'true')
-
-
 # When BroadcastExchange is not available, but it is still worthwhile to run DPP,
 # then Spark will plan an extra Aggregate to collect filtering values:
 # DynamicPruningExpression(InSubqueryExec(value, SubqueryExec(Aggregate(...))))
-def __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
+def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
     filter_val = create_dim_table(dim_table, store_format)
@@ -219,25 +212,17 @@ def __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory,
         conf=dict(_no_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-def test_dpp_via_aggregate_subquery_aqe_off(store_format, s_index, spark_tmp_table_factory):
-    __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory, 'false')
-
-
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_via_aggregate_subquery_aqe_on(store_format, s_index, spark_tmp_table_factory):
-    __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory, 'true')
-
-
 # When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
-def __dpp_skip(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
+def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
     filter_val = create_dim_table(dim_table, store_format)
@@ -249,18 +234,38 @@ def __dpp_skip(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
         conf=dict(_dpp_fallback_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
+# GPU verification on https://issues.apache.org/jira/browse/SPARK-34436
 @ignore_order
+@allow_non_gpu('FilterExec')
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-def test_dpp_skip_aqe_off(store_format, s_index, spark_tmp_table_factory):
-    __dpp_skip(store_format, s_index, spark_tmp_table_factory, 'false')
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason='DPP can not cooperate with rapids plugin on Databricks runtime')
+@pytest.mark.skipif(is_before_spark_312(), reason="DPP over LikeAny/LikeAll filter not enabled until Spark 3.1.2")
+def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format)
 
+    def create_dim_table_for_like(spark):
+        df = gen_df(spark, [
+            ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
+            ('filter', StringGen(pattern='[0-9]{2,10}')),
+        ], 100)
+        df.write.format(store_format).mode("overwrite").saveAsTable(dim_table)
 
-@ignore_order
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_skip_aqe_on(store_format, s_index, spark_tmp_table_factory):
-    __dpp_skip(store_format, s_index, spark_tmp_table_factory, 'true')
+    with_cpu_session(create_dim_table_for_like)
+
+    statement = """
+    SELECT f.key, f.skey, f.value
+    FROM {0} f JOIN {1} s
+    ON f.key = s.key
+    WHERE s.filter LIKE ANY ('%00%', '%01%', '%10%', '%11%')
+    """.format(fact_table, dim_table)
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))

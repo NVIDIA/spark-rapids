@@ -24,8 +24,11 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{broadcast, col, collect_list, explode, sum}
+import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, explode, hex, sum}
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
+import org.apache.spark.sql.types.StringType
+
 
 class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
@@ -53,7 +56,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo], speedUpFactor: Double = 2.0,
+  private def assertSizeAndSupported(size: Int, execs: Seq[ExecInfo], speedUpFactor: Double = 3.0,
       expectedDur: Seq[Option[Long]] = Seq.empty, extraText: String = ""): Unit = {
     for (t <- Seq(execs)) {
       assert(t.size == size, s"$extraText $t")
@@ -122,9 +125,9 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
         val sorts = allChildren.filter(_.exec == "Sort")
-        assertSizeAndSupported(3, sorts, 6.0)
+        assertSizeAndSupported(3, sorts, 5.2)
         val smj = allChildren.filter(_.exec == "SortMergeJoin")
-        assertSizeAndSupported(1, smj, 14.9)
+        assertSizeAndSupported(1, smj, 14.1)
       }
     }
   }
@@ -249,6 +252,17 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       allExecInfo.filter(_.exec.contains("CreateDataSourceTableAsSelectCommand"))
     }
     assertSizeAndNotSupported(1, parquet.toSeq)
+  }
+
+  test("Stages and jobs failure") {
+    val eventLog = s"$profileLogDir/tasks_executors_fail_compressed_eventlog.zstd"
+    val app = createAppFromEventlog(eventLog)
+    val stats = app.aggregateStats()
+    assert(stats.nonEmpty)
+    val estimatedGpuSpeed = stats.get.estimatedInfo.estimatedGpuSpeedup
+    val recommendation = stats.get.estimatedInfo.recommendation
+    assert (ToolUtils.truncateDoubleToTwoDecimal(estimatedGpuSpeed) == 1.11)
+    assert(recommendation.equals("Not Applicable"))
   }
 
   test("InMemoryTableScan") {
@@ -518,6 +532,83 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       for (execName <- supportedExecs) {
         val supportedExec = allChildren.filter(_.exec == execName)
         assertSizeAndSupported(1, supportedExec)
+      }
+    }
+  }
+
+  test("Expression not supported in FilterExec") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "Expressions in FilterExec") { spark =>
+        import spark.implicits._
+        val df1 = spark.sparkContext.parallelize(List(10, 20, 30, 40)).toDF
+        df1.filter(hex($"value") === "A") // hex is not supported in GPU yet.
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+        val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.size == 1)
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        val filters = allChildren.filter(_.exec == "Filter")
+        assertSizeAndNotSupported(1, filters)
+      }
+    }
+  }
+
+  test("Expressions supported in ProjectExec") {
+    TrampolineUtil.withTempDir { parquetoutputLoc =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+          "ProjectExprsSupported") { spark =>
+          import spark.implicits._
+          val df1 = Seq(9.9, 10.2, 11.6, 12.5).toDF("value")
+          df1.write.parquet(s"$parquetoutputLoc/testtext")
+          val df2 = spark.read.parquet(s"$parquetoutputLoc/testtext")
+          df2.select(df2("value").cast(StringType), ceil(df2("value")), df2("value"))
+        }
+        val pluginTypeChecker = new PluginTypeChecker()
+        val app = createAppFromEventlog(eventLog)
+        assert(app.sqlPlans.size == 2)
+        val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+        }
+        val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+        val wholeStages = allExecInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.size == 1)
+        assert(wholeStages.forall(_.duration.nonEmpty))
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        val projects = allChildren.filter(_.exec == "Project")
+        assertSizeAndSupported(1, projects)
+      }
+    }
+  }
+
+  test("Expressions not supported in ProjectExec") {
+    TrampolineUtil.withTempDir { parquetoutputLoc =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+          "ProjectExprsNotSupported") { spark =>
+          import spark.implicits._
+          val df1 = spark.sparkContext.parallelize(List(10, 20, 30, 40)).toDF
+          df1.write.parquet(s"$parquetoutputLoc/testtext")
+          val df2 = spark.read.parquet(s"$parquetoutputLoc/testtext")
+          df2.select(hex($"value") === "A")
+        }
+        val pluginTypeChecker = new PluginTypeChecker()
+        val app = createAppFromEventlog(eventLog)
+        assert(app.sqlPlans.size == 2)
+        val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+        }
+        val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+        val wholeStages = allExecInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.forall(_.duration.nonEmpty))
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        val projects = allChildren.filter(_.exec == "Project")
+        assertSizeAndNotSupported(1, projects)
       }
     }
   }

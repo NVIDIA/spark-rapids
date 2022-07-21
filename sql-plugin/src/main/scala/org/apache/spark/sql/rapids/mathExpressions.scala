@@ -21,10 +21,9 @@ import java.io.Serializable
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
-import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, ImplicitCastInputTypes}
-import org.apache.spark.sql.rapids.shims.RapidsFloorCeilUtils
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -48,6 +47,11 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
 case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGREES") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    // Spark's implementation of toDegrees is directly using toDegrees(angrad) in Java,
+    // In jdk8, toDegrees implemention is angrad * 180.0 / PI, while since jdk9, 
+    // toDegrees is angrad * DEGREES_TO_RADIANS, where DEGREES_TO_RADIANS is 180.0/PI.
+    // So when jdk8 or earlier is used, toDegrees will produce different result on GPU,
+    // where it will not overflow when input is very large.
     withResource(Scalar.fromDouble(180d / Math.PI)) { multiplier =>
       input.getBase.mul(multiplier)
     }
@@ -166,8 +170,9 @@ object GpuFloorCeil {
   }
 }
 
-case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
-  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
+case class GpuCeil(child: Expression, outputType: DataType)
+    extends CudfUnaryMathExpression("CEIL") {
+  override def dataType: DataType = outputType
 
   override def hasSideEffects: Boolean = true
 
@@ -199,7 +204,9 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+                throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
+                  input, outOfBounds, dt, outputType
+                )
               }
             }
           }
@@ -238,8 +245,9 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
   }
 }
 
-case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
-  override def dataType: DataType = RapidsFloorCeilUtils.outputDataType(child.dataType)
+case class GpuFloor(child: Expression, outputType: DataType)
+    extends CudfUnaryMathExpression("FLOOR") {
+  override def dataType: DataType = outputType
 
   override def hasSideEffects: Boolean = true
 
@@ -272,7 +280,9 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
           withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
-                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+                throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
+                  input, outOfBounds, dt, outputType
+                )
               }
             }
           }
@@ -556,32 +566,16 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
   override def dataType: DataType = DoubleType
 }
 
-abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBinaryExpression
-  with Serializable with ImplicitCastInputTypes {
+// Due to SPARK-39226, the dataType of round-like functions differs by Spark versions.
+abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: DataType)
+  extends GpuBinaryExpression with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
   override def right: Expression = scale
 
   def roundMode: RoundMode
 
-  override lazy val dataType: DataType = child.dataType match {
-    // if the new scale is bigger which means we are scaling up,
-    // keep the original scale as `Decimal` does
-    case DecimalType.Fixed(p, s) => DecimalType(p, if (_scale > s) s else _scale)
-    case t => t
-  }
-
-  // Avoid repeated evaluation since `scale` is a constant int,
-  // avoid unnecessary `child` evaluation in both codegen and non-codegen eval
-  // by checking if scaleV == null as well.
-  private lazy val scaleV: Any = scale match {
-    case _: GpuExpression =>
-      withResource(scale.columnarEval(null).asInstanceOf[GpuScalar]) { s =>
-        s.getValue
-      }
-    case _ => scale.eval(EmptyRow)
-  }
-  private lazy val _scale: Int = scaleV.asInstanceOf[Int]
+  override def dataType: DataType = outputType
 
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
 
@@ -590,9 +584,19 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
     val lhsValue = value.getBase
     val scaleVal = scale.getValue.asInstanceOf[Int]
 
-    dataType match {
-      case DecimalType.Fixed(_, scaleVal) =>
-        lhsValue.round(scaleVal, roundMode)
+    child.dataType match {
+      case DecimalType.Fixed(_, s) =>
+        // Only needs to perform round when required scale < input scale
+        val rounded = if (scaleVal < s) {
+          lhsValue.round(scaleVal, roundMode)
+        } else {
+          lhsValue.incRefCount()
+        }
+        withResource(rounded) { _ =>
+          // Fit the output datatype
+          rounded.castTo(
+            DecimalUtil.createCudfDecimal(dataType.asInstanceOf[DecimalType]))
+        }
       case ByteType =>
         fixUpOverflowInts(() => Scalar.fromByte(0.toByte), scaleVal, lhsValue)
       case ShortType =>
@@ -766,13 +770,13 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   }
 }
 
-case class GpuBRound(child: Expression, scale: Expression) extends
-  GpuRoundBase(child, scale) {
+case class GpuBRound(child: Expression, scale: Expression, outputType: DataType) extends
+  GpuRoundBase(child, scale, outputType) {
   override def roundMode: RoundMode = RoundMode.HALF_EVEN
 }
 
-case class GpuRound(child: Expression, scale: Expression) extends
-  GpuRoundBase(child, scale) {
+case class GpuRound(child: Expression, scale: Expression, outputType: DataType) extends
+  GpuRoundBase(child, scale, outputType) {
   override def roundMode: RoundMode = RoundMode.HALF_UP
 }
 
@@ -786,4 +790,33 @@ case class GpuPow(left: Expression, right: Expression)
 case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
   override def unaryOp: UnaryOp = UnaryOp.RINT
   override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+private object RoundingErrorUtil extends Arm {
+  /**
+   * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
+   *
+   * @param values A decimal column which contains values that try to cast.
+   * @param outOfBounds A boolean column that indicates which value cannot be casted. 
+   * Users must make sure that there is at least one `true` in this column.
+   * @param fromType The current decimal type.
+   * @param toType The type to cast.
+   * @param context The error context, default value is "".
+   */
+  def cannotChangeDecimalPrecisionError(      
+      values: GpuColumnVector,
+      outOfBounds: ColumnVector,
+      fromType: DecimalType,
+      toType: DecimalType,
+      context: String = ""): ArithmeticException = {
+    val row_id = withResource(outOfBounds.copyToHost()) {hcv =>
+      (0.toLong until outOfBounds.getRowCount())
+        .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
+        .get
+    }
+    val value = withResource(values.copyToHost()){hcv =>  
+      hcv.getDecimal(row_id.toInt, fromType.precision, fromType.scale)
+    }
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(value, toType)
+  }
 }

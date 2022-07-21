@@ -58,6 +58,8 @@ Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.
 Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
 you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
+For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the bahavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
+
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
@@ -384,7 +386,7 @@ The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and wr
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
  CPU when reading an unsupported compression format, and will error out in that case.
 
-### Push Down Aggreates for ORC
+### Push Down Aggregates for ORC
 
 Spark-3.3.0+ pushes down certain aggregations (`MIN`/`MAX`/`COUNT`) into ORC when the user-config
 `spark.sql.orc.aggregatePushdown` is set to true.  
@@ -414,16 +416,14 @@ file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.
 
 **Limitations With RAPIDS**
 
-RAPIDS does not support whole file statistics in ORC file. We are working with
-[CUDF](https://github.com/rapidsai/cudf) to support writing statistics and you can track it
-[here](https://github.com/rapidsai/cudf/issues/5826).
+RAPIDS does not support whole file statistics in ORC file in releases prior to release 22.06.
 
 *Writing ORC Files*
 
-Without CUDF support to file statistics, all ORC files written by
-the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
-In order to prevent job failures, `spark.sql.orc.aggregatePushdown` should be disabled while reading ORC files
-that were written by the GPU.
+If you are using release prior to release 22.06 where CUDF does not support writing file statistics, then the ORC files
+written by the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.  
+In order to prevent job failures in releases prior to release 22.06, `spark.sql.orc.aggregatePushdown` should be disabled
+while reading ORC files that were written by the GPU.
 
 *Reading ORC Files*
 
@@ -570,20 +570,20 @@ The following Apache Spark regular expression functions and expressions are supp
 - `RLIKE`
 - `regexp`
 - `regexp_extract`
+- `regexp_extract_all`
 - `regexp_like`
 - `regexp_replace`
 - `string_split`
 - `str_to_map`
 
-Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
-regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
-still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
-set `spark.rapids.sql.regexp.enabled=false`.
+Regular expression evaluation on the GPU is enabled by default when the UTF-8 character set is used
+by the current locale. Execution will fall back to the CPU for regular expressions that are not yet
+supported on the GPU, and in environments where the locale does not use UTF-8. However, there are
+some edge cases that will still execute on the GPU and produce different results to the CPU. To
+disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
- to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
@@ -593,22 +593,22 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported by `regexp_replace`
+- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+  or more results
 - Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Word and non-word boundaries, `\b` and `\B`
-- Whitespace and non-whitespace characters, `\s` and `\S`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
-- Regular expressions containing null characters (unless the pattern is a simple literal string)
-- Octal digits in the range `\0200` to `\0377`
-- Character classes with octal digits, such as `[\02]` or `[\024]`
-- Character classes with hex digits, such as `[\x02]` or `[\x24]`
-- Hex digits in the range `\x80` to `Character.MAX_CODE_POINT`
 - `regexp_replace` does not support back-references
+
+The following regular expression patterns are known to potentially produce different results on the GPU
+vs the CPU.
+
+- Word and non-word boundaries, `\b` and `\B`
+
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
@@ -707,16 +707,21 @@ The formats which are supported on GPU vary depending on the setting for `timePa
 With timeParserPolicy set to `CORRECTED` or `EXCEPTION` (the default), the following formats are supported
 on the GPU without requiring any additional settings.
 
-- `dd/MM/yyyy`
-- `yyyy/MM`
+- `yyyy-MM-dd`
 - `yyyy/MM/dd`
 - `yyyy-MM`
-- `yyyy-MM-dd`
+- `yyyy/MM`
+- `dd/MM/yyyy`
 - `yyyy-MM-dd HH:mm:ss`
 - `MM-dd`
 - `MM/dd`
 - `dd-MM`
 - `dd/MM`
+- `MM/yyyy`
+- `MM-yyyy`
+- `MM/dd/yyyy`
+- `MM-dd-yyyy`
+- `MMyyyy`
 
 Valid Spark date/time formats that do not appear in the list above may also be supported but have not been 
 extensively tested and may produce different results compared to the CPU. Known issues include:
@@ -916,9 +921,9 @@ updated in a future release to more closely match Spark.
 
 The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
-distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
-`approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.sql.incompatibleOps.enabled=true`.
+distribution. The results are not bit-for-bit identical with the Apache Spark implementation of
+`approximate_percentile`. This feature is enabled by default and can be disabled by setting
+`spark.rapids.sql.expression.ApproximatePercentile=false`.
 
 ## Conditionals and operations with side effects (ANSI mode)
 
