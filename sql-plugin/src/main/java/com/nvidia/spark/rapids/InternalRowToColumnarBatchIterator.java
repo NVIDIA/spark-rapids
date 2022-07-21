@@ -186,8 +186,6 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         }
       } catch (BufferOverflowException ex) {
         // Handle corner case when the dataLength is too small to copy a single row.
-        // For debugging
-        System.err.println("Caught BufferOverflow Exception");
         // Increase dataBuffer size by 25%
         // dataLength can be considered a rough estimate of a single row.
         long newRowSizeEstimate =
