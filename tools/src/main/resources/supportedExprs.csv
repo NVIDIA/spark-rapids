@@ -381,6 +381,10 @@ RegExpExtract,S,`regexp_extract`,None,project,str,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,N
 RegExpExtract,S,`regexp_extract`,None,project,regexp,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA
 RegExpExtract,S,`regexp_extract`,None,project,idx,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 RegExpExtract,S,`regexp_extract`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
+RegExpExtractAll,S,`regexp_extract_all`,None,project,str,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
+RegExpExtractAll,S,`regexp_extract_all`,None,project,regexp,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA
+RegExpExtractAll,S,`regexp_extract_all`,None,project,idx,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+RegExpExtractAll,S,`regexp_extract_all`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA
 RegExpReplace,S,`regexp_replace`,None,project,regex,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA
 RegExpReplace,S,`regexp_replace`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 RegExpReplace,S,`regexp_replace`,None,project,pos,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA

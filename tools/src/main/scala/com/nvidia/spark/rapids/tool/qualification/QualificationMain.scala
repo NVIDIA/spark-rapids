@@ -30,7 +30,8 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 object QualificationMain extends Logging {
 
   def main(args: Array[String]) {
-    val (exitCode, _) = mainInternal(new QualificationArgs(args), printStdout = true)
+    val (exitCode, _) =
+      mainInternal(new QualificationArgs(args), printStdout = true, enablePB = true)
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -40,7 +41,8 @@ object QualificationMain extends Logging {
    * Entry point for tests
    */
   def mainInternal(appArgs: QualificationArgs,
-      printStdout:Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
+      printStdout: Boolean = false,
+      enablePB: Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
@@ -86,7 +88,7 @@ object QualificationMain extends Logging {
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
-      nThreads, order, pluginTypeChecker, reportReadSchema, printStdout, uiEnabled)
+      nThreads, order, pluginTypeChecker, reportReadSchema, printStdout, uiEnabled, enablePB)
     val res = qual.qualifyApps(filteredLogs)
     (0, res)
   }

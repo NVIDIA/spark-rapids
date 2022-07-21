@@ -58,6 +58,8 @@ Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.
 Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
 you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
+For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the bahavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
+
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
@@ -568,20 +570,20 @@ The following Apache Spark regular expression functions and expressions are supp
 - `RLIKE`
 - `regexp`
 - `regexp_extract`
+- `regexp_extract_all`
 - `regexp_like`
 - `regexp_replace`
 - `string_split`
 - `str_to_map`
 
-Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
-regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
-still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
-set `spark.rapids.sql.regexp.enabled=false`.
+Regular expression evaluation on the GPU is enabled by default when the UTF-8 character set is used
+by the current locale. Execution will fall back to the CPU for regular expressions that are not yet
+supported on the GPU, and in environments where the locale does not use UTF-8. However, there are
+some edge cases that will still execute on the GPU and produce different results to the CPU. To
+disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
- to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
@@ -595,13 +597,18 @@ The following regular expression patterns are not yet supported on the GPU and w
   or more results
 - Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Word and non-word boundaries, `\b` and `\B`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - `regexp_replace` does not support back-references
+
+The following regular expression patterns are known to potentially produce different results on the GPU
+vs the CPU.
+
+- Word and non-word boundaries, `\b` and `\B`
+
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 

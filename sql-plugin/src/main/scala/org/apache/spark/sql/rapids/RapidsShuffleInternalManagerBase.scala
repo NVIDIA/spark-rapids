@@ -208,7 +208,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
+class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
@@ -357,7 +357,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     }
   }
 
-  def getReaderInternal[K, C](
+  override def getReader[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,
       endMapIndex: Int,
@@ -434,10 +434,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 /**
  * Trait that makes it easy to check whether we are dealing with the
  * a RAPIDS Shuffle Manager
- *
- * TODO name does not match its function anymore
  */
-trait VisibleShuffleManager {
+trait RapidsShuffleManagerLike {
   def isDriver: Boolean
   def initialize: Unit
 }
@@ -450,10 +448,10 @@ trait VisibleShuffleManager {
  * @param conf
  * @param isDriver
  */
-abstract class ProxyRapidsShuffleInternalManagerBase(
+class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
-) extends VisibleShuffleManager with Proxy {
+) extends RapidsShuffleManagerLike with Proxy {
 
   // touched in the plugin code after the shim initialization
   // is complete
@@ -464,11 +462,7 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
   // the manager. This is called from both the driver and executor.
   // In the driver, it's mostly to display information on how to enable/disable the manager,
   // in the executor, the UCXShuffleTransport starts and allocates memory at this time.
-  def initialize: Unit = self
-
-  //
-  // Signatures unchanged since 3.0.1 follow
-  //
+  override def initialize: Unit = self
 
   def getWriter[K, V](
       handle: ShuffleHandle,
@@ -477,6 +471,19 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
       metrics: ShuffleWriteMetricsReporter
   ): ShuffleWriter[K, V] = {
     self.getWriter(handle, mapId, context, metrics)
+  }
+
+  def getReader[K, C](
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+    self.getReader(handle,
+      startMapIndex, endMapIndex, startPartition, endPartition,
+      context, metrics)
   }
 
   def registerShuffle[K, V, C](
