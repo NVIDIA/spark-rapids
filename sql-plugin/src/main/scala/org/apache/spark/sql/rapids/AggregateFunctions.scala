@@ -390,38 +390,34 @@ class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMergeSets"
 }
 
-abstract class CudfFirstLastBase extends CudfAggregate {
-  val includeNulls: NullPolicy
-  val offset: Int
+class CudfNthLikeAggregate(opName: String, override val dataType: DataType, offset: Int,
+    includeNulls: NullPolicy) extends CudfAggregate {
+
+  override val name = includeNulls match {
+    case NullPolicy.INCLUDE => opName + "IncludeNulls"
+    case NullPolicy.EXCLUDE => opName + "ExcludeNulls"
+  }
+
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
+
   override lazy val groupByAggregate: GroupByAggregation = {
     GroupByAggregation.nth(offset, includeNulls)
   }
 }
 
-class CudfFirstIncludeNulls(override val dataType: DataType) extends CudfFirstLastBase {
-  override val includeNulls: NullPolicy = NullPolicy.INCLUDE
-  override val offset: Int = 0
-  override lazy val name: String = "CudfFirstIncludeNulls"
-}
+object CudfNthLikeAggregate {
+  def newFirstExcludeNulls(dataType: DataType): CudfAggregate =
+    new CudfNthLikeAggregate("CudfFirst", dataType, 0, NullPolicy.EXCLUDE)
 
-class CudfFirstExcludeNulls(override val dataType: DataType) extends CudfFirstLastBase {
-  override val includeNulls: NullPolicy = NullPolicy.EXCLUDE
-  override val offset: Int = 0
-  override lazy val name: String = "CudfFirstExcludeNulls"
-}
+  def newFirstIncludeNulls(dataType: DataType): CudfAggregate =
+    new CudfNthLikeAggregate("CudfFirst", dataType, 0, NullPolicy.INCLUDE)
 
-class CudfLastIncludeNulls(override val dataType: DataType) extends CudfFirstLastBase {
-  override val includeNulls: NullPolicy = NullPolicy.INCLUDE
-  override val offset: Int = -1
-  override lazy val name: String = "CudfLastIncludeNulls"
-}
+  def newLastExcludeNulls(dataType: DataType): CudfAggregate =
+    new CudfNthLikeAggregate("CudfLast", dataType, -1, NullPolicy.EXCLUDE)
 
-class CudfLastExcludeNulls(override val dataType: DataType) extends CudfFirstLastBase {
-  override val includeNulls: NullPolicy = NullPolicy.EXCLUDE
-  override val offset: Int = -1
-  override lazy val name: String = "CudfLastExcludeNulls"
+  def newLastIncludeNulls(dataType: DataType): CudfAggregate =
+    new CudfNthLikeAggregate("CudfLast", dataType, -1, NullPolicy.INCLUDE)
 }
 
 /**
@@ -1193,10 +1189,10 @@ case class GpuPivotFirst(
   })
 
   override lazy val updateAggregates: Seq[CudfAggregate] =
-    pivotColAttr.map(c => new CudfLastExcludeNulls(c.dataType))
+    pivotColAttr.map(c => CudfNthLikeAggregate.newLastExcludeNulls(c.dataType))
 
   override lazy val mergeAggregates: Seq[CudfAggregate] =
-    pivotColAttr.map(c => new CudfLastExcludeNulls(c.dataType))
+    pivotColAttr.map(c => CudfNthLikeAggregate.newLastExcludeNulls(c.dataType))
 
   override lazy val evaluateExpression: Expression =
     GpuCreateArray(pivotColAttr, false)
@@ -1482,6 +1478,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
+  with GpuAggregateWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
   with Serializable {
@@ -1493,11 +1490,11 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
     Seq(child, GpuLiteral(ignoreNulls, BooleanType))
 
   private lazy val commonExpressions: Seq[CudfAggregate] = if (ignoreNulls) {
-    Seq(new CudfFirstExcludeNulls(cudfFirst.dataType),
-        new CudfFirstExcludeNulls(valueSet.dataType))
+    Seq(CudfNthLikeAggregate.newFirstExcludeNulls(cudfFirst.dataType),
+      CudfNthLikeAggregate.newFirstExcludeNulls(valueSet.dataType))
   } else {
-    Seq(new CudfFirstIncludeNulls(cudfFirst.dataType),
-        new CudfFirstIncludeNulls(valueSet.dataType))
+    Seq(CudfNthLikeAggregate.newFirstIncludeNulls(cudfFirst.dataType),
+      CudfNthLikeAggregate.newFirstIncludeNulls(valueSet.dataType))
   }
 
   // Expected input data type.
@@ -1524,10 +1521,19 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
       TypeCheckSuccess
     }
   }
+
+  // GENERAL WINDOW FUNCTION
+  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.nth(0, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
+        .onColumn(inputs.head._2)
+
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
+  with GpuAggregateWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
   with Serializable {
@@ -1539,11 +1545,11 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
     Seq(child, GpuLiteral(!ignoreNulls, BooleanType))
 
   private lazy val commonExpressions: Seq[CudfAggregate] = if (ignoreNulls) {
-    Seq(new CudfLastExcludeNulls(cudfLast.dataType),
-        new CudfLastExcludeNulls(valueSet.dataType))
+    Seq(CudfNthLikeAggregate.newLastExcludeNulls(cudfLast.dataType),
+      CudfNthLikeAggregate.newLastExcludeNulls(valueSet.dataType))
   } else {
-    Seq(new CudfLastIncludeNulls(cudfLast.dataType),
-        new CudfLastIncludeNulls(valueSet.dataType))
+    Seq(CudfNthLikeAggregate.newLastIncludeNulls(cudfLast.dataType),
+      CudfNthLikeAggregate.newLastIncludeNulls(valueSet.dataType))
   }
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
@@ -1569,6 +1575,49 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
       TypeCheckSuccess
     }
   }
+
+  // GENERAL WINDOW FUNCTION
+  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.nth(-1, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
+        .onColumn(inputs.head._2)
+}
+
+case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boolean)
+  extends GpuAggregateWindowFunction
+        with ImplicitCastInputTypes
+        with Serializable {
+
+  // offset is foldable, get value as Spark does
+  private lazy val offsetVal = offset.eval().asInstanceOf[Int]
+
+  // Copied from First
+  override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
+  override def children: Seq[Expression] = child :: Nil
+  override def nullable: Boolean = true
+  override def dataType: DataType = child.dataType
+  override def toString: String = s"gpu_nth_value($child, $offset)" +
+      s"${if (ignoreNulls) " ignore nulls"}"
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    val defaultCheck = super.checkInputDataTypes()
+    if (defaultCheck.isFailure) {
+      defaultCheck
+    } else {
+      TypeCheckSuccess
+    }
+  }
+
+  // GENERAL WINDOW FUNCTION
+  override lazy val windowInputProjection: Seq[Expression] =
+    Seq(child)
+
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.nth(offsetVal - 1,
+      if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
+        .onColumn(inputs.head._2)
 }
 
 trait GpuCollectBase

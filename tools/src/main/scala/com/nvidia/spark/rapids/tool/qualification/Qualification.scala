@@ -26,12 +26,13 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification._
-import org.apache.spark.sql.rapids.tool.ui.QualificationReportGenerator
+import org.apache.spark.sql.rapids.tool.ui.{ConsoleProgressBar, QualificationReportGenerator}
 
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
     pluginTypeChecker: PluginTypeChecker,
-    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean) extends Logging {
+    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean,
+    enablePB: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
 
@@ -44,11 +45,16 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
     .asInstanceOf[ThreadPoolExecutor]
 
+  private var progressBar: Option[ConsoleProgressBar] = None
+
   private class QualifyThread(path: EventLogInfo) extends Runnable {
     def run: Unit = qualifyApp(path, hadoopConf)
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
+    if (enablePB && allPaths.nonEmpty) { // total count to start the PB cannot be 0
+      progressBar = Some(new ConsoleProgressBar("Qual Tool", allPaths.length))
+    }
     allPaths.foreach { path =>
       try {
         threadPool.submit(new QualifyThread(path))
@@ -64,7 +70,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         " stopping processing any more event logs")
       threadPool.shutdownNow()
     }
-
+    progressBar.foreach(_.finishAll())
     val allAppsSum = allApps.asScala.toSeq
     val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
     // sort order and limit only applies to the report summary text file,
@@ -108,15 +114,18 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       val startTime = System.currentTimeMillis()
       val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker)
       if (!app.isDefined) {
+        progressBar.foreach(_.reportUnkownStatusProcess())
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
         None
       } else {
         val qualSumInfo = app.get.aggregateStats()
         if (qualSumInfo.isDefined) {
           allApps.add(qualSumInfo.get)
+          progressBar.foreach(_.reportSuccessfulProcess())
           val endTime = System.currentTimeMillis()
           logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         } else {
+          progressBar.foreach(_.reportUnkownStatusProcess())
           logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
         }
       }
@@ -129,6 +138,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
         System.exit(1)
       case e: Exception =>
+        progressBar.foreach(_.reportFailedProcess())
         logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
   }

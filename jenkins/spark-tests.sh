@@ -263,6 +263,7 @@ export -f get_tests_by_tags
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+# - ICEBERG_ONLY: iceberg tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   # integration tests

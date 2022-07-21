@@ -35,12 +35,6 @@ class RapidsParquetScanMeta(
       willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
         " on datasource V2 yet.")
     }
-
-    if (pScan.options.getBoolean("mergeSchema", false) &&
-      conf.parquetReaderFooterType == RapidsConf.ParquetFooterReaderType.NATIVE) {
-      willNotWorkOnGpu("Native footer reader for parquet does not work when" +
-        " mergeSchema is enabled")
-    }
   }
 
   override def convertToGpu(): Scan = {

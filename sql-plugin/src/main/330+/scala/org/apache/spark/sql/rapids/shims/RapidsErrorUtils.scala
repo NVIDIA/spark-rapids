@@ -64,4 +64,10 @@ object RapidsErrorUtils {
       value, toType.precision, toType.scale, context
     )
   }
+
+  def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
+    QueryExecutionErrors.arithmeticOverflowError(
+      "Overflow in integral divide", "try_divide", context
+    )
+  }
 }

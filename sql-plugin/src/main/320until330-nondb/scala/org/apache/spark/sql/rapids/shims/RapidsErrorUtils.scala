@@ -62,5 +62,9 @@ object RapidsErrorUtils {
       value, toType.precision, toType.scale
     )
   }
+
+  def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
+    QueryExecutionErrors.overflowInIntegralDivideError()
+  }
 }
 
