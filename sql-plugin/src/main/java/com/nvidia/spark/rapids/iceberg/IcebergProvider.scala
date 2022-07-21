@@ -28,8 +28,7 @@ trait IcebergProvider {
 }
 
 object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
-    "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
+  def apply(): IcebergProvider = ShimLoader.newIcebergProvider()
 
   val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
 }
