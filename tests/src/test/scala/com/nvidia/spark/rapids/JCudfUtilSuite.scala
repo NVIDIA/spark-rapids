@@ -128,6 +128,7 @@ class JCudfUtilSuite extends FunSuite with Logging {
     val cudfEndAddress = "endAddress"
     val cudfDataOffset = "cudfDataOffsetVar"
 
+    // scalastyle:off line.size.limit
     val expectedCopyStrings : Array[String] =
       Array(
         "Platform.putLong(null, startAddress + 0, Platform.getLong(64, 72 + 8 + (0 * 8)));",
@@ -142,15 +143,39 @@ class JCudfUtilSuite extends FunSuite with Logging {
         "Platform.putLong(null, startAddress + 72, Platform.getLong(64, 72 + 8 + (9 * 8)));",
         "Platform.putLong(null, startAddress + 80, Platform.getLong(64, 72 + 8 + (10 * 8)));",
         "Platform.putLong(null, startAddress + 88, Platform.getLong(64, 72 + 8 + (11 * 8)));",
-        "cudfDataOffsetVar += copyUTF8StringInto(12, 64, 72, 8, startAddress, endAddress, 96, cudfDataOffsetVar);",
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(12, 64, 72, 8, startAddress, endAddress, 96, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
         "Platform.putInt(null, startAddress + 104, Platform.getInt(64, 72 + 8 + (13 * 8)));",
-        "cudfDataOffsetVar += copyUTF8StringInto(14, 64, 72, 8, startAddress, endAddress, 108, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(15, 64, 72, 8, startAddress, endAddress, 116, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(16, 64, 72, 8, startAddress, endAddress, 124, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(17, 64, 72, 8, startAddress, endAddress, 132, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(18, 64, 72, 8, startAddress, endAddress, 140, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(19, 64, 72, 8, startAddress, endAddress, 148, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(20, 64, 72, 8, startAddress, endAddress, 156, cudfDataOffsetVar);",
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(14, 64, 72, 8, startAddress, endAddress, 108, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(15, 64, 72, 8, startAddress, endAddress, 116, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(16, 64, 72, 8, startAddress, endAddress, 124, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(17, 64, 72, 8, startAddress, endAddress, 132, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(18, 64, 72, 8, startAddress, endAddress, 140, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(19, 64, 72, 8, startAddress, endAddress, 148, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
+        s"""|cudfDataOffsetVar += copyUTF8StringInto(20, 64, 72, 8, startAddress, endAddress, 156, cudfDataOffsetVar);
+            |if (cudfDataOffsetVar < 0) {
+            |  return cudfDataOffsetVar;
+            |}""".stripMargin,
         "Platform.putInt(null, startAddress + 164, Platform.getInt(64, 72 + 8 + (21 * 8)));",
         "Platform.putByte(null, startAddress + 168, Platform.getByte(64, 72 + 8 + (22 * 8)));",
         "Platform.putByte(null, startAddress + 169, Platform.getByte(64, 72 + 8 + (23 * 8)));")

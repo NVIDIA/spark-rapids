@@ -60,6 +60,11 @@ public final class JCudfUtil {
   public static final int JCUDF_OPTIMIZED_CUDF_KERNEL_MAX_BYTES = 1536;
 
   /**
+   * The maximum buffer size allocated to copy JCudf row.
+   */
+  public static final long JCUDF_MAX_DATA_BUFFER_LENGTH = Integer.MAX_VALUE;
+
+  /**
    * Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
    * The maximum is {@code 1536 - 7} with 64-bit alignment.
    */
@@ -113,7 +118,8 @@ public final class JCudfUtil {
   /**
    * A method used to order the columns to pack the schema based on the JCudf specifications.
    * It sorts fixed-width columns by their length.
-   * Variable-length columns store 8 bytes, but are 4 byte aligned since they are two 4-byte values.
+   * Variable-length columns store 8 bytes, but are 4 byte aligned since they are two 4-byte
+   * values.
    * However, if both datatypes are variable-length, then we want the type with larger alignment to
    * come last for better packing of the data.
    *
@@ -200,8 +206,8 @@ public final class JCudfUtil {
    *
    * @param cudfUnsafeRow the unsafeRow object that represents the Spark SQL Schema.
    * @return true if {@link CudfUnsafeRow#getFixedWidthInBytes()} is less than
-   *         {@link #JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED} which is 1529 Bytes to account for the
-   *         alignment.
+   *         {@link #JCUDF_MAX_FIXED_ROW_SIZE_FITS_OPTIMIZED} which is 1529 Bytes to account for
+   *         the alignment.
    */
   public static boolean fitsOptimizedConversion(
       CudfUnsafeRow cudfUnsafeRow) {
@@ -236,12 +242,14 @@ public final class JCudfUtil {
     private int varSizeColIndex;
     // At what point validity data starts.
     private int validityBytesOffset;
-    // Caches the estimate size (8-bytes aligned). Calculating and reading this field is synchronized.
+    // Caches the estimate size (8-bytes aligned). Calculating and reading this field is
+    // synchronized.
     private int estimateRowSize;
 
     private RowOffsetsCalculator(Attribute[] attrArr, int[] offsetArr) {
       // offsetArr can be null.
-      // This is in the context of constructing an object to get an estimate of the memory needed by the row.
+      // This is in the context of constructing an object to get an estimate of the memory needed
+      // by the row.
       this.attributes = attrArr;
       resetMeta();
       initFixedWidthSection(offsetArr);
@@ -250,8 +258,8 @@ public final class JCudfUtil {
     /**
      * Handles iterating on all the columns to advance the {@link #byteCursor}.
      * Then, it calculates the start offset of the validity and its size in bytes.
-     * This method updates the following: {@link #byteCursor}, {@link #offsets}, {@link #varSizeColIndex}, and
-     * all the fields related to the validity
+     * This method updates the following: {@link #byteCursor}, {@link #offsets},
+     * {@link #varSizeColIndex}, and all the fields related to the validity
      *
      * @param offsetArr if not NULL, it will be used to save the column offsets.
      */
@@ -271,10 +279,11 @@ public final class JCudfUtil {
     }
 
     /**
-     * Given the column-index, it increments the {@link #byteCursor} by the length of the datatype of that column.
+     * Given the column-index, it increments the {@link #byteCursor} by the length of the datatype
+     * of that column.
      * It takes into considerations the alignment of the column.
-     * Note that this method expects sequential increments to the column. Accessing columns in random order would
-     * result in incorrect calculations.
+     * Note that this method expects sequential increments to the column. Accessing columns in
+     * random order would result in incorrect calculations.
      *
      * @param ind the index of the column in the schema.
      * @return At what point the column starts.
@@ -314,9 +323,10 @@ public final class JCudfUtil {
     /**
      * This is used internally to estimate the memory needed by the row.
      * The value calculated is 8-bytes aligned.
-     * It loops on variable-width columns using a moving-cursor that represents the offset of the data.
-     * Note that the calculation requires that {@link #initFixedWidthSection(int[])} has been called at some
-     * point before. Otherwise, the {@link #byteCursor} will be 0.
+     * It loops on variable-width columns using a moving-cursor that represents the offset
+     * of the data.
+     * Note that the calculation requires that {@link #initFixedWidthSection(int[])} has
+     * been called at some point before. Otherwise, the {@link #byteCursor} will be 0.
      */
     private void calculateEstimateSize() {
       // at this point the cursor points to the beginning of the variableWidth section
@@ -337,7 +347,8 @@ public final class JCudfUtil {
 
     /**
      * Increments the data cursor by the length of the column type.
-     * It takes into considerations the datatype alignment. See {@link #getDataAlignmentForDataType(DType)}.
+     * It takes into considerations the datatype alignment.
+     * See {@link #getDataAlignmentForDataType(DType)}.
      *
      * @param dataOffsetCursor current offset of the data values.
      * @param rapidsType the type of the current column.
@@ -367,8 +378,8 @@ public final class JCudfUtil {
 
     /**
      * Reads the estimate memory that may be used by the row.
-     * This method is thread-safe, but it is not expected that multiple-threads are accessing the same row object
-     * concurrently.
+     * This method is thread-safe, but it is not expected that multiple-threads are accessing the
+     * same row object concurrently.
      *
      * @return the estimate memory occupied by the row in bytes (8-bytes aligned).
      */
@@ -382,14 +393,17 @@ public final class JCudfUtil {
   }
 
   /**
-   * A helper class to calculate columns and validity offsets along with Code-generation that is used to copy row from
-   * {@link org.apache.spark.sql.catalyst.expressions.UnsafeRow} to {@link CudfUnsafeRow}.
-   * The implementation assumes that columns are: accessed sequentially; and they are not necessarily packed.
-   * This class does not need to cache the offsets/types since all the calculations are consumed inside a loop.
-   * It is important to note that failing to iterate on all the columns will break the offsets of the validity bytes
-   * and the variable-width data.
-   * Note: Although building the code using {@code String.format()} looks more clean and readable, it is not preferred
-   * in terms of performance.
+   * A helper class to calculate columns and validity offsets along with Code-generation that is
+   * used to copy row from {@link org.apache.spark.sql.catalyst.expressions.UnsafeRow} to
+   * {@link CudfUnsafeRow}.
+   * The implementation assumes that columns are: accessed sequentially; and they are not
+   * necessarily packed.
+   * This class does not need to cache the offsets/types since all the calculations are consumed
+   * inside a loop.
+   * It is important to note that failing to iterate on all the columns will break the offsets of
+   * the validity bytes and the variable-width data.
+   * Note: Although building the code using {@code String.format()} looks more clean and readable,
+   * it is not preferred in terms of performance.
    */
   public static class RowBuilder {
     private static final String COPY_STRING_DATA_METHOD_NAME = "copyUTF8StringInto";
@@ -418,8 +432,7 @@ public final class JCudfUtil {
         , "  long cudfDstAddress = startAddress + dataDstOffset;"
         , "  long newDataOffset = cudfDstAddress + strSize;"
         , "  if (newDataOffset > bufferEndAddress) {"
-        , "    throw new java.lang.RuntimeException("
-        , "        \"Row data exceeds allocated buffer. Diff size = \" + (newDataOffset - bufferEndAddress));"
+        , "    return Integer.MIN_VALUE;"
         , "  }"
         , "  // set the offset and length in the fixed width section."
         , "  Platform.putInt(null, unsafeCudfColOffset, dataDstOffset);"
@@ -432,7 +445,8 @@ public final class JCudfUtil {
 
     public static final String GET_CUDF_ROW_SIZE_CODE = String.join("\n"
         , "private int "+ GET_CUDF_ROW_SIZE_METHOD_NAME + "(int bytesOffset) {"
-        , "  return (bytesOffset +" + (JCUDF_ROW_ALIGNMENT - 1) + ") & -" + JCUDF_ROW_ALIGNMENT + ";"
+        , " return (bytesOffset +"
+            + (JCUDF_ROW_ALIGNMENT - 1) + ") & -" + JCUDF_ROW_ALIGNMENT + ";"
         , "}");
 
     private final Attribute[] attributes;
@@ -467,9 +481,10 @@ public final class JCudfUtil {
      * @param rowBaseOffset relative offset from the beginning of the row object address.
      * @param sparkValidityOffset the size of the Spark validity bytes. It is 8-bytes aligned.
      * @param cudfAddress the start address of the cudf row.
-     * @param cudfDataCursor the variable used by the generated-code to point to the address of the next variable-width
-     *                       data.
-     * @return generated-code to copy the column from the source unsafeRow to the Cudf destination row.
+     * @param cudfDataCursor the variable used by the generated-code to point to the address of
+     *                       the next variable-width data.
+     * @return generated-code to copy the column from the source unsafeRow to the Cudf destination
+     *         row.
      */
     public String generateCopyCodeColumn(
         int colIndex, String rowBase, String rowBaseOffset, String sparkValidityOffset,
@@ -485,12 +500,16 @@ public final class JCudfUtil {
         byteCursor = alignOffset(byteCursor, JCUDF_VAR_LENGTH_FIELD_ALIGNMENT);
         if (rapidsType.equals(DType.STRING)) {
           result =
-              cudfDataCursor
-                  + " += "
-                  + COPY_STRING_DATA_METHOD_NAME
-                  + "(" + String.join(", ", colIndAsStr, rowBase, rowBaseOffset, sparkValidityOffset,
-                            cudfAddress, cudfEndAddress, String.valueOf(byteCursor), cudfDataCursor)
-                  + ");";
+            cudfDataCursor
+                + " += "
+                + COPY_STRING_DATA_METHOD_NAME + "("
+                + String.join(", ", colIndAsStr, rowBase, rowBaseOffset,
+                      sparkValidityOffset, cudfAddress, cudfEndAddress,
+                      String.valueOf(byteCursor), cudfDataCursor)
+                + ");\n"
+                + "if (" + cudfDataCursor + " < 0) {\n"
+                + "  return " + cudfDataCursor + ";\n"
+                + "}";
         } else {
           // we support String only for now.
           throw new IllegalStateException(
@@ -500,19 +519,24 @@ public final class JCudfUtil {
         byteCursor = alignOffset(byteCursor, columnSize);
         String cudfDstOffset = cudfAddress + " + " + byteCursor;
         String sparkSrcOffset =
-            rowBase + ", " + rowBaseOffset + " + " + sparkValidityOffset + " + (" + colIndAsStr + " * 8)";
+            rowBase + ", " + rowBaseOffset + " + " + sparkValidityOffset
+                + " + (" + colIndAsStr + " * 8)";
         switch (columnSize) {
           case 1:
-            result = "Platform.putByte(null, " + cudfDstOffset + ", Platform.getByte(" + sparkSrcOffset + "));";
+            result = "Platform.putByte(null, " + cudfDstOffset
+                + ", Platform.getByte(" + sparkSrcOffset + "));";
             break;
           case 2:
-            result = "Platform.putShort(null, " + cudfDstOffset + ", Platform.getShort(" + sparkSrcOffset + "));";
+            result = "Platform.putShort(null, " + cudfDstOffset
+                + ", Platform.getShort(" + sparkSrcOffset + "));";
             break;
           case 4:
-            result = "Platform.putInt(null, " + cudfDstOffset + ", Platform.getInt(" + sparkSrcOffset + "));";
+            result = "Platform.putInt(null, " + cudfDstOffset
+                + ", Platform.getInt(" + sparkSrcOffset + "));";
             break;
           case 8:
-            result = "Platform.putLong(null, " + cudfDstOffset + ", Platform.getLong(" + sparkSrcOffset + "));";
+            result = "Platform.putLong(null, " + cudfDstOffset
+                + ", Platform.getLong(" + sparkSrcOffset + "));";
             break;
           default:
             throw new IllegalStateException(
