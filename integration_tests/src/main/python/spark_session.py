@@ -191,7 +191,7 @@ def get_java_major_version():
     return int(ver)
 
 def get_jvm_charset():
-    sc = SparkContext.getOrCreate()
+    sc = _spark.sparkContext
     return str(sc._jvm.java.nio.charset.Charset.defaultCharset())
 
 def is_jvm_charset_utf8():

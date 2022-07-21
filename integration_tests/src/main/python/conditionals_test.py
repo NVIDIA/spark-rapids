@@ -199,7 +199,7 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
             conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
-@pytest.mark.skipif(is_jvm_charset_not_utf8(), reason="regular expression does not work without UTF-8")
+@pytest.mark.skipif(is_jvm_charset_not_utf8(), reason="regular expressions require UTF-8")
 def test_conditional_with_side_effects_cast(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
@@ -209,7 +209,7 @@ def test_conditional_with_side_effects_cast(data_gen):
             conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
-@pytest.mark.skipif(is_jvm_charset_not_utf8(), reason="regular expression does not work without UTF-8")
+@pytest.mark.skipif(is_jvm_charset_not_utf8(), reason="regular expressions require UTF-8")
 def test_conditional_with_side_effects_case_when(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
