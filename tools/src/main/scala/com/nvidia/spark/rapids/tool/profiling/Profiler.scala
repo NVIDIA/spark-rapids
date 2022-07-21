@@ -47,7 +47,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   private val outputCSV: Boolean = appArgs.csv()
   private val outputCombined: Boolean = appArgs.combined()
 
-  private val useRecommender: Boolean = appArgs.recommender()
+  private val useAutoTuner: Boolean = appArgs.autoTuner()
 
   logInfo(s"Threadpool size is $nThreads")
 
@@ -449,8 +449,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
         Some("Unsupported SQL Ops"))
 
-      if(useRecommender) {
-        val workerInfo: String = appArgs.workerinfo.getOrElse(".")
+      if(useAutoTuner) {
+        val workerInfo: String = appArgs.workerInfo.getOrElse(".")
         val autoTuner: AutoTuner = new AutoTuner(app, workerInfo)
         val (properties, comments) = autoTuner.getRecommendedProperties()
         profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")

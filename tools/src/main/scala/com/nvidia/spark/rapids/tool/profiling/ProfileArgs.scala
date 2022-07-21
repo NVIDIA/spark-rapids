@@ -86,13 +86,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Filter event logs whose application start occurred within the past specified " +
         "time period. Valid time periods are min(minute),h(hours),d(days),w(weeks)," +
         "m(months). If a period is not specified it defaults to days.")
-  val recommender: ScallopOption[Boolean] =
+  val autoTuner: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Toggle recommendation module",
+      descr = "Toggle auto-tuner module",
       default = Some(false))
-  val workerinfo: ScallopOption[String] =
+  val workerInfo: ScallopOption[String] =
     opt[String](required = false,
-      descr = "File path containing system information for workers",
+      descr = "File path containing the system information of a worker node",
       default = Some("."))
 
   validate(filterCriteria) {
