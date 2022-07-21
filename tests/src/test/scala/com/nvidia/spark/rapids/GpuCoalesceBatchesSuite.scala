@@ -43,7 +43,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     withGpuSparkSession(spark => {
       val testData = mixedDf(spark, numSlices = 1)
       val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
-        TargetSize(1))
+        TargetSize(160))
       val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(100000))
       val rdd = gpuCoalesceBatches.doExecuteColumnar()
       val part = rdd.partitions.head
@@ -69,7 +69,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     withGpuSparkSession(spark => {
       val testData = mixedDf(spark, numSlices = 1)
       val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
-        TargetSize(1))
+        TargetSize(160))
       val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(50))
       val rdd = gpuCoalesceBatches.doExecuteColumnar()
       val part = rdd.partitions.head
@@ -420,7 +420,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   test("not require single batch") {
 
-    val conf = makeBatchedBytes(1)
+    val conf = makeBatchedBytes(160)
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set("spark.sql.shuffle.partitions", "1")
@@ -440,7 +440,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal != RequireSingleBatch)
-      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes == 1)
+      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes == 160)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)

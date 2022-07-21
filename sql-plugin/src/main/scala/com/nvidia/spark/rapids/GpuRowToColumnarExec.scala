@@ -730,7 +730,7 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
     val copyData = schema.indices.map { colIndex =>
       jcudfRowBuilder.generateCopyCodeColumn(
         colIndex, s"$rowBaseObj", s"$rowBaseOffset", s"$sparkValidityOffset",
-        "startAddress", s"$cudfDataOffsetTmp")
+        "startAddress", "endAddress", s"$cudfDataOffsetTmp")
     }
     val cudfDataOffsetInit = s"$cudfDataOffsetTmp = ${jcudfRowBuilder.getVariableDataOffset};"
 

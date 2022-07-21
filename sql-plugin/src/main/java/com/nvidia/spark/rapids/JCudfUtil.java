@@ -398,7 +398,7 @@ public final class JCudfUtil {
     public static final String COPY_STRING_DATA_CODE = String.join("\n"
         , "private int " + COPY_STRING_DATA_METHOD_NAME + "("
         , "    int ordinal, Object src, long baseOffset, int sparkValidityOffset,"
-        , "    long startAddress, int cudfColOffset, int dataDstOffset) {"
+        , "    long startAddress, long bufferEndAddress, int cudfColOffset, int dataDstOffset) {"
         , "  final long unsafeCudfColOffset = startAddress + cudfColOffset;"
         , "  // check that the field is null"
         , "  if (org.apache.spark.unsafe.bitset.BitSetMethods.isSet(src, baseOffset, ordinal)) {"
@@ -414,12 +414,19 @@ public final class JCudfUtil {
         , "  final long strOffsetAndSize = Platform.getLong(src, sparkFieldOffset);"
         , "  final int strOffset = (int) (strOffsetAndSize >> 32);"
         , "  final int strSize = (int) strOffsetAndSize;"
+        , "  // verify that the strSize will not cause to write past buffer"
+        , "  long cudfDstAddress = startAddress + dataDstOffset;"
+        , "  long newDataOffset = cudfDstAddress + strSize;"
+        , "  if (newDataOffset > bufferEndAddress) {"
+        , "    throw new java.lang.RuntimeException("
+        , "        \"Row data exceeds allocated buffer. Diff size = \" + (newDataOffset - bufferEndAddress));"
+        , "  }"
         , "  // set the offset and length in the fixed width section."
         , "  Platform.putInt(null, unsafeCudfColOffset, dataDstOffset);"
         , "  Platform.putInt(null, unsafeCudfColOffset + 4, strSize);"
         , "  // copy the data"
         , "  Platform.copyMemory("
-        , "      src, baseOffset + strOffset, null, startAddress + dataDstOffset, strSize);"
+        , "      src, baseOffset + strOffset, null, cudfDstAddress, strSize);"
         , "  return strSize;"
         , "}");
 
@@ -466,7 +473,7 @@ public final class JCudfUtil {
      */
     public String generateCopyCodeColumn(
         int colIndex, String rowBase, String rowBaseOffset, String sparkValidityOffset,
-        String cudfAddress, String cudfDataCursor) {
+        String cudfAddress, String cudfEndAddress, String cudfDataCursor) {
       Attribute attr = attributes[colIndex];
       DataType dataType = attr.dataType();
       DType rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType);
@@ -482,7 +489,7 @@ public final class JCudfUtil {
                   + " += "
                   + COPY_STRING_DATA_METHOD_NAME
                   + "(" + String.join(", ", colIndAsStr, rowBase, rowBaseOffset, sparkValidityOffset,
-                            cudfAddress, String.valueOf(byteCursor), cudfDataCursor)
+                            cudfAddress, cudfEndAddress, String.valueOf(byteCursor), cudfDataCursor)
                   + ");";
         } else {
           // we support String only for now.

@@ -125,6 +125,7 @@ class JCudfUtilSuite extends FunSuite with Logging {
     val rowBaseOffset = 72
     val sparkValidityOffset = UnsafeRow.calculateBitSetWidthInBytes(schema.length)
     val cudfAddress = "startAddress"
+    val cudfEndAddress = "endAddress"
     val cudfDataOffset = "cudfDataOffsetVar"
 
     val expectedCopyStrings : Array[String] =
@@ -141,15 +142,15 @@ class JCudfUtilSuite extends FunSuite with Logging {
         "Platform.putLong(null, startAddress + 72, Platform.getLong(64, 72 + 8 + (9 * 8)));",
         "Platform.putLong(null, startAddress + 80, Platform.getLong(64, 72 + 8 + (10 * 8)));",
         "Platform.putLong(null, startAddress + 88, Platform.getLong(64, 72 + 8 + (11 * 8)));",
-        "cudfDataOffsetVar += copyUTF8StringInto(12, 64, 72, 8, startAddress, 96, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(12, 64, 72, 8, startAddress, endAddress, 96, cudfDataOffsetVar);",
         "Platform.putInt(null, startAddress + 104, Platform.getInt(64, 72 + 8 + (13 * 8)));",
-        "cudfDataOffsetVar += copyUTF8StringInto(14, 64, 72, 8, startAddress, 108, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(15, 64, 72, 8, startAddress, 116, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(16, 64, 72, 8, startAddress, 124, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(17, 64, 72, 8, startAddress, 132, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(18, 64, 72, 8, startAddress, 140, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(19, 64, 72, 8, startAddress, 148, cudfDataOffsetVar);",
-        "cudfDataOffsetVar += copyUTF8StringInto(20, 64, 72, 8, startAddress, 156, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(14, 64, 72, 8, startAddress, endAddress, 108, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(15, 64, 72, 8, startAddress, endAddress, 116, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(16, 64, 72, 8, startAddress, endAddress, 124, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(17, 64, 72, 8, startAddress, endAddress, 132, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(18, 64, 72, 8, startAddress, endAddress, 140, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(19, 64, 72, 8, startAddress, endAddress, 148, cudfDataOffsetVar);",
+        "cudfDataOffsetVar += copyUTF8StringInto(20, 64, 72, 8, startAddress, endAddress, 156, cudfDataOffsetVar);",
         "Platform.putInt(null, startAddress + 164, Platform.getInt(64, 72 + 8 + (21 * 8)));",
         "Platform.putByte(null, startAddress + 168, Platform.getByte(64, 72 + 8 + (22 * 8)));",
         "Platform.putByte(null, startAddress + 169, Platform.getByte(64, 72 + 8 + (23 * 8)));")
@@ -158,7 +159,7 @@ class JCudfUtilSuite extends FunSuite with Logging {
       assert(cudfRowVisitor.getByteCursor == expectedPackedOffsets(colIndex))
       assert(cudfRowVisitor.generateCopyCodeColumn(
         colIndex, s"$rowBaseObj", s"$rowBaseOffset", s"$sparkValidityOffset",
-        cudfAddress, cudfDataOffset) == expectedCopyStrings(colIndex))
+        cudfAddress, cudfEndAddress, cudfDataOffset) == expectedCopyStrings(colIndex))
     }
     assert(cudfRowVisitor.getValidityBytesOffset == 170)
     assert(cudfRowVisitor.getValiditySizeInBytes == (attributes.length + 7) / 8)
