@@ -151,14 +151,14 @@ object RapidsPluginUtils extends Logging {
     // If spark.rapids.sql.multiThreadedRead.numThreads is not set explicitly, or it is set
     // explicitly as value 0, then we derive it from other settings. Otherwise, we keep the
     // users' setting.
-    val num_threads_key = RapidsConf.MULTITHREAD_READ_NUM_THREADS.key;
-    if (!conf.contains(num_threads_key) || conf.get(num_threads_key).toInt == 0) {
+    val numThreadsKey = RapidsConf.MULTITHREAD_READ_NUM_THREADS.key
+    if (!conf.contains(numThreadsKey) || conf.get(numThreadsKey).toInt == 0) {
       // Derive it from spark.executor.cores
       // In standalone mode, users set spark.executor.cores via `--conf spark.executor.cores=10`.
       // In yarn mode, users set spark.executor.cores via a config file 'spark-default.conf',
       // for more details, see yarn-gpu.md
       if (conf.contains(EXECUTOR_CORES_KEY)) {
-        conf.set(num_threads_key, Math.max(20, conf.get(EXECUTOR_CORES_KEY).toInt).toString)
+        conf.set(numThreadsKey, Math.max(20, conf.get(EXECUTOR_CORES_KEY).toInt).toString)
       }
     }
   }
