@@ -590,18 +590,20 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
             (3.2, "a"), (10.6, "c")).toDF("num", "letter")
           df1.write.parquet(s"$parquetoutputLoc/testsortExec")
           val df2 = spark.read.parquet(s"$parquetoutputLoc/testsortExec")
+          df2.sort("num").collect
+          df2.orderBy("num").collect
           df2.select(round(col("num")), col("letter")).sort(round(col("num")), col("letter").desc)
         }
         val pluginTypeChecker = new PluginTypeChecker()
         val app = createAppFromEventlog(eventLog)
-        assert(app.sqlPlans.size == 2)
+        assert(app.sqlPlans.size == 4)
         val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
           SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
         }
         val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
         val sortExec = allExecInfo.filter(_.exec.contains("Sort"))
-        assert(sortExec.size == 1)
-        assertSizeAndSupported(1, sortExec, 5.2)
+        assert(sortExec.size == 3)
+        assertSizeAndSupported(3, sortExec, 5.2)
       }
     }
   }
