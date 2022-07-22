@@ -194,7 +194,6 @@ SELECT_SQL = [
 ("SELECT * FROM test_table WHERE strF LIKE 'Y%'", "* WHERE strF LIKE 'Y%'"),
 ("SELECT * FROM test_table WHERE strF LIKE '%an' ", "* WHERE strF LIKE '%an'"),
 ("SELECT REPLACE(strF, 'Yuan', 'Eric') FROM test_table", "REPLACE(strF, 'Yuan', 'Eric')"),
-("SELECT REGEXP_REPLACE(strF, 'Yu', 'Eric') FROM test_table", "REGEXP_REPLACE(strF, 'Yu', 'Eric')"),
 #("SELECT REGEXP_REPLACE(strF, 'Y*', 'Eric') FROM test_table", "REGEXP_REPLACE(strF, 'Y*', 'Eric')"),
 ("SELECT CONCAT(strF, strF) FROM test_table", "CONCAT(strF, strF)"),
 # (" DATETIME", "DATETIME"),
@@ -815,4 +814,8 @@ SELECT_PRE_ORDER_SQL=[
 SELECT_FLOAT_SQL=[
 ("SELECT IFNULL(floatF, 0) as if_null FROM test_table", "IFNULL(floatF, 0)"),
 ("SELECT floatF, COALESCE(floatF, 0) FROM test_table", "floatF, COALESCE(floatF,0)"),
+]
+
+SELECT_REGEXP_SQL=[
+("SELECT REGEXP_REPLACE(strF, 'Yu', 'Eric') FROM test_table", "REGEXP_REPLACE(strF, 'Yu', 'Eric')"),
 ]

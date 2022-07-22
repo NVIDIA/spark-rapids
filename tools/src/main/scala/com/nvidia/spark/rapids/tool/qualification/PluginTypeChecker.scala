@@ -252,7 +252,9 @@ class PluginTypeChecker extends Logging {
   }
 
   def isExprSupported(expr: String): Boolean = {
-    val exprLowercase = expr.toLowerCase
+    // Remove _ from the string. Example: collect_list => collectlist.
+    // collect_list is alias for CollectList aggregate function
+    val exprLowercase = expr.toLowerCase.replace("_","")
     if (supportedExprs.contains(exprLowercase)) {
       val exprSupported = supportedExprs.getOrElse(exprLowercase, "NS")
       if (exprSupported == "S") {
