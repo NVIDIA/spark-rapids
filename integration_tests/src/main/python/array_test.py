@@ -35,8 +35,8 @@ array_item_test_gens = array_gens_sample + [array_all_null_gen,
     ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)]
 
 no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
-        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
-        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct
+        # but nans do work
         FloatGen(special_cases=[]), DoubleGen(special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
@@ -402,7 +402,7 @@ def test_array_max_q1():
     assert_gpu_and_cpu_are_equal_collect(q1)
 
 
-@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -419,7 +419,7 @@ def test_array_intersect(data_gen):
         )
     )
     
-@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_array_union(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -436,7 +436,7 @@ def test_array_union(data_gen):
         )
     )
 
-@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_array_except(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -453,7 +453,7 @@ def test_array_except(data_gen):
         )
     )
 
-@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_arrays_overlap(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
