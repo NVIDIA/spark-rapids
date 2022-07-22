@@ -652,7 +652,7 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
             .agg(f.sort_array(f.collect_set('b'))))
 
 
-# Note, using size() here instead of sort_array(), because sort_array() does not yet 
+# Note, using size() here instead of sort_array(), because sort_array() does not yet
 # support sorting arbitrary types
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
@@ -661,7 +661,7 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
-    conf = { 
+    conf = {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true" 
     }
@@ -669,7 +669,7 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
-            .agg(f.size(f.collect_set('b'))), conf=conf)
+            .agg(f.collect_set('b')), conf=conf)
 
 @approximate_float
 @ignore_order(local=True)
