@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{File, FileInputStream}
 import java.util.Optional
-import java.util.concurrent.{Executors, LinkedBlockingQueue}
+import java.util.concurrent.{Callable, Executors}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable
@@ -38,7 +38,6 @@ import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase.Task
 import org.apache.spark.sql.rapids.shims.GpuShuffleBlockResolver
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
@@ -106,57 +105,45 @@ object RapidsShuffleInternalManagerBase extends Logging {
   }
 
   /**
-   * A single-thread + queue used to compute a series of tasks serially.
-   * Used to compose a map of slots that can run independent of each other.
+   * "slots" are a thread + queue thin wrapper that is used
+   * to execute tasks that need to be done in sequentially.
+   * This is done such that the threaded shuffle writer posts
+   * tasks that are for writer_i, and that writer is guaranteed
+   * to be written to sequentially, but writer_j may end up
+   * in a different slot, and could perform its work in parallel.
+   * @param id string identifying the slot (and thread)
    */
-  case class Task(body: () => Unit, handleException: Throwable => Unit)
-  private class Slot(i: Int) {
-    val tasks = new LinkedBlockingQueue[Task]()
-    val p = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
-      .setNameFormat(s"rapids-shuffle-writer-$i")
-      .setDaemon(true)
-      .build)
+  private class Slot(id: Int) {
+    private val p = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
+        .setNameFormat(s"rapids-shuffle-writer-$id")
+        .setDaemon(true)
+        .build())
 
-    def offer(task: Task): Unit = {
-      tasks.offer(task)
+    def offer[T](task: Callable[T]): Unit = {
+      p.submit(task)
     }
-    p.submit[Unit](() => {
-      while (true) {
-        var t: Task = null
-        try {
-          t = tasks.take()
-          t.body()
-        } catch {
-          case e: Throwable =>
-            t.handleException(e)
-        }
-      }
-    })
 
     def shutdownNow(): Unit = p.shutdownNow()
   }
 
-  // "slots" are a thread + queue thin wrapper that is used
-  // to execute tasks that need to be done in sequentially.
-  // This is done such that the threaded shuffle writer posts
-  // tasks that are for writer_i, and that writer is guaranteed
-  // to be written to sequentially, but writer_j may end up
-  // in a different slot.
+  // this is set by the executor on startup, when the MULTITHREADED
+  // shuffle mode is utilized, as per this config:
+  //   spark.rapids.shuffle.multiThreaded.writer.threads
   private var numSlots: Int = 0
   private lazy val slots = new mutable.HashMap[Int, Slot]()
 
   // used by callers to obtain a unique slot
   private val slotNumber = new AtomicInteger(0)
 
-  def queueTask(slot: Int, task: Task): Unit = {
+  def queueTask[T](slot: Int, task: Callable[T]): Unit = {
     slots(slot % numSlots).offer(task)
   }
 
   def startThreadPoolIfNeeded(numConfiguredThreads: Int): Unit = synchronized {
     if (slots.isEmpty) {
       numSlots = numConfiguredThreads
-      (0 until numSlots).foreach { i  =>
-        slots.put(i, new Slot(i))
+      (0 until numSlots).foreach { slotId =>
+        slots.put(slotId, new Slot(slotId))
       }
     }
   }
@@ -265,21 +252,23 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   null
               }
 
-              RapidsShuffleInternalManagerBase.queueTask(slot, Task(() => {
-                withResource(cb) { _ =>
-                  myWriter.write(key, value)
+              RapidsShuffleInternalManagerBase.queueTask(slot, () => {
+                try {
+                  withResource(cb) { _ =>
+                    myWriter.write(key, value)
+                  }
+                  synchronized {
+                    scheduledWrites.decrementAndGet()
+                    notifyAll()
+                  }
+                } catch {
+                  case e: Throwable =>
+                    synchronized {
+                      errorOcurred = e
+                      notifyAll()
+                    }
                 }
-                synchronized {
-                  scheduledWrites.decrementAndGet()
-                  notifyAll()
-                }
-              }, handleException = (throwable: Throwable) => {
-                // exception occurred while writing
-                synchronized {
-                  errorOcurred = throwable
-                  notifyAll()
-                }
-              }))
+              })
             }
 
             withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
