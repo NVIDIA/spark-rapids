@@ -62,7 +62,8 @@ public final class JCudfUtil {
   /**
    * The maximum buffer size allocated to copy JCudf row.
    */
-  public static final long JCUDF_MAX_DATA_BUFFER_LENGTH = Integer.MAX_VALUE;
+  public static final long JCUDF_MAX_DATA_BUFFER_LENGTH =
+      Integer.MAX_VALUE - (JCUDF_ROW_ALIGNMENT - 1);
 
   /**
    * Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
@@ -85,7 +86,7 @@ public final class JCudfUtil {
   }
 
   public static int alignOffset(int offset, int alignment) {
-    return (offset + alignment - 1) & -alignment;
+    return (offset - 1 + alignment) & -alignment;
   }
 
   public static int calculateBitSetWidthInBytes(int numFields) {
@@ -182,15 +183,10 @@ public final class JCudfUtil {
    * @return size in bytes of the variable length datatype.
    */
   public static int getEstimateSizeForVarLengthTypes(DType rapidsType) {
-    switch (rapidsType.getTypeId()) {
-      case STRING:
-        return JCUDF_TYPE_STRING_LENGTH_ESTIMATE;
-      case LIST:
-      case STRUCT:
-        // Return 32 bytes for other types until we decide on how to handle each type.
-      default:
-        throw new IllegalArgumentException(rapidsType + " estimated size is not supported yet.");
+    if (rapidsType.equals(DType.STRING)) {
+      return JCUDF_TYPE_STRING_LENGTH_ESTIMATE;
     }
+    throw new IllegalArgumentException(rapidsType + " estimated size is not supported yet.");
   }
 
   /**

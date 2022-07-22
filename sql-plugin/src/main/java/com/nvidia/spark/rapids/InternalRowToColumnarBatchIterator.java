@@ -162,7 +162,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
         // To do this we first need to make a HostColumnCoreVector for the data, and then
         // put that into a HostColumnVector as its child.  This the basics of building up
-        // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
+        // a column of lists of bytes in CUDF but it is typically hidden behind the higher level
         // APIs.
         dataBuffer.incRefCount();
         offsetsBuffer.incRefCount();
@@ -188,15 +188,16 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         // Handle corner case when the dataLength is too small to copy a single row.
         // Increase dataBuffer size by 25%
         // dataLength can be considered a rough estimate of a single row.
-        long newRowSizeEstimate =
-            Math.min((dataLength * 125) / 100, JCudfUtil.JCUDF_MAX_DATA_BUFFER_LENGTH);
-        if (newRowSizeEstimate <= dataLength) { // We already reached the limit.
+        long newRowSizeEst =
+            JCudfUtil.alignOffset((int) (dataLength * 125) / 100, JCudfUtil.JCUDF_ROW_ALIGNMENT);
+        newRowSizeEst = Math.min(newRowSizeEst, JCudfUtil.JCUDF_MAX_DATA_BUFFER_LENGTH);
+        if (newRowSizeEst <= dataLength) { // We already reached the limit.
           // proceed with throwing exception.
           throw new RuntimeException(
               "JCudf row is too large to fit in MemoryBuffer", ex);
         }
         // Recalculate the dataLength based on the new size estimate
-        setBuffersCapacities(newRowSizeEstimate, goalTargetSize);
+        setBuffersCapacities(newRowSizeEst, goalTargetSize);
         retryCount++;
       }
     }
