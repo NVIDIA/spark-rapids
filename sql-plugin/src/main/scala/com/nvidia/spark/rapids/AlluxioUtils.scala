@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.io.FileNotFoundException
-import java.net.URI
 import java.util.Properties
 
 import scala.io.{BufferedSource, Source}
@@ -83,10 +82,9 @@ object AlluxioUtils extends Logging {
             val items = line.trim.split(" +")
             logDebug(line)
             if (items.length >= 3) {
-              val uri = new URI(items(0))
-              // record all the mounted point which has scheme like s3 s3a or gs
-              // though we only support s3, s3a now
-              if (uri.getScheme() != null) {
+              // if the first item contains the "://", it means it's a remote path.
+              // record it as a mounted point
+              if (items(0).contains("://")) {
                 mountedBuckets(items(2)) = items(0)
                 logInfo(s"Found mounted bucket ${items(0)} to ${items(2)}")
               }
@@ -100,13 +98,15 @@ object AlluxioUtils extends Logging {
     }
   }
 
+  // The path should be like s3://bucket/... or s3a://bucket/...
   private def getSchemeAndBucketFromPath(path: String) : (String, String) = {
-    val uri = new URI(path)
-    // the bucket is the host in URI
-    if (uri.getScheme == null || uri.getHost == null) {
+    val i = path.split("://")
+    val scheme = i(0)
+    if (i.length <= 1) {
       throw new RuntimeException(s"path $path is not expected for Alluxio auto mount")
     }
-    (uri.getScheme, uri.getHost)
+    val bucket = i(1).split("/")(0)
+    (scheme, bucket)
   }
 
   private def runAlluxioCmd(param : String) : (Int,
