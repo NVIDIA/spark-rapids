@@ -116,7 +116,7 @@ rapids_shuffle_smoke_test() {
       TEST_PARALLEL=0 \
       PYSP_TEST_spark_cores_max=2 \
       PYSP_TEST_spark_executor_cores=1 \
-      SPARK_SUBMIT_FLAGS="--conf spark.rapids.shuffle.mode=MULTI_THREADED \
+      SPARK_SUBMIT_FLAGS="--conf spark.rapids.shuffle.mode=MULTITHREADED \
         --conf spark.rapids.shuffle.multiThreaded.writer.threads=2" \
       PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
       PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \

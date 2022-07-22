@@ -1117,14 +1117,14 @@ object RapidsConf {
     .createWithDefault(true)
 
   object RapidsShuffleManagerMode extends Enumeration {
-    val UCX, CACHE_ONLY, MULTI_THREADED = Value
+    val UCX, CACHE_ONLY, MULTITHREADED = Value
   }
 
   val SHUFFLE_MANAGER_MODE = conf("spark.rapids.shuffle.mode")
     .doc("RAPIDS Shuffle Manager mode. The default mode is " +
         "\"UCX\", which has to be installed in the system. Consider setting to \"CACHE_ONLY\" if " +
         "running with a single executor and UCX is not installed, for short-circuit cached " +
-        "shuffle (for testing purposes). Set to \"MULTI_THREADED\" for an experimental mode that " +
+        "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
         "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
         "mode dynamically is not supported.")
     .stringConf
@@ -1264,7 +1264,7 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
-  val SHUFFLE_MULTI_THREADED_WRITER_THREADS =
+  val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
       .doc("The number of threads to use for writing shuffle blocks per executor.")
       .integerConf
@@ -1887,7 +1887,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
-  lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTI_THREADED_WRITER_THREADS)
+  lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
@@ -1895,7 +1895,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   def isMultiThreadedShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
-      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTI_THREADED
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
 
   def isCacheOnlyShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode

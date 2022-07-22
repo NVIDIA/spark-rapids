@@ -23,12 +23,13 @@ import org.apache.spark.shuffle.sort.BypassMergeSortShuffleHandle
 import org.apache.spark.sql.rapids.RapidsShuffleThreadedWriterBase
 import org.apache.spark.storage.BlockManager
 
-class RapidsShuffleThreadedWriter[K, V](blockManager: BlockManager,
-                                        handle: BypassMergeSortShuffleHandle[K, V],
-                                        mapId: Long,
-                                        sparkConf: SparkConf,
-                                        writeMetrics: ShuffleWriteMetricsReporter,
-                                        shuffleExecutorComponents: ShuffleExecutorComponents)
+class RapidsShuffleThreadedWriter[K, V](
+    blockManager: BlockManager,
+    handle: BypassMergeSortShuffleHandle[K, V],
+    mapId: Long,
+    sparkConf: SparkConf,
+    writeMetrics: ShuffleWriteMetricsReporter,
+    shuffleExecutorComponents: ShuffleExecutorComponents)
   extends RapidsShuffleThreadedWriterBase[K, V](
     blockManager,
     handle,
