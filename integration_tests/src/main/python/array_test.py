@@ -34,6 +34,12 @@ array_all_null_gen = ArrayGen(int_gen, all_null=True)
 array_item_test_gens = array_gens_sample + [array_all_null_gen,
     ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)]
 
+no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
+        FloatGen(special_cases=[]), DoubleGen(special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 def test_array_item(data_gen):
@@ -396,8 +402,7 @@ def test_array_max_q1():
     assert_gpu_and_cpu_are_equal_collect(q1)
 
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -414,30 +419,24 @@ def test_array_intersect(data_gen):
         )
     )
     
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
 def test_array_union(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', ArrayGen(data_gen, nullable=True))],
         nullable=False)
 
-    # The 4th item in this integration test here is left commented out here
-    # There is an issue with running that item with collect(), which affects
-    # the integration test here.
-    # See this issue (https://github.com/NVIDIA/spark-rapids/issues/5957) 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'sort_array(array_union(a, b))',
             'sort_array(array_union(b, a))',
             'sort_array(array_union(a, array()))',
-            # 'sort_array(array_union(array(), b))', # see https://github.com/NVIDIA/spark-rapids/issues/5957
+            'sort_array(array_union(array(), b))',
             'sort_array(array_union(a, a))',
         )
     )
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
 def test_array_except(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -454,8 +453,7 @@ def test_array_except(data_gen):
         )
     )
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(special_cases=[]), DoubleGen(special_cases=[]), string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens, ids=idfn)
 def test_arrays_overlap(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
