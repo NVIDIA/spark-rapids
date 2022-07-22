@@ -186,10 +186,9 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         }
       } catch (BufferOverflowException ex) {
         // Handle corner case when the dataLength is too small to copy a single row.
-        // Increase dataBuffer size by 25%
+        // We retry after doubling the bufferSize.
         // dataLength can be considered a rough estimate of a single row.
-        long newRowSizeEst =
-            JCudfUtil.alignOffset((int) (dataLength * 125) / 100, JCudfUtil.JCUDF_ROW_ALIGNMENT);
+        long newRowSizeEst = dataLength << 1 ;
         newRowSizeEst = Math.min(newRowSizeEst, JCudfUtil.JCUDF_MAX_DATA_BUFFER_LENGTH);
         if (newRowSizeEst <= dataLength) { // We already reached the limit.
           // proceed with throwing exception.
@@ -204,8 +203,8 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     try (NvtxRange ignored = buildRange;
          ColumnVector cv = devColumn;
          Table tab = fitsOptimizedConversion ?
-             // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means
-             // at most 184 double/long values.
+             // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which
+             // means at most 184 double/long values.
              Table.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
              Table.convertFromRows(cv, rapidsTypes)) {
       return GpuColumnVector.from(tab, outputTypes);
