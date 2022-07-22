@@ -27,6 +27,9 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy._
 
+// Copied from org/apache/spark/sql/catalyst/util/DateFormatter
+// for https://github.com/NVIDIA/spark-rapids/issues/6026
+// It can be removed when Spark3.3 is the least supported Spark version
 sealed trait DateFormatter extends Serializable {
   def parse(s: String): Int // returns days since epoch
 

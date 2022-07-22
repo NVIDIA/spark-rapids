@@ -26,6 +26,9 @@ import org.apache.spark.sql.catalyst.ScalaReflection.universe.typeTag
  *
  * Please use the singleton `DataTypes.TimestampNTZType` to refer the type.
  */
+// Copied from Spark: org/apache/spark/sql/types/TimestampNTZType.scala
+// for https://github.com/NVIDIA/spark-rapids/issues/6026
+// It can be removed when Spark 3.3.0 is the least supported Spark version
 private[spark] class TimestampNTZType private() extends DatetimeType {
   /**
    * Internally, a timestamp is stored as the number of microseconds from

@@ -64,6 +64,9 @@ object GpuPartitioningUtils extends SQLConfHelper {
    *
    * Mainly copied from PartitioningAwareFileIndex.inferPartitioning
    */
+    // Copied from Spark: org/apache/spark/sql/execution/datasources/PartitionUtils.scala
+    // for for https://github.com/NVIDIA/spark-rapids/issues/6026
+    // It can be removed when Spark3.3 is the least supported Spark version
   def inferPartitioning(
       sparkSession: SparkSession,
       rootPaths: Seq[Path],

@@ -18,7 +18,10 @@ package org.apache.spark.sql.errors.rapids
 
 import org.apache.spark.sql.types.DataType
 
-object QueryExecutionErrors extends QueryErrorsBase {
+// Copied from org/apache/spark/sql/errors/QueryExecutionErrors.scala
+// for for https://github.com/NVIDIA/spark-rapids/issues/6026
+// It can be removed when Spark 3.3.0 is the least supported Spark version
+object QueryExecutionErrors {
   def failedToCastValueToDataTypeForPartitionColumnError(
       value: String, dataType: DataType, columnName: String): Throwable = {
     new RuntimeException(s"Failed to cast value `$value` to " +
@@ -28,6 +31,4 @@ object QueryExecutionErrors extends QueryErrorsBase {
   def typeUnsupportedError(dataType: DataType): Throwable = {
     new IllegalArgumentException(s"Unexpected type $dataType")
   }
-
-
 }

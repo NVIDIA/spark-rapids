@@ -20,6 +20,9 @@ import java.text.ParseException
 import java.time.DateTimeException
 import java.time.format.DateTimeParseException
 
+// Copied from Spark: org/apache/spark/sql/catalyst/util/TimestampFormatter.scala
+// for for https://github.com/NVIDIA/spark-rapids/issues/6026
+// It can be removed when Spark3.3 is the least supported Spark version
 sealed trait TimestampFormatter extends Serializable {
   /**
    * Parses a timestamp in a string and converts it to microseconds since Unix Epoch in local time.

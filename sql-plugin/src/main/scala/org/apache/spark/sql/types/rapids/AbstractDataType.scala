@@ -19,7 +19,9 @@ package org.apache.spark.sql.types.rapids
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{AbstractDataType, AtomicType, DataType, TimestampType}
 
-
+// Copied from org/apache/spark/sql/types/AbstractDataType.scala
+// for for https://github.com/NVIDIA/spark-rapids/issues/6026
+// It can be removed when Spark 3.3.0 is the least supported Spark version
 private[sql] object AnyTimestampType extends AbstractDataType with Serializable {
   override private[sql] def defaultConcreteType: DataType = TimestampType
 
